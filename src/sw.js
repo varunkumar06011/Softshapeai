@@ -27,13 +27,24 @@ registerRoute(
   })
 );
 
+// ── Local edge server requests: bypass service worker entirely ───────────────
+// The edge server runs on localhost:3100. The SW should not intercept, cache,
+// or modify these requests — otherwise it can return stale/failed responses
+// when the desktop app is starting the edge server sidecar.
+registerRoute(
+  ({ url }) => url.hostname === 'localhost' || url.hostname === '127.0.0.1',
+  new NetworkOnly()
+);
+
 // ── API GET requests: NetworkFirst with cache fallback ──────────────────────
 // Cache menu, tables, transactions for offline use
 registerRoute(
   ({ url, request }) =>
     url.pathname.startsWith('/api/') &&
     !url.pathname.startsWith('/api/auth/') &&
-    request.method === 'GET',
+    request.method === 'GET' &&
+    url.hostname !== 'localhost' &&
+    url.hostname !== '127.0.0.1',
   new NetworkFirst({
     cacheName: 'softshape-api',
     networkTimeoutSeconds: 5,
@@ -50,7 +61,9 @@ registerRoute(
 registerRoute(
   ({ url, request }) =>
     url.pathname.startsWith('/api/') &&
-    request.method !== 'GET',
+    request.method !== 'GET' &&
+    url.hostname !== 'localhost' &&
+    url.hostname !== '127.0.0.1',
   new NetworkOnly()
 );
 

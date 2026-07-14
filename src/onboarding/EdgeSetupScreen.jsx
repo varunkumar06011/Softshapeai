@@ -31,6 +31,10 @@ const EDGE_START_POLL_MS = 2000;
 const STATUS_POLL_MS = 2000;
 const EDGE_START_TIMEOUT_MS = 30_000;
 
+function isRunningInsideDesktopApp() {
+  return typeof window !== 'undefined' && !!window.__TAURI__;
+}
+
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
   { id: 'edge-start',   label: 'Starting edge server',     icon: Server },
@@ -68,6 +72,7 @@ export default function EdgeSetupScreen() {
 
   // ── General ─────────────────────────────────────────────────────────────────
   const [error, setError] = useState(null);
+  const [startErrorCount, setStartErrorCount] = useState(0);
   const pollRef = useRef(null);
   const edgeStartTimerRef = useRef(null);
 
@@ -75,6 +80,8 @@ export default function EdgeSetupScreen() {
   useEffect(() => {
     let cancelled = false;
     const startTime = Date.now();
+    setError(null);
+    setEdgeChecking(true);
 
     const checkEdge = async () => {
       if (cancelled) return;
@@ -106,11 +113,25 @@ export default function EdgeSetupScreen() {
         setPhase('collect-info');
       } else if (Date.now() - startTime > EDGE_START_TIMEOUT_MS) {
         setEdgeChecking(false);
+        const inDesktop = isRunningInsideDesktopApp();
+        if (inDesktop && window.__TAURI__) {
+          try {
+            const status = await window.__TAURI__.core.invoke('get_edge_server_status');
+            if (status?.error) {
+              setError(status.error + ' Restart the SoftShape Cashier app and try again.');
+              return;
+            }
+          } catch (e) {
+            console.warn('[EdgeSetup] get_edge_server_status failed:', e);
+          }
+        }
         setError(
-          'Edge server did not start within 30 seconds. ' +
-          'Make sure the SoftShape Cashier desktop app is running and no other ' +
-          'application is using port 3100 (e.g. the old Print Agent). ' +
-          'Close this page, restart the Cashier app, and try again.'
+          inDesktop
+            ? 'Edge server did not start within 30 seconds. ' +
+              'Make sure no other application is using port 3100 (e.g. the old Print Agent). ' +
+              'Close this page, restart the SoftShape Cashier app, and try again.'
+            : 'Edge server not found. This page must be opened inside the SoftShape Cashier desktop app. ' +
+              'If the app is already running, close this browser tab and use the Cashier app window instead.'
         );
       } else {
         // Retry
@@ -124,7 +145,7 @@ export default function EdgeSetupScreen() {
       cancelled = true;
       if (edgeStartTimerRef.current) clearTimeout(edgeStartTimerRef.current);
     };
-  }, []);
+  }, [startErrorCount]);
 
   // ── Step 2: Submit registration ─────────────────────────────────────────────
   const handleRegister = useCallback(async () => {
@@ -348,7 +369,13 @@ export default function EdgeSetupScreen() {
                   <div className="flex items-center gap-2 font-bold mb-1">
                     <AlertCircle size={16} /> Error
                   </div>
-                  {error}
+                  <p className="mb-3">{error}</p>
+                  <button
+                    onClick={() => setStartErrorCount(c => c + 1)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-bold text-red-800 transition-colors"
+                  >
+                    <RefreshCw size={12} /> Retry
+                  </button>
                 </div>
               )}
             </div>

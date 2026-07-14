@@ -30,6 +30,13 @@ struct PrinterInfo {
 // We spawn it on app startup and kill it on app shutdown.
 
 static EDGE_SERVER_CHILD: Mutex<Option<Child>> = Mutex::new(None);
+static EDGE_SERVER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EdgeServerStatus {
+    running: bool,
+    error: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 struct PrintBridgeRequest {
@@ -162,6 +169,10 @@ fn start_print_bridge() -> (Arc<AtomicBool>, String) {
     (stop, url)
 }
 
+fn set_edge_server_error(message: String) {
+    let _ = EDGE_SERVER_LAST_ERROR.lock().map(|mut guard| *guard = Some(message));
+}
+
 fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
     // Resolve the edge-server binary path from bundled resources
     let resource_path = app
@@ -184,7 +195,9 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
     }
 
     let Some(edge_server_exe) = candidates.into_iter().find(|path| path.is_file()) else {
-        eprintln!("[EdgeServer] Bundled edge-server.exe was not found; cannot start local edge server (dev mode?)");
+        let err = "Bundled edge-server.exe was not found. This usually means the desktop app was not built with the edge server binary. Please reinstall SoftShape Cashier.".to_string();
+        eprintln!("[EdgeServer] {}", err);
+        set_edge_server_error(err.clone());
         return;
     };
 
@@ -216,11 +229,31 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                     }
                 });
             }
+            // Watch for unexpected exit and record the error
+            std::thread::spawn(move || {
+                let status = child.wait();
+                match status {
+                    Ok(code) if !code.success() => {
+                        let err = format!("Edge server process exited unexpectedly with code {:?}. Port 3100 may already be in use.", code.code());
+                        eprintln!("[EdgeServer] {}", err);
+                        set_edge_server_error(err);
+                    }
+                    Err(e) => {
+                        let err = format!("Edge server process wait error: {}", e);
+                        eprintln!("[EdgeServer] {}", err);
+                        set_edge_server_error(err);
+                    }
+                    _ => {}
+                }
+                let _ = EDGE_SERVER_CHILD.lock().map(|mut guard| *guard = None);
+            });
             eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
             *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
         }
         Err(e) => {
-            eprintln!("[EdgeServer] Failed to start edge-server at {:?}: {}", edge_server_exe, e);
+            let err = format!("Failed to start edge-server at {:?}: {}", edge_server_exe, e);
+            eprintln!("[EdgeServer] {}", err);
+            set_edge_server_error(err.clone());
         }
     }
 }
@@ -233,10 +266,12 @@ fn kill_edge_server() {
     }
 }
 
-/// Check if the edge server is running.
+/// Check if the edge server is running and report any spawn errors.
 #[tauri::command]
-fn is_edge_server_running() -> bool {
-    EDGE_SERVER_CHILD.lock().unwrap().is_some()
+fn get_edge_server_status() -> EdgeServerStatus {
+    let running = EDGE_SERVER_CHILD.lock().unwrap().is_some();
+    let error = EDGE_SERVER_LAST_ERROR.lock().unwrap().clone();
+    EdgeServerStatus { running, error }
 }
 
 /// List all installed Windows printers.
@@ -320,7 +355,7 @@ fn main() {
             print_network,
             get_app_version,
             check_for_updates,
-            is_edge_server_running
+            get_edge_server_status
         ])
         .build(tauri::generate_context!())
         .expect("error while building SoftShape Cashier");
