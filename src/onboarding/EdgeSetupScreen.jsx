@@ -71,15 +71,44 @@ export default function EdgeSetupScreen() {
 
   // ── General ─────────────────────────────────────────────────────────────────
   const [error, setError] = useState(null);
+  const [edgeDiagnostics, setEdgeDiagnostics] = useState(null);
+  const [diagCopied, setDiagCopied] = useState(false);
   const [startErrorCount, setStartErrorCount] = useState(0);
   const pollRef = useRef(null);
   const edgeStartTimerRef = useRef(null);
+
+  const copyEdgeDiagnostics = useCallback(async () => {
+    const text = edgeDiagnostics
+      || error
+      || 'No edge-server diagnostics available. Restart SoftShape Cashier and retry.';
+    try {
+      await navigator.clipboard.writeText(text);
+      setDiagCopied(true);
+      setTimeout(() => setDiagCopied(false), 2000);
+    } catch {
+      // Fallback for environments without clipboard permission
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setDiagCopied(true);
+        setTimeout(() => setDiagCopied(false), 2000);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [edgeDiagnostics, error]);
 
   // ── Step 1: Wait for edge server to come online ─────────────────────────────
   useEffect(() => {
     let cancelled = false;
     const startTime = Date.now();
     setError(null);
+    setEdgeDiagnostics(null);
+    setDiagCopied(false);
     setEdgeChecking(true);
 
     if (!isRunningInsideDesktopApp()) {
@@ -90,6 +119,27 @@ export default function EdgeSetupScreen() {
       );
       return () => { cancelled = true; };
     }
+
+    const fetchEdgeDiagnostics = async () => {
+      if (!(window.__TAURI__ || window.__TAURI_INTERNALS__)) return null;
+      try {
+        const invoke = window.__TAURI__?.core?.invoke
+          || window.__TAURI_INTERNALS__?.invoke;
+        if (!invoke) return null;
+        const status = await invoke('get_edge_server_status');
+        if (!status) return null;
+        const parts = [
+          `app_version=${status.app_version || 'unknown'}`,
+          `running=${!!status.running}`,
+          status.error ? `error=${status.error}` : null,
+          status.diagnostics || null,
+        ].filter(Boolean);
+        return parts.join('\n');
+      } catch (e) {
+        console.warn('[EdgeSetup] get_edge_server_status failed:', e);
+        return null;
+      }
+    };
 
     const checkEdge = async () => {
       if (cancelled) return;
@@ -122,16 +172,13 @@ export default function EdgeSetupScreen() {
       } else if (Date.now() - startTime > EDGE_START_TIMEOUT_MS) {
         setEdgeChecking(false);
         const inDesktop = isRunningInsideDesktopApp();
-        if (inDesktop && (window.__TAURI__ || window.__TAURI_INTERNALS__)) {
-          try {
-            const status = await window.__TAURI__.core.invoke('get_edge_server_status');
-            if (status?.error) {
-              setError(status.error + ' Restart the SoftShape Cashier app and try again.');
-              return;
-            }
-          } catch (e) {
-            console.warn('[EdgeSetup] get_edge_server_status failed:', e);
-          }
+        const diag = inDesktop ? await fetchEdgeDiagnostics() : null;
+        if (diag) setEdgeDiagnostics(diag);
+        if (diag && /not found/i.test(diag)) {
+          setError(
+            'Bundled edge-server.exe was not found. This usually means the desktop app was not built with the edge server binary. Please reinstall SoftShape Cashier, or copy diagnostic info for support.'
+          );
+          return;
         }
         setError(
           inDesktop
@@ -380,17 +427,27 @@ export default function EdgeSetupScreen() {
                 The local SQLite engine is launching on port 3100. This usually takes 2–3 seconds.
               </p>
               {error && (
-                <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 max-w-sm">
+                <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 max-w-sm text-left">
                   <div className="flex items-center gap-2 font-bold mb-1">
                     <AlertCircle size={16} /> Error
                   </div>
                   <p className="mb-3">{error}</p>
-                  <button
-                    onClick={() => setStartErrorCount(c => c + 1)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-bold text-red-800 transition-colors"
-                  >
-                    <RefreshCw size={12} /> Retry
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setStartErrorCount(c => c + 1)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-bold text-red-800 transition-colors"
+                    >
+                      <RefreshCw size={12} /> Retry
+                    </button>
+                    {edgeDiagnostics && (
+                      <button
+                        onClick={copyEdgeDiagnostics}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 hover:bg-red-50 rounded-lg text-xs font-bold text-red-800 transition-colors"
+                      >
+                        {diagCopied ? 'Copied!' : 'Copy diagnostic info'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -632,6 +689,26 @@ export default function EdgeSetupScreen() {
           )}
         </div>
 
+        {/* ── Footer ──────────────────────────────────────────────────────────── */}
+        <div className="mt-6 flex items-center justify-between px-2">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <ArrowLeft size={14} /> Back to portal
+          </button>
+
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <div className={`w-2 h-2 rounded-full ${edgeOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="font-medium">
+              {edgeOnline ? 'Edge server online' : edgeChecking ? 'Edge starting…' : 'Edge offline'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
         {/* ── Footer ──────────────────────────────────────────────────────────── */}
         <div className="mt-6 flex items-center justify-between px-2">
           <button

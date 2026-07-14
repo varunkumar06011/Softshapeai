@@ -4,13 +4,14 @@
 )]
 
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -30,12 +31,15 @@ struct PrinterInfo {
 // We spawn it on app startup and kill it on app shutdown.
 
 static EDGE_SERVER_CHILD: Mutex<Option<Child>> = Mutex::new(None);
+static EDGE_SERVER_DIAGNOSTICS: Mutex<Option<String>> = Mutex::new(None);
 static EDGE_SERVER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct EdgeServerStatus {
     running: bool,
     error: Option<String>,
+    diagnostics: Option<String>,
+    app_version: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -173,8 +177,115 @@ fn set_edge_server_error(message: String) {
     let _ = EDGE_SERVER_LAST_ERROR.lock().map(|mut guard| *guard = Some(message));
 }
 
+fn set_edge_server_diagnostics(message: String) {
+    let _ = EDGE_SERVER_DIAGNOSTICS.lock().map(|mut guard| *guard = Some(message));
+}
+
+/// Bounded recursive search for a file named `edge-server.exe` under `root`.
+/// Caps depth and file visits so a packaging regression never freezes startup.
+fn find_edge_server_recursive(root: &Path, max_depth: usize, max_files: usize) -> (Option<PathBuf>, usize, Duration) {
+    let started = Instant::now();
+    let mut files_walked = 0usize;
+    let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > max_depth {
+            continue;
+        }
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            files_walked += 1;
+            if files_walked > max_files {
+                return (None, files_walked, started.elapsed());
+            }
+            let path = entry.path();
+            if path.is_dir() {
+                if depth < max_depth {
+                    stack.push((path, depth + 1));
+                }
+            } else if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.eq_ignore_ascii_case("edge-server.exe"))
+                .unwrap_or(false)
+            {
+                return (Some(path), files_walked, started.elapsed());
+            }
+        }
+    }
+
+    (None, files_walked, started.elapsed())
+}
+
+/// Kill any process currently listening on `port` (Windows). Best-effort; never panics.
+#[cfg(windows)]
+fn kill_process_on_port(port: &str) {
+    let netstat = Command::new("cmd")
+        .args(["/C", &format!("netstat -ano | findstr :{}", port)])
+        .output();
+    let Ok(output) = netstat else {
+        return;
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut pids = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        // Prefer LISTENING rows so we don't kill random clients.
+        if !line.contains("LISTENING") {
+            continue;
+        }
+        if let Some(pid) = line.split_whitespace().last() {
+            if pid.chars().all(|c| c.is_ascii_digit()) {
+                pids.insert(pid.to_string());
+            }
+        }
+    }
+    for pid in pids {
+        eprintln!("[EdgeServer] Killing stale process on port {} (PID {})", port, pid);
+        let _ = Command::new("taskkill")
+            .args(["/F", "/PID", &pid])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(not(windows))]
+fn kill_process_on_port(_port: &str) {}
+
+fn attach_edge_server_logs(child: &mut Child) {
+    if let Some(stdout) = child.stdout.take() {
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            for line in BufReader::new(stdout).lines().flatten() {
+                eprintln!("[EdgeServer] {}", line);
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            for line in BufReader::new(stderr).lines().flatten() {
+                eprintln!("[EdgeServer] {}", line);
+            }
+        });
+    }
+}
+
+fn spawn_edge_server_process(exe: &Path, port: &str, print_bridge_url: &str) -> Result<Child, std::io::Error> {
+    Command::new(exe)
+        .env("EDGE_PORT", port)
+        .env("PRINT_BRIDGE_URL", print_bridge_url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+
 fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
     let _ = EDGE_SERVER_LAST_ERROR.lock().map(|mut guard| *guard = None);
+    let _ = EDGE_SERVER_DIAGNOSTICS.lock().map(|mut guard| *guard = None);
 
     // Resolve the edge-server binary path from bundled resources
     let resource_path = app
@@ -183,6 +294,18 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
         .expect("Failed to get resource dir");
 
     let mut candidates = vec![resource_path.join("edge-server.exe")];
+    // Legacy fallback: Tauri array-form resources rewrote ".." to "_up_" folders.
+    // Keep this so already-built / future-regressed installers still resolve.
+    candidates.push(
+        resource_path
+            .join("_up_")
+            .join("_up_")
+            .join("_up_")
+            .join("softshape-print-agent")
+            .join("softshape-print-agent")
+            .join("edge-server")
+            .join("edge-server.exe"),
+    );
     if cfg!(debug_assertions) {
         candidates.push(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -195,50 +318,128 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                 .join("edge-server")
                 .join("edge-server.exe"),
         );
+        // Sibling checkout used during local monorepo development.
+        candidates.push(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("..")
+                .join("..")
+                .join("..")
+                .join("softshape-print-agent")
+                .join("softshape-print-agent")
+                .join("edge-server")
+                .join("edge-server.exe"),
+        );
     }
 
-    let Some(edge_server_exe) = candidates.into_iter().find(|path| path.is_file()) else {
-        let err = "Bundled edge-server.exe was not found. This usually means the desktop app was not built with the edge server binary. Please reinstall SoftShape Cashier.".to_string();
+    let checked: Vec<String> = candidates
+        .iter()
+        .map(|p| format!("{} (exists={})", p.display(), p.exists()))
+        .collect();
+
+    let mut edge_server_exe = candidates.iter().find(|path| path.is_file()).cloned();
+    let mut scan_files = 0usize;
+    let mut scan_elapsed = Duration::from_millis(0);
+    let mut found_via_scan = false;
+
+    if edge_server_exe.is_none() {
+        let (found, walked, elapsed) = find_edge_server_recursive(&resource_path, 3, 500);
+        scan_files = walked;
+        scan_elapsed = elapsed;
+        if let Some(path) = found {
+            eprintln!(
+                "[EdgeServer] Found via fallback scan at {} — resources config is misconfigured, fix tauri.conf.json",
+                path.display()
+            );
+            found_via_scan = true;
+            edge_server_exe = Some(path);
+        }
+    }
+
+    let diagnostics = format!(
+        "app_version={}\nresource_dir={}\ncandidates=[{}]\nscan_files_walked={}\nscan_elapsed_ms={}\nfound_via_scan={}",
+        env!("CARGO_PKG_VERSION"),
+        resource_path.display(),
+        checked.join("; "),
+        scan_files,
+        scan_elapsed.as_millis(),
+        found_via_scan
+    );
+    set_edge_server_diagnostics(diagnostics.clone());
+
+    let Some(edge_server_exe) = edge_server_exe else {
+        let err = format!(
+            "Bundled edge-server.exe was not found. {}. This usually means the desktop app was not built with the edge server binary. Please reinstall SoftShape Cashier.",
+            diagnostics.replace('\n', " ")
+        );
         eprintln!("[EdgeServer] {}", err);
-        set_edge_server_error(err.clone());
+        set_edge_server_error(err);
         return;
     };
 
     // Pass through environment variables for edge-server configuration
     let port = std::env::var("EDGE_PORT").unwrap_or_else(|_| "3100".to_string());
 
-    match Command::new(&edge_server_exe)
-        .env("EDGE_PORT", &port)
-        .env("PRINT_BRIDGE_URL", print_bridge_url)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+    // First attempt. If spawn fails, or the child dies immediately (stale port bind),
+    // free EDGE_PORT once and retry — never loop forever.
+    let first = spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url);
+    let need_retry = match first {
         Ok(mut child) => {
-            let pid = child.id();
-            if let Some(stdout) = child.stdout.take() {
-                std::thread::spawn(move || {
-                    use std::io::{BufRead, BufReader};
-                    for line in BufReader::new(stdout).lines().flatten() {
-                        eprintln!("[EdgeServer] {}", line);
-                    }
-                });
+            thread::sleep(Duration::from_millis(300));
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    eprintln!(
+                        "[EdgeServer] Process exited immediately with {} — likely port {} still held; will retry once",
+                        status, port
+                    );
+                    true
+                }
+                Ok(None) => {
+                    let pid = child.id();
+                    attach_edge_server_logs(&mut child);
+                    eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
+                    *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
+                    false
+                }
+                Err(e) => {
+                    let err = format!("Unable to inspect edge-server process: {}", e);
+                    eprintln!("[EdgeServer] {}", err);
+                    set_edge_server_error(err);
+                    false
+                }
             }
-            if let Some(stderr) = child.stderr.take() {
-                std::thread::spawn(move || {
-                    use std::io::{BufRead, BufReader};
-                    for line in BufReader::new(stderr).lines().flatten() {
-                        eprintln!("[EdgeServer] {}", line);
-                    }
-                });
-            }
-            eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
-            *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
         }
         Err(e) => {
-            let err = format!("Failed to start edge-server at {:?}: {}", edge_server_exe, e);
-            eprintln!("[EdgeServer] {}", err);
-            set_edge_server_error(err.clone());
+            eprintln!(
+                "[EdgeServer] First spawn failed at {:?}: {} — retrying once after freeing port {}",
+                edge_server_exe, e, port
+            );
+            true
+        }
+    };
+
+    if need_retry {
+        kill_process_on_port(&port);
+        thread::sleep(Duration::from_millis(400));
+        match spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url) {
+            Ok(mut child) => {
+                let pid = child.id();
+                attach_edge_server_logs(&mut child);
+                eprintln!(
+                    "[EdgeServer] Started edge-server after port cleanup (PID: {}) on port {}",
+                    pid, port
+                );
+                *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
+            }
+            Err(e2) => {
+                let err = format!(
+                    "Failed to start edge-server at {:?} after port-cleanup retry: {}",
+                    edge_server_exe, e2
+                );
+                eprintln!("[EdgeServer] {}", err);
+                set_edge_server_error(err);
+            }
         }
     }
 }
@@ -276,7 +477,13 @@ fn get_edge_server_status() -> EdgeServerStatus {
     }
 
     let error = EDGE_SERVER_LAST_ERROR.lock().unwrap().clone();
-    EdgeServerStatus { running, error }
+    let diagnostics = EDGE_SERVER_DIAGNOSTICS.lock().unwrap().clone();
+    EdgeServerStatus {
+        running,
+        error,
+        diagnostics,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+    }
 }
 
 /// List all installed Windows printers.

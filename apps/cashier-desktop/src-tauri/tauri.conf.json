@@ -48,9 +48,9 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe"
-    ],
+    "resources": {
+      "../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe": ""
+    },
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

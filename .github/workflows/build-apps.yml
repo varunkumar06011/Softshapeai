@@ -95,6 +95,17 @@ jobs:
           bun install
           bun build --compile server.ts --outfile edge-server.exe
 
+      - name: Verify edge-server.exe was produced
+        working-directory: softshape-print-agent/softshape-print-agent/edge-server
+        shell: bash
+        run: |
+          if [ ! -f edge-server.exe ]; then
+            echo "::error::edge-server.exe was not produced by bun build --compile"
+            ls -la
+            exit 1
+          fi
+          ls -la edge-server.exe
+
       - name: Generate Tauri icons
         working-directory: apps/cashier-desktop
         shell: bash
@@ -105,6 +116,18 @@ jobs:
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+      - name: Verify edge-server.exe bundled into resources
+        shell: bash
+        run: |
+          expected="apps/cashier-desktop/src-tauri/target/release/resources/edge-server.exe"
+          if [ ! -f "$expected" ]; then
+            echo "::error::edge-server.exe missing from Tauri resources at $expected"
+            find apps/cashier-desktop/src-tauri/target/release -name 'edge-server.exe' 2>/dev/null || true
+            ls -laR apps/cashier-desktop/src-tauri/target/release/resources 2>/dev/null || true
+            exit 1
+          fi
+          ls -la "$expected"
 
       - name: Rename installer
         shell: bash
@@ -121,6 +144,89 @@ jobs:
           if [ -n "$sig" ] && [ -f "$sig" ]; then
             mv "$sig" "$dir/${fixed}.sig"
           fi
+
+      - name: Smoke-test installed edge-server health
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = "apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe"
+          if (-not (Test-Path $installer)) {
+            Write-Error "Installer not found at $installer"
+            exit 1
+          }
+
+          $installDir = Join-Path $env:RUNNER_TEMP "softshape-cashier-smoke"
+          if (Test-Path $installDir) { Remove-Item -Recurse -Force $installDir }
+          New-Item -ItemType Directory -Path $installDir | Out-Null
+
+          Write-Host "Silent-installing to $installDir"
+          $proc = Start-Process -FilePath (Resolve-Path $installer) -ArgumentList "/S","/D=$installDir" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "NSIS silent install failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
+
+          $appExe = Get-ChildItem -Path $installDir -Recurse -Filter "SoftShape Cashier.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $appExe) {
+            $appExe = Get-ChildItem -Path $installDir -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notmatch 'uninstall|edge-server' } |
+              Select-Object -First 1
+          }
+          if (-not $appExe) {
+            Write-Host "Install tree:"
+            Get-ChildItem -Path $installDir -Recurse | Select-Object FullName
+            Write-Error "Installed SoftShape Cashier.exe not found under $installDir"
+            exit 1
+          }
+
+          $resourceExe = Join-Path $installDir "edge-server.exe"
+          if (-not (Test-Path $resourceExe)) {
+            $resourceExe = Get-ChildItem -Path $installDir -Recurse -Filter "edge-server.exe" -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          Write-Host "App exe: $($appExe.FullName)"
+          Write-Host "edge-server.exe: $resourceExe"
+          if (-not $resourceExe -or -not (Test-Path $resourceExe)) {
+            Write-Error "edge-server.exe missing from installed tree — resources packaging is broken"
+            exit 1
+          }
+
+          # Prefer launching the bundled edge-server directly for a deterministic health check.
+          # The full GUI app may hang on WebView2 first-run; edge-server is the packaging contract.
+          # (Avoid Start-Process -Environment — not available on Windows PowerShell 5.1.)
+          $prevEdgePort = $env:EDGE_PORT
+          $env:EDGE_PORT = "3100"
+          $edgeProc = Start-Process -FilePath $resourceExe -PassThru -WindowStyle Hidden `
+            -WorkingDirectory (Split-Path $resourceExe)
+          if ($null -ne $prevEdgePort) { $env:EDGE_PORT = $prevEdgePort } else { Remove-Item Env:EDGE_PORT -ErrorAction SilentlyContinue }
+
+          $healthy = $false
+          $deadline = (Get-Date).AddSeconds(15)
+          while ((Get-Date) -lt $deadline) {
+            try {
+              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:3100/health" -UseBasicParsing -TimeoutSec 2
+              if ($resp.StatusCode -eq 200) {
+                Write-Host "Health OK: $($resp.Content)"
+                $healthy = $true
+                break
+              }
+            } catch {
+              Start-Sleep -Milliseconds 500
+            }
+          }
+
+          if ($edgeProc -and -not $edgeProc.HasExited) {
+            Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
+          }
+          Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if (-not $healthy) {
+            Write-Error "edge-server never responded on http://127.0.0.1:3100/health within 15s"
+            exit 1
+          }
+
+          Write-Host "Smoke test passed: installed edge-server.exe is healthy"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

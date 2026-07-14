@@ -51,11 +51,13 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
 
     if (isLiquor) {
       liquorSubtotal += price * qty;
+      // Bar/liquor items never attract GST
+      gstExemptTotal += price * qty;
     } else {
       foodSubtotal += price * qty;
-    }
-    if (item.gstEnabled === false) {
-      gstExemptTotal += price * qty;
+      if (item.gstEnabled === false) {
+        gstExemptTotal += price * qty;
+      }
     }
   });
 
