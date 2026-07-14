@@ -110,33 +110,6 @@ const PortalSelection = ({ onSelect }) => {
 
       <footer className="mt-16 flex flex-col items-center gap-4 z-10 text-center">
         <p className="text-[11px] font-black uppercase tracking-[0.5em] text-[#B71C1C] drop-shadow-sm">Powered by Vtech</p>
-<<<<<<< HEAD
-
-        <h3 className="text-lg md:text-xl font-black text-[#B71C1C] tracking-tight">Contact Us</h3>
-
-        <div className="flex items-center justify-start md:justify-center gap-3 text-base md:text-lg font-semibold text-gray-800 overflow-x-auto whitespace-nowrap max-w-full px-2 scrollbar-hide">
-          <a href="tel:+919391798370" className="hover:text-[#E53935] transition">9391798370</a>
-          <span className="text-gray-300">|</span>
-          <a href="tel:+919381872579" className="hover:text-[#E53935] transition">9381872579</a>
-          <span className="text-gray-300">|</span>
-          <a href="mailto:softshapeai@gmail.com" className="hover:text-[#E53935] transition">softshapeai@gmail.com</a>
-        </div>
-
-        <p className="sr-only text-xs text-gray-500">
-          Contact: 9391798370, 9381872579, softshapeai@gmail.com
-        </p>
-
-        <p className="text-sm md:text-base text-gray-700 max-w-md">
-          Built by 3 founders — <span className="font-bold text-[#E53935]">T. Vinod Chowdary</span>, <span className="font-bold text-[#E53935]">N. Varun Kumar</span>, <span className="font-bold text-[#E53935]">V. Akhil</span> — in 60 days.
-        </p>
-
-        <a
-          href="/onboarding"
-          className="text-sm font-semibold text-[#E53935] hover:text-[#B71C1C] transition-colors flex items-center gap-2"
-        >
-          New Restaurant? Get Started →
-        </a>
-=======
         <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
           <a
             href="/onboarding"
@@ -152,7 +125,6 @@ const PortalSelection = ({ onSelect }) => {
             Link Existing Restaurant →
           </a>
         </div>
->>>>>>> 050cfae (end of the heain era)
       </footer>
     </div>
   );

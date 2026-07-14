@@ -22,9 +22,6 @@ import { authService } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
 import { reconnectSocket } from '../../hooks/useSocket';
 
-<<<<<<< HEAD
-const LoginScreen = ({ role, onLogin, onBack }) => {
-=======
 // Resolves the backend base URL from Vite env vars
 function getApiBase() {
   return (
@@ -33,7 +30,6 @@ function getApiBase() {
 }
 
 const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable }) => {
->>>>>>> 050cfae (end of the heain era)
   const navigate = useNavigate();
   const { setAuth } = useAuth();
   const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
