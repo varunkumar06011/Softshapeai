@@ -42,3 +42,6 @@ apps/admin-desktop/src-tauri/target/
 apps/admin-desktop/src-tauri/gen/
 apps/captain-android/src-tauri/target/
 apps/captain-android/src-tauri/gen/
+
+# Local junction to print-agent repo (CI checks it out directly)
+/softshape-print-agent

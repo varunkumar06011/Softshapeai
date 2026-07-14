@@ -176,7 +176,6 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                 .join("..")
                 .join("..")
                 .join("..")
-                .join("..")
                 .join("softshape-print-agent")
                 .join("softshape-print-agent")
                 .join("edge-server")
