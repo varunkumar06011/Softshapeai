@@ -18,7 +18,7 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { isEdgeAvailable, edgeFetch, getEdgeUrl } from '../services/edgeHealth.js';
+import { isEdgeAvailable, edgeFetch, getEdgeUrl, resetEdgeCache } from '../services/edgeHealth.js';
 import { ChevronLeft, ChevronRight, Check, Store, Utensils, LayoutGrid, Printer, Loader2, Wine, Coffee, Cloud, UtensilsCrossed } from 'lucide-react';
 
 // Menu templates — imported as raw JSON via Vite's ?raw suffix
@@ -123,6 +123,7 @@ const QuickOnboarding = () => {
       // Edge server is the only path — it creates local SQLite records and
       // enqueues them for cloud sync. Cloud registration happens automatically
       // via POST /api/edge/register-offline when connectivity returns.
+      resetEdgeCache();
       if (await isEdgeAvailable()) {
         const result = await edgeFetch('/api/edge/onboard', {
           method: 'POST',
@@ -136,7 +137,12 @@ const QuickOnboarding = () => {
       }
 
       // No edge server — can't onboard offline without it
-      setError('Edge server is not running. Start the cashier desktop app to begin onboarding.');
+      setError(
+        'Edge server is not running on this device. ' +
+        'Make sure you are using the SoftShape Cashier desktop app (not a browser) ' +
+        'and that no other application is using port 3100 (e.g. the old Print Agent). ' +
+        'Restart the Cashier app and try again.'
+      );
       setSubmitting(false);
     } catch (err) {
       setError(err.message);

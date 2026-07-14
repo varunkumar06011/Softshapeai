@@ -21,6 +21,11 @@ export function getEdgeUrl() {
   return EDGE_URL;
 }
 
+export function resetEdgeCache() {
+  _edgeLastCheck = 0;
+  _edgeAvailable = false;
+}
+
 export async function isEdgeAvailable() {
   const now = Date.now();
   if (now - _edgeLastCheck < EDGE_CHECK_INTERVAL_MS) return _edgeAvailable;

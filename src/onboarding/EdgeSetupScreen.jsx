@@ -19,7 +19,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { isEdgeAvailable, edgeFetch } from '../services/edgeHealth.js';
+import { isEdgeAvailable, edgeFetch, resetEdgeCache } from '../services/edgeHealth.js';
 import {
   CheckCircle2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   Cloud, Database, Link2, Server, Utensils, LayoutGrid, Users,
@@ -78,6 +78,7 @@ export default function EdgeSetupScreen() {
 
     const checkEdge = async () => {
       if (cancelled) return;
+      resetEdgeCache();
       const available = await isEdgeAvailable();
       if (cancelled) return;
 
@@ -105,7 +106,12 @@ export default function EdgeSetupScreen() {
         setPhase('collect-info');
       } else if (Date.now() - startTime > EDGE_START_TIMEOUT_MS) {
         setEdgeChecking(false);
-        setError('Edge server did not start within 30 seconds. Please restart the app.');
+        setError(
+          'Edge server did not start within 30 seconds. ' +
+          'Make sure the SoftShape Cashier desktop app is running and no other ' +
+          'application is using port 3100 (e.g. the old Print Agent). ' +
+          'Close this page, restart the Cashier app, and try again.'
+        );
       } else {
         // Retry
         edgeStartTimerRef.current = setTimeout(checkEdge, EDGE_START_POLL_MS);
