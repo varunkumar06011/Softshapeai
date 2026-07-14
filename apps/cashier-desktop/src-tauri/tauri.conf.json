@@ -49,7 +49,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe"
+      "../../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe"
     ],
     "windows": {
       "webviewInstallMode": {

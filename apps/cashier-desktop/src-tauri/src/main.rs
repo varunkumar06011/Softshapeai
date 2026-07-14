@@ -189,6 +189,7 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                 .join("..")
                 .join("..")
                 .join("..")
+                .join("..")
                 .join("softshape-print-agent")
                 .join("softshape-print-agent")
                 .join("edge-server")
@@ -253,7 +254,27 @@ fn kill_edge_server() {
 /// Check if the edge server is running and report any spawn errors.
 #[tauri::command]
 fn get_edge_server_status() -> EdgeServerStatus {
-    let running = EDGE_SERVER_CHILD.lock().unwrap().is_some();
+    let mut child_guard = EDGE_SERVER_CHILD.lock().unwrap();
+    let mut running = false;
+
+    if let Some(child) = child_guard.as_mut() {
+        match child.try_wait() {
+            Ok(None) => running = true,
+            Ok(Some(status)) => {
+                let message = format!("edge-server exited unexpectedly with status {}", status);
+                eprintln!("[EdgeServer] {}", message);
+                set_edge_server_error(message);
+                child_guard.take();
+            }
+            Err(error) => {
+                let message = format!("Unable to inspect edge-server process: {}", error);
+                eprintln!("[EdgeServer] {}", message);
+                set_edge_server_error(message);
+                child_guard.take();
+            }
+        }
+    }
+
     let error = EDGE_SERVER_LAST_ERROR.lock().unwrap().clone();
     EdgeServerStatus { running, error }
 }
