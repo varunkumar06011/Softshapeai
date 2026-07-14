@@ -24,7 +24,7 @@ export async function createMenuItem(item) {
       });
     } catch { /* fall through to cloud */ }
   }
-  const res = await fetch(apiUrl('/api/menu/items'), {
+  const res = await fetch(apiUrl('/api/menu/admin/items'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(item),
@@ -41,7 +41,7 @@ export async function updateMenuItem(id, updates) {
       });
     } catch { /* fall through to cloud */ }
   }
-  const res = await fetch(apiUrl(`/api/menu/items/${id}`), {
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(updates),
@@ -55,7 +55,7 @@ export async function deleteMenuItem(id) {
       return await edgeFetch(`/api/edge/admin/menu-item/${id}`, { method: 'DELETE' });
     } catch { /* fall through to cloud */ }
   }
-  const res = await fetch(apiUrl(`/api/menu/items/${id}`), {
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}`), {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
@@ -171,7 +171,7 @@ export async function createCategory(category) {
       });
     } catch { /* fall through to cloud */ }
   }
-  const res = await fetch(apiUrl('/api/menu/categories'), {
+  const res = await fetch(apiUrl('/api/menu/admin/categories'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(category),
@@ -188,7 +188,7 @@ export async function updateCategory(id, updates) {
       });
     } catch { /* fall through to cloud */ }
   }
-  const res = await fetch(apiUrl(`/api/menu/categories/${id}`), {
+  const res = await fetch(apiUrl(`/api/menu/admin/categories/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(updates),
@@ -202,7 +202,7 @@ export async function deleteCategory(id) {
       return await edgeFetch(`/api/edge/admin/category/${id}`, { method: 'DELETE' });
     } catch { /* fall through to cloud */ }
   }
-  const res = await fetch(apiUrl(`/api/menu/categories/${id}`), {
+  const res = await fetch(apiUrl(`/api/menu/admin/categories/${id}`), {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });

@@ -37,9 +37,9 @@ import { bulkImportSpecials } from '../services/menuService';
 import { useTableSync } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
-import { printLocal } from '../utils/printOffline';
+import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
-import { getOfflineTransactions, markOfflineTransactionSynced } from '../utils/offlineDB';
+import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { validateTableIntegrity } from '../utils/syncInvariant';
@@ -504,6 +504,8 @@ const CashierDashboard = ({ onLogout }) => {
   const isSubmittingPaymentRef = useRef(false);
   const [isSettling, setIsSettling] = useState(false);
   const [isReprintingBill, setIsReprintingBill] = useState(false);
+  const [pendingPrintCount, setPendingPrintCount] = useState(0);
+  const [isRetryingPrint, setIsRetryingPrint] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
 
   // Settlement guards: persisted order/table IDs that have already been settled.
@@ -796,6 +798,40 @@ const CashierDashboard = ({ onLogout }) => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Poll pending offline print jobs so the Retry Print button appears when needed
+  useEffect(() => {
+    let mounted = true;
+    const poll = async () => {
+      try {
+        const jobs = await getOfflinePrintJobs();
+        const pending = (jobs || []).filter(j => j.status === 'pending').length;
+        if (mounted) setPendingPrintCount(pending);
+      } catch { /* IndexedDB may not be available */ }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
+
+  const handleRetryPrint = async () => {
+    setIsRetryingPrint(true);
+    try {
+      const result = await flushQueuedPrintJobs();
+      if (result.flushed > 0) {
+        addNotification('Print Retry', `${result.flushed} print job(s) sent to printer.`, 'success');
+      } else if (result.failed > 0) {
+        addNotification('Print Retry', `${result.failed} job(s) still queued — no printer available.`, 'warning');
+      } else {
+        addNotification('Print Retry', 'No pending print jobs found.', 'info');
+      }
+      setPendingPrintCount(0);
+    } catch (err) {
+      addNotification('Print Retry Failed', err.message || 'Could not retry print jobs.', 'error');
+    } finally {
+      setIsRetryingPrint(false);
+    }
+  };
 
   // Cleanup cooldown timer on unmount
   useEffect(() => {
@@ -3303,22 +3339,12 @@ const CashierDashboard = ({ onLogout }) => {
           .filter(Boolean)
           .join(',');
         const response = selectedTable.isExtra
-          ? await fetch(
-              `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}&tableNumber=${selectedTable.number}&discountPercent=${extraDiscountPercent}&kotNumbers=${extraKotIds}`,
-              { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } }
-            )
-          : await fetch(
-              `${API_BASE}/api/orders/${orderId}/print-bill?restaurantId=${printBillRestaurantId}`,
-              { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } }
-            );
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId });
 
         // Backend returns 409 if PAID — handle gracefully
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          // If 409 PAID, still allow re-emit since settlement already happened
-          if (response.status !== 409) {
-            throw new Error(errBody.error || `Server returned ${response.status}`);
-          }
+        if (response && response.error && !response.offline) {
+          throw new Error(response.error);
         }
       } catch (error) {
         console.error('[Reprint] Failed:', error.message);
@@ -4511,7 +4537,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (selectedTable.isExtra) {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
-              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds, selectedTable.id);
             } else {
               orderResponse = await createOrder({
                 tableId: selectedTable.backendId,
@@ -4530,7 +4556,7 @@ const CashierDashboard = ({ onLogout }) => {
               });
             }
           } else if (selectedTable.activeOrder?.id) {
-            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds);
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds, selectedTable.id);
           } else {
             try {
               orderResponse = await createOrder({
@@ -4565,7 +4591,7 @@ const CashierDashboard = ({ onLogout }) => {
                   console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
                 }
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
-                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, localPrinted, preReservedKotNumber, kotEventIds);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, localPrinted, preReservedKotNumber, kotEventIds, selectedTable.id);
               } else {
                 throw createErr;
               }
@@ -4592,7 +4618,7 @@ const CashierDashboard = ({ onLogout }) => {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
               console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, selectedTable.id);
             } else {
               orderResponse = await createOrder({
                 tableId: selectedTable.backendId,
@@ -4608,7 +4634,7 @@ const CashierDashboard = ({ onLogout }) => {
               });
             }
           } else if (selectedTable.activeOrder?.id) {
-            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000);
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, selectedTable.id);
           } else {
             try {
               orderResponse = await createOrder({
@@ -4639,7 +4665,7 @@ const CashierDashboard = ({ onLogout }) => {
                 } catch (fetchErr) {
                   console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
                 }
-                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, false, null, null, selectedTable.id);
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
               } else {
                 throw createErr;
@@ -5202,7 +5228,10 @@ const CashierDashboard = ({ onLogout }) => {
                                     )}
                                     {isWaitingBill && table.billNumber && (
                                       <p className={`text-[10px] font-black uppercase tracking-wider mb-1 ${textColor}`}>
-                                        Bill #{table.billNumber}
+                                        {String(table.billNumber).startsWith('OFFLINE-')
+                                          ? <span className="bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded">📱 {table.billNumber}</span>
+                                          : <>Bill #{table.billNumber}</>
+                                        }
                                       </p>
                                     )}
                                     <p className="text-xl font-black text-gray-900">
@@ -6780,7 +6809,10 @@ const CashierDashboard = ({ onLogout }) => {
                   </p>
                   {selectedTable.billNumber && (
                     <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 mt-0.5">
-                      Bill #{selectedTable.billNumber}
+                      {String(selectedTable.billNumber).startsWith('OFFLINE-')
+                        ? <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">📱 {selectedTable.billNumber}</span>
+                        : <>Bill #{selectedTable.billNumber}</>
+                      }
                     </p>
                   )}
                 </div>
@@ -7054,6 +7086,20 @@ const CashierDashboard = ({ onLogout }) => {
                     {isReprintingBill
                       ? <><Loader2 size={10} className="animate-spin" /> Sending…</>
                       : <>🖨️ RE-PRINT SAME BILL #</>
+                    }
+                  </button>
+                )}
+
+                {/* Retry Print button — visible when there are pending offline print jobs */}
+                {pendingPrintCount > 0 && (
+                  <button
+                    onClick={handleRetryPrint}
+                    disabled={isRetryingPrint}
+                    className="mt-1.5 w-full py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all duration-150 flex items-center justify-center gap-1.5 hover:bg-amber-100 cursor-pointer shadow-sm"
+                  >
+                    {isRetryingPrint
+                      ? <><Loader2 size={10} className="animate-spin" /> Retrying…</>
+                      : <><Printer size={10} /> Retry Print ({pendingPrintCount} queued)</>
                     }
                   </button>
                 )}

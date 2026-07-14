@@ -255,7 +255,7 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
 }
 
 export async function createMenuItem(data) {
-  const res = await fetch(apiUrl('/api/menu/items'), {
+  const res = await fetch(apiUrl('/api/menu/admin/items'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
@@ -264,7 +264,7 @@ export async function createMenuItem(data) {
 }
 
 export async function bulkImportSpecials(items, syncToAllOutlets = true) {
-  const res = await fetch(apiUrl('/api/menu/items/bulk-specials'), {
+  const res = await fetch(apiUrl('/api/menu/admin/items/bulk-specials'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ items, syncToAllOutlets }),
@@ -273,7 +273,7 @@ export async function bulkImportSpecials(items, syncToAllOutlets = true) {
 }
 
 export async function updateMenuItem(id, data) {
-  const res = await fetch(apiUrl(`/api/menu/items/${id}`), {
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
@@ -282,7 +282,7 @@ export async function updateMenuItem(id, data) {
 }
 
 export async function deleteMenuItem(id) {
-  const res = await fetch(apiUrl(`/api/menu/items/${id}`), {
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}`), {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });

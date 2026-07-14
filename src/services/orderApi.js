@@ -284,13 +284,14 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (tableId && await isEdgeAvailable()) {
     try {
       const edgeBody = {
+        orderId,
         tableId,
         items: body.items,
         captainName,
         requestId: requestId || generateRequestId(),
         orderByRole: authService.getUserRole?.() || undefined,
       };
-      const result = await edgeFetch('/api/edge/order', {
+      const result = await edgeFetch('/api/edge/order/update', {
         method: 'POST',
         body: JSON.stringify(edgeBody),
       });

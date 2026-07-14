@@ -2166,7 +2166,7 @@ export function MenuPage({ onAddDish }) {
 
           ? `${API_BASE}/api/bar/menu/items/${item.id}/venue-availability`
 
-          : `${API_BASE}/api/menu/items/${item.id}/venue-availability`;
+          : `${API_BASE}/api/menu/admin/items/${item.id}/venue-availability`;
 
         body = JSON.stringify({ venueId: activeVenueId });
 
@@ -2176,7 +2176,7 @@ export function MenuPage({ onAddDish }) {
 
           ? `${API_BASE}/api/bar/menu/items/${item.id}/availability`
 
-          : `${API_BASE}/api/menu/items/${item.id}/availability`;
+          : `${API_BASE}/api/menu/admin/items/${item.id}/availability`;
 
       }
 
@@ -2253,7 +2253,7 @@ export function MenuPage({ onAddDish }) {
     try {
       const endpoint = activeOutlet === 'bar'
         ? `${API_BASE}/api/bar/menu/items/${item.id}`
-        : `${API_BASE}/api/menu/items/${item.id}/menu-type`;
+        : `${API_BASE}/api/menu/admin/items/${item.id}/menu-type`;
 
       const res = await fetch(endpoint, {
         method: 'PATCH',
@@ -2362,7 +2362,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+      const res = await fetch(`${API_BASE}/api/menu/admin/categories/${id}`, {
 
         method: 'PATCH',
 
@@ -2404,7 +2404,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+      const res = await fetch(`${API_BASE}/api/menu/admin/categories/${id}`, {
 
         method: 'PATCH',
 
@@ -2440,7 +2440,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories/${id}`, {
+      const res = await fetch(`${API_BASE}/api/menu/admin/categories/${id}`, {
 
         method: 'DELETE',
 
@@ -2484,7 +2484,7 @@ export function MenuPage({ onAddDish }) {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories`, {
+      const res = await fetch(`${API_BASE}/api/menu/admin/categories`, {
 
         method: 'POST',
 
@@ -2550,7 +2550,7 @@ export function MenuPage({ onAddDish }) {
 
         const [recipeRes, ingredientsRes] = await Promise.all([
 
-          fetch(`${API_BASE}/api/menu/recipes/${item.id}`, { headers: { ...getAuthHeaders() } }),
+          fetch(`${API_BASE}/api/menu/admin/recipes/${item.id}`, { headers: { ...getAuthHeaders() } }),
 
           fetch(`${API_BASE}/api/inventory/kitchen?restaurantId=${rid}`, { headers: { ...getAuthHeaders() } }),
 
@@ -2602,7 +2602,7 @@ export function MenuPage({ onAddDish }) {
     setAutoGenError(null);
     setAutoGenResult(null);
     try {
-      const data = await apiFetch('/api/menu/recipes/auto-generate', {
+      const data = await apiFetch('/api/menu/admin/recipes/auto-generate', {
         method: 'POST',
         timeout: 60000,
       });
@@ -2636,7 +2636,7 @@ export function MenuPage({ onAddDish }) {
 
         ? `${API_BASE}/api/bar/menu/items/${deletingItem.id}`
 
-        : `${API_BASE}/api/menu/items/${deletingItem.id}`;
+        : `${API_BASE}/api/menu/admin/items/${deletingItem.id}`;
 
       const res = await fetch(endpoint, {
 
@@ -2747,7 +2747,7 @@ export function MenuPage({ onAddDish }) {
 
         ? `${API_BASE}/api/bar/menu/items/${editingItem.id}`
 
-        : `${API_BASE}/api/menu/items/${editingItem.id}`;
+        : `${API_BASE}/api/menu/admin/items/${editingItem.id}`;
 
       const res = await fetch(endpoint, {
 
@@ -2817,7 +2817,7 @@ export function MenuPage({ onAddDish }) {
 
             if (validRows.length > 0) {
 
-              await fetch(`${API_BASE}/api/menu/recipes/${optimisticItem.id}`, {
+              await fetch(`${API_BASE}/api/menu/admin/recipes/${optimisticItem.id}`, {
 
                 method: 'POST',
 
@@ -2951,7 +2951,7 @@ export function MenuPage({ onAddDish }) {
 
         ? `${API_BASE}/api/bar/menu/items`
 
-        : `${API_BASE}/api/menu/items`;
+        : `${API_BASE}/api/menu/admin/items`;
 
       const res = await fetch(endpoint, {
 
@@ -16754,7 +16754,7 @@ export function BarMenuPage() {
 
     try {
 
-      const res = await fetch(`${API_BASE}/api/menu/categories`, {
+      const res = await fetch(`${API_BASE}/api/menu/admin/categories`, {
 
         method: 'POST',
 

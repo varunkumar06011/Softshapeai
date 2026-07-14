@@ -135,7 +135,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
         formData.append('sessionId', sessionId);
       }
 
-      const res = await fetch(`${API_BASE}/api/menu/upload`, {
+      const res = await fetch(`${API_BASE}/api/menu/admin/upload`, {
         method: 'POST',
         headers: { ...getAuthHeaders() },
         body: formData,
@@ -177,7 +177,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
       }
 
       const restaurantId = getCurrentRestaurantId();
-      const res = await fetch(`${API_BASE}/api/menu/bulk-import`, {
+      const res = await fetch(`${API_BASE}/api/menu/admin/bulk-import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
