@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoftShape Cashier",
-  "version": "15.1.0",
+  "version": "15.2.0",
   "identifier": "ai.softshape.cashier",
   "build": {
     "beforeDevCommand": "npm run dev",

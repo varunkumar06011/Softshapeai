@@ -334,6 +334,26 @@ fn diagnose_process_on_port(port: &str) -> String {
     format!("port={};owner_lookup=unsupported", port)
 }
 
+/// Check if a TCP port is free (nothing listening on it).
+fn is_port_free(port: &str) -> bool {
+    TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3100))).is_ok()
+}
+
+/// Kill any process on the port, then wait until the port is actually free.
+/// Windows keeps ports in TIME_WAIT for a while after a process is killed,
+/// so we poll for up to `timeout_secs` before giving up.
+fn free_port_blocking(port: &str, timeout_secs: u64) {
+    kill_process_on_port(port);
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    while Instant::now() < deadline {
+        if is_port_free(port) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+    eprintln!("[EdgeServer] Port {} still not free after {}s — spawning anyway", port, timeout_secs);
+}
+
 fn attach_edge_server_logs(child: &mut Child) {
     if let Some(stdout) = child.stdout.take() {
         std::thread::spawn(move || {
@@ -533,6 +553,14 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
         set_edge_server_diagnostics(combined);
     }
 
+    // Preemptive cleanup: if a previous Cashier instance left an orphaned edge-server
+    // on this port (e.g. crash, force-quit), kill it and wait for the port to be free.
+    // Windows keeps killed ports in TIME_WAIT for up to 4 minutes, so we poll.
+    if !is_port_free(&port) {
+        eprintln!("[EdgeServer] Port {} occupied — killing stale process before spawn", port);
+        free_port_blocking(&port, 5);
+    }
+
     // First attempt. If spawn fails, or the child dies immediately (stale port bind),
     // free EDGE_PORT once and retry — never loop forever.
     let first = spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url);
@@ -577,7 +605,7 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
     };
 
     if need_retry {
-        thread::sleep(Duration::from_millis(400));
+        free_port_blocking(&port, 10);
         match spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url) {
             Ok(mut child) => {
                 let pid = child.id();
