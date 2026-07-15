@@ -53,6 +53,9 @@ const STEPS = [
   { id: 'printers', title: 'Printers', icon: Printer },
 ];
 
+const EDGE_READY_POLL_MS = 1500;
+const EDGE_READY_TIMEOUT_MS = 25_000;
+
 const QuickOnboarding = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
@@ -98,6 +101,37 @@ const QuickOnboarding = () => {
       || window.__TAURI__?.invoke
       || window.__TAURI_INTERNALS__?.invoke
       || null;
+  }, []);
+
+  const fetchEdgeServerStatus = useCallback(async () => {
+    const invoke = getTauriInvoke();
+    if (!invoke) return null;
+    try {
+      return await invoke('get_edge_server_status');
+    } catch (e) {
+      console.warn('[QuickOnboarding] get_edge_server_status failed:', e);
+      return null;
+    }
+  }, [getTauriInvoke]);
+
+  const restartEdgeServer = useCallback(async () => {
+    const invoke = getTauriInvoke();
+    if (!invoke) return;
+    try {
+      await invoke('restart_edge_server');
+    } catch (e) {
+      console.warn('[QuickOnboarding] restart_edge_server failed:', e);
+    }
+  }, [getTauriInvoke]);
+
+  const waitForEdge = useCallback(async () => {
+    const started = Date.now();
+    while (Date.now() - started < EDGE_READY_TIMEOUT_MS) {
+      resetEdgeCache();
+      if (await isEdgeAvailable()) return true;
+      await new Promise(resolve => setTimeout(resolve, EDGE_READY_POLL_MS));
+    }
+    return false;
   }, []);
 
   const detectPrinters = useCallback(async () => {
@@ -165,32 +199,53 @@ const QuickOnboarding = () => {
       // Edge server is the only path — it creates local SQLite records and
       // enqueues them for cloud sync. Cloud registration happens automatically
       // via POST /api/edge/register-offline when connectivity returns.
-      resetEdgeCache();
-      if (await isEdgeAvailable()) {
-        const result = await edgeFetch('/api/edge/onboard', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        if (result.success !== false) {
-          navigate('/cashier');
-          return;
+      let ready = await waitForEdge();
+
+      // If the sidecar still isn't ready, ask the Rust shell to restart it
+      // and then wait one more time. This fixes cases where the user clicked
+      // Finish before the edge process finished its first startup.
+      if (!ready) {
+        const status = await fetchEdgeServerStatus();
+        const state = status?.state;
+        if (state === 'starting' || state === 'health_timeout' || state === 'exited' || state === 'port_conflict') {
+          await restartEdgeServer();
+          ready = await waitForEdge();
         }
-        throw new Error(result.error || 'Onboarding failed');
+
+        if (!ready) {
+          const edgePort = (() => {
+            try {
+              return new URL(getEdgeUrl()).port || '3100';
+            } catch {
+              return '3100';
+            }
+          })();
+          const detail = status?.error || status?.state || 'the edge server did not respond';
+          throw new Error(
+            'Edge server is not running on this device. ' +
+            'Make sure you are using the SoftShape Cashier desktop app (not a browser) ' +
+            `and that no other application is using port ${edgePort} (e.g. the old Print Agent). ` +
+            `Status: ${detail}. ` +
+            'Close any conflicting program, restart the Cashier app, and try again.'
+          );
+        }
       }
 
-      // No edge server — can't onboard offline without it
-      setError(
-        'Edge server is not running on this device. ' +
-        'Make sure you are using the SoftShape Cashier desktop app (not a browser) ' +
-        'and that no other application is using port 3100 (e.g. the old Print Agent). ' +
-        'Restart the Cashier app and try again.'
-      );
-      setSubmitting(false);
+      const result = await edgeFetch('/api/edge/onboard', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (result.success !== false) {
+        navigate('/cashier');
+        return;
+      }
+      throw new Error(result.error || 'Onboarding failed');
     } catch (err) {
       setError(err.message);
+    } finally {
       setSubmitting(false);
     }
-  }, [restaurantName, restaurantType, ownerName, ownerPhone, ownerPin, selectedTemplate, tableCount, printerMapping, navigate]);
+  }, [restaurantName, restaurantType, ownerName, ownerPhone, ownerPin, selectedTemplate, tableCount, printerMapping, navigate, waitForEdge, fetchEdgeServerStatus, restartEdgeServer]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 to-orange-50 flex items-center justify-center p-4">
