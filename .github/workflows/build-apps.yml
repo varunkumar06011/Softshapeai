@@ -198,13 +198,13 @@ jobs:
           Write-Host "App exe: $($appExe.FullName)"
           Write-Host "edge-server.exe: $resourceExe"
           if (-not $resourceExe -or -not (Test-Path $resourceExe)) {
-            Write-Error "edge-server.exe missing from installed tree — resources packaging is broken"
+            Write-Error "edge-server.exe missing from installed tree - resources packaging is broken"
             exit 1
           }
 
           # Prefer launching the bundled edge-server directly for a deterministic health check.
           # The full GUI app may hang on WebView2 first-run; edge-server is the packaging contract.
-          # (Avoid Start-Process -Environment — not available on Windows PowerShell 5.1.)
+          # (Avoid Start-Process -Environment - not available on Windows PowerShell 5.1.)
           $prevEdgePort = $env:EDGE_PORT
           $env:EDGE_PORT = "3100"
           $edgeProc = Start-Process -FilePath $resourceExe -PassThru -WindowStyle Hidden `
