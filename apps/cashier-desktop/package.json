@@ -1,14 +1,14 @@
 {
   "name": "softshape-cashier-desktop",
-  "version": "14.0.0",
+  "version": "15.2.0",
   "description": "SoftShape Cashier Desktop App (Tauri)",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "cd ../.. && npx vite",
     "build": "cd ../.. && npx vite build",
-    "build:edge": "cd ../../../softshape-print-agent/softshape-print-agent/edge-server && bun install && bun build --compile server.ts --outfile edge-server.exe",
-    "build:edge:check": "node -e \"const fs=require('fs');const p='../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe';if(!fs.existsSync(p)){console.error('ERROR: edge-server.exe not found at '+p+'. Run npm run build:edge first.');process.exit(1);}else{console.log('OK: edge-server.exe found ('+fs.statSync(p).size+' bytes)');}\"",
+    "build:edge": "node -e \"const fs=require('fs'),p=require('path');const candidates=[p.resolve(__dirname,'../../../softshape-print-agent/softshape-print-agent/edge-server'),p.resolve(__dirname,'../../softshape-print-agent/softshape-print-agent/edge-server')];const dir=candidates.find(d=>fs.existsSync(d));if(!dir){console.log('edge-server dir not found — skipping build (may already be built)');process.exit(0);}process.chdir(dir);require('child_process').execSync('bun install && bun build --compile server.ts --outfile edge-server.exe',{stdio:'inherit'})\"",
+    "build:edge:check": "node -e \"const fs=require('fs'),p=require('path');const candidates=[p.resolve(__dirname,'../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe'),p.resolve(__dirname,'../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe')];const found=candidates.find(f=>fs.existsSync(f));if(!found){console.error('ERROR: edge-server.exe not found. Run npm run build:edge first.');process.exit(1);}else{console.log('OK: edge-server.exe found ('+fs.statSync(found).size+' bytes)');}\"",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run build:edge && npm run build:edge:check && tauri build"

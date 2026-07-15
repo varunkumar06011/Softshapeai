@@ -18,9 +18,6 @@ use tauri::{Manager, RunEvent};
 use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(windows)]
@@ -338,6 +335,40 @@ fn diagnose_process_on_port(port: &str) -> String {
 fn is_port_free(port: &str) -> bool {
     TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3100))).is_ok()
 }
+
+/// Kill any process currently listening on `port` (Windows). Best-effort; never panics.
+#[cfg(windows)]
+fn kill_process_on_port(port: &str) {
+    let netstat = Command::new("cmd")
+        .args(["/C", &format!("netstat -ano | findstr :{}", port)])
+        .output();
+    let Ok(output) = netstat else {
+        return;
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut pids = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        if !line.contains("LISTENING") {
+            continue;
+        }
+        if let Some(pid) = line.split_whitespace().last() {
+            if pid.chars().all(|c| c.is_ascii_digit()) {
+                pids.insert(pid.to_string());
+            }
+        }
+    }
+    for pid in pids {
+        eprintln!("[EdgeServer] Killing stale process on port {} (PID {})", port, pid);
+        let _ = Command::new("taskkill")
+            .args(["/F", "/PID", &pid])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(not(windows))]
+fn kill_process_on_port(_port: &str) {}
 
 /// Kill any process on the port, then wait until the port is actually free.
 /// Windows keeps ports in TIME_WAIT for a while after a process is killed,
