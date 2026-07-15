@@ -450,7 +450,7 @@ fn assign_child_to_job(child: &Child) -> std::io::Result<JobHandle> {
             std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
         )
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("SetInformationJobObject failed: {}", e)))?;
-        let child_handle = HANDLE(child.as_raw_handle());
+        let child_handle = HANDLE(child.as_raw_handle() as isize);
         AssignProcessToJobObject(job, child_handle)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("AssignProcessToJobObject failed: {}", e)))?;
         Ok(JobHandle(job.0 as isize))
@@ -458,7 +458,7 @@ fn assign_child_to_job(child: &Child) -> std::io::Result<JobHandle> {
 }
 
 #[cfg(windows)]
-fn close_job_handle(handle: HANDLE) {
+fn close_job_handle(handle: windows::Win32::Foundation::HANDLE) {
     use windows::Win32::Foundation::CloseHandle;
     unsafe {
         let _ = CloseHandle(handle);
@@ -742,7 +742,7 @@ fn kill_edge_server() {
     #[cfg(windows)]
     if let Some(job) = EDGE_SERVER_JOB.lock().unwrap().take() {
         use windows::Win32::Foundation::HANDLE;
-        close_job_handle(HANDLE(job.0 as *mut _));
+        close_job_handle(HANDLE(job.0));
     }
     set_edge_server_state("stopped");
 }
