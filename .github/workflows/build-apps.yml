@@ -120,14 +120,24 @@ jobs:
       - name: Verify edge-server.exe bundled into resources
         shell: bash
         run: |
-          expected="apps/cashier-desktop/src-tauri/target/release/resources/edge-server.exe"
-          if [ ! -f "$expected" ]; then
-            echo "::error::edge-server.exe missing from Tauri resources at $expected"
+          # Tauri v2 may place resources directly in release/ or in release/resources/
+          found=""
+          for candidate in \
+            "apps/cashier-desktop/src-tauri/target/release/resources/edge-server.exe" \
+            "apps/cashier-desktop/src-tauri/target/release/edge-server.exe"; do
+            if [ -f "$candidate" ]; then
+              found="$candidate"
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "::error::edge-server.exe not found in Tauri build output"
             find apps/cashier-desktop/src-tauri/target/release -name 'edge-server.exe' 2>/dev/null || true
             ls -laR apps/cashier-desktop/src-tauri/target/release/resources 2>/dev/null || true
             exit 1
           fi
-          ls -la "$expected"
+          echo "Found edge-server.exe at: $found"
+          ls -la "$found"
 
       - name: Rename installer
         shell: bash
