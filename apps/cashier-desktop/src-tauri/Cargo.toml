@@ -1,10 +1,6 @@
 [package]
 name = "softshape-cashier-desktop"
-<<<<<<< HEAD
-version = "16.5.1"
-=======
 version = "16.6.0"
->>>>>>> adc2302 (release: v16.6.0 — edge onboarding back navigation, agent-setup token acceptance, restaurant name display)
 description = "SoftShape Cashier Desktop App"
 authors = ["SoftShape"]
 license = "MIT"
