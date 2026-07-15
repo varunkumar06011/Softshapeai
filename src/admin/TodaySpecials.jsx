@@ -774,7 +774,7 @@ export default function TodaySpecials() {
         )}
         {staffSold.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {staffSold.slice(0, 10).map((staff, idx) => (
+            {staffSold.map((staff, idx) => (
               <div key={staff.userId} className={`rounded-xl border overflow-hidden ${idx === 0 ? 'bg-amber-50 border-amber-200' : idx === 1 ? 'bg-gray-50 border-gray-200' : idx === 2 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
                 <div
                   className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-opacity-80 transition-colors"
@@ -794,29 +794,33 @@ export default function TodaySpecials() {
                       <span className="text-sm font-black text-[#E53935]">{staff.soldCount}</span>
                       <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
                     </div>
-                    {staff.items && staff.items.length > 0 && (
-                      <span className="text-gray-400 text-xs">{expandedStaff === staff.userId ? '▲' : '▼'}</span>
-                    )}
+                    <span className="text-gray-400 text-xs">{expandedStaff === staff.userId ? '▲' : '▼'}</span>
                   </div>
                 </div>
-                {expandedStaff === staff.userId && staff.items && staff.items.length > 0 && (
+                {expandedStaff === staff.userId && (
                   <div className="px-3 pb-2.5 pt-1 space-y-1 border-t border-gray-200/50">
-                    {staff.items.map((item, i) => (
-                      <div key={i} className="flex items-center justify-between text-[11px] py-1">
-                        <span className="font-bold text-gray-700 truncate pr-2">{item.name}</span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-black text-[#E53935]">{item.soldCount}x</span>
-                          {item.revenue > 0 && <span className="font-bold text-gray-400">₹{Math.round(item.revenue).toLocaleString('en-IN')}</span>}
+                    {staff.items && staff.items.length > 0 ? (
+                      staff.items.map((item, i) => (
+                        <div key={i} className="flex items-center justify-between text-[11px] py-1">
+                          <span className="font-bold text-gray-700 truncate pr-2">{item.name}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-black text-[#E53935]">{item.soldCount}x</span>
+                            {item.revenue > 0 && <span className="font-bold text-gray-400">₹{Math.round(item.revenue).toLocaleString('en-IN')}</span>}
+                          </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="py-2 text-center">
+                        <span className="text-[11px] font-bold text-gray-400">No specials sold in this period</span>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs font-bold text-gray-400">Captain Leaderboard will appear here once a special is sold.</p>
+          <p className="text-xs font-bold text-gray-400">No captains found for this outlet. Add captains from Staff settings to see the leaderboard.</p>
         )}
       </div>
 
