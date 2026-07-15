@@ -24,7 +24,7 @@ import { API_BASE } from '../services/apiConfig.js';
 import {
   CheckCircle2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   Cloud, Database, Link2, Server, Utensils, LayoutGrid, Users,
-  RefreshCw, Wifi, WifiOff, Store,
+  RefreshCw, Wifi, Store,
 } from 'lucide-react';
 
 // ── Poll intervals ────────────────────────────────────────────────────────────
@@ -43,6 +43,24 @@ function getTauriInvoke() {
     || null;
 }
 
+// ── Decode a JWT payload without verifying it (UX helpers only) ───────────────
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token).split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(base64);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function extractRestaurantCodeFromToken(token) {
+  const payload = decodeJwtPayload(token);
+  return payload?.restaurantCode || null;
+}
+
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
   { id: 'edge-start',   label: 'Starting edge server',     icon: Server },
@@ -58,12 +76,13 @@ export default function EdgeSetupScreen() {
   // ── Phase state ──────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState('edge-start'); // edge-start | collect-info | register | config-sync | ready
   const [edgeOnline, setEdgeOnline] = useState(false);
-  const [edgeChecking, setEdgeChecking] = useState(true);
+  const [edgeChecking, setEdgeChecking] = useState(() => isRunningInsideDesktopApp());
 
   // ── Form state ───────────────────────────────────────────────────────────────
   const [backendUrl, setBackendUrl] = useState(API_BASE);
   const [restaurantCode, setRestaurantCode] = useState('');
   const [setupToken, setSetupToken] = useState('');
+  const [restaurantName, setRestaurantName] = useState('');
 
   // ── Registration state ──────────────────────────────────────────────────────
   const [registering, setRegistering] = useState(false);
@@ -74,12 +93,15 @@ export default function EdgeSetupScreen() {
   const [configError, setConfigError] = useState(null);
   const [configStats, setConfigStats] = useState({ tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0 });
   const [configRowsLoaded, setConfigRowsLoaded] = useState(0);
-  const [syncStatus, setSyncStatus] = useState(null);
 
   // ── General ─────────────────────────────────────────────────────────────────
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(() =>
+    isRunningInsideDesktopApp()
+      ? null
+      : 'Link Existing Restaurant must be opened inside the SoftShape Cashier desktop app. ' +
+        'Open Cashier from the installed desktop application, then choose Link Existing Restaurant again.'
+  );
   const [edgeDiagnostics, setEdgeDiagnostics] = useState(null);
-  const [edgeStatus, setEdgeStatus] = useState(null);
   const [diagCopied, setDiagCopied] = useState(false);
   const [startErrorCount, setStartErrorCount] = useState(0);
   const pollRef = useRef(null);
@@ -110,21 +132,135 @@ export default function EdgeSetupScreen() {
     }
   }, [edgeDiagnostics, error]);
 
+  // ── Poll edge server status during config sync ──────────────────────────────
+  const startStatusPolling = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+
+    let pollCount = 0;
+    const maxPolls = 30; // 60 seconds max
+
+    pollRef.current = setInterval(async () => {
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        // Even if polling timed out, proceed if we have some data
+        setPhase('ready');
+        return;
+      }
+
+      try {
+        const status = await edgeFetch('/api/edge/status');
+        if (status.localStats) {
+          setConfigStats({
+            tables: status.localStats.tables || 0,
+            menuItems: status.localStats.menuItems || 0,
+            activeOrders: status.localStats.activeOrders || 0,
+            pendingSync: status.localStats.pendingSyncRecords || 0,
+          });
+        }
+
+        // If we have menu items and tables, config is loaded
+        if (status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          setPhase('ready');
+        }
+      } catch {
+        // Edge might be busy — keep polling
+      }
+    }, STATUS_POLL_MS);
+  }, []);
+
+  // ── Step 3: Trigger config sync ─────────────────────────────────────────────
+  const triggerConfigSync = useCallback(async () => {
+    setConfigSyncing(true);
+    setConfigError(null);
+
+    try {
+      const result = await edgeFetch('/api/edge/config/sync', { method: 'POST' });
+      if (result.success) {
+        setConfigRowsLoaded(result.tablesLoaded || 0);
+        // Start polling for final stats
+        startStatusPolling();
+      } else {
+        setConfigError(result.error || 'Config sync failed');
+      }
+    } catch (err) {
+      setConfigError(err.message || 'Failed to download config');
+    } finally {
+      setConfigSyncing(false);
+    }
+  }, [startStatusPolling]);
+
+  // ── Step 2: Submit registration ─────────────────────────────────────────────
+  const handleRegister = useCallback(async () => {
+    if (!backendUrl.trim()) {
+      setRegisterError('Backend URL is required');
+      return;
+    }
+    if (!restaurantCode.trim()) {
+      setRegisterError('Restaurant code is required');
+      return;
+    }
+    if (!setupToken.trim()) {
+      setRegisterError('Setup token is required');
+      return;
+    }
+
+    setRegistering(true);
+    setRegisterError(null);
+    setPhase('register');
+
+    try {
+      const result = await edgeFetch('/api/edge/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          setupToken: setupToken.trim(),
+          restaurantCode: restaurantCode.trim(),
+          backendUrl: backendUrl.trim(),
+        }),
+      });
+
+      if (result.success) {
+        // Registration succeeded — trigger config download
+        setRestaurantName(result.restaurantName || '');
+        setPhase('config-sync');
+        setConfigSyncing(true);
+        // If config was already downloaded during registration, check status
+        if (result.configDownloaded && result.tablesLoaded > 0) {
+          setConfigRowsLoaded(result.tablesLoaded);
+          // Still poll to get final stats
+          startStatusPolling();
+        } else {
+          // Trigger explicit config sync
+          await triggerConfigSync();
+        }
+      } else {
+        setRegisterError(result.error || 'Registration failed');
+        setPhase('collect-info');
+      }
+    } catch (err) {
+      const message = err.message || 'Failed to connect to cloud backend';
+      setRegisterError(
+        message === 'Restaurant not found'
+          ? 'This setup token belongs to a restaurant that was not found on this backend. Generate a new token from Admin → Printers and make sure the Backend URL is the same cloud account where the restaurant was created.'
+          : message.includes('Setup token') || message.includes('Invalid or expired')
+            ? `${message}. Generate a fresh setup token from Admin → Printers; tokens expire after 15 minutes.`
+            : message
+      );
+      setPhase('collect-info');
+    } finally {
+      setRegistering(false);
+    }
+  }, [backendUrl, restaurantCode, setupToken, startStatusPolling, triggerConfigSync]);
+
   // ── Step 1: Wait for edge server to come online ─────────────────────────────
   useEffect(() => {
     let cancelled = false;
     const startTime = Date.now();
-    setError(null);
-    setEdgeDiagnostics(null);
-    setDiagCopied(false);
-    setEdgeChecking(true);
 
     if (!isRunningInsideDesktopApp()) {
-      setEdgeChecking(false);
-      setError(
-        'Link Existing Restaurant must be opened inside the SoftShape Cashier desktop app. ' +
-        'Open Cashier from the installed desktop application, then choose Link Existing Restaurant again.'
-      );
       return () => { cancelled = true; };
     }
 
@@ -135,7 +271,6 @@ export default function EdgeSetupScreen() {
         if (!invoke) return null;
         const status = await invoke('get_edge_server_status');
         if (!status) return null;
-        setEdgeStatus(status);
         const parts = [
           `app_version=${status.app_version || 'unknown'}`,
           `running=${!!status.running}`,
@@ -227,130 +362,7 @@ export default function EdgeSetupScreen() {
       cancelled = true;
       if (edgeStartTimerRef.current) clearTimeout(edgeStartTimerRef.current);
     };
-  }, [startErrorCount]);
-
-  // ── Step 2: Submit registration ─────────────────────────────────────────────
-  const handleRegister = useCallback(async () => {
-    if (!backendUrl.trim()) {
-      setRegisterError('Backend URL is required');
-      return;
-    }
-    if (!restaurantCode.trim()) {
-      setRegisterError('Restaurant code is required');
-      return;
-    }
-    if (!setupToken.trim()) {
-      setRegisterError('Setup token is required');
-      return;
-    }
-
-    setRegistering(true);
-    setRegisterError(null);
-    setPhase('register');
-
-    try {
-      const result = await edgeFetch('/api/edge/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          setupToken: setupToken.trim(),
-          restaurantCode: restaurantCode.trim(),
-          backendUrl: backendUrl.trim(),
-        }),
-      });
-
-      if (result.success) {
-        // Registration succeeded — trigger config download
-        setPhase('config-sync');
-        setConfigSyncing(true);
-        // If config was already downloaded during registration, check status
-        if (result.configDownloaded && result.tablesLoaded > 0) {
-          setConfigRowsLoaded(result.tablesLoaded);
-          // Still poll to get final stats
-          startStatusPolling();
-        } else {
-          // Trigger explicit config sync
-          await triggerConfigSync();
-        }
-      } else {
-        setRegisterError(result.error || 'Registration failed');
-        setPhase('collect-info');
-      }
-    } catch (err) {
-      const message = err.message || 'Failed to connect to cloud backend';
-      setRegisterError(
-        message === 'Restaurant not found'
-          ? 'This setup token belongs to a restaurant that was not found on this backend. Generate a new token from Admin → Printers and make sure the Backend URL is the same cloud account where the restaurant was created.'
-          : message.includes('Setup token') || message.includes('Invalid or expired')
-            ? `${message}. Generate a fresh setup token from Admin → Printers; tokens expire after 15 minutes.`
-            : message
-      );
-      setPhase('collect-info');
-    } finally {
-      setRegistering(false);
-    }
-  }, [backendUrl, restaurantCode, setupToken]);
-
-  // ── Step 3: Trigger config sync ─────────────────────────────────────────────
-  const triggerConfigSync = useCallback(async () => {
-    setConfigSyncing(true);
-    setConfigError(null);
-
-    try {
-      const result = await edgeFetch('/api/edge/config/sync', { method: 'POST' });
-      if (result.success) {
-        setConfigRowsLoaded(result.tablesLoaded || 0);
-        // Start polling for final stats
-        startStatusPolling();
-      } else {
-        setConfigError(result.error || 'Config sync failed');
-      }
-    } catch (err) {
-      setConfigError(err.message || 'Failed to download config');
-    } finally {
-      setConfigSyncing(false);
-    }
-  }, []);
-
-  // ── Poll edge server status during config sync ──────────────────────────────
-  const startStatusPolling = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
-
-    let pollCount = 0;
-    const maxPolls = 30; // 60 seconds max
-
-    pollRef.current = setInterval(async () => {
-      pollCount++;
-      if (pollCount > maxPolls) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        // Even if polling timed out, proceed if we have some data
-        setPhase('ready');
-        return;
-      }
-
-      try {
-        const status = await edgeFetch('/api/edge/status');
-        setSyncStatus(status);
-        if (status.localStats) {
-          setConfigStats({
-            tables: status.localStats.tables || 0,
-            menuItems: status.localStats.menuItems || 0,
-            activeOrders: status.localStats.activeOrders || 0,
-            pendingSync: status.localStats.pendingSyncRecords || 0,
-          });
-        }
-
-        // If we have menu items and tables, config is loaded
-        if (status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-          setPhase('ready');
-        }
-      } catch {
-        // Edge might be busy — keep polling
-      }
-    }, STATUS_POLL_MS);
-  }, []);
+  }, [startErrorCount, triggerConfigSync]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -365,6 +377,29 @@ export default function EdgeSetupScreen() {
   // ── Skip to offline onboarding (Path B) ─────────────────────────────────────
   const handleSkipToOffline = () => navigate('/onboarding');
 
+  // ── Go back to the previous step ───────────────────────────────────────────
+  const handleBack = useCallback(() => {
+    if (phase === 'register' || phase === 'config-sync') {
+      setRegisterError(null);
+      setConfigError(null);
+      setConfigSyncing(false);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setPhase('collect-info');
+      return;
+    }
+    if (phase === 'collect-info') {
+      setRegisterError(null);
+      setPhase('edge-start');
+      return;
+    }
+    if (phase === 'ready') {
+      setPhase('config-sync');
+    }
+  }, [phase]);
+
   const handleEdgeRetry = async () => {
     const invoke = getTauriInvoke();
     try {
@@ -373,8 +408,10 @@ export default function EdgeSetupScreen() {
       setError(`Failed to restart edge server: ${err?.message || String(err)}`);
       return;
     }
-    setEdgeStatus(null);
+    setError(null);
     setEdgeDiagnostics(null);
+    setDiagCopied(false);
+    setEdgeChecking(true);
     setStartErrorCount(c => c + 1);
   };
 
@@ -421,7 +458,6 @@ export default function EdgeSetupScreen() {
             const Icon = step.icon;
             const isDone = idx < currentStepIndex;
             const isActive = idx === currentStepIndex;
-            const isPending = idx > currentStepIndex;
 
             return (
               <React.Fragment key={step.id}>
@@ -507,7 +543,16 @@ export default function EdgeSetupScreen() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                 >
-                  <h2 className="text-xl font-bold text-gray-900 mb-1">Enter setup details</h2>
+                  <div className="flex items-center gap-2 mb-1">
+                    <button
+                      onClick={handleBack}
+                      className="p-2 -ml-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                      title="Go back"
+                    >
+                      <ArrowLeft size={18} />
+                    </button>
+                    <h2 className="text-xl font-bold text-gray-900">Enter setup details</h2>
+                  </div>
                   <p className="text-sm text-gray-500 mb-6">
                     Generate a setup token from <span className="font-semibold">Admin → Printers</span> on your web dashboard.
                   </p>
@@ -552,7 +597,15 @@ export default function EdgeSetupScreen() {
                       <input
                         type="text"
                         value={setupToken}
-                        onChange={e => { setSetupToken(e.target.value); setRegisterError(null); }}
+                        onChange={e => {
+                          const value = e.target.value;
+                          setSetupToken(value);
+                          setRegisterError(null);
+                          if (value.trim() && !restaurantCode.trim()) {
+                            const code = extractRestaurantCodeFromToken(value);
+                            if (code) setRestaurantCode(String(code).toUpperCase());
+                          }
+                        }}
                         placeholder="Paste the token from Admin → Printers"
                         className="w-full h-12 px-4 rounded-xl border-2 border-gray-100 bg-gray-50 text-sm font-mono outline-none focus:border-rose-400 focus:bg-white transition-all"
                       />
@@ -568,13 +621,22 @@ export default function EdgeSetupScreen() {
                   )}
 
                   {/* Actions */}
-                  <div className="mt-7 flex items-center justify-between">
-                    <button
-                      onClick={handleSkipToOffline}
-                      className="text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      No cloud account? Set up offline →
-                    </button>
+                  <div className="mt-7 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleBack}
+                        className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        <ArrowLeft size={14} /> Back
+                      </button>
+                      <span className="text-gray-200">|</span>
+                      <button
+                        onClick={handleSkipToOffline}
+                        className="text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        Set up offline →
+                      </button>
+                    </div>
                     <button
                       onClick={handleRegister}
                       disabled={registering || !backendUrl.trim() || !restaurantCode.trim() || !setupToken.trim()}
@@ -603,13 +665,33 @@ export default function EdgeSetupScreen() {
               <p className="text-sm text-gray-500 max-w-sm">
                 Verifying setup token and linking this device to your restaurant on the cloud backend.
               </p>
+              <button
+                onClick={handleBack}
+                className="mt-6 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <ArrowLeft size={14} /> Go back
+              </button>
             </div>
           )}
 
           {/* ── Phase: config-sync ────────────────────────────────────────────── */}
           {phase === 'config-sync' && (
             <div className="p-8 min-h-[320px]">
-              <h2 className="text-xl font-bold text-gray-900 mb-1">Downloading restaurant data</h2>
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Downloading restaurant data</h2>
+                  {restaurantName && (
+                    <p className="text-sm font-medium text-rose-600">{restaurantName}</p>
+                  )}
+                </div>
+                <button
+                  onClick={handleBack}
+                  className="shrink-0 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Go back to change setup token"
+                >
+                  <ArrowLeft size={14} /> Back
+                </button>
+              </div>
               <p className="text-sm text-gray-500 mb-6">
                 Copying your menu, tables, staff, and settings from cloud to this device's local database.
               </p>
@@ -667,12 +749,20 @@ export default function EdgeSetupScreen() {
                   <AlertCircle size={16} className="shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p>{configError}</p>
-                    <button
-                      onClick={handleRetrySync}
-                      className="mt-2 flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-800"
-                    >
-                      <RefreshCw size={12} /> Retry download
-                    </button>
+                    <div className="mt-2 flex items-center gap-4">
+                      <button
+                        onClick={handleRetrySync}
+                        className="flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-800"
+                      >
+                        <RefreshCw size={12} /> Retry download
+                      </button>
+                      <button
+                        onClick={handleBack}
+                        className="flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-700"
+                      >
+                        <ArrowLeft size={12} /> Change token
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -698,7 +788,10 @@ export default function EdgeSetupScreen() {
                 <CheckCircle2 size={40} className="text-white" />
               </motion.div>
 
-              <h2 className="text-2xl font-black text-gray-900 mb-2">Ready to bill!</h2>
+              <h2 className="text-2xl font-black text-gray-900 mb-1">Ready to bill!</h2>
+              {restaurantName && (
+                <p className="text-base font-bold text-rose-600 mb-2">{restaurantName}</p>
+              )}
               <p className="text-sm text-gray-500 max-w-sm mb-6">
                 Your restaurant data is synced to this device. You can start billing immediately —
                 even without internet. Orders will sync to the cloud automatically.
@@ -722,13 +815,21 @@ export default function EdgeSetupScreen() {
                 </div>
               </div>
 
-              <button
-                onClick={handleGoToCashier}
-                className="flex items-center gap-2 px-8 py-4 bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-wider hover:bg-rose-600 transition-all shadow-xl shadow-rose-100 active:scale-95"
-              >
-                Go to Cashier Login
-                <ArrowRight size={18} />
-              </button>
+              <div className="flex flex-col items-center gap-3">
+                <button
+                  onClick={handleGoToCashier}
+                  className="flex items-center gap-2 px-8 py-4 bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-wider hover:bg-rose-600 transition-all shadow-xl shadow-rose-100 active:scale-95"
+                >
+                  Go to Cashier Login
+                  <ArrowRight size={18} />
+                </button>
+                <button
+                  onClick={handleBack}
+                  className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <ArrowLeft size={14} /> Back to sync
+                </button>
+              </div>
             </div>
           )}
         </div>

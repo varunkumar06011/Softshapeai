@@ -1,7 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoftShape Cashier",
+<<<<<<< HEAD
   "version": "16.5.1",
+=======
+  "version": "16.6.0",
+>>>>>>> adc2302 (release: v16.6.0 — edge onboarding back navigation, agent-setup token acceptance, restaurant name display)
   "identifier": "ai.softshape.cashier",
   "build": {
     "beforeDevCommand": "npm run dev",
