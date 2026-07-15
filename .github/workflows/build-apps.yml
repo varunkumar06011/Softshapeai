@@ -106,6 +106,16 @@ jobs:
           fi
           ls -la edge-server.exe
 
+      - name: Sign edge-server.exe
+        if: env.CERTIFICATE_THUMBPRINT != ''
+        working-directory: softshape-print-agent/softshape-print-agent/edge-server
+        shell: powershell
+        run: |
+          $exe = "edge-server.exe"
+          signtool sign /sha1 "$env:CERTIFICATE_THUMBPRINT" /tr http://timestamp.digicert.com /td sha256 /fd sha256 "$exe"
+        env:
+          CERTIFICATE_THUMBPRINT: ${{ secrets.CERTIFICATE_THUMBPRINT }}
+
       - name: Generate Tauri icons
         working-directory: apps/cashier-desktop
         shell: bash
@@ -206,7 +216,7 @@ jobs:
           # The full GUI app may hang on WebView2 first-run; edge-server is the packaging contract.
           # (Avoid Start-Process -Environment - not available on Windows PowerShell 5.1.)
           $prevEdgePort = $env:EDGE_PORT
-          $env:EDGE_PORT = "3100"
+          $env:EDGE_PORT = "3101"
           $edgeProc = Start-Process -FilePath $resourceExe -PassThru -WindowStyle Hidden `
             -WorkingDirectory (Split-Path $resourceExe)
           if ($null -ne $prevEdgePort) { $env:EDGE_PORT = $prevEdgePort } else { Remove-Item Env:EDGE_PORT -ErrorAction SilentlyContinue }
@@ -215,7 +225,7 @@ jobs:
           $deadline = (Get-Date).AddSeconds(15)
           while ((Get-Date) -lt $deadline) {
             try {
-              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:3100/health" -UseBasicParsing -TimeoutSec 2
+              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:3101/health" -UseBasicParsing -TimeoutSec 2
               if ($resp.StatusCode -eq 200) {
                 Write-Host "Health OK: $($resp.Content)"
                 $healthy = $true
@@ -226,17 +236,47 @@ jobs:
             }
           }
 
-          if ($edgeProc -and -not $edgeProc.HasExited) {
-            Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
-          }
-          Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
           if (-not $healthy) {
-            Write-Error "edge-server never responded on http://127.0.0.1:3100/health within 15s"
+            if ($edgeProc -and -not $edgeProc.HasExited) {
+              Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
+            }
+            Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Error "edge-server never responded on http://127.0.0.1:3101/health within 15s"
             exit 1
           }
 
           Write-Host "Smoke test passed: installed edge-server.exe is healthy"
+
+          # Regression test: leave the old edge-server running and reinstall on top.
+          # This should complete without the 'Error opening file for writing' dialog.
+          $originalTimestamp = (Get-Item $resourceExe).LastWriteTimeUtc
+          Write-Host "Regression test: reinstalling over running edge-server (original timestamp $originalTimestamp)"
+          $proc2 = Start-Process -FilePath (Resolve-Path $installer) -ArgumentList "/S","/D=$installDir" -Wait -PassThru
+          if ($proc2.ExitCode -ne 0) {
+            if ($edgeProc -and -not $edgeProc.HasExited) {
+              Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
+            }
+            Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Error "NSIS reinstall over running edge-server failed with exit code $($proc2.ExitCode)"
+            exit 1
+          }
+
+          # The installer should have replaced the running edge-server.exe.
+          $newTimestamp = (Get-Item $resourceExe).LastWriteTimeUtc
+          if ($newTimestamp -le $originalTimestamp) {
+            if ($edgeProc -and -not $edgeProc.HasExited) {
+              Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
+            }
+            Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Error "edge-server.exe was not replaced by the installer (timestamp did not change)"
+            exit 1
+          }
+          Write-Host "Regression test passed: installer replaced edge-server.exe even while it was running (new timestamp $newTimestamp)"
+
+          if ($edgeProc -and -not $edgeProc.HasExited) {
+            Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
+          }
+          Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

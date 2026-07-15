@@ -36,6 +36,12 @@ struct PrinterInfo {
 // We spawn it on app startup and kill it on app shutdown.
 
 static EDGE_SERVER_CHILD: Mutex<Option<Child>> = Mutex::new(None);
+#[cfg(windows)]
+struct JobHandle(isize);
+#[cfg(windows)]
+unsafe impl Send for JobHandle {}
+#[cfg(windows)]
+static EDGE_SERVER_JOB: Mutex<Option<JobHandle>> = Mutex::new(None);
 static EDGE_SERVER_DIAGNOSTICS: Mutex<Option<String>> = Mutex::new(None);
 static EDGE_SERVER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
 static EDGE_SERVER_STATE: Mutex<String> = Mutex::new(String::new());
@@ -357,7 +363,12 @@ fn kill_process_on_port(port: &str) {
             }
         }
     }
+    let our_pid = std::process::id().to_string();
     for pid in pids {
+        if pid == our_pid {
+            eprintln!("[EdgeServer] Refusing to taskkill our own PID ({}) — logic bug guard", pid);
+            continue;
+        }
         eprintln!("[EdgeServer] Killing stale process on port {} (PID {})", port, pid);
         let _ = Command::new("taskkill")
             .args(["/F", "/PID", &pid])
@@ -415,6 +426,43 @@ fn spawn_edge_server_process(exe: &Path, port: &str, print_bridge_url: &str) -> 
     cmd.creation_flags(CREATE_NO_WINDOW);
 
     cmd.spawn()
+}
+
+#[cfg(windows)]
+fn assign_child_to_job(child: &Child) -> std::io::Result<JobHandle> {
+    use windows::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JobObjectExtendedLimitInformation,
+    };
+    use windows::Win32::Foundation::HANDLE;
+    use std::os::windows::io::AsRawHandle;
+
+    unsafe {
+        let job = CreateJobObjectW(None, None)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("CreateJobObjectW failed: {}", e)))?;
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const std::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("SetInformationJobObject failed: {}", e)))?;
+        let child_handle = HANDLE(child.as_raw_handle());
+        AssignProcessToJobObject(job, child_handle)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("AssignProcessToJobObject failed: {}", e)))?;
+        Ok(JobHandle(job.0 as isize))
+    }
+}
+
+#[cfg(windows)]
+fn close_job_handle(handle: HANDLE) {
+    use windows::Win32::Foundation::CloseHandle;
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
 }
 
 /// Detect if a legacy standalone edge-server.exe is already listening on the port.
@@ -610,6 +658,12 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                 }
                 Ok(None) => {
                     let pid = child.id();
+                    #[cfg(windows)]
+                    if let Ok(job) = assign_child_to_job(&child) {
+                        *EDGE_SERVER_JOB.lock().unwrap() = Some(job);
+                    } else {
+                        eprintln!("[EdgeServer] Warning: failed to assign child to Job Object; sidecar may orphan on hard kill");
+                    }
                     attach_edge_server_logs(&mut child);
                     eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
                     *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
@@ -640,6 +694,12 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
         match spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url) {
             Ok(mut child) => {
                 let pid = child.id();
+                #[cfg(windows)]
+                if let Ok(job) = assign_child_to_job(&child) {
+                    *EDGE_SERVER_JOB.lock().unwrap() = Some(job);
+                } else {
+                    eprintln!("[EdgeServer] Warning: failed to assign retry child to Job Object; sidecar may orphan on hard kill");
+                }
                 attach_edge_server_logs(&mut child);
                 eprintln!(
                     "[EdgeServer] Started edge-server after retry (PID: {}) on port {}",
@@ -678,6 +738,11 @@ fn kill_edge_server() {
         let _ = child.kill();
         let _ = child.wait();
         eprintln!("[EdgeServer] Stopped edge-server");
+    }
+    #[cfg(windows)]
+    if let Some(job) = EDGE_SERVER_JOB.lock().unwrap().take() {
+        use windows::Win32::Foundation::HANDLE;
+        close_job_handle(HANDLE(job.0 as *mut _));
     }
     set_edge_server_state("stopped");
 }

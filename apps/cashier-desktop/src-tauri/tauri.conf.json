@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoftShape Cashier",
-  "version": "16.5.0",
+  "version": "16.5.1",
   "identifier": "ai.softshape.cashier",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -52,8 +52,14 @@
       "../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe": ""
     },
     "windows": {
+      "certificateThumbprint": "YOUR_CERT_THUMBPRINT",
+      "timestampUrl": "http://timestamp.digicert.com",
       "webviewInstallMode": {
         "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "./windows/hooks.nsh"
       }
     }
   }
