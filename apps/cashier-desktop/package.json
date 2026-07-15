@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "cd ../.. && npx vite",
     "build": "cd ../.. && npx vite build",
-    "build:edge": "cd ../../softshape-print-agent/softshape-print-agent/edge-server && bun install && bun build --compile server.ts --outfile edge-server.exe",
+    "build:edge": "cd ../../../softshape-print-agent/softshape-print-agent/edge-server && bun install && bun build --compile server.ts --outfile edge-server.exe",
+    "build:edge:check": "node -e \"const fs=require('fs');const p='../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe';if(!fs.existsSync(p)){console.error('ERROR: edge-server.exe not found at '+p+'. Run npm run build:edge first.');process.exit(1);}else{console.log('OK: edge-server.exe found ('+fs.statSync(p).size+' bytes)');}\"",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "npm run build:edge && tauri build"
+    "tauri:build": "npm run build:edge && npm run build:edge:check && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.3"

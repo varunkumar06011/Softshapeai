@@ -53,6 +53,7 @@ import { purgeLegacyCaches } from "./utils/cacheKeys";
 
 function isTokenValid(token) {
   if (!token) return false;
+  if (token.startsWith('edge-local-')) return true;
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
     if (!payload.exp) return true;

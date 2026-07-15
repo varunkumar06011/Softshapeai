@@ -240,6 +240,18 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
 }
 
 export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), status } = {}) {
+  // ── Edge server first (local SQLite) ────────────────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const qs = new URLSearchParams();
+      if (status) qs.set('status', status);
+      const path = qs.toString() ? `/api/edge/orders?${qs.toString()}` : '/api/edge/orders';
+      return await edgeFetch(path);
+    } catch (e) {
+      console.debug('[orderApi] edge fetch orders failed, falling through to cloud:', e);
+    }
+  }
+
   const qs = new URLSearchParams({ restaurantId });
   if (status) qs.set("status", status);
   return withRetry(

@@ -217,6 +217,8 @@ export const authService = {
   isAuthenticated() {
     const token = localStorage.getItem('ss_token');
     if (!token) return false;
+    // Edge server local tokens (offline PIN login) are not JWTs
+    if (token.startsWith('edge-local-')) return true;
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       if (!payload.exp) return true;

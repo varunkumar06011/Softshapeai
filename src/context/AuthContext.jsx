@@ -28,6 +28,9 @@ const AuthContext = createContext(null);
  */
 function isTokenValid(token) {
   if (!token) return false;
+  // Edge server local tokens (offline PIN login) are not JWTs — always valid
+  // until explicit logout. They have the form "edge-local-<timestamp>".
+  if (token.startsWith('edge-local-')) return true;
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
     if (!payload.exp) return true;

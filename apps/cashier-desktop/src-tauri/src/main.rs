@@ -9,6 +9,8 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -39,10 +41,17 @@ struct PrinterInfo {
 static EDGE_SERVER_CHILD: Mutex<Option<Child>> = Mutex::new(None);
 static EDGE_SERVER_DIAGNOSTICS: Mutex<Option<String>> = Mutex::new(None);
 static EDGE_SERVER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+static EDGE_SERVER_STATE: Mutex<String> = Mutex::new(String::new());
+static EDGE_SERVER_READY: AtomicBool = AtomicBool::new(false);
+static EDGE_SERVER_EXE: Mutex<Option<PathBuf>> = Mutex::new(None);
+static EDGE_SERVER_PORT: Mutex<String> = Mutex::new(String::new());
+static EDGE_PRINT_BRIDGE_URL: Mutex<String> = Mutex::new(String::new());
 
 #[derive(Debug, Serialize, Deserialize)]
 struct EdgeServerStatus {
     running: bool,
+    ready: bool,
+    state: String,
     error: Option<String>,
     diagnostics: Option<String>,
     app_version: String,
@@ -129,6 +138,12 @@ fn handle_print_bridge_connection(mut stream: TcpStream) {
         }
     };
 
+    let correlation_id = format!("pb-{}-{}", std::process::id(), std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
+    let byte_count = print_request.bytes.len();
+    let printer_name = &print_request.printer_name;
+    eprintln!("[PrintBridge] {} → printer={} bytes={}", correlation_id, printer_name, byte_count);
+
     let result = if let Some((ip, port)) = parse_network_printer(&print_request.printer_name) {
         print_network(ip, port, print_request.bytes)
     } else {
@@ -136,8 +151,14 @@ fn handle_print_bridge_connection(mut stream: TcpStream) {
     };
 
     let response = match result {
-        Ok(()) => bridge_json_response("200 OK", serde_json::json!({"ok": true, "message": "Printed"})),
-        Err(error) => bridge_json_response("500 Internal Server Error", serde_json::json!({"ok": false, "error": error})),
+        Ok(()) => {
+            eprintln!("[PrintBridge] {} ✓ printed {} bytes to {}", correlation_id, byte_count, printer_name);
+            bridge_json_response("200 OK", serde_json::json!({"ok": true, "message": "Printed", "correlation_id": correlation_id}))
+        }
+        Err(error) => {
+            eprintln!("[PrintBridge] {} ✗ failed: {}", correlation_id, error);
+            bridge_json_response("500 Internal Server Error", serde_json::json!({"ok": false, "error": error, "correlation_id": correlation_id}))
+        }
     };
     let _ = stream.write_all(&response);
 }
@@ -187,6 +208,55 @@ fn set_edge_server_diagnostics(message: String) {
     let _ = EDGE_SERVER_DIAGNOSTICS.lock().map(|mut guard| *guard = Some(message));
 }
 
+fn set_edge_server_state(state: &str) {
+    if let Ok(mut guard) = EDGE_SERVER_STATE.lock() {
+        *guard = state.to_string();
+    }
+}
+
+fn set_edge_server_ready(ready: bool) {
+    EDGE_SERVER_READY.store(ready, Ordering::Relaxed);
+}
+
+fn start_edge_health_probe(port: String) {
+    set_edge_server_ready(false);
+    set_edge_server_state("starting");
+    thread::spawn(move || {
+        let started = Instant::now();
+        let deadline = Duration::from_secs(35);
+        let mut attempts = 0u32;
+        while started.elapsed() < deadline {
+            attempts += 1;
+            if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port.parse::<u16>().unwrap_or(3100))) {
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let request = "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+                if stream.write_all(request.as_bytes()).is_ok() {
+                    let mut response = String::new();
+                    if stream.read_to_string(&mut response).is_ok() && response.starts_with("HTTP/1.1 200") {
+                        let body = response.split("\r\n\r\n").nth(1).unwrap_or("");
+                        if body.contains("\"status\":\"ok\"") {
+                            set_edge_server_ready(true);
+                            set_edge_server_state("ready");
+                            set_edge_server_diagnostics(format!("health=ready\nhealth_attempts={}\nhealth_elapsed_ms={}", attempts, started.elapsed().as_millis()));
+                            return;
+                        }
+                        if body.contains("\"status\":\"error\"") {
+                            set_edge_server_state("database_error");
+                            set_edge_server_error(format!("Edge server /health reported error state: {}", body));
+                            set_edge_server_diagnostics(format!("health=error\nhealth_attempts={}\nhealth_elapsed_ms={}\nbody={}", attempts, started.elapsed().as_millis(), body));
+                            return;
+                        }
+                    }
+                }
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+        set_edge_server_state("health_timeout");
+        set_edge_server_error(format!("Edge server process is alive but /health did not respond within {} seconds", deadline.as_secs()));
+        set_edge_server_diagnostics(format!("health=timeout\nhealth_attempts={}\nhealth_elapsed_ms={}", attempts, started.elapsed().as_millis()));
+    });
+}
+
 /// Bounded recursive search for a file named `edge-server.exe` under `root`.
 /// Caps depth and file visits so a packaging regression never freezes startup.
 fn find_edge_server_recursive(root: &Path, max_depth: usize, max_files: usize) -> (Option<PathBuf>, usize, Duration) {
@@ -226,40 +296,43 @@ fn find_edge_server_recursive(root: &Path, max_depth: usize, max_files: usize) -
     (None, files_walked, started.elapsed())
 }
 
-/// Kill any process currently listening on `port` (Windows). Best-effort; never panics.
 #[cfg(windows)]
-fn kill_process_on_port(port: &str) {
-    let netstat = Command::new("cmd")
-        .args(["/C", &format!("netstat -ano | findstr :{}", port)])
-        .output();
-    let Ok(output) = netstat else {
-        return;
+fn diagnose_process_on_port(port: &str) -> String {
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/C", &format!("netstat -ano | findstr LISTENING | findstr :{}", port)]);
+    cmd.creation_flags(0x08000000);
+    let output = cmd.output();
+    let Ok(output) = output else {
+        return format!("port={}; owner_lookup=failed", port);
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut pids = std::collections::HashSet::new();
+    let mut owners = Vec::new();
     for line in stdout.lines() {
-        // Prefer LISTENING rows so we don't kill random clients.
-        if !line.contains("LISTENING") {
-            continue;
-        }
         if let Some(pid) = line.split_whitespace().last() {
             if pid.chars().all(|c| c.is_ascii_digit()) {
-                pids.insert(pid.to_string());
+                let mut task_cmd = Command::new("tasklist");
+                task_cmd.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
+                task_cmd.creation_flags(0x08000000);
+                let task = task_cmd.output()
+                    .ok()
+                    .map(|value| String::from_utf8_lossy(&value.stdout).trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| "process_lookup=failed".to_string());
+                owners.push(format!("pid={};task={}", pid, task));
             }
         }
     }
-    for pid in pids {
-        eprintln!("[EdgeServer] Killing stale process on port {} (PID {})", port, pid);
-        let _ = Command::new("taskkill")
-            .args(["/F", "/PID", &pid])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+    if owners.is_empty() {
+        format!("port={};owner=none", port)
+    } else {
+        format!("port={};{}", port, owners.join(";"))
     }
 }
 
 #[cfg(not(windows))]
-fn kill_process_on_port(_port: &str) {}
+fn diagnose_process_on_port(port: &str) -> String {
+    format!("port={};owner_lookup=unsupported", port)
+}
 
 fn attach_edge_server_logs(child: &mut Child) {
     if let Some(stdout) = child.stdout.take() {
@@ -291,6 +364,51 @@ fn spawn_edge_server_process(exe: &Path, port: &str, print_bridge_url: &str) -> 
     cmd.creation_flags(CREATE_NO_WINDOW);
 
     cmd.spawn()
+}
+
+/// Detect if a legacy standalone edge-server.exe is already listening on the port.
+/// This is diagnostic-only: we never kill the foreign process.
+#[cfg(windows)]
+fn detect_legacy_edge_server(port: &str) -> Option<String> {
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/C", &format!("netstat -ano | findstr LISTENING | findstr :{}", port)]);
+    cmd.creation_flags(0x08000000);
+    let output = cmd.output().ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let our_pid = std::process::id();
+    let child_pid = EDGE_SERVER_CHILD.lock().ok()
+        .and_then(|guard| guard.as_ref().map(|c| c.id()));
+    for line in stdout.lines() {
+        if let Some(pid_str) = line.split_whitespace().last() {
+            if pid_str.chars().all(|c| c.is_ascii_digit()) {
+                let pid: u32 = pid_str.parse().ok()?;
+                if pid == our_pid {
+                    continue;
+                }
+                if child_pid == Some(pid) {
+                    continue;
+                }
+                let mut task_cmd = Command::new("tasklist");
+                task_cmd.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
+                task_cmd.creation_flags(0x08000000);
+                let task = task_cmd.output()
+                    .ok()
+                    .map(|v| String::from_utf8_lossy(&v.stdout).trim().to_string())
+                    .unwrap_or_default();
+                let is_edge = task.to_lowercase().contains("edge-server");
+                return Some(format!(
+                    "legacy_standalone_detected: pid={} task={} is_edge_server={}",
+                    pid, task, is_edge
+                ));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn detect_legacy_edge_server(_port: &str) -> Option<String> {
+    None
 }
 
 fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
@@ -385,11 +503,35 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
         );
         eprintln!("[EdgeServer] {}", err);
         set_edge_server_error(err);
+        set_edge_server_state("binary_missing");
         return;
     };
 
     // Pass through environment variables for edge-server configuration
     let port = std::env::var("EDGE_PORT").unwrap_or_else(|_| "3100".to_string());
+    if let Ok(mut guard) = EDGE_SERVER_EXE.lock() {
+        *guard = Some(edge_server_exe.clone());
+    }
+    if let Ok(mut guard) = EDGE_SERVER_PORT.lock() {
+        *guard = port.clone();
+    }
+    if let Ok(mut guard) = EDGE_PRINT_BRIDGE_URL.lock() {
+        *guard = print_bridge_url.to_string();
+    }
+    set_edge_server_ready(false);
+    set_edge_server_state("starting");
+
+    // Detect legacy standalone edge-server that may already own the port.
+    // Diagnostic-only: we never kill it, just warn the user.
+    if let Some(legacy_info) = detect_legacy_edge_server(&port) {
+        eprintln!("[EdgeServer] WARNING: {}", legacy_info);
+        let existing = EDGE_SERVER_DIAGNOSTICS.lock().map(|g| g.clone()).unwrap_or(None);
+        let combined = match existing {
+            Some(d) => format!("{}\n{}", d, legacy_info),
+            None => legacy_info.clone(),
+        };
+        set_edge_server_diagnostics(combined);
+    }
 
     // First attempt. If spawn fails, or the child dies immediately (stale port bind),
     // free EDGE_PORT once and retry — never loop forever.
@@ -399,10 +541,12 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
             thread::sleep(Duration::from_millis(300));
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    eprintln!(
-                        "[EdgeServer] Process exited immediately with {} — likely port {} still held; will retry once",
-                        status, port
-                    );
+                    let port_diagnostic = diagnose_process_on_port(&port);
+                    let message = format!("Edge server exited immediately with {}. {}", status, port_diagnostic);
+                    eprintln!("[EdgeServer] {}", message);
+                    set_edge_server_error(message);
+                    set_edge_server_diagnostics(port_diagnostic);
+                    set_edge_server_state("port_conflict");
                     true
                 }
                 Ok(None) => {
@@ -410,6 +554,7 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                     attach_edge_server_logs(&mut child);
                     eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
                     *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
+                    start_edge_health_probe(port.clone());
                     false
                 }
                 Err(e) => {
@@ -421,26 +566,28 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
             }
         }
         Err(e) => {
-            eprintln!(
-                "[EdgeServer] First spawn failed at {:?}: {} — retrying once after freeing port {}",
-                edge_server_exe, e, port
-            );
+            let port_diagnostic = diagnose_process_on_port(&port);
+            let message = format!("First edge-server spawn failed at {:?}: {}. {}", edge_server_exe, e, port_diagnostic);
+            eprintln!("[EdgeServer] {}", message);
+            set_edge_server_error(message);
+            set_edge_server_diagnostics(port_diagnostic);
+            set_edge_server_state("port_conflict");
             true
         }
     };
 
     if need_retry {
-        kill_process_on_port(&port);
         thread::sleep(Duration::from_millis(400));
         match spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url) {
             Ok(mut child) => {
                 let pid = child.id();
                 attach_edge_server_logs(&mut child);
                 eprintln!(
-                    "[EdgeServer] Started edge-server after port cleanup (PID: {}) on port {}",
+                    "[EdgeServer] Started edge-server after retry (PID: {}) on port {}",
                     pid, port
                 );
                 *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
+                start_edge_health_probe(port.clone());
             }
             Err(e2) => {
                 let err = format!(
@@ -449,17 +596,31 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
                 );
                 eprintln!("[EdgeServer] {}", err);
                 set_edge_server_error(err);
+                set_edge_server_state("exited");
             }
         }
     }
 }
 
+#[tauri::command]
+fn restart_edge_server(app: tauri::AppHandle) -> Result<(), String> {
+    kill_edge_server();
+    let print_bridge_url = EDGE_PRINT_BRIDGE_URL.lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| "http://127.0.0.1:3101".to_string());
+    spawn_edge_server(&app, &print_bridge_url);
+    Ok(())
+}
+
 fn kill_edge_server() {
+    set_edge_server_ready(false);
+    set_edge_server_state("stopping");
     if let Some(mut child) = EDGE_SERVER_CHILD.lock().unwrap().take() {
         let _ = child.kill();
         let _ = child.wait();
         eprintln!("[EdgeServer] Stopped edge-server");
     }
+    set_edge_server_state("stopped");
 }
 
 /// Check if the edge server is running and report any spawn errors.
@@ -488,8 +649,11 @@ fn get_edge_server_status() -> EdgeServerStatus {
 
     let error = EDGE_SERVER_LAST_ERROR.lock().unwrap().clone();
     let diagnostics = EDGE_SERVER_DIAGNOSTICS.lock().unwrap().clone();
+    let state = EDGE_SERVER_STATE.lock().map(|guard| guard.clone()).unwrap_or_else(|_| "unknown".to_string());
     EdgeServerStatus {
         running,
+        ready: EDGE_SERVER_READY.load(Ordering::Relaxed),
+        state,
         error,
         diagnostics,
         app_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -497,15 +661,18 @@ fn get_edge_server_status() -> EdgeServerStatus {
 }
 
 /// List all installed Windows printers.
+/// Returns an error if enumeration fails (e.g. spooler service down),
+/// so the UI can distinguish "no printers installed" from "detection failed".
 #[tauri::command]
-fn list_printers() -> Vec<PrinterInfo> {
+fn list_printers() -> Result<Vec<PrinterInfo>, String> {
     #[cfg(windows)]
     {
-        windows_printing::enumerate_printers().unwrap_or_default()
+        windows_printing::enumerate_printers()
+            .map_err(|e| format!("Printer enumeration failed: {}", e))
     }
     #[cfg(not(windows))]
     {
-        vec![]
+        Ok(vec![])
     }
 }
 
@@ -539,11 +706,23 @@ fn print_network(ip: String, port: u16, bytes: Vec<u8>) -> Result<(), String> {
     )
     .map_err(|e| format!("Cannot connect to {}: {}", addr, e))?;
 
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
     stream
         .write_all(&bytes)
-        .map_err(|e| format!("Write failed: {}", e))?;
+        .map_err(|e| format!("Write failed to {}: {}", addr, e))?;
 
     Ok(())
+}
+
+/// Send a small ESC/POS test print to verify a printer is reachable.
+#[tauri::command]
+fn test_print(printer_name: String) -> Result<(), String> {
+    let test_bytes = b"\x1B\x40SoftShape Test Print\n\n\n\x1D\x56\x42\x00";
+    if let Some((ip, port)) = parse_network_printer(&printer_name) {
+        print_network(ip, port, test_bytes.to_vec())
+    } else {
+        print_raw(printer_name, test_bytes.to_vec())
+    }
 }
 
 /// Get the app version.
@@ -577,7 +756,9 @@ fn main() {
             print_network,
             get_app_version,
             check_for_updates,
-            get_edge_server_status
+            get_edge_server_status,
+            restart_edge_server,
+            test_print
         ])
         .build(tauri::generate_context!())
         .expect("error while building SoftShape Cashier");

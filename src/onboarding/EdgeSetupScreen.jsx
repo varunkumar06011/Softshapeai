@@ -30,10 +30,17 @@ import {
 // ── Poll intervals ────────────────────────────────────────────────────────────
 const EDGE_START_POLL_MS = 2000;
 const STATUS_POLL_MS = 2000;
-const EDGE_START_TIMEOUT_MS = 30_000;
+const EDGE_START_TIMEOUT_MS = 40_000;
 
 function isRunningInsideDesktopApp() {
   return typeof window !== 'undefined' && !!(window.__TAURI__ || window.__TAURI_INTERNALS__);
+}
+
+function getTauriInvoke() {
+  return window.__TAURI__?.core?.invoke
+    || window.__TAURI__?.invoke
+    || window.__TAURI_INTERNALS__?.invoke
+    || null;
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -72,6 +79,7 @@ export default function EdgeSetupScreen() {
   // ── General ─────────────────────────────────────────────────────────────────
   const [error, setError] = useState(null);
   const [edgeDiagnostics, setEdgeDiagnostics] = useState(null);
+  const [edgeStatus, setEdgeStatus] = useState(null);
   const [diagCopied, setDiagCopied] = useState(false);
   const [startErrorCount, setStartErrorCount] = useState(0);
   const pollRef = useRef(null);
@@ -123,11 +131,11 @@ export default function EdgeSetupScreen() {
     const fetchEdgeDiagnostics = async () => {
       if (!(window.__TAURI__ || window.__TAURI_INTERNALS__)) return null;
       try {
-        const invoke = window.__TAURI__?.core?.invoke
-          || window.__TAURI_INTERNALS__?.invoke;
+        const invoke = getTauriInvoke();
         if (!invoke) return null;
         const status = await invoke('get_edge_server_status');
         if (!status) return null;
+        setEdgeStatus(status);
         const parts = [
           `app_version=${status.app_version || 'unknown'}`,
           `running=${!!status.running}`,
@@ -180,11 +188,29 @@ export default function EdgeSetupScreen() {
           );
           return;
         }
+        if (diag && /legacy_standalone_detected/i.test(diag)) {
+          setError(
+            'A legacy standalone edge-server.exe is already running on port 3100. ' +
+            'Close it from Task Manager (look for edge-server.exe), then click Retry. ' +
+            'The app will not automatically kill foreign processes.'
+          );
+          return;
+        }
+        const state = edgeStatus?.state;
+        const stateMessage = state === 'binary_missing'
+          ? 'The bundled edge-server.exe is missing. Reinstall the packaged Cashier build.'
+          : state === 'port_conflict'
+            ? 'Port 3100 is already owned by another process. Close the identified legacy standalone edge-server or other conflicting application.'
+            : state === 'health_timeout'
+              ? 'The edge process is running but /health is not responding. The process may be blocked or the database may be unavailable.'
+              : state === 'database_error'
+                ? 'The local edge database could not start. Check database permissions or recovery diagnostics.'
+                : state === 'exited'
+                  ? 'The edge server process exited unexpectedly. Use Retry to restart it.'
+                  : 'The edge server did not become ready within 40 seconds.';
         setError(
           inDesktop
-            ? 'Edge server did not start within 30 seconds. ' +
-              'Make sure no other application is using port 3100 (e.g. the old Print Agent). ' +
-              'Close this page, restart the SoftShape Cashier app, and try again.'
+            ? `${stateMessage} Use Retry to restart the managed service, or copy diagnostic info for support.`
             : 'Edge server not found. This page must be opened inside the SoftShape Cashier desktop app. ' +
               'If the app is already running, close this browser tab and use the Cashier app window instead.'
         );
@@ -338,6 +364,19 @@ export default function EdgeSetupScreen() {
   // ── Skip to offline onboarding (Path B) ─────────────────────────────────────
   const handleSkipToOffline = () => navigate('/onboarding');
 
+  const handleEdgeRetry = async () => {
+    const invoke = getTauriInvoke();
+    try {
+      if (invoke) await invoke('restart_edge_server');
+    } catch (err) {
+      setError(`Failed to restart edge server: ${err?.message || String(err)}`);
+      return;
+    }
+    setEdgeStatus(null);
+    setEdgeDiagnostics(null);
+    setStartErrorCount(c => c + 1);
+  };
+
   // ── Retry config sync ───────────────────────────────────────────────────────
   const handleRetrySync = () => {
     setConfigError(null);
@@ -434,7 +473,7 @@ export default function EdgeSetupScreen() {
                   <p className="mb-3">{error}</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => setStartErrorCount(c => c + 1)}
+                      onClick={handleEdgeRetry}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-bold text-red-800 transition-colors"
                     >
                       <RefreshCw size={12} /> Retry

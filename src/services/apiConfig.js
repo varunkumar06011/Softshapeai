@@ -99,6 +99,13 @@ export async function apiFetch(path, options = {}) {
         throw new Error('Authentication required');
       }
 
+      // Edge server local tokens (offline PIN login) are not cloud JWTs.
+      // A 401 from the cloud is expected — don't wipe the session or redirect.
+      // Just surface the error so the caller can fall back to edge/offline.
+      if (token.startsWith('edge-local-')) {
+        throw new Error('Cloud session unavailable — using offline mode');
+      }
+
       // If a newer token was stored since this request started (e.g. user
       // just logged in), retry with the new token instead of wiping session.
       const currentToken = localStorage.getItem('ss_token');

@@ -68,7 +68,10 @@ const QuickOnboarding = () => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [tableCount, setTableCount] = useState(10);
   const [printers, setPrinters] = useState([]);
+  const [printerError, setPrinterError] = useState(null);
   const [printerMapping, setPrinterMapping] = useState({ kitchen: null, bill: null, bar: null });
+  const [testingPrinter, setTestingPrinter] = useState(null);
+  const [testResult, setTestResult] = useState({});
 
   const canProceed = useCallback(() => {
     if (step === 0) return restaurantName.trim() && ownerName.trim() && ownerPin.length >= 4;
@@ -90,19 +93,51 @@ const QuickOnboarding = () => {
     if (step > 0) setStep(step - 1);
   }, [step]);
 
-  const detectPrinters = useCallback(async () => {
-    // Tauri desktop: use list_printers command
-    if (window.__TAURI__ || window.__TAURI_INTERNALS__) {
-      try {
-        const result = await window.__TAURI__.core.invoke('list_printers');
-        if (Array.isArray(result)) {
-          setPrinters(result.map(p => typeof p === 'string' ? p : p.name));
-        }
-      } catch (err) {
-        console.warn('[Onboarding] Printer detection failed:', err);
-      }
-    }
+  const getTauriInvoke = useCallback(() => {
+    return window.__TAURI__?.core?.invoke
+      || window.__TAURI__?.invoke
+      || window.__TAURI_INTERNALS__?.invoke
+      || null;
   }, []);
+
+  const detectPrinters = useCallback(async () => {
+    const invoke = getTauriInvoke();
+    if (!invoke) {
+      setPrinterError('Printer detection is available on the desktop app only.');
+      return;
+    }
+    setPrinterError(null);
+    try {
+      const result = await invoke('list_printers');
+      if (Array.isArray(result)) {
+        setPrinters(result.map(p => typeof p === 'string' ? p : p.name));
+        if (result.length === 0) {
+          setPrinterError('No printers found. Install or connect a printer and click Detect again.');
+        }
+      }
+    } catch (err) {
+      const msg = err?.message || String(err);
+      setPrinterError(`Printer detection failed: ${msg}`);
+      setPrinters([]);
+    }
+  }, [getTauriInvoke]);
+
+  const handleTestPrint = useCallback(async (role) => {
+    const invoke = getTauriInvoke();
+    if (!invoke) return;
+    const printerName = printerMapping[role];
+    if (!printerName) return;
+    setTestingPrinter(role);
+    setTestResult(prev => ({ ...prev, [role]: null }));
+    try {
+      await invoke('test_print', { printerName });
+      setTestResult(prev => ({ ...prev, [role]: 'ok' }));
+    } catch (err) {
+      setTestResult(prev => ({ ...prev, [role]: err?.message || String(err) }));
+    } finally {
+      setTestingPrinter(null);
+    }
+  }, [printerMapping, getTauriInvoke]);
 
   const handleSubmit = useCallback(async () => {
     setSubmitting(true);
@@ -334,11 +369,29 @@ const QuickOnboarding = () => {
                 >
                   Detect Printers
                 </button>
+                {printerError && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                    {printerError}
+                  </div>
+                )}
                 {printers.length > 0 ? (
                   <div className="space-y-3">
                     {['kitchen', 'bill', 'bar'].map(role => (
                       <div key={role}>
-                        <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">{role} Printer</label>
+                        <div className="flex items-center gap-2 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 capitalize">{role} Printer</label>
+                          {printerMapping[role] && (
+                            <button
+                              onClick={() => handleTestPrint(role)}
+                              disabled={testingPrinter === role}
+                              className="text-xs px-2 py-0.5 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 disabled:opacity-50"
+                            >
+                              {testingPrinter === role ? 'Printing…' : 'Test Print'}
+                            </button>
+                          )}
+                          {testResult[role] === 'ok' && <span className="text-xs text-green-600">✓ Sent</span>}
+                          {testResult[role] && testResult[role] !== 'ok' && <span className="text-xs text-red-600">✗ {testResult[role]}</span>}
+                        </div>
                         <select
                           value={printerMapping[role] || ''}
                           onChange={e => setPrinterMapping({ ...printerMapping, [role]: e.target.value || null })}
@@ -352,7 +405,7 @@ const QuickOnboarding = () => {
                   </div>
                 ) : (
                   <div className="text-sm text-gray-400 py-8 text-center">
-                    {window.__TAURI__ ? 'Click "Detect Printers" to scan for connected printers' : 'Printer detection is available on the desktop app. You can configure printers later from Settings.'}
+                    {(window.__TAURI__ || window.__TAURI_INTERNALS__) ? 'Click "Detect Printers" to scan for connected printers' : 'Printer detection is available on the desktop app. You can configure printers later from Settings.'}
                   </div>
                 )}
               </motion.div>
