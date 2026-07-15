@@ -161,12 +161,12 @@ fn handle_print_bridge_connection(mut stream: TcpStream) {
 }
 
 fn start_print_bridge() -> (Arc<AtomicBool>, String) {
-    let port = std::env::var("PRINT_BRIDGE_PORT").unwrap_or_else(|_| "3101".to_string());
+    let port = std::env::var("PRINT_BRIDGE_PORT").unwrap_or_else(|_| "3102".to_string());
     let url = format!("http://127.0.0.1:{}", port);
     let stop = Arc::new(AtomicBool::new(false));
     let stop_for_thread = Arc::clone(&stop);
 
-    let listener = match TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3101))) {
+    let listener = match TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3102))) {
         Ok(listener) => listener,
         Err(error) => {
             eprintln!("[PrintBridge] Failed to bind {}: {}", url, error);
@@ -666,7 +666,7 @@ fn restart_edge_server(app: tauri::AppHandle) -> Result<(), String> {
     kill_edge_server();
     let print_bridge_url = EDGE_PRINT_BRIDGE_URL.lock()
         .map(|guard| guard.clone())
-        .unwrap_or_else(|_| "http://127.0.0.1:3101".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:3102".to_string());
     spawn_edge_server(&app, &print_bridge_url);
     Ok(())
 }
