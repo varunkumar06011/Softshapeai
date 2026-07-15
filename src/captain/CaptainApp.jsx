@@ -3336,7 +3336,7 @@ export default function CaptainApp({ onLogout }) {
 
                 src="/logo softshape.ai.png"
 
-                alt="Softshape.ai"
+                alt="Softshape"
 
                 className="h-16 w-auto object-contain"
 
@@ -3649,7 +3649,7 @@ export default function CaptainApp({ onLogout }) {
 
               src="/logo softshape.ai.png"
 
-              alt="Softshape.ai"
+              alt="Softshape"
 
               className="h-12 sm:h-16 w-auto object-contain shrink-0"
 

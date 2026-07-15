@@ -479,20 +479,20 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
           <div className="flex flex-col items-center mt-10">
             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4">Scan to log in</p>
             <QRCodeSVG
-              value={`https://softshape.ai/cashier?code=${encodeURIComponent(restaurant.restaurantCode || '')}`}
+              value={`https://softshape.in/cashier?code=${encodeURIComponent(restaurant.restaurantCode || '')}`}
               size={160}
               level="M"
               includeMargin={true}
             />
             <p className="text-[10px] text-gray-400 mt-3 font-bold">
-              https://softshape.ai/cashier?code={restaurant.restaurantCode}
+              https://softshape.in/cashier?code={restaurant.restaurantCode}
             </p>
           </div>
 
           {/* Footer */}
           <div className="mt-12 pt-4 border-t border-gray-200 text-center">
             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-              Powered by Softshape.ai
+              Powered by Softshape
             </p>
           </div>
         </div>

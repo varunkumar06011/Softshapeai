@@ -522,7 +522,7 @@ export default function EdgeSetupScreen() {
                         type="url"
                         value={backendUrl}
                         onChange={e => { setBackendUrl(e.target.value); setRegisterError(null); }}
-                        placeholder="https://api.softshape.ai"
+                        placeholder="https://api.softshape.in"
                         className="w-full h-12 px-4 rounded-xl border-2 border-gray-100 bg-gray-50 text-sm font-medium outline-none focus:border-rose-400 focus:bg-white transition-all"
                       />
                       <p className="text-[11px] text-gray-400 mt-1">The cloud server URL where your restaurant was onboarded</p>

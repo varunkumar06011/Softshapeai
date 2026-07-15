@@ -56,7 +56,7 @@ const PortalSelection = ({ onSelect }) => {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-white font-['Inter',sans-serif]">
+    <div className="min-h-screen flex flex-col bg-white">
       {/* ── Dark Hero Section ── */}
       <section className="relative overflow-hidden bg-[#0B0F19]">
         {/* Subtle grid pattern */}
@@ -72,7 +72,7 @@ const PortalSelection = ({ onSelect }) => {
         <nav className="relative z-20 mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-16">
           <img
             src="/logo softshape.ai.png"
-            alt="Softshape.ai"
+            alt="Softshape"
             className="h-12 w-auto rounded-lg shadow-lg shadow-black/20"
           />
           <Link
@@ -85,9 +85,9 @@ const PortalSelection = ({ onSelect }) => {
         </nav>
 
         {/* Hero content */}
-        <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 px-6 pb-24 pt-10 lg:grid-cols-2 lg:px-16 lg:pb-32 lg:pt-16">
+        <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 px-6 pb-24 pt-12 lg:grid-cols-2 lg:px-16 lg:pb-32 lg:pt-20">
           <div className="max-w-xl">
-            <h1 className="text-[2.5rem] font-bold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">
+            <h1 className="text-balance text-[2.5rem] font-bold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">
               Run your restaurant{' '}
               <span className="text-[#E53935]">smarter</span>, faster, and more profitably.
             </h1>
@@ -158,11 +158,11 @@ const PortalSelection = ({ onSelect }) => {
       </section>
 
       {/* ── Portals Section ── */}
-      <section className="relative z-10 bg-white px-6 py-20 lg:px-16">
-        <div className="mx-auto max-w-6xl">
+      <section className="relative z-10 bg-white px-6 py-24 lg:px-16">
+        <div className="mx-auto max-w-7xl">
           <div className="mb-12 text-center">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E53935]">Choose Your Portal</p>
-            <h2 className="mt-3 text-3xl font-bold text-gray-900 sm:text-4xl">
+            <h2 className="mt-3 text-balance text-3xl font-bold text-gray-900 sm:text-4xl">
               Built for every role in your restaurant
             </h2>
           </div>
@@ -174,7 +174,7 @@ const PortalSelection = ({ onSelect }) => {
                 <button
                   key={portal.id}
                   onClick={() => onSelect(portal.id)}
-                  className="group flex flex-col items-start rounded-xl border border-gray-100 bg-white p-6 text-left shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-gray-200 hover:shadow-lg"
+                  className="group flex h-full flex-col items-start rounded-xl border border-gray-100 bg-white p-6 text-left shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-gray-200 hover:shadow-lg"
                 >
                   <div
                     className="mb-4 rounded-lg p-3 text-white transition-transform duration-200 group-hover:scale-105"
@@ -183,8 +183,8 @@ const PortalSelection = ({ onSelect }) => {
                     <Icon size={24} strokeWidth={2} />
                   </div>
                   <h3 className="text-lg font-bold text-gray-900">{portal.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-gray-500">{portal.description}</p>
-                  <span className="mt-auto pt-5 inline-flex items-center gap-1 text-sm font-semibold text-[#E53935]">
+                  <p className="mt-2 flex-grow text-sm leading-relaxed text-gray-500">{portal.description}</p>
+                  <span className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-[#E53935]">
                     Open Portal <ArrowRight size={14} />
                   </span>
                 </button>
@@ -197,15 +197,15 @@ const PortalSelection = ({ onSelect }) => {
       {/* ── Why Clients Love Us ── */}
       <section className="relative overflow-hidden bg-[#0B0F19] px-6 py-24 lg:px-16">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-16 text-center">
+          <div className="mb-14 text-center">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E53935]">Why Our Clients Love Us</p>
-            <h2 className="mt-3 text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
+            <h2 className="mt-3 text-balance text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
               Simplicity meets excellence
             </h2>
-            <p className="mt-2 text-lg font-medium text-gray-400">
+            <p className="mt-2 text-balance text-lg font-medium text-gray-400">
               Our products excel in every aspect
             </p>
-            <p className="mx-auto mt-4 max-w-2xl text-gray-500">
+            <p className="mx-auto mt-4 max-w-2xl text-balance text-gray-500">
               We design our products to be the best in every way, so you get the most out of them.
             </p>
           </div>
@@ -233,7 +233,7 @@ const PortalSelection = ({ onSelect }) => {
 
       {/* ── Contact Us ── */}
       <section className="bg-white px-6 py-24 lg:px-16">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 lg:grid-cols-2">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 items-start gap-16 lg:grid-cols-2">
           {/* Left: Image */}
           <div className="flex justify-center lg:justify-start">
             <div className="relative w-full max-w-lg overflow-hidden rounded-2xl shadow-xl">
@@ -248,8 +248,8 @@ const PortalSelection = ({ onSelect }) => {
           {/* Right: Form + Details */}
           <div className="max-w-md lg:max-w-none">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E53935]">Get in Touch</p>
-            <h2 className="mt-3 text-3xl font-bold text-gray-900 sm:text-4xl">Contact Us</h2>
-            <p className="mt-3 text-gray-500">
+            <h2 className="mt-3 text-balance text-3xl font-bold text-gray-900 sm:text-4xl">Contact Us</h2>
+            <p className="mt-3 text-balance text-gray-500">
               Have questions? Fill out the form and our team will reach out to you on WhatsApp.
             </p>
 
@@ -341,7 +341,7 @@ const PortalSelection = ({ onSelect }) => {
           <div className="flex items-center gap-3">
             <img
               src="/logo softshape.ai.png"
-              alt="Softshape.ai"
+              alt="Softshape"
               className="h-7 w-auto rounded"
             />
             <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-gray-500">Powered by Vtech</p>

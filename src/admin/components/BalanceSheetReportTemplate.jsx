@@ -136,12 +136,11 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-xl" style={{ background: '#E63946' }}>
-            <img src={logoSrc} alt="softshape.ai" className="h-8 w-8 object-contain" />
+            <img src={logoSrc} alt="Softshape" className="h-8 w-8 object-contain" />
           </div>
           <div>
             <div className="text-xl font-black">
-              <span style={{ color: '#0F172A' }}>softshape</span>
-              <span style={{ color: '#E63946' }}>.ai</span>
+              <span style={{ color: '#0F172A' }}>Softshape</span>
             </div>
             <div className="text-[9px] font-bold tracking-widest" style={{ color: '#9CA3AF' }}>
               THE AI OPERATING SYSTEM FOR RESTAURANTS

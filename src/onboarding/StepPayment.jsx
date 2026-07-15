@@ -148,7 +148,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
     key: paymentConfig.keyId,
     amount: amount * 100,
     currency: 'INR',
-    name: 'Softshape.ai',
+    name: 'Softshape',
     description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan — Monthly`,
     order_id: gatewayOrderId,
     handler: async (response) => {

@@ -67,7 +67,7 @@ const ForgotPasswordPage = () => {
           <div className="flex flex-col items-center justify-center mb-6">
             <img
               src="/logo softshape.ai.png"
-              alt="Softshape.ai"
+              alt="Softshape"
               className="h-20 w-auto object-contain"
             />
           </div>

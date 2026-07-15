@@ -4978,7 +4978,7 @@ const CashierDashboard = ({ onLogout }) => {
           <div className="bg-white p-1.5 lg:p-3 rounded-2xl lg:rounded-[24px] shadow-lg lg:shadow-xl border border-gray-50 aspect-square w-14 lg:w-32 flex items-center justify-center">
             <img
               src="/logo softshape.ai.png"
-              alt="Softshape.ai"
+              alt="Softshape"
               className="w-full h-full object-contain"
             />
           </div>

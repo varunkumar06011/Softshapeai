@@ -242,7 +242,7 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
             </div>
             <p className="text-sm text-gray-500">Our team will reach out to discuss custom pricing for your needs.</p>
             <a
-              href="mailto:hello@softshape.ai?subject=Enterprise Plan Inquiry"
+              href="mailto:softshapeai@gmail.com?subject=Enterprise Plan Inquiry"
               className="block w-full py-3 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold text-center transition-all"
             >
               Request a Call Back

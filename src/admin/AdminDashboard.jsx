@@ -484,7 +484,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
             <div className="bg-white p-4 rounded-[32px] shadow-2xl border border-white/10 aspect-square w-40 flex items-center justify-center">
               <img
                 src="/logo softshape.ai.png"
-                alt="Softshape.ai"
+                alt="Softshape"
                 className="w-full h-full object-contain"
               />
             </div>

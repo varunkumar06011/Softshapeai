@@ -323,7 +323,7 @@ export default function CustomerMenu({ slug, tableId, sig, representativeId, isM
             Please ask your server for assistance.
           </p>
           <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#B71C1C]/30">
-            Powered by softshape.ai
+            Powered by Softshape
           </p>
         </div>
       </div>

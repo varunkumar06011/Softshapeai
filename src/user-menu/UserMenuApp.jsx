@@ -98,7 +98,7 @@ export default function UserMenuApp() {
             Please ask your server for assistance.
           </p>
           <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#B71C1C]/30">
-            Powered by softshape.ai
+            Powered by Softshape
           </p>
         </div>
       </div>
@@ -141,7 +141,7 @@ export default function UserMenuApp() {
         >
           <img
             src="/logo softshape.ai.png"
-            alt="softshape.ai"
+            alt="Softshape"
             className="h-28 sm:h-44 md:h-52 w-auto object-contain mx-auto"
           />
           <h1 className="text-base sm:text-xl font-black text-gray-500 uppercase tracking-[0.2em] mt-2">
@@ -208,7 +208,7 @@ export default function UserMenuApp() {
 
         <footer className="mt-16 flex flex-col items-center gap-4 z-10">
           <p className="text-[11px] font-black uppercase tracking-[0.5em] text-[#B71C1C]/40 drop-shadow-sm">
-            Powered by softshape.ai
+            Powered by Softshape
           </p>
         </footer>
       </div>

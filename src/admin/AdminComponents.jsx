@@ -1,8 +1,8 @@
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
-// AdminComponents â€” Large shared component library for admin dashboard modules
+// AdminComponents — Large shared component library for admin dashboard modules
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Contains the majority of admin UI components including:
 
@@ -20,7 +20,7 @@
 
 //   - AI Tools panel (dish creation, creative engine, pricing engine)
 
-//   - Marketing panel (campaigns, promotions â€” TODO WIP)
+//   - Marketing panel (campaigns, promotions — TODO WIP)
 
 //   - Surveillance dashboard integration
 
@@ -32,7 +32,7 @@
 
 // component library imported by AdminDashboard.jsx.
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
 
 
@@ -220,7 +220,7 @@ function getLiquorMlPerUnit(itemName, bottleSize) {
 
   if (itemName.endsWith('30ml')) return BAR_UNIT_ML;
 
-  // Bottle items (Beer, Soft drinks) â€” use stored bottleSize
+  // Bottle items (Beer, Soft drinks) — use stored bottleSize
 
   return bottleSize || FULL_BOTTLE_ML;
 
@@ -287,13 +287,13 @@ function Popup({ message, type = 'info', onClose }) {
 
   const icons = {
 
-    success: 'âœ“',
+    success: '✓',
 
-    error: 'âœ•',
+    error: '✕',
 
-    warning: 'âš ',
+    warning: '⚠',
 
-    info: 'â„¹'
+    info: 'ℹ'
 
   };
 
@@ -377,7 +377,7 @@ function Popup({ message, type = 'info', onClose }) {
 
           >
 
-            Ã—
+            ×
 
           </button>
 
@@ -463,7 +463,7 @@ const card = cardBase + " bg-white";
 
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
-// â”€â”€ Shared helpers (module-level so all components can use them) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Shared helpers (module-level so all components can use them) ──────────
 
 const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
   const base64Data = base64DataUri.includes(',') ? base64DataUri.split(',')[1] : base64DataUri;
@@ -726,11 +726,11 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       {[
 
-        { label: "Total Sales", value: `â‚¹${(totalSales ?? 0).toLocaleString()}`, sub: "With GST, after discount", color: "text-[#2E7D32]" },
+        { label: "Total Sales", value: `₹${(totalSales ?? 0).toLocaleString()}`, sub: "With GST, after discount", color: "text-[#2E7D32]" },
 
-        { label: "Net Sales", value: `â‚¹${(netSales ?? 0).toLocaleString()}`, sub: "Excl. GST, after discount", color: "text-[#1565C0]" },
+        { label: "Net Sales", value: `₹${(netSales ?? 0).toLocaleString()}`, sub: "Excl. GST, after discount", color: "text-[#1565C0]" },
 
-        { label: "Discount", value: `â‚¹${(totalDiscount ?? 0).toLocaleString()}`, sub: `${ordersCount || 0} txns`, color: "text-[#C62828]" },
+        { label: "Discount", value: `₹${(totalDiscount ?? 0).toLocaleString()}`, sub: `${ordersCount || 0} txns`, color: "text-[#C62828]" },
 
         { label: "Tables Occupied", value: `${occupiedCount}/${totalTables}`, sub: "active", color: "text-[#1A1A1A]" },
 
@@ -1205,7 +1205,7 @@ export function Pos() {
 
                 <p className="font-bold text-sm md:text-base text-[#1A1A1A] line-clamp-1 group-hover:text-[#E53935]">{x.n}</p>
 
-                <p className="text-sm font-semibold text-[#6B6B6B] mt-0.5 whitespace-nowrap">â‚¹{x.p}</p>
+                <p className="text-sm font-semibold text-[#6B6B6B] mt-0.5 whitespace-nowrap">₹{x.p}</p>
 
               </div>
 
@@ -1259,15 +1259,15 @@ export function Pos() {
 
                     <span className="font-medium">{item.n}</span>
 
-                    <span className="text-[10px] text-[#6B6B6B]">â‚¹{item.p} x {item.q}</span>
+                    <span className="text-[10px] text-[#6B6B6B]">₹{item.p} x {item.q}</span>
 
                   </div>
 
                   <div className="flex items-center gap-3">
 
-                    <span className="font-bold">â‚¹{item.p * item.q}</span>
+                    <span className="font-bold">₹{item.p * item.q}</span>
 
-                    <button onClick={(e) => { e.stopPropagation(); removeFromCart(item.n); }} className="text-[#E53935] opacity-0 group-hover:opacity-100 transition-opacity">âœ•</button>
+                    <button onClick={(e) => { e.stopPropagation(); removeFromCart(item.n); }} className="text-[#E53935] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
 
                   </div>
 
@@ -1281,11 +1281,11 @@ export function Pos() {
 
           <div className="mt-4 border-t border-[#FFCDD2] pt-3 space-y-1">
 
-            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>â‚¹{subtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
 
-            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST ({(() => { const c = getRestaurantConfig(); const isAc = String(c.gstCategory).toUpperCase() === 'AC'; const r = c.gstRegistered === false ? 0 : (c.gstRate ?? (isAc ? 18 : 5)); return r; })()}%)</span><span>â‚¹{gst.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs text-[#6B6B6B]"><span>GST ({(() => { const c = getRestaurantConfig(); const isAc = String(c.gstCategory).toUpperCase() === 'AC'; const r = c.gstRegistered === false ? 0 : (c.gstRate ?? (isAc ? 18 : 5)); return r; })()}%)</span><span>₹{gst.toFixed(2)}</span></div>
 
-            <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>â‚¹{total.toFixed(2)}</span></div>
+            <div className="flex justify-between text-base font-black text-[#1A1A1A] pt-1"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
 
           </div>
 
@@ -1457,7 +1457,7 @@ export function Tables({ onOpen }) {
 
       <h3 className="font-semibold">
 
-        {selectedSection ? `Floor Plan â€” ${selectedSection.venueName} â€” ${selectedSection.name}` : 'Floor Plan'}
+        {selectedSection ? `Floor Plan — ${selectedSection.venueName} — ${selectedSection.name}` : 'Floor Plan'}
 
       </h3>
 
@@ -1477,7 +1477,7 @@ export function Tables({ onOpen }) {
 
           {allSections.map(s => (
 
-            <option key={s.id} value={s.id}>{s.venueName} â€” {s.name}</option>
+            <option key={s.id} value={s.id}>{s.venueName} — {s.name}</option>
 
           ))}
 
@@ -1545,7 +1545,7 @@ export function Tables({ onOpen }) {
 
         if (!isFree && !isReserved) {
 
-           details = `${t.guests || 0} guests â€” â‚¹${t.currentBill || 0}`;
+           details = `${t.guests || 0} guests — ₹${t.currentBill || 0}`;
 
         } else if (isReserved) {
 
@@ -1555,7 +1555,7 @@ export function Tables({ onOpen }) {
 
         
 
-        const label = isFree ? "Available" : isReserved ? `Reserved â€” ${details}` : `${t.status} â€” ${details}`;
+        const label = isFree ? "Available" : isReserved ? `Reserved — ${details}` : `${t.status} — ${details}`;
 
         
 
@@ -1643,7 +1643,7 @@ export function Tables({ onOpen }) {
 
                    </div>
 
-                   <span className="text-sm font-black">â‚¹{t.currentBill || 0}</span>
+                   <span className="text-sm font-black">₹{t.currentBill || 0}</span>
 
                  </div>
 
@@ -1824,7 +1824,7 @@ export function Tables({ onOpen }) {
 
                    </div>
 
-                   <span className="text-2xl font-black text-[#E53935] tracking-tight">â‚¹{pTable.currentBill || 0}</span>
+                   <span className="text-2xl font-black text-[#E53935] tracking-tight">₹{pTable.currentBill || 0}</span>
 
                 </div>
 
@@ -1878,7 +1878,7 @@ export function MenuPage({ onAddDish }) {
   // Build a deduplicated list of all known printers from:
   // 1. Manually configured printers (admin settings)
   // 2. Live printers from print agent on cashier desktop (prioritized)
-  // 3. Live agent mapping values (kitchen/bar/bill â†’ printer name)
+  // 3. Live agent mapping values (kitchen/bar/bill → printer name)
   // 4. Cached availablePrinters from restaurant object
   const allPrinterOptions = useMemo(() => {
     const map = new Map();
@@ -1886,14 +1886,14 @@ export function MenuPage({ onAddDish }) {
     configuredPrinters.forEach(p => {
       if (p.name) map.set(p.name, { name: p.name, type: p.type || '', source: 'configured' });
     });
-    // Live agent printers (highest priority â€” these are what's actually connected)
+    // Live agent printers (highest priority — these are what's actually connected)
     const liveAgentPrinters = liveAgentData?.availablePrinters || [];
     liveAgentPrinters.forEach(name => {
       if (typeof name === 'string') {
         map.set(name, { name, type: '', source: 'agent-live' });
       }
     });
-    // Live agent mapping values â€” the actual printer names assigned to kitchen/bar/bill
+    // Live agent mapping values — the actual printer names assigned to kitchen/bar/bill
     const liveMapping = liveAgentData?.agentMapping || {};
     Object.values(liveMapping).forEach(name => {
       if (typeof name === 'string' && name && !map.has(name)) {
@@ -1917,7 +1917,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // â”€â”€ Admin items: fetched from admin endpoint (includes unavailable) â”€â”€â”€
+  // ── Admin items: fetched from admin endpoint (includes unavailable) ───
 
   const [adminItems, setAdminItems] = useState([]);
 
@@ -1927,7 +1927,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // â”€â”€ Venue/section resolution from actual tenant venues â”€â”€
+  // ── Venue/section resolution from actual tenant venues ──
 
   const { outlets, venueColumns: currentVenueColumns } = useVenueSections(activeOutlet);
 
@@ -2118,7 +2118,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // â”€â”€ Availability toggle with optimistic update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Availability toggle with optimistic update ─────────────────────────
 
   const handleToggleAvailability = useCallback(async (item) => {
 
@@ -2195,7 +2195,7 @@ export function MenuPage({ onAddDish }) {
 
       if (!res.ok) throw new Error('Toggle failed');
 
-      // Backend confirmed â€” also refresh the shared POS menu so unavailable items disappear
+      // Backend confirmed — also refresh the shared POS menu so unavailable items disappear
 
       refreshMenu().catch(() => {});
 
@@ -2238,7 +2238,7 @@ export function MenuPage({ onAddDish }) {
     if (togglingMenuTypeId) return;
     const newType = item.menuType === 'LIQUOR' ? 'FOOD' : 'LIQUOR';
 
-    // Determine default printer for the new type â€” use agent mapping first, then fall back to type-based search
+    // Determine default printer for the new type — use agent mapping first, then fall back to type-based search
     const agentMap = liveAgentData?.agentMapping || {};
     const defaultPrinter = newType === 'LIQUOR'
       ? agentMap.bar || allPrinterOptions.find(p => (p.type === 'BAR' || p.name.toLowerCase().includes('bar')))?.name || ''
@@ -2286,7 +2286,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // â”€â”€ Dynamic categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Dynamic categories ────────────────────────────────────────────────
 
   const [dbCategories, setDbCategories] = useState([]);
 
@@ -2600,7 +2600,7 @@ export function MenuPage({ onAddDish }) {
 
   };
 
-  // â”€â”€ Auto-Generate Recipes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Auto-Generate Recipes ──────────────────────────────────────────────
 
   const handleAutoGenerateRecipes = async () => {
     setAutoGenConfirm(false);
@@ -2628,7 +2628,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // â”€â”€ confirmDelete â€” async, soft-delete via backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── confirmDelete — async, soft-delete via backend ───────────────────────
 
   const confirmDelete = async () => {
 
@@ -2683,7 +2683,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // â”€â”€ handleSaveEdit â€” async, Cloudinary upload then PATCH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── handleSaveEdit — async, Cloudinary upload then PATCH ─────────────────
 
   const handleSaveEdit = async () => {
 
@@ -2808,7 +2808,7 @@ export function MenuPage({ onAddDish }) {
 
         };
 
-        // Apply optimistic update instantly â€” no loading flash
+        // Apply optimistic update instantly — no loading flash
 
         setGlobalMenu(prev => prev.map(i => i.id === editingItem.id ? { ...i, ...optimisticItem } : i));
 
@@ -2942,7 +2942,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  // â”€â”€ handleSaveAdd â€” async, Cloudinary upload then POST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── handleSaveAdd — async, Cloudinary upload then POST ───────────────────
 
   const handleSaveAdd = async () => {
 
@@ -3063,7 +3063,7 @@ export function MenuPage({ onAddDish }) {
 
         };
 
-        // Append new item instantly â€” no loading flash
+        // Append new item instantly — no loading flash
 
         setGlobalMenu(prev => [...prev, optimisticItem]);
 
@@ -3143,7 +3143,7 @@ export function MenuPage({ onAddDish }) {
 
           )}
 
-          {adminLoading && <span className="text-xs font-normal text-gray-400"> (syncingâ€¦)</span>}
+          {adminLoading && <span className="text-xs font-normal text-gray-400"> (syncing…)</span>}
 
         </h3>
 
@@ -3251,7 +3251,7 @@ export function MenuPage({ onAddDish }) {
 
           ) : (
 
-            <span>âš¡</span>
+            <span>⚡</span>
 
           )}
 
@@ -3283,7 +3283,7 @@ export function MenuPage({ onAddDish }) {
 
     </div>
 
-    {/* â”€â”€ Auto-Generate Recipes Confirmation Dialog â”€â”€ */}
+    {/* ── Auto-Generate Recipes Confirmation Dialog ── */}
 
     {autoGenConfirm && (
 
@@ -3309,7 +3309,7 @@ export function MenuPage({ onAddDish }) {
 
             <p className="text-sm text-red-600 font-bold mt-3 leading-relaxed">
 
-              âš ï¸ This OVERWRITES any recipe you've already set up or edited for every food item. Quantities can be reviewed and adjusted afterward in each item's recipe editor.
+              ⚠️ This OVERWRITES any recipe you've already set up or edited for every food item. Quantities can be reviewed and adjusted afterward in each item's recipe editor.
 
             </p>
 
@@ -3341,7 +3341,7 @@ export function MenuPage({ onAddDish }) {
 
     )}
 
-    {/* â”€â”€ Auto-Generate Recipes Results Panel â”€â”€ */}
+    {/* ── Auto-Generate Recipes Results Panel ── */}
 
     {autoGenError && (
 
@@ -3409,7 +3409,7 @@ export function MenuPage({ onAddDish }) {
 
               <summary className="text-sm font-bold text-amber-700 cursor-pointer hover:text-amber-800">
 
-                âš  {autoGenResult.warnings.length} warning{autoGenResult.warnings.length !== 1 ? 's' : ''} (click to expand)
+                ⚠ {autoGenResult.warnings.length} warning{autoGenResult.warnings.length !== 1 ? 's' : ''} (click to expand)
 
               </summary>
 
@@ -3433,7 +3433,7 @@ export function MenuPage({ onAddDish }) {
 
     )}
 
-    {/* Outlet Selector â€” only when tenant has more than one outlet type */}
+    {/* Outlet Selector — only when tenant has more than one outlet type */}
 
     {outlets.length > 1 && (
 
@@ -3463,7 +3463,7 @@ export function MenuPage({ onAddDish }) {
 
           >
 
-            {outlet === 'bar' ? 'ðŸº Bar' : 'ðŸ½ï¸ Restaurant'}
+            {outlet === 'bar' ? '🍺 Bar' : '🍽️ Restaurant'}
 
           </button>
 
@@ -3475,7 +3475,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-    {/* Venue-specific tabs â€” only when more than one section exists */}
+    {/* Venue-specific tabs — only when more than one section exists */}
 
     {currentVenueColumns.length > 1 && (
 
@@ -3539,13 +3539,13 @@ export function MenuPage({ onAddDish }) {
 
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
 
-      {filter ? ` matching "${filter}"` : ""} Â· synced from backend
+      {filter ? ` matching "${filter}"` : ""} · synced from backend
 
     </p>
 
 
 
-    {/* â”€â”€ Category Manager â”€â”€ */}
+    {/* ── Category Manager ── */}
 
     <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden">
 
@@ -3773,7 +3773,7 @@ export function MenuPage({ onAddDish }) {
 
               <td colSpan={8} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
 
-                Syncing menu from serverâ€¦
+                Syncing menu from server…
 
               </td>
 
@@ -3823,7 +3823,7 @@ export function MenuPage({ onAddDish }) {
 
                 {Number(item.venuePrices?.[activeVenueId] || 0) > 0
 
-                  ? `â‚¹${Number(item.venuePrices?.[activeVenueId] || 0)}`
+                  ? `₹${Number(item.venuePrices?.[activeVenueId] || 0)}`
 
                   : <span className="text-gray-400 font-bold">Hidden</span>}
 
@@ -3849,7 +3849,7 @@ export function MenuPage({ onAddDish }) {
 
                 }`}>
 
-                  {item.menuType === 'LIQUOR' ? 'ðŸ¥ƒ Bar' : 'ðŸ½ Food'}
+                  {item.menuType === 'LIQUOR' ? '🥃 Bar' : '🍽 Food'}
 
                 </span>
 
@@ -3919,7 +3919,7 @@ export function MenuPage({ onAddDish }) {
 
                     >
 
-                      {togglingId === item.id ? 'â€¦' : venueAvail ? 'Disable' : 'Enable'}
+                      {togglingId === item.id ? '…' : venueAvail ? 'Disable' : 'Enable'}
 
                     </button>
 
@@ -3937,19 +3937,19 @@ export function MenuPage({ onAddDish }) {
                       : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
-                  {togglingMenuTypeId === item.id ? 'â€¦' : (
+                  {togglingMenuTypeId === item.id ? '…' : (
                     <span className="whitespace-nowrap">
                       {item.menuType === 'LIQUOR'
-                        ? `Bar â†’ Kitchen`
-                        : `Kitchen â†’ Bar`
+                        ? `Bar → Kitchen`
+                        : `Kitchen → Bar`
                       }
                     </span>
                   )}
                 </button>
 
-                <button onClick={() => handleEdit(item)} className="text-blue-600 hover:scale-110 transition-transform">âœï¸</button>
+                <button onClick={() => handleEdit(item)} className="text-blue-600 hover:scale-110 transition-transform">✏️</button>
 
-                <button onClick={() => handleDeleteClick(item)} className="text-red-600 hover:scale-110 transition-transform">ðŸ—‘ï¸</button>
+                <button onClick={() => handleDeleteClick(item)} className="text-red-600 hover:scale-110 transition-transform">🗑️</button>
 
               </td>
 
@@ -3983,7 +3983,7 @@ export function MenuPage({ onAddDish }) {
 
           <div className="p-5 space-y-4 overflow-y-auto">
 
-            {/* â”€â”€ Section 1: Basic Info â”€â”€ */}
+            {/* ── Section 1: Basic Info ── */}
 
             <details open className="group">
 
@@ -4099,7 +4099,7 @@ export function MenuPage({ onAddDish }) {
 
             </details>
 
-            {/* â”€â”€ Section 2: Pricing â”€â”€ */}
+            {/* ── Section 2: Pricing ── */}
 
             <details open className="group">
 
@@ -4115,7 +4115,7 @@ export function MenuPage({ onAddDish }) {
 
             <div>
 
-                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">{activeVenue.label} Price (â‚¹)</label>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">{activeVenue.label} Price (₹)</label>
 
                   <input type="number" value={editingItem.venuePrice} onChange={e => setEditingItem({...editingItem, venuePrice: e.target.value})} className={input + " w-full bg-gray-50"} />
 
@@ -4189,7 +4189,7 @@ export function MenuPage({ onAddDish }) {
 
             </details>
 
-            {/* â”€â”€ Section 3: Printer Settings â”€â”€ */}
+            {/* ── Section 3: Printer Settings ── */}
 
             <details className="group border-t border-gray-100 pt-3">
 
@@ -4280,7 +4280,7 @@ export function MenuPage({ onAddDish }) {
 
             </details>
 
-            {/* â”€â”€ Section 4: Recipe â”€â”€ */}
+            {/* ── Section 4: Recipe ── */}
 
             {editingItem.menuType !== 'LIQUOR' && (
 
@@ -4408,7 +4408,7 @@ export function MenuPage({ onAddDish }) {
 
             <button onClick={() => setEditingItem(null)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
 
-            <button onClick={handleSaveEdit} disabled={!editingItem.n || saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Savingâ€¦' : 'Save Changes'}</button>
+            <button onClick={handleSaveEdit} disabled={!editingItem.n || saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Saving…' : 'Save Changes'}</button>
 
           </div>
 
@@ -4438,7 +4438,7 @@ export function MenuPage({ onAddDish }) {
 
           <div className="p-5 space-y-4 overflow-y-auto min-h-0">
 
-            {/* â”€â”€ Section 1: Basic Info â”€â”€ */}
+            {/* ── Section 1: Basic Info ── */}
 
             <details open className="group">
 
@@ -4568,7 +4568,7 @@ export function MenuPage({ onAddDish }) {
 
             </details>
 
-            {/* â”€â”€ Section 2: Pricing â”€â”€ */}
+            {/* ── Section 2: Pricing ── */}
 
             <details open className="group">
 
@@ -4584,7 +4584,7 @@ export function MenuPage({ onAddDish }) {
 
             <div>
 
-                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Base Price (â‚¹)</label>
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Base Price (₹)</label>
 
                   <input type="number" placeholder="0.00" value={addingItem.p} onChange={e => setAddingItem({...addingItem, p: e.target.value})} className={input + " w-full bg-gray-50"} />
 
@@ -4658,7 +4658,7 @@ export function MenuPage({ onAddDish }) {
 
             </details>
 
-            {/* â”€â”€ Section 3: Printer Settings â”€â”€ */}
+            {/* ── Section 3: Printer Settings ── */}
 
             <details className="group border-t border-gray-100 pt-3">
 
@@ -4747,7 +4747,7 @@ export function MenuPage({ onAddDish }) {
 
             </details>
 
-            {/* â”€â”€ Section 4: Recipe â”€â”€ */}
+            {/* ── Section 4: Recipe ── */}
 
             {activeOutlet === 'restaurant' && (
 
@@ -4773,7 +4773,7 @@ export function MenuPage({ onAddDish }) {
                       }}
                       className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs"
                     >
-                      <option value="">Select ingredientâ€¦</option>
+                      <option value="">Select ingredient…</option>
                       {kitchenIngredients.map(ing => (
                         <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
                       ))}
@@ -4809,7 +4809,7 @@ export function MenuPage({ onAddDish }) {
 
             <button onClick={() => { setAddingItem(null); setRecipeRows([]); }} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
 
-            <button onClick={handleSaveAdd} disabled={!addingItem.n || !addingItem.p || saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Savingâ€¦' : 'Add Item'}</button>
+            <button onClick={handleSaveAdd} disabled={!addingItem.n || !addingItem.p || saving} className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md">{saving ? 'Saving…' : 'Add Item'}</button>
 
           </div>
 
@@ -4847,7 +4847,7 @@ export function MenuPage({ onAddDish }) {
 
             <button onClick={() => setDeletingItem(null)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
 
-            <button onClick={confirmDelete} disabled={deleteWorking} className="flex-1 py-2.5 text-sm font-black text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl shadow-md transition-colors">{deleteWorking ? 'Removingâ€¦' : 'Yes, Delete'}</button>
+            <button onClick={confirmDelete} disabled={deleteWorking} className="flex-1 py-2.5 text-sm font-black text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl shadow-md transition-colors">{deleteWorking ? 'Removing…' : 'Yes, Delete'}</button>
 
           </div>
 
@@ -4985,7 +4985,7 @@ export function Orders() {
 
         items: items.length,
 
-        amount: `â‚¹${table.currentBill || calculateOrderTotal(items).subtotal}`,
+        amount: `₹${table.currentBill || calculateOrderTotal(items).subtotal}`,
 
         status: table.status,
 
@@ -5045,9 +5045,9 @@ export function Orders() {
 
             <div className="text-xs font-semibold uppercase tracking-wide text-[#6B6B6B]">{p.platform.replace(/_/g, ' ')}</div>
 
-            <div className="mt-1 text-2xl font-bold text-[#B71C1C]">â‚¹{p.sales.toFixed(2)}</div>
+            <div className="mt-1 text-2xl font-bold text-[#B71C1C]">₹{p.sales.toFixed(2)}</div>
 
-            <div className="mt-1 text-xs text-[#6B6B6B]">{p.orders} orders Â· {p.items} items</div>
+            <div className="mt-1 text-xs text-[#6B6B6B]">{p.orders} orders · {p.items} items</div>
 
           </div>
 
@@ -5743,21 +5743,21 @@ export function Payroll() {
             <div className="flex gap-6">
               <div>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Base</p>
-                <p className="text-xl font-black text-gray-900 tracking-tighter">â‚¹{totalBaseSalary.toLocaleString()}</p>
+                <p className="text-xl font-black text-gray-900 tracking-tighter">₹{totalBaseSalary.toLocaleString()}</p>
               </div>
               <div>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Advance</p>
-                <p className="text-xl font-black text-amber-600 tracking-tighter">â‚¹{totalAdvance.toLocaleString()}</p>
+                <p className="text-xl font-black text-amber-600 tracking-tighter">₹{totalAdvance.toLocaleString()}</p>
               </div>
               <div>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable</p>
-                <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">â‚¹{totalPayable.toLocaleString()}</p>
+                <p className="text-3xl font-black text-[#B71C1C] tracking-tighter">₹{totalPayable.toLocaleString()}</p>
               </div>
             </div>
 
             {totalOutstanding > 0 && (
 
-              <p className="text-xs text-amber-600 font-bold mt-1">Outstanding: â‚¹{totalOutstanding.toLocaleString()}</p>
+              <p className="text-xs text-amber-600 font-bold mt-1">Outstanding: ₹{totalOutstanding.toLocaleString()}</p>
 
             )}
 
@@ -5908,7 +5908,7 @@ export function Payroll() {
                           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{emp.role || 'Staff'}</p>
 
                           {emp.createdVia === 'CASHIER' && (
-                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Created by cashier â€” set base salary</p>
+                            <p className="text-[10px] font-bold text-amber-600 mt-0.5">Created by cashier — set base salary</p>
                           )}
 
                           {rec?.needsReview && (
@@ -5998,12 +5998,12 @@ export function Payroll() {
                     </td>
 
                     <td className="px-4 py-4 text-right font-bold text-gray-700">
-                      â‚¹{Number(rec?.actualSalary || 0).toLocaleString()}
+                      ₹{Number(rec?.actualSalary || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-right">
                       <div className="flex flex-col items-end gap-1">
-                        <span className="font-bold text-amber-600">â‚¹{Number(rec?.totalAdvance || 0).toLocaleString()}</span>
+                        <span className="font-bold text-amber-600">₹{Number(rec?.totalAdvance || 0).toLocaleString()}</span>
                         {rec && (
                           <button
                             onClick={() => openAdvanceModal(rec)}
@@ -6016,17 +6016,17 @@ export function Payroll() {
                     </td>
 
                     <td className="px-4 py-4 text-right font-black text-gray-900">
-                      â‚¹{Number(rec?.finalSalary || 0).toLocaleString()}
+                      ₹{Number(rec?.finalSalary || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-right font-bold text-gray-600">
 
-                      â‚¹{rec ? Number(rec.paidAmount).toLocaleString() : '0'}
+                      ₹{rec ? Number(rec.paidAmount).toLocaleString() : '0'}
 
                     </td>
 
                     <td className="px-4 py-4 text-right font-bold text-[#B71C1C]">
-                      â‚¹{Number(rec?.balanceSalary || 0).toLocaleString()}
+                      ₹{Number(rec?.balanceSalary || 0).toLocaleString()}
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -6220,7 +6220,7 @@ export function Payroll() {
 
             </select>
 
-            <input type="number" placeholder="Base Salary (â‚¹)" value={newEmp.baseSalary} onChange={(e) => setNewEmp({ ...newEmp, baseSalary: e.target.value })}
+            <input type="number" placeholder="Base Salary (₹)" value={newEmp.baseSalary} onChange={(e) => setNewEmp({ ...newEmp, baseSalary: e.target.value })}
 
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
 
@@ -6256,11 +6256,11 @@ export function Payroll() {
 
             <div className="text-sm text-gray-500 space-y-1">
 
-              <p>Final Salary: <span className="font-bold text-gray-900">â‚¹{Number(payModal.finalSalary || payModal.netPayable).toLocaleString()}</span></p>
+              <p>Final Salary: <span className="font-bold text-gray-900">₹{Number(payModal.finalSalary || payModal.netPayable).toLocaleString()}</span></p>
 
-              <p>Already Paid: <span className="font-bold text-gray-700">â‚¹{Number(payModal.paidAmount).toLocaleString()}</span></p>
+              <p>Already Paid: <span className="font-bold text-gray-700">₹{Number(payModal.paidAmount).toLocaleString()}</span></p>
 
-              <p>Balance Salary: <span className="font-bold text-[#B71C1C]">â‚¹{Number(payModal.balanceSalary || 0).toLocaleString()}</span></p>
+              <p>Balance Salary: <span className="font-bold text-[#B71C1C]">₹{Number(payModal.balanceSalary || 0).toLocaleString()}</span></p>
 
             </div>
 
@@ -6292,10 +6292,10 @@ export function Payroll() {
 
           <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
 
-            <h3 className="text-lg font-black text-gray-900">Advance History â€” {advanceModal.employee?.name}</h3>
+            <h3 className="text-lg font-black text-gray-900">Advance History — {advanceModal.employee?.name}</h3>
 
             <div className="text-sm text-gray-500 space-y-1">
-              <p>Total Advance: <span className="font-bold text-amber-600">â‚¹{Number(advanceModal.totalAdvance || 0).toLocaleString()}</span></p>
+              <p>Total Advance: <span className="font-bold text-amber-600">₹{Number(advanceModal.totalAdvance || 0).toLocaleString()}</span></p>
             </div>
 
             {advanceHistory.length === 0 ? (
@@ -6305,7 +6305,7 @@ export function Payroll() {
                 {advanceHistory.map((h) => (
                   <div key={h.id} className="border border-gray-100 rounded-lg p-3 text-sm">
                     <div className="flex justify-between items-center">
-                      <span className="font-bold text-gray-900">â‚¹{Number(h.amount).toLocaleString()}</span>
+                      <span className="font-bold text-gray-900">₹{Number(h.amount).toLocaleString()}</span>
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${h.type === 'EXPENDITURE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                           {h.type === 'EXPENDITURE' ? 'Expenditure' : 'Manual'}
@@ -6324,7 +6324,7 @@ export function Payroll() {
               <p className="text-sm font-bold text-gray-900">Add Manual Advance</p>
               <input
                 type="number"
-                placeholder="Amount (â‚¹)"
+                placeholder="Amount (₹)"
                 value={advanceAmount}
                 onChange={(e) => setAdvanceAmount(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm"
@@ -6452,7 +6452,7 @@ export function Payroll() {
                   {importPreview.warnings?.length > 0 && (
                     <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs space-y-1">
                       {importPreview.warnings.map((w, i) => (
-                        <p key={i}>âš  {w}</p>
+                        <p key={i}>⚠ {w}</p>
                       ))}
                     </div>
                   )}
@@ -6521,7 +6521,7 @@ export function Payroll() {
                                 {row.action === 'create' && <span className="text-[10px] font-black text-green-600">NEW</span>}
                                 {row.action === 'update' && (
                                   <span className="text-[10px] font-black text-blue-600">
-                                    UPDATE {row.oldBaseSalary !== row.baseSalary && ` â‚¹${row.oldBaseSalary} â†’ â‚¹${row.baseSalary}`}
+                                    UPDATE {row.oldBaseSalary !== row.baseSalary && ` ₹${row.oldBaseSalary} → ₹${row.baseSalary}`}
                                   </span>
                                 )}
                                 {row.action === 'ambiguous' && <span className="text-[10px] font-black text-amber-600">AMBIGUOUS</span>}
@@ -7097,9 +7097,9 @@ export function KitchenInventory() {
 
     loadItems();
 
-    const errMsg = errors.length ? `\n\nErrors (${errors.length}):\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\nâ€¦and ${errors.length - 5} more` : ''}` : '';
+    const errMsg = errors.length ? `\n\nErrors (${errors.length}):\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n…and ${errors.length - 5} more` : ''}` : '';
 
-    alert(`Import complete!\nâœ… ${succeeded} items saved\nâ­ ${skipped} rows skipped\nâº ${alreadyExists} already existed${errMsg}`);
+    alert(`Import complete!\n✅ ${succeeded} items saved\n⏭ ${skipped} rows skipped\n⏺ ${alreadyExists} already existed${errMsg}`);
 
   };
 
@@ -7566,7 +7566,7 @@ export function KitchenInventory() {
 
           >
 
-            <Download size={14} className="rotate-180" /> {importing ? `Importing ${importProgress}â€¦` : 'Import CSV'}
+            <Download size={14} className="rotate-180" /> {importing ? `Importing ${importProgress}…` : 'Import CSV'}
 
           </button>
 
@@ -7660,7 +7660,7 @@ export function KitchenInventory() {
           <div className="flex items-center gap-3">
               <input
                 type="text"
-                placeholder="Paste Order ID hereâ€¦"
+                placeholder="Paste Order ID here…"
                 value={deductionCheckOrderId}
                 onChange={(e) => setDeductionCheckOrderId(e.target.value)}
                 className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none font-mono"
@@ -7685,7 +7685,7 @@ export function KitchenInventory() {
                 disabled={deductionCheckLoading || !deductionCheckOrderId.trim()}
                 className="px-5 py-2 bg-[#B71C1C] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#8E1414] disabled:opacity-50"
               >
-                {deductionCheckLoading ? 'Checkingâ€¦' : 'Check'}
+                {deductionCheckLoading ? 'Checking…' : 'Check'}
               </button>
             </div>
 
@@ -7697,7 +7697,7 @@ export function KitchenInventory() {
                   <>
                     <div className="flex items-center gap-4 text-xs">
                       <span className="font-bold text-gray-700">Status: <span className={deductionCheckResult.status === 'PAID' ? 'text-green-600' : 'text-amber-600'}>{deductionCheckResult.status}</span></span>
-                      <span className="font-bold text-gray-700">Inventory Deducted: <span className={deductionCheckResult.inventoryDeducted ? 'text-green-600' : 'text-red-600'}>{deductionCheckResult.inventoryDeducted ? 'Yes âœ“' : 'No âœ—'}</span></span>
+                      <span className="font-bold text-gray-700">Inventory Deducted: <span className={deductionCheckResult.inventoryDeducted ? 'text-green-600' : 'text-red-600'}>{deductionCheckResult.inventoryDeducted ? 'Yes ✓' : 'No ✗'}</span></span>
                       <span className="font-bold text-gray-700">Food Items: {deductionCheckResult.totalFoodItems}</span>
                     </div>
 
@@ -7705,7 +7705,7 @@ export function KitchenInventory() {
                       <div className="bg-red-50 border border-red-200 rounded-xl p-3">
                         <p className="text-xs font-black text-red-700 mb-1">No Recipe Set Up For:</p>
                         <p className="text-xs text-red-600">{deductionCheckResult.missingRecipes.join(', ')}</p>
-                        <p className="text-[10px] text-red-500 mt-1">Go to Menu â†’ Edit the item â†’ Set Recipe to fix this.</p>
+                        <p className="text-[10px] text-red-500 mt-1">Go to Menu → Edit the item → Set Recipe to fix this.</p>
                       </div>
                     )}
 
@@ -7713,9 +7713,9 @@ export function KitchenInventory() {
                       {deductionCheckResult.foodItems?.map((fi) => (
                         <div key={fi.menuItemId} className={`rounded-xl border p-3 ${fi.hasRecipe ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
                           <div className="flex items-center justify-between mb-1">
-                            <p className="text-xs font-black text-gray-900">{fi.name} Ã— {fi.orderedQty}</p>
+                            <p className="text-xs font-black text-gray-900">{fi.name} × {fi.orderedQty}</p>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${fi.hasRecipe ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                              {fi.hasRecipe ? 'âœ“ Recipe found' : 'âœ— No recipe'}
+                              {fi.hasRecipe ? '✓ Recipe found' : '✗ No recipe'}
                             </span>
                           </div>
                           {fi.ingredients?.length > 0 && (
@@ -7725,7 +7725,7 @@ export function KitchenInventory() {
                                   {ing.name}: -{ing.totalDeductQty.toFixed(3)} {ing.unit}
                                   {ing.deductionStatus && (
                                     <span className="ml-1 font-bold">
-                                      {ing.deductionStatus === 'SUCCESS' ? 'âœ“' : ing.deductionStatus === 'FAILED' ? 'âœ—' : 'â€”'}
+                                      {ing.deductionStatus === 'SUCCESS' ? '✓' : ing.deductionStatus === 'FAILED' ? '✗' : '—'}
                                     </span>
                                   )}
                                   {ing.deductionError && (
@@ -7970,9 +7970,9 @@ export function KitchenInventory() {
 
                 const balanceStockAmt = balanceStock != null ? balanceStock * price : null;
 
-                const fmtAmt = (val) => val == null ? 'â€”' : `â‚¹ ${Number(val).toFixed(2)}`;
+                const fmtAmt = (val) => val == null ? '—' : `₹ ${Number(val).toFixed(2)}`;
 
-                const fmtVal = (val) => val == null ? 'â€”' : String(val);
+                const fmtVal = (val) => val == null ? '—' : String(val);
 
                 return (
 
@@ -8088,7 +8088,7 @@ export function KitchenInventory() {
 
                           )}
 
-                          {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">â†© carried over</span>}
+                          {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
 
                         </div>
 
@@ -8239,7 +8239,7 @@ export function KitchenInventory() {
 
                     </td>
 
-                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `â‚¹ ${price.toFixed(2)}`)}</td>
+                    <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'price', `₹ ${price.toFixed(2)}`)}</td>
 
                     <td className="px-4 py-4 text-center font-bold text-gray-900">{renderEditCell(item, 'opening', fmtVal(opening, item.unit))}</td>
 
@@ -8307,7 +8307,7 @@ export function KitchenInventory() {
                   balanceStock: 0, balanceStockAmt: 0,
                 });
 
-                const fmtAmt = (val) => `â‚¹ ${Number(val).toFixed(2)}`;
+                const fmtAmt = (val) => `₹ ${Number(val).toFixed(2)}`;
 
                 return (
                   <tr>
@@ -8351,8 +8351,8 @@ export function KitchenInventory() {
           const consumed = hasEntry ? Number(item.todayEntry.consumedStock ?? 0) : null;
           const closingStock = hasEntry ? Number(item.todayEntry.closingStock ?? 0) : null;
           const totalStock = hasEntry ? opening + purchase : null;
-          const fmtAmt = (val) => val == null ? 'â€”' : `â‚¹${Number(val).toFixed(2)}`;
-          const fmtVal = (val) => val == null ? 'â€”' : String(val);
+          const fmtAmt = (val) => val == null ? '—' : `₹${Number(val).toFixed(2)}`;
+          const fmtVal = (val) => val == null ? '—' : String(val);
 
           return (
             <div key={item.id} className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 ${isCarryOver ? 'bg-blue-50/40' : ''}`}>
@@ -8379,8 +8379,8 @@ export function KitchenInventory() {
                       <span className="text-[10px] font-bold text-gray-400 uppercase" title="Scale">{item.unit}</span>
                     </div>
                   </div>
-                  <p className="text-sm font-bold text-gray-900 mt-0.5">â‚¹{price.toFixed(2)} <span className="text-[10px] font-medium text-gray-400">/ unit</span></p>
-                  {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">â†© carried over</span>}
+                  <p className="text-sm font-bold text-gray-900 mt-0.5">₹{price.toFixed(2)} <span className="text-[10px] font-medium text-gray-400">/ unit</span></p>
+                  {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 mt-3">
@@ -8404,7 +8404,7 @@ export function KitchenInventory() {
               <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
                 <div>
                   <p className="text-[9px] font-bold text-gray-400 uppercase">Total Value</p>
-                  <p className="text-sm font-black text-[#B71C1C]">{totalStock != null ? fmtAmt(totalStock * price) : 'â€”'}</p>
+                  <p className="text-sm font-black text-[#B71C1C]">{totalStock != null ? fmtAmt(totalStock * price) : '—'}</p>
                 </div>
                 <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-red-600 hover:text-red-500">
                   <Trash2 size={16} />
@@ -8477,7 +8477,7 @@ export function KitchenInventory() {
 
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
 
-            <input type="number" step="0.01" min="0" placeholder="Price per unit (â‚¹)" value={newItem.prize} onChange={(e) => setNewItem({ ...newItem, prize: e.target.value })}
+            <input type="number" step="0.01" min="0" placeholder="Price per unit (₹)" value={newItem.prize} onChange={(e) => setNewItem({ ...newItem, prize: e.target.value })}
 
               className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
 
@@ -8530,7 +8530,7 @@ export function KitchenInventory() {
 
               <button onClick={() => { setShowAddModal(false); setAddError(null); }} disabled={adding} className="flex-1 py-2.5 bg-gray-100 text-gray-900 rounded-xl font-bold text-sm disabled:opacity-50">Cancel</button>
 
-              <button onClick={handleAddItem} disabled={adding} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414] disabled:opacity-50 disabled:cursor-not-allowed">{adding ? 'Savingâ€¦' : 'Add'}</button>
+              <button onClick={handleAddItem} disabled={adding} className="flex-1 py-2.5 bg-[#B71C1C] text-white rounded-xl font-bold text-sm hover:bg-[#8E1414] disabled:opacity-50 disabled:cursor-not-allowed">{adding ? 'Saving…' : 'Add'}</button>
 
             </div>
 
@@ -8588,7 +8588,7 @@ export function KitchenInventory() {
 
             <div className="flex items-center justify-between">
 
-              <h3 className="text-lg font-black text-gray-900">Top 3 Selling Items â€” {fromDate}</h3>
+              <h3 className="text-lg font-black text-gray-900">Top 3 Selling Items — {fromDate}</h3>
 
               <button onClick={() => setTopSelling(null)} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
 
@@ -8646,7 +8646,7 @@ export function KitchenInventory() {
 
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
 
-            <h3 className="text-lg font-black text-gray-900">Add Stock â€” {addStockModal.name}</h3>
+            <h3 className="text-lg font-black text-gray-900">Add Stock — {addStockModal.name}</h3>
 
             <p className="text-sm text-gray-500">Current: <span className="font-bold">{addStockModal.currentStock} {addStockModal.unit}</span></p>
 
@@ -9751,9 +9751,9 @@ function SalesReport({ inventory }) {
 
       doc.text(`Total Items Sold: ${grandTotals.quantity}`, 14, 54);
 
-      doc.text(`Total Revenue: â‚¹${grandTotals.revenue.toLocaleString('en-IN')}`, 14, 59);
+      doc.text(`Total Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')}`, 14, 59);
 
-      doc.text(`Total Profit: â‚¹${grandTotals.profit.toLocaleString('en-IN')}`, 14, 64);
+      doc.text(`Total Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}`, 14, 64);
 
       const margin = grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0';
 
@@ -9807,15 +9807,15 @@ function SalesReport({ inventory }) {
 
           group.uom,
 
-          item.totalCost > 0 ? `â‚¹${(item.totalCost / item.quantity).toFixed(2)}` : 'N/A',
+          item.totalCost > 0 ? `₹${(item.totalCost / item.quantity).toFixed(2)}` : 'N/A',
 
-          `â‚¹${item.sellingPrice.toFixed(2)}`,
+          `₹${item.sellingPrice.toFixed(2)}`,
 
-          'â‚¹0',
+          '₹0',
 
-          `â‚¹${item.revenue.toLocaleString('en-IN')}`,
+          `₹${item.revenue.toLocaleString('en-IN')}`,
 
-          `â‚¹${(item.revenue - item.totalCost).toLocaleString('en-IN')}`
+          `₹${(item.revenue - item.totalCost).toLocaleString('en-IN')}`
 
         ]);
 
@@ -9843,9 +9843,9 @@ function SalesReport({ inventory }) {
 
             '',
 
-            `â‚¹${group.totalRevenue.toLocaleString('en-IN')}`,
+            `₹${group.totalRevenue.toLocaleString('en-IN')}`,
 
-            `â‚¹${group.totalProfit.toLocaleString('en-IN')}`
+            `₹${group.totalProfit.toLocaleString('en-IN')}`
 
           ]],
 
@@ -9913,9 +9913,9 @@ function SalesReport({ inventory }) {
 
       doc.text(`GRAND TOTAL: ${grandTotals.quantity} items`, 16, yPosition + 5.5);
 
-      doc.text(`Revenue: â‚¹${grandTotals.revenue.toLocaleString('en-IN')}`, 105, yPosition + 5.5);
+      doc.text(`Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')}`, 105, yPosition + 5.5);
 
-      doc.text(`Profit: â‚¹${grandTotals.profit.toLocaleString('en-IN')}`, 155, yPosition + 5.5);
+      doc.text(`Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}`, 155, yPosition + 5.5);
 
 
 
@@ -10297,9 +10297,9 @@ function SalesReport({ inventory }) {
 
       printWindow.document.write(`<div>Total Items Sold: ${grandTotals.quantity}</div>`);
 
-      printWindow.document.write(`<div>Total Revenue: â‚¹${grandTotals.revenue.toLocaleString('en-IN')}</div>`);
+      printWindow.document.write(`<div>Total Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')}</div>`);
 
-      printWindow.document.write(`<div>Total Profit: â‚¹${grandTotals.profit.toLocaleString('en-IN')}</div>`);
+      printWindow.document.write(`<div>Total Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}</div>`);
 
       const margin = grandTotals.revenue > 0 ? ((grandTotals.profit / grandTotals.revenue) * 100).toFixed(1) : '0.0';
 
@@ -10335,15 +10335,15 @@ function SalesReport({ inventory }) {
 
           printWindow.document.write(`<td>${group.uom}</td>`);
 
-          printWindow.document.write(`<td class="text-right">${item.totalCost > 0 ? 'â‚¹' + (item.totalCost / item.quantity).toFixed(2) : 'N/A'}</td>`);
+          printWindow.document.write(`<td class="text-right">${item.totalCost > 0 ? '₹' + (item.totalCost / item.quantity).toFixed(2) : 'N/A'}</td>`);
 
-          printWindow.document.write(`<td class="text-right">â‚¹${item.sellingPrice.toFixed(2)}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${item.sellingPrice.toFixed(2)}</td>`);
 
-          printWindow.document.write(`<td class="text-right">â‚¹0</td>`);
+          printWindow.document.write(`<td class="text-right">₹0</td>`);
 
-          printWindow.document.write(`<td class="text-right">â‚¹${item.revenue.toLocaleString('en-IN')}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${item.revenue.toLocaleString('en-IN')}</td>`);
 
-          printWindow.document.write(`<td class="text-right">â‚¹${(item.revenue - item.totalCost).toLocaleString('en-IN')}</td>`);
+          printWindow.document.write(`<td class="text-right">₹${(item.revenue - item.totalCost).toLocaleString('en-IN')}</td>`);
 
           printWindow.document.write('</tr>');
 
@@ -10359,9 +10359,9 @@ function SalesReport({ inventory }) {
 
         printWindow.document.write(`<td colspan="4"></td>`);
 
-        printWindow.document.write(`<td class="text-right">â‚¹${group.totalRevenue.toLocaleString('en-IN')}</td>`);
+        printWindow.document.write(`<td class="text-right">₹${group.totalRevenue.toLocaleString('en-IN')}</td>`);
 
-        printWindow.document.write(`<td class="text-right">â‚¹${group.totalProfit.toLocaleString('en-IN')}</td>`);
+        printWindow.document.write(`<td class="text-right">₹${group.totalProfit.toLocaleString('en-IN')}</td>`);
 
         printWindow.document.write('</tr>');
 
@@ -10375,7 +10375,7 @@ function SalesReport({ inventory }) {
 
       printWindow.document.write('<div class="grand-total">');
 
-      printWindow.document.write(`GRAND TOTAL: ${grandTotals.quantity} items | Revenue: â‚¹${grandTotals.revenue.toLocaleString('en-IN')} | Profit: â‚¹${grandTotals.profit.toLocaleString('en-IN')}`);
+      printWindow.document.write(`GRAND TOTAL: ${grandTotals.quantity} items | Revenue: ₹${grandTotals.revenue.toLocaleString('en-IN')} | Profit: ₹${grandTotals.profit.toLocaleString('en-IN')}`);
 
       printWindow.document.write('</div>');
 
@@ -10535,7 +10535,7 @@ function SalesReport({ inventory }) {
 
           <p className="text-3xl font-black text-green-700 mt-2">
 
-            â‚¹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            ₹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
           </p>
 
@@ -10547,7 +10547,7 @@ function SalesReport({ inventory }) {
 
           <p className="text-3xl font-black text-blue-700 mt-2">
 
-            â‚¹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            ₹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
           </p>
 
@@ -10721,27 +10721,27 @@ function SalesReport({ inventory }) {
 
                         <td className="px-4 py-3 text-sm text-right text-gray-700">
 
-                          {item.totalCost > 0 ? `â‚¹${(item.totalCost / item.quantity).toFixed(2)}` : 'N/A'}
+                          {item.totalCost > 0 ? `₹${(item.totalCost / item.quantity).toFixed(2)}` : 'N/A'}
 
                         </td>
 
                         <td className="px-4 py-3 text-sm text-right text-gray-700">
 
-                          â‚¹{item.sellingPrice.toFixed(2)}
+                          ₹{item.sellingPrice.toFixed(2)}
 
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-right text-gray-600">â‚¹0</td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-600">₹0</td>
 
                         <td className="px-4 py-3 text-sm text-right text-green-700 font-semibold">
 
-                          â‚¹{item.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          ₹{item.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                         </td>
 
                         <td className="px-4 py-3 text-sm text-right text-blue-700 font-semibold">
 
-                          â‚¹{(item.revenue - item.totalCost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          ₹{(item.revenue - item.totalCost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                         </td>
 
@@ -10767,13 +10767,13 @@ function SalesReport({ inventory }) {
 
                       <td className="px-4 py-3 text-sm text-right font-black text-green-800">
 
-                        â‚¹{group.totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        ₹{group.totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                       </td>
 
                       <td className="px-4 py-3 text-sm text-right font-black text-blue-800">
 
-                        â‚¹{group.totalProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        ₹{group.totalProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                       </td>
 
@@ -10801,13 +10801,13 @@ function SalesReport({ inventory }) {
 
                   <td className="px-4 py-4 text-sm text-right">
 
-                    â‚¹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    ₹{grandTotals.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                   </td>
 
                   <td className="px-4 py-4 text-sm text-right">
 
-                    â‚¹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    ₹{grandTotals.profit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
 
                   </td>
 
@@ -10907,7 +10907,7 @@ function LowStockReport({ inventory }) {
 
         <h3 className="font-bold text-red-800 text-lg">
 
-          {lowStockItems.length === 0 ? 'âœ… All items adequately stocked' : `âš ï¸ ${lowStockItems.length} item${lowStockItems.length !== 1 ? 's' : ''} below reorder level`}
+          {lowStockItems.length === 0 ? '✅ All items adequately stocked' : `⚠️ ${lowStockItems.length} item${lowStockItems.length !== 1 ? 's' : ''} below reorder level`}
 
         </h3>
 
@@ -10915,7 +10915,7 @@ function LowStockReport({ inventory }) {
 
           <p className="text-sm text-red-600 mt-1">
 
-            Total restock investment required: â‚¹{totalRestockValue.toLocaleString('en-IN')}
+            Total restock investment required: ₹{totalRestockValue.toLocaleString('en-IN')}
 
           </p>
 
@@ -11075,13 +11075,13 @@ function LowStockReport({ inventory }) {
 
                       <td className="px-4 py-3 text-sm text-right text-gray-700">
 
-                        â‚¹{(parseFloat(item.costPerBottle) || 0).toFixed(2)}
+                        ₹{(parseFloat(item.costPerBottle) || 0).toFixed(2)}
 
                       </td>
 
                       <td className="px-4 py-3 text-sm text-right font-bold text-green-700">
 
-                        â‚¹{restockValue.toLocaleString('en-IN')}
+                        ₹{restockValue.toLocaleString('en-IN')}
 
                       </td>
 
@@ -11105,7 +11105,7 @@ function LowStockReport({ inventory }) {
 
                   <td className="px-4 py-4 text-sm text-right text-green-800">
 
-                    â‚¹{totalRestockValue.toLocaleString('en-IN')}
+                    ₹{totalRestockValue.toLocaleString('en-IN')}
 
                   </td>
 
@@ -11123,7 +11123,7 @@ function LowStockReport({ inventory }) {
 
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
 
-          <div className="text-6xl mb-4">âœ…</div>
+          <div className="text-6xl mb-4">✅</div>
 
           <p className="text-xl font-bold text-gray-700">All items are adequately stocked</p>
 
@@ -11437,7 +11437,7 @@ function ComparisonReport({ inventory }) {
 
           <div className="text-3xl font-black text-blue-800 mt-2">
 
-            â‚¹{period1Total.toLocaleString('en-IN')}
+            ₹{period1Total.toLocaleString('en-IN')}
 
           </div>
 
@@ -11461,7 +11461,7 @@ function ComparisonReport({ inventory }) {
 
           <div className="text-3xl font-black text-green-800 mt-2">
 
-            â‚¹{period2Total.toLocaleString('en-IN')}
+            ₹{period2Total.toLocaleString('en-IN')}
 
           </div>
 
@@ -11485,13 +11485,13 @@ function ComparisonReport({ inventory }) {
 
           <div className={`text-3xl font-black mt-2 ${changePercent >= 0 ? 'text-green-800' : 'text-red-800'}`}>
 
-            {changePercent >= 0 ? 'â†‘' : 'â†“'} {Math.abs(changePercent).toFixed(1)}%
+            {changePercent >= 0 ? '↑' : '↓'} {Math.abs(changePercent).toFixed(1)}%
 
           </div>
 
           <div className={`text-sm mt-1 ${changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
 
-            {changePercent >= 0 ? `+â‚¹${(period2Total - period1Total).toLocaleString('en-IN')}` : `-â‚¹${Math.abs(period2Total - period1Total).toLocaleString('en-IN')}`}
+            {changePercent >= 0 ? `+₹${(period2Total - period1Total).toLocaleString('en-IN')}` : `-₹${Math.abs(period2Total - period1Total).toLocaleString('en-IN')}`}
 
           </div>
 
@@ -11571,11 +11571,11 @@ function ComparisonReport({ inventory }) {
 
                       <td className="px-4 py-3 text-sm text-right text-gray-700">{item.period1Qty}</td>
 
-                      <td className="px-4 py-3 text-sm text-right text-gray-700">â‚¹{item.period1Revenue.toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">₹{item.period1Revenue.toLocaleString('en-IN')}</td>
 
                       <td className="px-4 py-3 text-sm text-right text-gray-700">{item.period2Qty}</td>
 
-                      <td className="px-4 py-3 text-sm text-right text-gray-700">â‚¹{item.period2Revenue.toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">₹{item.period2Revenue.toLocaleString('en-IN')}</td>
 
                       <td className="px-4 py-3 text-sm text-right">
 
@@ -11591,7 +11591,7 @@ function ComparisonReport({ inventory }) {
 
                         <span className={`font-bold ${revenueChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
 
-                          {revenueChange >= 0 ? '+' : ''}â‚¹{Math.abs(revenueChange).toLocaleString('en-IN')} ({revenueChangePercent >= 0 ? '+' : ''}{revenueChangePercent.toFixed(1)}%)
+                          {revenueChange >= 0 ? '+' : ''}₹{Math.abs(revenueChange).toLocaleString('en-IN')} ({revenueChangePercent >= 0 ? '+' : ''}{revenueChangePercent.toFixed(1)}%)
 
                         </span>
 
@@ -11925,7 +11925,7 @@ function TopPerformersReport({ inventory }) {
 
                 <div className="text-5xl mb-3">
 
-                  {index === 0 ? 'ðŸ¥‡' : index === 1 ? 'ðŸ¥ˆ' : 'ðŸ¥‰'}
+                  {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
 
                 </div>
 
@@ -11937,7 +11937,7 @@ function TopPerformersReport({ inventory }) {
 
                 <div className="text-3xl font-black text-green-700 my-2">
 
-                  â‚¹{item.revenue.toLocaleString('en-IN')}
+                  ₹{item.revenue.toLocaleString('en-IN')}
 
                 </div>
 
@@ -12027,19 +12027,19 @@ function TopPerformersReport({ inventory }) {
 
                       <td className="px-4 py-3 text-sm text-right text-green-700 font-bold">
 
-                        â‚¹{item.revenue.toLocaleString('en-IN')}
+                        ₹{item.revenue.toLocaleString('en-IN')}
 
                       </td>
 
                       <td className="px-4 py-3 text-sm text-right text-gray-700">
 
-                        â‚¹{item.cost.toLocaleString('en-IN')}
+                        ₹{item.cost.toLocaleString('en-IN')}
 
                       </td>
 
                       <td className="px-4 py-3 text-sm text-right text-blue-700 font-bold">
 
-                        â‚¹{item.profit.toLocaleString('en-IN')}
+                        ₹{item.profit.toLocaleString('en-IN')}
 
                       </td>
 
@@ -12367,7 +12367,7 @@ function WasteReport({ inventory }) {
 
         <h3 className="font-bold text-red-800 text-lg">
 
-          ðŸ’¸ Total Waste Cost: â‚¹{totalWasteCost.toLocaleString('en-IN')}
+          💸 Total Waste Cost: ₹{totalWasteCost.toLocaleString('en-IN')}
 
         </h3>
 
@@ -12503,7 +12503,7 @@ function WasteReport({ inventory }) {
 
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
 
-          <div className="text-6xl mb-4">âœ…</div>
+          <div className="text-6xl mb-4">✅</div>
 
           <p className="text-xl font-bold text-gray-700">No waste recorded</p>
 
@@ -12589,7 +12589,7 @@ function WasteReport({ inventory }) {
 
                         <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
 
-                          â‚¹{cost.toLocaleString('en-IN')}
+                          ₹{cost.toLocaleString('en-IN')}
 
                         </td>
 
@@ -12619,7 +12619,7 @@ function WasteReport({ inventory }) {
 
                     <td className="px-4 py-4 text-sm text-right text-red-700">
 
-                      â‚¹{totalWasteCost.toLocaleString('en-IN')}
+                      ₹{totalWasteCost.toLocaleString('en-IN')}
 
                     </td>
 
@@ -12683,7 +12683,7 @@ function WasteReport({ inventory }) {
 
                       <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
 
-                        â‚¹{item.cost.toLocaleString('en-IN')}
+                        ₹{item.cost.toLocaleString('en-IN')}
 
                       </td>
 
@@ -12707,7 +12707,7 @@ function WasteReport({ inventory }) {
 
                     <td className="px-4 py-4 text-sm text-right text-red-700">
 
-                      â‚¹{totalWasteCost.toLocaleString('en-IN')}
+                      ₹{totalWasteCost.toLocaleString('en-IN')}
 
                     </td>
 
@@ -13731,7 +13731,7 @@ export function Inventory() {
             disabled={importing}
             className="w-full sm:w-auto text-xs font-bold bg-[#F4F4F5] text-gray-700 px-6 py-4 rounded-2xl hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            <Download size={14} className="rotate-180" /> {importing ? `Importing ${importProgress}â€¦` : 'Import CSV'}
+            <Download size={14} className="rotate-180" /> {importing ? `Importing ${importProgress}…` : 'Import CSV'}
           </button>
 
           <input
@@ -13830,7 +13830,7 @@ export function Inventory() {
               disabled={deductionCheckLoading || !deductionCheckOrderId.trim()}
               className="px-5 py-2 bg-[#B71C1C] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#8E1414] disabled:opacity-50"
             >
-              {deductionCheckLoading ? 'Checkingâ€¦' : 'Check'}
+              {deductionCheckLoading ? 'Checking…' : 'Check'}
             </button>
           </div>
 
@@ -13856,16 +13856,16 @@ export function Inventory() {
                     {deductionCheckResult.liquorItems?.map((li) => (
                       <div key={li.menuItemId} className={`rounded-xl border p-3 ${li.hasInventoryLink && li.deductedQty !== null ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
                         <div className="flex items-center justify-between mb-1">
-                          <p className="text-xs font-black text-gray-900">{li.name} Ã— {li.orderedQty}</p>
+                          <p className="text-xs font-black text-gray-900">{li.name} × {li.orderedQty}</p>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${li.hasInventoryLink ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {li.hasInventoryLink ? 'âœ“ Inventory found' : 'âœ— No inventory'}
+                            {li.hasInventoryLink ? '✓ Inventory found' : '✗ No inventory'}
                           </span>
                         </div>
                         {li.deductedQty !== null && (
                           <div className="text-[10px] bg-white border border-green-200 rounded-lg px-2 py-1 text-gray-700 inline-block">
                             Deducted: <span className="font-bold text-red-600">-{li.deductedQty} ml</span> 
                             <span className="mx-2 text-gray-300">|</span> 
-                            Stock: {li.stockBefore} â†’ {li.stockAfter}
+                            Stock: {li.stockBefore} → {li.stockAfter}
                           </div>
                         )}
                       </div>
@@ -13996,8 +13996,8 @@ export function Inventory() {
                 const balanceStock   = closingStock;
                 const balanceStockAmt = balanceStock != null ? balanceStock * pricePerMl : null;
 
-                const fmtAmt = (val) => val == null ? 'â€”' : `â‚¹ ${Number(val).toFixed(2)}`;
-                const fmtVal = (val) => val == null ? 'â€”' : Number(val).toFixed(0);
+                const fmtAmt = (val) => val == null ? '—' : `₹ ${Number(val).toFixed(2)}`;
+                const fmtVal = (val) => val == null ? '—' : Number(val).toFixed(0);
 
                 return (
                   <tr key={item.id} className={`transition-colors ${isCarryOver ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'} ${selectedIds.has(item.id) ? 'bg-red-50/50' : ''}`}>
@@ -14044,7 +14044,7 @@ export function Inventory() {
                               </button>
                             </div>
                           )}
-                          {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">â†© carried over</span>}
+                          {isCarryOver && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">↩ carried over</span>}
                         </div>
                       </div>
                     </td>
@@ -14104,16 +14104,16 @@ export function Inventory() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'price', `â‚¹${price.toFixed(2)}`, 'number')}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'opening', opening != null ? formatBottlesMl(opening, bottleSize) : 'â€”')}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'price', `₹${price.toFixed(2)}`, 'number')}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'opening', opening != null ? formatBottlesMl(opening, bottleSize) : '—')}</td>
                     <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(openingAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'purchase', purchase != null ? formatBottlesMl(purchase, bottleSize) : 'â€”')}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-gray-900">{renderEditBarCell(item, 'purchase', purchase != null ? formatBottlesMl(purchase, bottleSize) : '—')}</td>
                     <td className="px-4 py-4 text-xs text-center text-gray-600">{fmtAmt(purchaseAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-blue-600">{totalStock != null ? formatBottlesMl(totalStock, bottleSize) : 'â€”'}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-blue-600">{totalStock != null ? formatBottlesMl(totalStock, bottleSize) : '—'}</td>
                     <td className="px-4 py-4 text-xs text-center text-blue-600">{fmtAmt(totalStockAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-red-600">{renderEditBarCell(item, 'consumed', consumed != null ? formatBottlesMl(consumed, bottleSize) : 'â€”')}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-red-600">{renderEditBarCell(item, 'consumed', consumed != null ? formatBottlesMl(consumed, bottleSize) : '—')}</td>
                     <td className="px-4 py-4 text-xs text-center text-red-600">{fmtAmt(consumptionAmt)}</td>
-                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{balanceStock != null ? formatBottlesMl(balanceStock, bottleSize) : 'â€”'}</td>
+                    <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{balanceStock != null ? formatBottlesMl(balanceStock, bottleSize) : '—'}</td>
                     <td className="px-4 py-4 text-xs text-center font-bold text-green-600">{fmtAmt(balanceStockAmt)}</td>
                     <td className="px-4 py-4 text-center">
                           <button
@@ -14231,7 +14231,7 @@ export function Inventory() {
 
                     {item.costPerBottle > 0 && (
 
-                      <span>Cost: <strong className="text-gray-900">â‚¹{parseFloat(item.costPerBottle).toFixed(2)}</strong></span>
+                      <span>Cost: <strong className="text-gray-900">₹{parseFloat(item.costPerBottle).toFixed(2)}</strong></span>
 
                     )}
 
@@ -14736,7 +14736,7 @@ function AddInventoryModal({ onClose, onSave, isSubmitting }) {
 
           <div>
 
-            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (â‚¹)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (₹)</label>
 
             <input
 
@@ -14904,7 +14904,7 @@ function EditInventoryModal({ item, onClose, onSave, isSubmitting }) {
 
           <div>
 
-            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (â‚¹)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (₹)</label>
 
             <input
 
@@ -15612,7 +15612,7 @@ function RecordPurchaseModal({ inventory, onClose, onSave, showNotification, isS
 
           <div>
 
-            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (â‚¹)</label>
+            <label className="block text-sm font-bold mb-2 uppercase tracking-wide">Cost Per Bottle (₹)</label>
 
             <input
 
@@ -15742,7 +15742,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
   const [selectedConfig, setSelectedConfig] = useState(null);
 
-  const [caption, setCaption] = useState("âœ¨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. ðŸ¥˜â¤ï¸\n\n#SoftshapeAI #GourmetExperience #FoodArt");
+  const [caption, setCaption] = useState("✨ Savor the perfection in every bite! Our chef's latest creation is here to redefine your dining experience. Handcrafted with authentic spices and passion. 🥘❤️\n\n#SoftshapeAI #GourmetExperience #FoodArt");
 
   const [scheduling, setScheduling] = useState('now');
 
@@ -16144,7 +16144,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
                  <p className="text-[10px] font-black text-gray-400 uppercase">SIGNALS</p>
 
-                 <p className="text-[10px] font-bold text-gray-700 uppercase">Rainy â€¢ Public Holiday</p>
+                 <p className="text-[10px] font-bold text-gray-700 uppercase">Rainy • Public Holiday</p>
 
               </div>
 
@@ -16170,7 +16170,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
               {[
 
-                { name: "Monsoon Special", desc: "â‚¹50 OFF on all Biryani", status: "Active", color: "text-green-600 bg-green-50" },
+                { name: "Monsoon Special", desc: "₹50 OFF on all Biryani", status: "Active", color: "text-green-600 bg-green-50" },
 
                 { name: "Lassi Combo", desc: "Buy 2 Get 1 Free", status: "Scheduled", color: "text-blue-600 bg-blue-50" }
 
@@ -16218,7 +16218,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
                  <div className="text-right">
 
-                    <p className="text-xs font-black text-green-600 flex items-center gap-1">â†‘ 24%</p>
+                    <p className="text-xs font-black text-green-600 flex items-center gap-1">↑ 24%</p>
 
                     <p className="text-[9px] font-bold text-gray-400 uppercase">vs last week</p>
 
@@ -16244,7 +16244,7 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
                  <div className="text-right">
 
-                    <p className="text-sm font-black text-gray-900">â‚¹1.2k</p>
+                    <p className="text-sm font-black text-gray-900">₹1.2k</p>
 
                     <p className="text-[9px] font-black text-gray-400 uppercase">AD SPEND</p>
 
@@ -16360,13 +16360,13 @@ export function Pricing() {
 
               <div className="flex items-baseline gap-1">
 
-                <span className="text-5xl font-black text-gray-900 tracking-tighter">â‚¹{plan.dayPrice}</span>
+                <span className="text-5xl font-black text-gray-900 tracking-tighter">₹{plan.dayPrice}</span>
 
                 <span className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">/ Day</span>
 
               </div>
 
-              <p className="text-sm font-medium text-gray-400 mt-2">â‚¹{plan.monthPrice} / Month</p>
+              <p className="text-sm font-medium text-gray-400 mt-2">₹{plan.monthPrice} / Month</p>
 
             </div>
 
@@ -16461,11 +16461,11 @@ export function BarTables() {
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
 
-        <h3 className="font-semibold">Floor Plan â€” Bar Hall</h3>
+        <h3 className="font-semibold">Floor Plan — Bar Hall</h3>
 
         <span className="text-[11px] font-black text-[#B71C1C] uppercase tracking-widest bg-[#FFF5F5] px-3 py-1.5 rounded-full">
 
-          ðŸº Bar â€¢ {tables.filter(t => t.status !== 'Free').length} Occupied / {tables.length} Total
+          🍺 Bar • {tables.filter(t => t.status !== 'Free').length} Occupied / {tables.length} Total
 
         </span>
 
@@ -16525,7 +16525,7 @@ export function BarTables() {
 
               <p className="text-[11px] font-bold mt-2">
 
-                {isFree ? 'Available' : `${t.status} â€” â‚¹${t.currentBill || 0}`}
+                {isFree ? 'Available' : `${t.status} — ₹${t.currentBill || 0}`}
 
               </p>
 
@@ -16688,7 +16688,7 @@ export function BarTables() {
 
                      </div>
 
-                     <span className="text-2xl font-black text-[#E53935] tracking-tight">â‚¹{pTable.currentBill || 0}</span>
+                     <span className="text-2xl font-black text-[#E53935] tracking-tight">₹{pTable.currentBill || 0}</span>
 
                   </div>
 
@@ -16734,7 +16734,7 @@ export function BarMenuPage() {
 
 
 
-  // â”€â”€ Dynamic categories for bar menu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Dynamic categories for bar menu ────────────────────────────────────
 
   const [dbCategories, setDbCategories] = useState([]);
 
@@ -16826,7 +16826,7 @@ export function BarMenuPage() {
 
 
 
-  // â”€â”€ Venue/section resolution from actual tenant venues (bar-only) â”€â”€
+  // ── Venue/section resolution from actual tenant venues (bar-only) ──
 
   const { venueColumns } = useVenueSections('bar');
 
@@ -17076,7 +17076,7 @@ export function BarMenuPage() {
 
 
 
-  // Image resize helper (canvas â†’ base64)
+  // Image resize helper (canvas → base64)
 
   const compressImage = (file, cb) => {
 
@@ -17149,7 +17149,7 @@ export function BarMenuPage() {
 
     if (editImg && editImg.startsWith('data:')) {
 
-      // New local file picked â€” upload to Cloudinary first
+      // New local file picked — upload to Cloudinary first
 
       try {
 
@@ -17167,9 +17167,9 @@ export function BarMenuPage() {
 
     }
 
-    // If editImg is an existing https URL â€” skip (don't re-upload)
+    // If editImg is an existing https URL — skip (don't re-upload)
 
-    // If editImg is null â€” skip (don't touch imageUrl)
+    // If editImg is null — skip (don't touch imageUrl)
 
 
 
@@ -17543,7 +17543,7 @@ export function BarMenuPage() {
 
         <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-[12px] text-red-600 font-bold">
 
-          {error} â€” <button onClick={refreshMenu} className="underline">Retry</button>
+          {error} — <button onClick={refreshMenu} className="underline">Retry</button>
 
         </div>
 
@@ -17614,9 +17614,9 @@ export function BarMenuPage() {
 
                   {venueColumns.length > 1 && Number(item.venuePrices?.[activeVenueId] || 0) > 0
 
-                    ? `â‚¹${item.venuePrices[activeVenueId]}`
+                    ? `₹${item.venuePrices[activeVenueId]}`
 
-                    : `â‚¹${item.variants[0].price}`}
+                    : `₹${item.variants[0].price}`}
 
                 </p>
 
@@ -17628,7 +17628,7 @@ export function BarMenuPage() {
 
                     <span key={v.id} className="text-[10px] font-bold bg-gray-100 px-2 py-0.5 rounded-full text-gray-700">
 
-                      {v.name}: â‚¹{v.price}
+                      {v.name}: ₹{v.price}
 
                     </span>
 
@@ -17732,7 +17732,7 @@ export function BarMenuPage() {
 
 
 
-      {/* â”€â”€ EDIT MODAL â”€â”€ */}
+      {/* ── EDIT MODAL ── */}
 
       {editItem && (
 
@@ -17820,7 +17820,7 @@ export function BarMenuPage() {
 
                     >
 
-                      {t === 'veg' ? 'ðŸŸ¢ Veg' : 'ðŸ”´ Non-Veg'}
+                      {t === 'veg' ? '🟢 Veg' : '🔴 Non-Veg'}
 
                     </button>
 
@@ -17840,7 +17840,7 @@ export function BarMenuPage() {
 
               <div>
 
-                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Base Price (â‚¹)</label>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Base Price (₹)</label>
 
                 <input
 
@@ -17862,7 +17862,7 @@ export function BarMenuPage() {
 
             {editItem.variants.length > 1 && (
 
-              <p className="text-[11px] text-gray-400 font-bold">Multi-variant base pricing â€” edit from backend. Venue prices below still apply.</p>
+              <p className="text-[11px] text-gray-400 font-bold">Multi-variant base pricing — edit from backend. Venue prices below still apply.</p>
 
             )}
 
@@ -17874,7 +17874,7 @@ export function BarMenuPage() {
 
               <div>
 
-                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Venue Prices (â‚¹)</label>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Venue Prices (₹)</label>
 
                 <div className="grid grid-cols-2 gap-2 mt-1">
 
@@ -17940,7 +17940,7 @@ export function BarMenuPage() {
 
 
 
-      {/* â”€â”€ ADD MODAL â”€â”€ */}
+      {/* ── ADD MODAL ── */}
 
       {showAdd && (
 
@@ -18084,7 +18084,7 @@ export function BarMenuPage() {
 
                 ))}
 
-                <option value="__new__">+ Add new categoryâ€¦</option>
+                <option value="__new__">+ Add new category…</option>
 
               </select>
 
@@ -18144,7 +18144,7 @@ export function BarMenuPage() {
 
                       className={`flex-1 py-1.5 rounded-xl text-[12px] font-bold border transition ${addType === t ? (t === 'veg' ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700') : 'border-gray-200 text-gray-500'}`}>
 
-                      {t === 'veg' ? 'ðŸŸ¢ Veg' : 'ðŸ”´ Non-Veg'}
+                      {t === 'veg' ? '🟢 Veg' : '🔴 Non-Veg'}
 
                     </button>
 
@@ -18160,7 +18160,7 @@ export function BarMenuPage() {
 
             <div>
 
-              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Price (â‚¹) *</label>
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Price (₹) *</label>
 
               <input type="number" value={addPrice} onChange={(e) => setAddPrice(e.target.value)}
 
@@ -18178,7 +18178,7 @@ export function BarMenuPage() {
 
               <div>
 
-                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Venue Prices (â‚¹)</label>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Venue Prices (₹)</label>
 
                 <div className="grid grid-cols-2 gap-2 mt-1">
 
@@ -18238,7 +18238,7 @@ export function BarMenuPage() {
 
 
 
-      {/* â”€â”€ DELETE CONFIRM â”€â”€ */}
+      {/* ── DELETE CONFIRM ── */}
 
       {deleteTarget && (
 
@@ -18246,7 +18246,7 @@ export function BarMenuPage() {
 
           <div className="bg-white rounded-2xl p-5 w-full max-w-xs space-y-4 shadow-2xl text-center">
 
-            <div className="text-3xl">ðŸ—‘ï¸</div>
+            <div className="text-3xl">🗑️</div>
 
             <p className="font-bold text-[14px]">Remove "{deleteTarget.n}"?</p>
 
@@ -18667,7 +18667,7 @@ export function StaffManagement({ role }) {
                 <td className="px-4 py-3 text-gray-600">
 
                   {member.role === 'OWNER' ? (
-                    <span className="text-[10px] font-bold text-gray-400">â€”</span>
+                    <span className="text-[10px] font-bold text-gray-400">—</span>
                   ) : member.hasPin ? (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700">Set</span>
                   ) : (
@@ -18987,7 +18987,7 @@ export function StaffManagement({ role }) {
                 {importPreview.warnings?.length > 0 && (
                   <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs space-y-1">
                     {importPreview.warnings.map((w, i) => (
-                      <p key={i}>âš  {w}</p>
+                      <p key={i}>⚠ {w}</p>
                     ))}
                   </div>
                 )}
@@ -19056,7 +19056,7 @@ export function StaffManagement({ role }) {
                               {row.action === 'create' && <span className="text-[10px] font-black text-green-600">NEW</span>}
                               {row.action === 'update' && (
                                 <span className="text-[10px] font-black text-blue-600">
-                                  UPDATE {row.oldBaseSalary !== row.baseSalary && ` â‚¹${row.oldBaseSalary} â†’ â‚¹${row.baseSalary}`}
+                                  UPDATE {row.oldBaseSalary !== row.baseSalary && ` ₹${row.oldBaseSalary} → ₹${row.baseSalary}`}
                                 </span>
                               )}
                               {row.action === 'ambiguous' && <span className="text-[10px] font-black text-amber-600">AMBIGUOUS</span>}
@@ -19485,7 +19485,7 @@ export function Attendance() {
               className="outline-none text-[12px] font-bold text-gray-900 placeholder-gray-400 w-40"
             />
             {searchTerm && (
-              <button onClick={() => setSearchTerm('')} className="text-[10px] text-gray-400 hover:text-gray-600">âœ•</button>
+              <button onClick={() => setSearchTerm('')} className="text-[10px] text-gray-400 hover:text-gray-600">✕</button>
             )}
           </div>
           <select

@@ -184,7 +184,7 @@ const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable }) => {
           <div className="flex flex-col items-center justify-center mb-6 gap-2">
             <img
               src="/logo softshape.ai.png"
-              alt="Softshape.ai"
+              alt="Softshape"
               className="h-20 w-auto object-contain"
             />
           </div>

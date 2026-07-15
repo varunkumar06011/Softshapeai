@@ -27,7 +27,7 @@ function todayString() {
 export function downloadPDF({ title, dateRange, headers, rows, filename }) {
   const doc = new jsPDF({ orientation: 'landscape' });
   doc.setFontSize(18);
-  doc.text(`Softshape.ai — ${title}`, 14, 20);
+  doc.text(`Softshape — ${title}`, 14, 20);
   doc.setFontSize(11);
   doc.setTextColor(100);
   doc.text(`Period: ${dateRange}`, 14, 28);
@@ -57,7 +57,7 @@ export function downloadPDF({ title, dateRange, headers, rows, filename }) {
   const finalY = doc.lastAutoTable?.finalY || 240;
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`Generated on ${todayString()} | Softshape.ai Restaurant Management`, 14, finalY + 10);
+  doc.text(`Generated on ${todayString()} | Softshape Restaurant Management`, 14, finalY + 10);
 
   doc.save(`${filename}.pdf`);
 }
@@ -67,7 +67,7 @@ export function downloadExcel({ title, dateRange, sheets, filename }) {
 
   sheets.forEach((sheet) => {
     const wsData = [
-      [`Softshape.ai — ${title}`],
+      [`Softshape — ${title}`],
       [`Period: ${dateRange}`],
       [],
       sheet.headers.map((h) => h.label),
