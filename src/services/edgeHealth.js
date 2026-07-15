@@ -12,7 +12,7 @@ const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 
 const DEFAULT_EDGE_URL = 'http://localhost:3100';
-const EDGE_CHECK_TIMEOUT_MS = 1500;
+const EDGE_CHECK_TIMEOUT_MS = 6000;
 const EDGE_CHECK_INTERVAL_MS = 10_000;
 const LAN_DISCOVERY_TIMEOUT_MS = 800;
 
@@ -226,6 +226,8 @@ export async function isEdgeAvailable() {
   return _edgeAvailable;
 }
 
+const EDGE_FETCH_TIMEOUT_MS = 30_000;
+
 export async function edgeFetch(path, options = {}) {
   const edgeApiKey = getStoredEdgeApiKey();
   const headers = {
@@ -236,10 +238,23 @@ export async function edgeFetch(path, options = {}) {
     headers['X-Edge-Key'] = edgeApiKey;
   }
 
-  const res = await fetch(`${getEdgeUrl()}${path}`, {
-    ...options,
-    headers,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EDGE_FETCH_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${getEdgeUrl()}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err?.name === 'AbortError') {
+      throw new Error(`Edge request to ${path} timed out after ${EDGE_FETCH_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
   if (!res.ok) {
     let message = `Edge request failed (${res.status})`;
     try {
