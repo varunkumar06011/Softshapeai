@@ -138,26 +138,39 @@ export default function EdgeSetupScreen() {
 
     let pollCount = 0;
     const maxPolls = 30; // 60 seconds max
+    // Track latest stats inside the closure so the timeout branch sees fresh values
+    // (configStats from useState would be stale here due to useCallback([]) deps).
+    let latestStats = { tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0 };
 
     pollRef.current = setInterval(async () => {
       pollCount++;
       if (pollCount > maxPolls) {
         clearInterval(pollRef.current);
         pollRef.current = null;
-        // Even if polling timed out, proceed if we have some data
-        setPhase('ready');
+        // Polling timed out — only proceed if we actually have data (menu AND tables).
+        // Otherwise surface an error instead of silently forcing "ready".
+        if (latestStats.menuItems > 0 && latestStats.tables > 0) {
+          setPhase('ready');
+        } else {
+          setConfigError(
+            'Config download timed out. ' +
+            `Loaded ${latestStats.menuItems} menu items and ${latestStats.tables} tables. ` +
+            'Check your network connection and retry.'
+          );
+        }
         return;
       }
 
       try {
         const status = await edgeFetch('/api/edge/status');
         if (status.localStats) {
-          setConfigStats({
+          latestStats = {
             tables: status.localStats.tables || 0,
             menuItems: status.localStats.menuItems || 0,
             activeOrders: status.localStats.activeOrders || 0,
             pendingSync: status.localStats.pendingSyncRecords || 0,
-          });
+          };
+          setConfigStats(latestStats);
         }
 
         // If we have menu items and tables, config is loaded
@@ -298,8 +311,8 @@ export default function EdgeSetupScreen() {
         try {
           const status = await edgeFetch('/api/edge/status');
           if (status.registered && status.sessionValid) {
-            // Already registered — check if config is loaded
-            if (status.localStats && status.localStats.menuItems > 0) {
+            // Already registered — check if config is loaded (both menu AND tables, same as startStatusPolling)
+            if (status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0) {
               setPhase('ready');
               return;
             }

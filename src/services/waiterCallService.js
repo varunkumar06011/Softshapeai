@@ -16,7 +16,7 @@
 // to waiter call updates without duplicate socket listeners.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getSocket, getPublicSocket, onSocketDisconnect } from "../hooks/useSocket";
 import { API_BASE } from "./apiConfig";
 import { getTenantScopedKey } from "../utils/cacheKeys";
@@ -178,8 +178,8 @@ export function broadcastWaiterEvent(type, payload, outlet = 'restaurant') {
  *  - localStorage `storage` events (cross-tab fallback)
  *  - localStorage DB on mount (survive page refresh)
  */
-export function useWaiterCalls() {
-  const [activeCalls, setActiveCalls] = useState([]);
+export function useWaiterCalls(outletFilter) {
+  const [allCalls, setActiveCalls] = useState([]);
 
   useEffect(() => {
     // Ensure socket is connected and listening
@@ -310,6 +310,13 @@ export function useWaiterCalls() {
       window.removeEventListener('storage', handleStorage);
     };
   }, []);
+
+  // Filter calls by outlet when a filter is provided.
+  // 'both' means show calls from all sources.
+  const activeCalls = useMemo(() => {
+    if (!outletFilter || outletFilter === 'both') return allCalls;
+    return allCalls.filter(c => (c.source || 'restaurant') === outletFilter);
+  }, [allCalls, outletFilter]);
 
   const clearCall = useCallback((callId) => {
     console.log("[WaiterCallSync] Clearing call:", callId);

@@ -69,9 +69,7 @@ import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, discoverEdgeOnLAN } from '../s
 
 
 
-import { useWaiterCalls, broadcastWaiterEvent } from '../services/waiterCallService';
-
-import { markWaiterCallAccepted } from '../services/customerSessionService';
+import { useWaiterCalls } from '../services/waiterCallService';
 
 import { useBarTableSync } from '../services/barTableSyncService';
 
@@ -576,7 +574,13 @@ export default function CaptainApp({ onLogout }) {
 
   const [currentCaptain, setCurrentCaptain] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('active_captain'));
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        localStorage.removeItem(getTenantScopedKey('active_captain'));
+      }
+    }
     // Respect main auth context when captain logged in via shared LoginScreen
     if (user?.role === 'CAPTAIN' && user?.name) {
       return {
@@ -1062,9 +1066,9 @@ export default function CaptainApp({ onLogout }) {
 
   const pendingCalls = useMemo(() => {
 
-    return activeCalls.filter(c => c.status === 'pending' && (c.source || 'restaurant') === activeOutlet);
+    return activeCalls.filter(c => c.status === 'pending');
 
-  }, [activeCalls, activeOutlet]);
+  }, [activeCalls]);
 
 
 
@@ -3570,7 +3574,7 @@ export default function CaptainApp({ onLogout }) {
 
           onDismiss={(call) => clearCall(call.callId)}
 
-          onAccept={(call) => {
+          onAccept={async (call) => {
 
             if (currentCaptain) {
 
@@ -3581,50 +3585,65 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-              const locked = markWaiterCallAccepted(call.tableId, currentCaptain.id);
+              // Server-authoritative accept: POST to backend which atomically claims the call
+              // via Redis SET NX (or in-memory fallback). No more localStorage-based race.
+              try {
+                const response = await fetch(`${API_BASE}/api/public/accept-waiter-call`, {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...getAuthHeaders(),
+                  },
+                  body: JSON.stringify({
+                    callId: call.callId,
+                    tableId: call.tableId,
+                    captainName: currentCaptain.name,
+                  }),
+                });
 
-              if (locked) {
+                const result = await response.json();
 
-                broadcastWaiterEvent('captain:accept_waiter_call', {
+                if (response.ok && result.success) {
+                  addNotification(`You accepted table ${call.tableId}`, 'success');
 
-                  callId: call.callId,
+                  // Allocate table to this captain
+                  setActiveTables(prev => prev.map(t => {
+                    if (String(t.id) === String(callTableNumber)) {
 
-                  captainId: currentCaptain.id,
+                      return {
 
-                  captainName: currentCaptain.name
+                        ...t,
 
-                }, activeOutlet);
+                        captainId: currentCaptain.id,
 
-                addNotification(`You accepted table ${call.tableId}`, 'success');
+                        captainName: currentCaptain.name
 
+                      };
 
+                    }
 
-                // Allocate table to this captain
-                setActiveTables(prev => prev.map(t => {
-                  if (String(t.id) === String(callTableNumber)) {
+                    return t;
 
-                    return {
+                  }));
 
-                      ...t,
-
-                      captainId: currentCaptain.id,
-
-                      captainName: currentCaptain.name
-
-                    };
-
-                  }
-
-                  return t;
-
-                }));
-
-              } else {
-
-                addNotification("Another captain has already accepted this request!", "error");
-
+                } else if (response.status === 409) {
+                  // Another captain already accepted — server is the source of truth
+                  const winnerName = result.acceptedByName;
+                  addNotification(
+                    winnerName
+                      ? `${winnerName} already accepted this request`
+                      : "Another captain has already accepted this request!",
+                    "error"
+                  );
+                  clearCall(call.callId);
+                } else {
+                  addNotification(result.error || result.message || "Failed to accept waiter call", "error");
+                  clearCall(call.callId);
+                }
+              } catch (err) {
+                addNotification("Network error — could not reach server to accept call", "error");
                 clearCall(call.callId);
-
               }
 
             }

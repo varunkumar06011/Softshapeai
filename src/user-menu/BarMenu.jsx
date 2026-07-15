@@ -339,7 +339,7 @@ export default function BarMenu({ slug, tableId, sig, representativeId, isMenuOn
 
     };
 
-  }, []);
+  }, [isMenuOnly, slug, tableId, sig, refreshBarMenu]);
 
 
 
