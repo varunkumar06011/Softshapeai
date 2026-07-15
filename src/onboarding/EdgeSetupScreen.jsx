@@ -530,6 +530,12 @@ export default function EdgeSetupScreen() {
                   </div>
                 </div>
               )}
+              <button
+                onClick={handleGoToCashier}
+                className="mt-6 inline-flex items-center gap-1.5 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <ArrowLeft size={14} /> Back to Cashier Login
+              </button>
             </div>
           )}
 
