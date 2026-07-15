@@ -266,6 +266,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
+          fail_on_unmatched_files: false
           files: |
             apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe
             apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe.sig
@@ -351,6 +352,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
+          fail_on_unmatched_files: false
           files: |
             apps/admin-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Admin_x64-setup.exe
             apps/admin-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Admin_x64-setup.exe.sig
@@ -474,4 +476,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
+          fail_on_unmatched_files: false
           files: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/${{ matrix.app }}.apk
