@@ -512,7 +512,7 @@ export default function CaptainApp({ onLogout }) {
           localStorage.setItem('last_working_print_agent_url', data.httpUrl);
         }
         if (data?.lanIp) {
-          const lanUrl = `http://${data.lanIp}:3100`;
+          const lanUrl = `http://${data.lanIp}:3101`;
           if (!localStorage.getItem('last_working_print_agent_url')) {
             localStorage.setItem('last_working_print_agent_url', lanUrl);
           }
@@ -3765,10 +3765,10 @@ export default function CaptainApp({ onLogout }) {
                 type="text"
                 value={edgeUrlInput}
                 onChange={e => setEdgeUrlInput(e.target.value)}
-                placeholder="http://192.168.1.100:3100"
+                placeholder="http://192.168.1.100:3101"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-gray-400 mt-1">Enter the hub machine's LAN IP and port (default: 3100)</p>
+              <p className="text-xs text-gray-400 mt-1">Enter the hub machine's LAN IP and port (default: 3101)</p>
             </div>
 
             {/* Action buttons */}

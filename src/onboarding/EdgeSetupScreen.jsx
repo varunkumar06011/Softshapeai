@@ -191,7 +191,7 @@ export default function EdgeSetupScreen() {
         }
         if (diag && /legacy_standalone_detected/i.test(diag)) {
           setError(
-            'A legacy standalone edge-server.exe is already running on port 3100. ' +
+            'A legacy standalone edge-server.exe is already running on port 3101. ' +
             'Close it from Task Manager (look for edge-server.exe), then click Retry. ' +
             'The app will not automatically kill foreign processes.'
           );
@@ -201,7 +201,7 @@ export default function EdgeSetupScreen() {
         const stateMessage = state === 'binary_missing'
           ? 'The bundled edge-server.exe is missing. Reinstall the packaged Cashier build.'
           : state === 'port_conflict'
-            ? 'Port 3100 is already owned by another process. Close the identified legacy standalone edge-server or other conflicting application.'
+            ? 'Port 3101 is already owned by another process. Close the identified legacy standalone edge-server or other conflicting application.'
             : state === 'health_timeout'
               ? 'The edge process is running but /health is not responding. The process may be blocked or the database may be unavailable.'
               : state === 'database_error'
@@ -466,7 +466,7 @@ export default function EdgeSetupScreen() {
                   />
                   <h2 className="text-lg font-bold text-gray-900 mb-2">Starting edge server…</h2>
                   <p className="text-sm text-gray-500 max-w-sm">
-                    The local SQLite engine is launching on port 3100. This usually takes 2–3 seconds.
+                    The local SQLite engine is launching on port 3101. This usually takes 2–3 seconds.
                   </p>
                 </>
               )}

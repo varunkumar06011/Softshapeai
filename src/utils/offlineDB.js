@@ -701,7 +701,7 @@ export async function setLocalPrinterMapping(mapping) {
 
 export async function getPrintAgentUrl() {
   const config = await getLocalPrinterConfig();
-  return config.printAgentUrl || 'http://localhost:3100';
+  return config.printAgentUrl || 'http://localhost:3101';
 }
 
 export async function setPrintAgentUrl(url) {

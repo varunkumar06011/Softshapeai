@@ -11,15 +11,17 @@ import { API_BASE, getAuthHeaders } from "./apiConfig";
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 
-const DEFAULT_EDGE_URL = 'http://localhost:3100';
+const DEFAULT_EDGE_URL = 'http://localhost:3101';
 const EDGE_CHECK_TIMEOUT_MS = 6000;
-const EDGE_CHECK_INTERVAL_MS = 10_000;
+const EDGE_CHECK_INTERVAL_MS = 2_000;
 const LAN_DISCOVERY_TIMEOUT_MS = 800;
 
 let _edgeAvailable = false;
 let _edgeLastCheck = 0;
 let _discoveredEdgeUrl = null;
 let _discoveryInProgress = null;
+let _discoveryLastFailed = 0;
+const DISCOVERY_FAILURE_COOLDOWN_MS = 30_000;
 
 /**
  * Returns the current edge URL.
@@ -128,11 +130,11 @@ export async function discoverEdgeOnLAN() {
             const ip = match[1];
             if (!ip.startsWith('0.') && !ip.startsWith('127.')) {
               const parts = ip.split('.');
-              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.1:3100`);
-              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.100:3100`);
+              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.1:3101`);
+              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.100:3101`);
               // Also try the device's own subnet range
               for (let i = 2; i <= 20; i++) {
-                candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.${i}:3100`);
+                candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.${i}:3101`);
               }
             }
           }
@@ -143,15 +145,15 @@ export async function discoverEdgeOnLAN() {
 
     // Fallback: try common router IPs
     const commonGateways = [
-      'http://192.168.1.1:3100',
-      'http://192.168.0.1:3100',
-      'http://192.168.1.100:3100',
-      'http://192.168.0.100:3100',
-      'http://192.168.1.2:3100',
-      'http://192.168.0.2:3100',
-      'http://10.0.0.1:3100',
-      'http://10.0.0.2:3100',
-      'http://10.0.1.1:3100',
+      'http://192.168.1.1:3101',
+      'http://192.168.0.1:3101',
+      'http://192.168.1.100:3101',
+      'http://192.168.0.100:3101',
+      'http://192.168.1.2:3101',
+      'http://192.168.0.2:3101',
+      'http://10.0.0.1:3101',
+      'http://10.0.0.2:3101',
+      'http://10.0.1.1:3101',
     ];
     for (const c of commonGateways) {
       if (!candidates.includes(c)) candidates.push(c);
@@ -214,13 +216,21 @@ export async function isEdgeAvailable() {
 
   // If health check failed and we're using default localhost, try LAN discovery
   if (!_edgeAvailable && edgeUrl === DEFAULT_EDGE_URL) {
+    // Skip discovery if it recently failed — avoids re-probing ~30 IPs (5-6s)
+    // on every 2s poll cycle, which starves the localhost health checks.
+    if (Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
+      return _edgeAvailable;
+    }
     try {
       const discovered = await discoverEdgeOnLAN();
       if (discovered) {
         _edgeAvailable = true;
         return true;
       }
-    } catch { /* discovery failed */ }
+      _discoveryLastFailed = Date.now();
+    } catch {
+      _discoveryLastFailed = Date.now();
+    }
   }
 
   return _edgeAvailable;

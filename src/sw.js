@@ -28,7 +28,7 @@ registerRoute(
 );
 
 // ── Local edge server requests: bypass service worker entirely ───────────────
-// The edge server runs on localhost:3100. The SW should not intercept, cache,
+// The edge server runs on localhost:3101. The SW should not intercept, cache,
 // or modify these requests — otherwise it can return stale/failed responses
 // when the desktop app is starting the edge server sidecar.
 registerRoute(

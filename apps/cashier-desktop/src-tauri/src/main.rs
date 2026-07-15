@@ -31,7 +31,7 @@ struct PrinterInfo {
 }
 
 // ── Edge server sidecar management ───────────────────────────────────────────
-// The edge-server is a compiled Bun binary that runs as a subprocess on port 3100.
+// The edge-server is a compiled Bun binary that runs as a subprocess on port 3101.
 // It provides local SQLite, offline order creation, KOT printing, and LAN API.
 // We spawn it on app startup and kill it on app shutdown.
 
@@ -224,7 +224,7 @@ fn start_edge_health_probe(port: String) {
         let mut attempts = 0u32;
         while started.elapsed() < deadline {
             attempts += 1;
-            if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port.parse::<u16>().unwrap_or(3100))) {
+            if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port.parse::<u16>().unwrap_or(3101))) {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
                 let request = "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
                 if stream.write_all(request.as_bytes()).is_ok() {
@@ -333,7 +333,7 @@ fn diagnose_process_on_port(port: &str) -> String {
 
 /// Check if a TCP port is free (nothing listening on it).
 fn is_port_free(port: &str) -> bool {
-    TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3100))).is_ok()
+    TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3101))).is_ok()
 }
 
 /// Kill any process currently listening on `port` (Windows). Best-effort; never panics.
@@ -559,7 +559,7 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
     };
 
     // Pass through environment variables for edge-server configuration
-    let port = std::env::var("EDGE_PORT").unwrap_or_else(|_| "3100".to_string());
+    let port = std::env::var("EDGE_PORT").unwrap_or_else(|_| "3101".to_string());
     if let Ok(mut guard) = EDGE_SERVER_EXE.lock() {
         *guard = Some(edge_server_exe.clone());
     }

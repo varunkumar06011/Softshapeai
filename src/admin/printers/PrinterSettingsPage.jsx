@@ -84,7 +84,7 @@ export default function PrinterSettingsPage() {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch('http://localhost:3100/api/edge/status', {
+      const res = await fetch('http://localhost:3101/api/edge/status', {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -106,7 +106,7 @@ export default function PrinterSettingsPage() {
     setEdgeLoading(true);
     setError(null);
     try {
-      const res = await fetch('http://localhost:3100/api/edge/register', {
+      const res = await fetch('http://localhost:3101/api/edge/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -193,7 +193,7 @@ async function discoverPrintAgentUrls() {
 
   // 1. User-configured URL
   const configuredUrl = await getPrintAgentUrl();
-  if (configuredUrl && configuredUrl !== 'http://localhost:3100') {
+  if (configuredUrl && configuredUrl !== 'http://localhost:3101') {
     add(configuredUrl);
   }
 
@@ -210,7 +210,7 @@ async function discoverPrintAgentUrls() {
     if (res.ok) {
       const data = await res.json();
       if (data.httpUrl) add(data.httpUrl);
-      if (data.lanIp) add(`http://${data.lanIp}:3100`);
+      if (data.lanIp) add(`http://${data.lanIp}:3101`);
       if (data.printerMapping && Object.keys(data.printerMapping).length > 0) {
         setLocalPrinterMapping(data.printerMapping).catch(() => {});
       }
@@ -226,7 +226,7 @@ async function discoverPrintAgentUrls() {
   } catch { /* ignore */ }
 
   // 4. localhost fallback (works when running on the same machine as Print Agent)
-  add('http://localhost:3100');
+  add('http://localhost:3101');
 
   _cachedAgentUrls = urls;
   _lastDiscoveryTime = Date.now();
@@ -288,7 +288,7 @@ async function tryPrintAgentUrls(body, jobType) {
     console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${workingUrl}`);
     try {
       localStorage.setItem('last_working_print_agent_url', workingUrl);
-      if (workingUrl !== 'http://localhost:3100') {
+      if (workingUrl !== 'http://localhost:3101') {
         await setPrintAgentUrl(workingUrl);
       }
     } catch { /* ignore */ }

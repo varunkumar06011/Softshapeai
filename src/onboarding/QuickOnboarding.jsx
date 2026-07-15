@@ -215,9 +215,9 @@ const QuickOnboarding = () => {
         if (!ready) {
           const edgePort = (() => {
             try {
-              return new URL(getEdgeUrl()).port || '3100';
+              return new URL(getEdgeUrl()).port || '3101';
             } catch {
-              return '3100';
+              return '3101';
             }
           })();
           const detail = status?.error || status?.state || 'the edge server did not respond';
