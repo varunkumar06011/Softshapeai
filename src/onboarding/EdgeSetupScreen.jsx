@@ -457,15 +457,19 @@ export default function EdgeSetupScreen() {
           {/* ── Phase: edge-start ──────────────────────────────────────────────── */}
           {phase === 'edge-start' && (
             <div className="p-10 text-center min-h-[320px] flex flex-col items-center justify-center">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-                className="w-16 h-16 rounded-full border-4 border-rose-100 border-t-rose-500 mb-6"
-              />
-              <h2 className="text-lg font-bold text-gray-900 mb-2">Starting edge server…</h2>
-              <p className="text-sm text-gray-500 max-w-sm">
-                The local SQLite engine is launching on port 3100. This usually takes 2–3 seconds.
-              </p>
+              {edgeChecking && (
+                <>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
+                    className="w-16 h-16 rounded-full border-4 border-rose-100 border-t-rose-500 mb-6"
+                  />
+                  <h2 className="text-lg font-bold text-gray-900 mb-2">Starting edge server…</h2>
+                  <p className="text-sm text-gray-500 max-w-sm">
+                    The local SQLite engine is launching on port 3100. This usually takes 2–3 seconds.
+                  </p>
+                </>
+              )}
               {error && (
                 <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 max-w-sm text-left">
                   <div className="flex items-center gap-2 font-bold mb-1">
