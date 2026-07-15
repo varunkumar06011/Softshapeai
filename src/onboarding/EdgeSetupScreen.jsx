@@ -142,7 +142,7 @@ export default function EdgeSetupScreen() {
           status.error ? `error=${status.error}` : null,
           status.diagnostics || null,
         ].filter(Boolean);
-        return parts.join('\n');
+        return { text: parts.join('\n'), status };
       } catch (e) {
         console.warn('[EdgeSetup] get_edge_server_status failed:', e);
         return null;
@@ -180,7 +180,8 @@ export default function EdgeSetupScreen() {
       } else if (Date.now() - startTime > EDGE_START_TIMEOUT_MS) {
         setEdgeChecking(false);
         const inDesktop = isRunningInsideDesktopApp();
-        const diag = inDesktop ? await fetchEdgeDiagnostics() : null;
+        const diagResult = inDesktop ? await fetchEdgeDiagnostics() : null;
+        const diag = diagResult?.text ?? null;
         if (diag) setEdgeDiagnostics(diag);
         if (diag && /not found/i.test(diag)) {
           setError(
@@ -196,7 +197,7 @@ export default function EdgeSetupScreen() {
           );
           return;
         }
-        const state = edgeStatus?.state;
+        const state = diagResult?.status?.state;
         const stateMessage = state === 'binary_missing'
           ? 'The bundled edge-server.exe is missing. Reinstall the packaged Cashier build.'
           : state === 'port_conflict'
