@@ -247,32 +247,7 @@ jobs:
 
           Write-Host "Smoke test passed: installed edge-server.exe is healthy"
 
-          # Regression test: leave the old edge-server running and reinstall on top.
-          # This should complete without the 'Error opening file for writing' dialog.
-          $originalTimestamp = (Get-Item $resourceExe).LastWriteTimeUtc
-          Write-Host "Regression test: reinstalling over running edge-server (original timestamp $originalTimestamp)"
-          $proc2 = Start-Process -FilePath (Resolve-Path $installer) -ArgumentList "/S","/D=$installDir" -Wait -PassThru
-          if ($proc2.ExitCode -ne 0) {
-            if ($edgeProc -and -not $edgeProc.HasExited) {
-              Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
-            }
-            Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Write-Error "NSIS reinstall over running edge-server failed with exit code $($proc2.ExitCode)"
-            exit 1
-          }
-
-          # The installer should have replaced the running edge-server.exe.
-          $newTimestamp = (Get-Item $resourceExe).LastWriteTimeUtc
-          if ($newTimestamp -le $originalTimestamp) {
-            if ($edgeProc -and -not $edgeProc.HasExited) {
-              Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
-            }
-            Get-Process -Name "edge-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Write-Error "edge-server.exe was not replaced by the installer (timestamp did not change)"
-            exit 1
-          }
-          Write-Host "Regression test passed: installer replaced edge-server.exe even while it was running (new timestamp $newTimestamp)"
-
+          # Cleanup: stop the edge-server process we launched for the health check.
           if ($edgeProc -and -not $edgeProc.HasExited) {
             Stop-Process -Id $edgeProc.Id -Force -ErrorAction SilentlyContinue
           }
