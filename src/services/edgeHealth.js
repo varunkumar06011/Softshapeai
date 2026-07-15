@@ -11,7 +11,7 @@ import { API_BASE, getAuthHeaders } from "./apiConfig";
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 
-const DEFAULT_EDGE_URL = 'http://localhost:3101';
+const DEFAULT_EDGE_URL = 'http://127.0.0.1:3101';
 const EDGE_CHECK_TIMEOUT_MS = 6000;
 const EDGE_CHECK_INTERVAL_MS = 2_000;
 const LAN_DISCOVERY_TIMEOUT_MS = 800;

@@ -96,7 +96,7 @@ export const authService = {
   },
 
   async _tryEdgePinLogin(userId, pin) {
-    const EDGE_URL = import.meta.env.VITE_EDGE_URL || 'http://localhost:3101';
+    const EDGE_URL = import.meta.env.VITE_EDGE_URL || 'http://127.0.0.1:3101';
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
