@@ -16,6 +16,12 @@ use tauri::{Manager, RunEvent};
 use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(windows)]
 mod windows_printing;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -275,12 +281,16 @@ fn attach_edge_server_logs(child: &mut Child) {
 }
 
 fn spawn_edge_server_process(exe: &Path, port: &str, print_bridge_url: &str) -> Result<Child, std::io::Error> {
-    Command::new(exe)
-        .env("EDGE_PORT", port)
+    let mut cmd = Command::new(exe);
+    cmd.env("EDGE_PORT", port)
         .env("PRINT_BRIDGE_URL", print_bridge_url)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    cmd.spawn()
 }
 
 fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
