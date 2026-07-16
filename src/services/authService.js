@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch } from './edgeHealth.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
 
@@ -290,5 +290,16 @@ export const authService = {
       throw new Error(data.error || 'Failed to fetch crew');
     }
     return data;
+  },
+
+  async fetchCrewEdge() {
+    const data = await edgeFetch('/api/edge/staff');
+    const staff = data.staff || [];
+    return {
+      captains: staff.filter(u => u.role === 'CAPTAIN'),
+      cashiers: staff.filter(u => u.role === 'CASHIER'),
+      managers: staff.filter(u => u.role === 'MANAGER'),
+      outletId: null,
+    };
   },
 };

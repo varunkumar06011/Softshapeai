@@ -16,7 +16,7 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
-import { isEdgeAvailable, getEdgeUrl } from "./edgeHealth.js";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth } from "./edgeHealth.js";
 
 async function edgeFetchMenuItems() {
   const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
@@ -209,14 +209,19 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
   }
 
   // ── Path 1: Edge server (local SQLite) — primary path ──────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const edgeItems = await edgeFetchMenuItems();
       if (edgeItems.length > 0) {
         console.log(`[MenuService] Loaded ${edgeItems.length} items from edge server`);
         return edgeItems;
       }
+      // For edge-local auth, return the empty array — don't fall through to
+      // cloud with a fake token that will always be rejected.
+      if (useEdgeDirect) return edgeItems;
     } catch (err) {
+      if (useEdgeDirect) throw err;
       console.warn("[MenuService] Edge server menu fetch failed:", err.message);
     }
   }

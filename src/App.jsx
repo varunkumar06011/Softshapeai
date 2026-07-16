@@ -369,6 +369,7 @@ function CashierLoginWrapper() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const [edgeCheck, setEdgeCheck] = useState(null); // null = checking, true = registered, false = needs setup
+  const [edgeRestaurantId, setEdgeRestaurantId] = useState(null);
   const isLoggedIn = user && token && isTokenValid(token) && ['CASHIER','OWNER','ADMIN'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
 
@@ -383,6 +384,7 @@ function CashierLoginWrapper() {
         if (cancelled) return;
         if (status.registered && status.sessionValid && status.localStats?.menuItems > 0) {
           setEdgeCheck(true);
+          if (status.restaurantId) setEdgeRestaurantId(status.restaurantId);
         } else {
           setEdgeCheck('setup');
         }
@@ -405,6 +407,7 @@ function CashierLoginWrapper() {
       onBack={() => navigate('/')}
       onEdgeSetup={() => navigate('/edge-setup')}
       edgeAvailable={edgeCheck === true}
+      edgeRestaurantId={edgeRestaurantId}
     />
   );
 }
@@ -427,10 +430,45 @@ function CashierDashboardWrapper() {
 function CaptainLoginWrapper() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const [edgeCheck, setEdgeCheck] = useState(null);
+  const [edgeRestaurantId, setEdgeRestaurantId] = useState(null);
   const isLoggedIn = user && token && isTokenValid(token) && ['CAPTAIN', 'OWNER', 'ADMIN'].includes(user.role);
   if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const available = await isEdgeAvailable();
+        if (cancelled || !available) { setEdgeCheck(false); return; }
+        const status = await edgeFetch('/api/edge/status');
+        if (cancelled) return;
+        if (status.registered && status.sessionValid && status.localStats?.menuItems > 0) {
+          setEdgeCheck(true);
+          if (status.restaurantId) setEdgeRestaurantId(status.restaurantId);
+        } else {
+          setEdgeCheck('setup');
+        }
+      } catch {
+        if (!cancelled) setEdgeCheck(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (edgeCheck === 'setup') {
+    return <Navigate to="/edge-setup" replace />;
+  }
+
   return (
-    <LoginScreen role="captain" onLogin={() => {}} onBack={() => navigate('/')} />
+    <LoginScreen
+      role="captain"
+      onLogin={() => {}}
+      onBack={() => navigate('/')}
+      onEdgeSetup={() => navigate('/edge-setup')}
+      edgeAvailable={edgeCheck === true}
+      edgeRestaurantId={edgeRestaurantId}
+    />
   );
 }
 

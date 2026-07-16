@@ -18,27 +18,31 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchTables, updateTableSession } from "./tableApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
-import { getTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { getTablesCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
-// Check if a table was recently terminated (within 30s) to prevent UI flicker
+// ── Cross-device termination grace window (in-memory, not localStorage) ───────
+// When a table is settled/terminated, the server emits "table:terminated" with a
+// server-authoritative timestamp. All devices in the outlet receive it and enter
+// a 30-second grace window during which stale non-Free events for that table are
+// blocked. This replaces the old localStorage-based guard which was per-device
+// and didn't work across tabs/devices.
+//
+// Map<tableId, terminatedAtMs>
+// Once a table is terminated, it is permanently blocked for the entire page session.
+// A terminated table must NEVER be revived by stale socket events — only a new
+// order creation (which goes through the full edge/cloud flow) can re-occupy it.
+const terminatedTables = new Set();
+
 function isRecentlyTerminated(tableId) {
-  try {
-    const raw = localStorage.getItem(getRecentlyTerminatedKey());
-    const map = raw ? JSON.parse(raw) : {};
-    const ts = map[tableId];
-    return ts && Date.now() - ts < 30000; // 30 seconds — same as VenueSectionView
-  } catch { return false; }
+  return terminatedTables.has(tableId);
 }
 
-// Mark a table as recently terminated in localStorage so all tabs/devices share the guard
 function markRecentlyTerminated(tableId) {
-  try {
-    const key = getRecentlyTerminatedKey();
-    const raw = localStorage.getItem(key);
-    const map = raw ? JSON.parse(raw) : {};
-    map[tableId] = Date.now();
-    localStorage.setItem(key, JSON.stringify(map));
-  } catch { /* ignore */ }
+  terminatedTables.add(tableId);
+}
+
+export function clearTerminatedTable(tableId) {
+  terminatedTables.delete(tableId);
 }
 
 // INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
@@ -54,19 +58,26 @@ function toFrontendStatus(backendStatus) {
   const map = {
     AVAILABLE: "Free",
     OCCUPIED: "Occupied",
+    PREPARING: "Preparing",
+    READY: "Ready",
     BILLING_REQUESTED: "Waiting Bill",
+    BILLING: "Waiting Bill",
     RESERVED: "Reserved",
     CLEANING: "Cleaning",
   };
   return map[backendStatus] || "Free";
 }
 
+let _legacyCleanupDone = false;
 function readCache() {
   try {
-    // Clear contaminated un-scoped legacy caches
-    LEGACY_UNSCOPED_KEYS.forEach(key => {
-      if (key.startsWith('softshape_tables_cache')) localStorage.removeItem(key);
-    });
+    // Clear contaminated un-scoped legacy caches (once per page load)
+    if (!_legacyCleanupDone) {
+      LEGACY_UNSCOPED_KEYS.forEach(key => {
+        if (key.startsWith('softshape_tables_cache')) localStorage.removeItem(key);
+      });
+      _legacyCleanupDone = true;
+    }
     const raw = localStorage.getItem(getTablesCacheKey());
     const parsed = raw ? JSON.parse(raw) : [];
     // Deduplicate cached tables to prevent duplicate cards on load
@@ -349,12 +360,13 @@ function acquireSocket(handlers) {
 
     sharedSocket.emit("join", getCurrentRestaurantId());
 
-    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
+    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated, onTerminated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
     sharedSocket.on("table:created", onCreated);
     sharedSocket.on("table:deleted", onDeleted);
     if (onOrderCreated) sharedSocket.on("order:created", onOrderCreated);
     if (onOrderUpdated) sharedSocket.on("order:updated", onOrderUpdated);
+    if (onTerminated) sharedSocket.on("table:terminated", onTerminated);
     socketRefCount += 1;
 
     return () => {
@@ -363,6 +375,7 @@ function acquireSocket(handlers) {
       sharedSocket?.off("table:deleted", onDeleted);
       if (onOrderCreated) sharedSocket?.off("order:created", onOrderCreated);
       if (onOrderUpdated) sharedSocket?.off("order:updated", onOrderUpdated);
+      if (onTerminated) sharedSocket?.off("table:terminated", onTerminated);
       socketRefCount = Math.max(0, socketRefCount - 1);
     };
   } catch (err) {
@@ -378,6 +391,20 @@ async function persistStatusChanges(prevTables, nextTables) {
   for (const table of nextTables) {
     if (!table.backendId) continue;
 
+    // Guard: skip persisting session updates for recently terminated tables.
+    // A socket event may have briefly revived the table with stale data before
+    // the grace window blocked it. Persisting that stale state would re-populate
+    // the table with old items on the backend, causing "old items adding to new
+    // tables" and "table automatically settling" bugs.
+    if (isRecentlyTerminated(table.backendId)) {
+      // Only persist if the table is being set to Free (legitimate termination confirm)
+      const isFree = table.status === 'Free' || table.status === 'AVAILABLE' || table.workflowStatus === 'Free';
+      if (!isFree) {
+        console.warn('[TableSync] Skipping persist for recently terminated table', table.number, '— status:', table.status);
+        continue;
+      }
+    }
+
     const prev = prevTables.find((t) => t.backendId === table.backendId);
     const sessionChanged =
       !prev ||
@@ -392,8 +419,11 @@ async function persistStatusChanges(prevTables, nextTables) {
       // Backend enum values like "OCCUPIED" need to be converted to "Occupied"
       let statusToSend = table.status;
       if (statusToSend === 'OCCUPIED') statusToSend = 'Occupied';
+      else if (statusToSend === 'PREPARING') statusToSend = 'Preparing';
+      else if (statusToSend === 'READY') statusToSend = 'Ready';
       else if (statusToSend === 'AVAILABLE') statusToSend = 'Free';
       else if (statusToSend === 'BILLING_REQUESTED') statusToSend = 'Waiting Bill';
+      else if (statusToSend === 'BILLING') statusToSend = 'Waiting Bill';
       else if (statusToSend === 'RESERVED') statusToSend = 'Reserved';
       else if (statusToSend === 'CLEANING') statusToSend = 'Cleaning';
 
@@ -505,6 +535,17 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
     registerReconnectRefetch(loadTables);
 
     const releaseSocket = acquireSocket({
+      onTerminated: (payload) => {
+        if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
+        if (!payload?.tableId) return;
+        // Enter the grace window using the server-authoritative timestamp
+        markRecentlyTerminated(payload.tableId);
+        // Also dispatch the settled event for UI feedback (same as before)
+        const existingTable = tablesRef.current.find(t => t.backendId === payload.tableId);
+        window.dispatchEvent(new CustomEvent('table:settled', {
+          detail: { tableId: payload.tableId, tableNumber: existingTable?.number }
+        }));
+      },
       onUpdated: (payload) => {
         if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
         const updatedTable = unwrapTableEvent(payload);
@@ -515,6 +556,8 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
         const existingTable = tablesRef.current.find(t => t.backendId === updatedTable.id);
         const hadActiveOrder = existingTable?.activeOrder && existingTable.activeOrder.items?.length > 0;
         if (isSettledOrTerminated && hadActiveOrder) {
+          // Fallback: if the table:terminated event was missed (e.g. socket not yet
+          // connected), mark it here from the table:updated event as a safety net.
           markRecentlyTerminated(updatedTable.id);
           window.dispatchEvent(new CustomEvent('table:settled', {
             detail: { tableId: updatedTable.id, tableNumber: existingTable?.number }

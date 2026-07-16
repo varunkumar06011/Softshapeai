@@ -18,28 +18,24 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchBarTables, updateBarTableSession } from "./barTableApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
-import { getBarTablesCacheKey, getRecentlyTerminatedKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { getBarTablesCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
-// Check if a table was recently terminated (within 30s) to prevent UI flicker
-// when a table is deleted and immediately recreated
+// ── Cross-device termination block (in-memory, not localStorage) ────────────
+// Once a table is terminated, it is permanently blocked for the entire page session.
+// A terminated table must NEVER be revived by stale socket events — only a new
+// order creation (which goes through the full edge/cloud flow) can re-occupy it.
+const terminatedTables = new Set();
+
 function isRecentlyTerminated(tableId) {
-  try {
-    const raw = localStorage.getItem(getRecentlyTerminatedKey());
-    const map = raw ? JSON.parse(raw) : {};
-    const ts = map[tableId];
-    return ts && Date.now() - ts < 30000; // 30 seconds — same as VenueSectionView
-  } catch { return false; }
+  return terminatedTables.has(tableId);
 }
 
-// Mark a table as recently terminated in localStorage so all tabs/devices share the guard
 function markRecentlyTerminated(tableId) {
-  try {
-    const key = getRecentlyTerminatedKey();
-    const raw = localStorage.getItem(key);
-    const map = raw ? JSON.parse(raw) : {};
-    map[tableId] = Date.now();
-    localStorage.setItem(key, JSON.stringify(map));
-  } catch { /* ignore */ }
+  terminatedTables.add(tableId);
+}
+
+export function clearTerminatedTable(tableId) {
+  terminatedTables.delete(tableId);
 }
 
 let _persistingCount = 0;
@@ -57,19 +53,26 @@ function toFrontendStatus(backendStatus) {
   const map = {
     AVAILABLE: "Free",
     OCCUPIED: "Occupied",
+    PREPARING: "Preparing",
+    READY: "Ready",
     BILLING_REQUESTED: "Waiting Bill",
+    BILLING: "Waiting Bill",
     RESERVED: "Reserved",
     CLEANING: "Cleaning",
   };
   return map[backendStatus] || "Free";
 }
 
+let _legacyCleanupDone = false;
 function readCache() {
   try {
-    // Evict stale caches that may contain local-N fake IDs
-    LEGACY_UNSCOPED_KEYS.forEach(k => {
-      if (k.startsWith('softshape_bar_tables_cache')) localStorage.removeItem(k);
-    });
+    // Evict stale caches that may contain local-N fake IDs (once per page load)
+    if (!_legacyCleanupDone) {
+      LEGACY_UNSCOPED_KEYS.forEach(k => {
+        if (k.startsWith('softshape_bar_tables_cache')) localStorage.removeItem(k);
+      });
+      _legacyCleanupDone = true;
+    }
     const raw = localStorage.getItem(getBarTablesCacheKey());
     const parsed = raw ? JSON.parse(raw) : [];
     // Drop any local-N entries that slipped through, then deduplicate by backendId
@@ -276,12 +279,13 @@ function acquireSocket(handlers) {
 
     sharedSocket.emit("join", getCurrentRestaurantId());
 
-    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated } = handlers;
+    const { onUpdated, onCreated, onDeleted, onOrderCreated, onOrderUpdated, onTerminated } = handlers;
     sharedSocket.on("table:updated", onUpdated);
     sharedSocket.on("table:created", onCreated);
     sharedSocket.on("table:deleted", onDeleted);
     if (onOrderCreated) sharedSocket.on("order:created", onOrderCreated);
     if (onOrderUpdated) sharedSocket.on("order:updated", onOrderUpdated);
+    if (onTerminated) sharedSocket.on("table:terminated", onTerminated);
     socketRefCount += 1;
 
     return () => {
@@ -290,6 +294,7 @@ function acquireSocket(handlers) {
       sharedSocket?.off("table:deleted", onDeleted);
       if (onOrderCreated) sharedSocket?.off("order:created", onOrderCreated);
       if (onOrderUpdated) sharedSocket?.off("order:updated", onOrderUpdated);
+      if (onTerminated) sharedSocket?.off("table:terminated", onTerminated);
       socketRefCount = Math.max(0, socketRefCount - 1);
     };
   } catch (err) {
@@ -305,6 +310,19 @@ async function persistStatusChanges(prevTables, nextTables) {
   for (const table of nextTables) {
     if (!table.backendId) continue;
 
+    // Guard: skip persisting session updates for recently terminated tables.
+    // A socket event may have briefly revived the table with stale data before
+    // the grace window blocked it. Persisting that stale state would re-populate
+    // the table with old items on the backend, causing "old items adding to new
+    // tables" and "table automatically settling" bugs.
+    if (isRecentlyTerminated(table.backendId)) {
+      const isFree = table.status === 'Free' || table.status === 'AVAILABLE' || table.workflowStatus === 'Free';
+      if (!isFree) {
+        console.warn('[BarTableSync] Skipping persist for recently terminated table', table.number, '— status:', table.status);
+        continue;
+      }
+    }
+
     const prev = prevTables.find((t) => t.backendId === table.backendId);
     const sessionChanged =
       !prev ||
@@ -319,8 +337,11 @@ async function persistStatusChanges(prevTables, nextTables) {
       // Backend enum values like "OCCUPIED" need to be converted to "Occupied"
       let statusToSend = table.status;
       if (statusToSend === 'OCCUPIED') statusToSend = 'Occupied';
+      else if (statusToSend === 'PREPARING') statusToSend = 'Preparing';
+      else if (statusToSend === 'READY') statusToSend = 'Ready';
       else if (statusToSend === 'AVAILABLE') statusToSend = 'Free';
       else if (statusToSend === 'BILLING_REQUESTED') statusToSend = 'Waiting Bill';
+      else if (statusToSend === 'BILLING') statusToSend = 'Waiting Bill';
       else if (statusToSend === 'RESERVED') statusToSend = 'Reserved';
       else if (statusToSend === 'CLEANING') statusToSend = 'Cleaning';
 
@@ -456,6 +477,15 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
     loadTables();
 
     const releaseSocket = acquireSocket({
+      onTerminated: (payload) => {
+        if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
+        if (!payload?.tableId) return;
+        markRecentlyTerminated(payload.tableId);
+        const existingTable = tablesRef.current.find(t => t.backendId === payload.tableId);
+        window.dispatchEvent(new CustomEvent('table:settled', {
+          detail: { tableId: payload.tableId, tableNumber: existingTable?.number }
+        }));
+      },
       onUpdated: (payload) => {
         if (payload?.restaurantId && payload.restaurantId !== getCurrentRestaurantId()) return;
         const updatedTable = unwrapTableEvent(payload);
@@ -466,6 +496,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
         const existingTable = tablesRef.current.find(t => t.backendId === updatedTable.id);
         const hadActiveOrder = existingTable?.activeOrder && existingTable.activeOrder.items?.length > 0;
         if (isSettledOrTerminated && hadActiveOrder) {
+          // Fallback: if the table:terminated event was missed, mark it here
           markRecentlyTerminated(updatedTable.id);
           window.dispatchEvent(new CustomEvent('table:settled', {
             detail: { tableId: updatedTable.id, tableNumber: existingTable?.number }

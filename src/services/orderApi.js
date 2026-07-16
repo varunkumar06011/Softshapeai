@@ -34,7 +34,7 @@ import {
   getNextOfflineKotNumber,
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
-import { isEdgeAvailable, edgeFetch } from "./edgeHealth.js";
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from "./edgeHealth.js";
 
 // Generate a unique request ID for idempotency tracking
 function generateRequestId() {
@@ -79,14 +79,12 @@ export function toOrderItems(items) {
 
 export async function reserveKotNumber(requestId = null) {
   // ── Edge server first (local daily_counter) ─────────────────────────────────
-  if (await isEdgeAvailable()) {
-    try {
-      // Edge server generates KOT numbers locally via daily_counter — no network needed.
-      // The createOrder call to edge will handle KOT numbering, so we can return a placeholder.
-      return { kotNumber: 0, edge: true };
-    } catch {
-      // fall through
-    }
+  // For edge-local (PIN) auth, the edge server assigns KOT numbers locally
+  // during order creation and prints KOTs directly to the designated printers.
+  // No pre-reservation or local print is needed — return null so the caller
+  // skips the local print block and lets the edge server handle everything.
+  if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+    return { kotNumber: null, edge: true };
   }
 
   // Fast path: if backend is known unreachable, skip API and use local counter instantly.
@@ -108,6 +106,15 @@ export async function reserveKotNumber(requestId = null) {
   }
 }
 
+export async function releaseKotNumber(requestId) {
+  if (!requestId) return;
+  try {
+    await apiFetch('/api/orders/release-kot-number', { method: 'POST', timeout: 3000, body: JSON.stringify({ requestId }) });
+  } catch {
+    // Best-effort — ignore errors
+  }
+}
+
 export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
@@ -121,7 +128,9 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
 
   // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
   // Edge server writes to local SQLite, prints KOT, enqueues sync — all local, ~15-40ms.
-  if (await isEdgeAvailable()) {
+  // For edge-local (PIN) auth, go straight to edgeFetch bypassing the health check.
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const edgeBody = {
         tableId,
@@ -145,6 +154,32 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         };
       }
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        // Edge-local auth: queue offline instead of cloud fallback (cloud will reject fake token)
+        console.warn('[Edge] createOrder edge failed, queuing offline:', edgeErr.message);
+        const offlineRequestId = requestId || generateRequestId();
+        const offlineOrderId = `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        orderData.requestId = offlineRequestId;
+        await addPendingAction({
+          requestId: offlineRequestId,
+          entityId: tableId,
+          entityType: 'order',
+          actionType: 'create-order',
+          url: '/api/orders',
+          method: 'POST',
+          body: orderData,
+          offlineOrderId,
+        });
+        const kitchenItems = orderData.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+        await queueKitchenItems({
+          orderId: offlineOrderId,
+          tableId,
+          tableNumber: orderData.tableNumber || tableId,
+          items: kitchenItems,
+          requestId: offlineRequestId,
+        }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+        return { id: offlineOrderId, ...orderData, offline: true };
+      }
       console.warn('[Edge] Edge server failed, falling through to cloud:', edgeErr.message);
     }
   }
@@ -241,13 +276,16 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
 
 export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), status } = {}) {
   // ── Edge server first (local SQLite) ────────────────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const qs = new URLSearchParams();
       if (status) qs.set('status', status);
       const path = qs.toString() ? `/api/edge/orders?${qs.toString()}` : '/api/edge/orders';
-      return await edgeFetch(path);
+      const edgeData = await edgeFetch(path);
+      return edgeData || [];
     } catch (e) {
+      if (useEdgeDirect) throw e;
       console.debug('[orderApi] edge fetch orders failed, falling through to cloud:', e);
     }
   }
@@ -268,6 +306,23 @@ export async function fetchOrders({ restaurantId = getCurrentRestaurantId(), sta
 }
 
 export async function fetchTableOrder(tableId) {
+  // For edge-local (PIN) auth, use the edge server — fetch all tables and find
+  // the one with matching tableId to extract its active order.
+  if (isEdgeLocalAuth()) {
+    try {
+      const allTables = await edgeFetch('/api/edge/tables');
+      if (Array.isArray(allTables)) {
+        for (const section of allTables) {
+          const table = (section.tables || []).find(t => t.id === tableId || t.backendId === tableId);
+          if (table?.activeOrder) return table.activeOrder;
+          if (table?.orders && table.orders.length > 0) return table.orders[0];
+        }
+      }
+      return null;
+    } catch (e) {
+      throw e;
+    }
+  }
   // Edge server doesn't have a per-table-order endpoint yet.
   // fetchTables (plural) returns all tables with active orders — callers that need
   // a single table's order should use fetchTables and filter, or use cloud directly.
@@ -293,7 +348,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
   // Edge server needs the actual tableId to find/create the order.
   // If tableId is not provided, skip edge path — can't route without it.
-  if (tableId && await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (tableId && (useEdgeDirect || await isEdgeAvailable())) {
     try {
       const edgeBody = {
         orderId,
@@ -317,6 +373,31 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         };
       }
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        // Edge-local auth: queue offline instead of cloud fallback
+        console.warn('[Edge] updateOrderItems edge failed, queuing offline:', edgeErr.message);
+        const offlineRequestId = requestId || generateRequestId();
+        body.requestId = offlineRequestId;
+        await addPendingAction({
+          requestId: offlineRequestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'update-items',
+          url: `/api/orders/${orderId}/items`,
+          method: 'PATCH',
+          body,
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        const kitchenItems = body.items.filter(i => (i.menuType || 'FOOD') !== 'LIQUOR');
+        await queueKitchenItems({
+          orderId,
+          tableId,
+          tableNumber: tableNumber || orderId,
+          items: kitchenItems,
+          requestId: offlineRequestId,
+        }).catch(err => console.error('[Offline] Kitchen queue failed:', err.message));
+        return { id: orderId, offline: true, order: { id: orderId, items: body.items } };
+      }
       console.warn('[Edge] Edge server failed for update, falling through to cloud:', edgeErr.message);
     }
   }
@@ -419,7 +500,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
 
 export async function updateOrderStatus(orderId, status) {
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/status', {
         method: 'POST',
@@ -428,6 +510,21 @@ export async function updateOrderStatus(orderId, status) {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] updateOrderStatus edge failed, queuing offline:', edgeErr.message);
+        const requestId = generateRequestId();
+        await addPendingAction({
+          requestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'update-status',
+          url: `/api/orders/${orderId}/status`,
+          method: 'PATCH',
+          body: { status },
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        return { id: orderId, offline: true, status };
+      }
       console.warn('[Edge] updateOrderStatus failed, falling through:', edgeErr.message);
     }
   }
@@ -478,7 +575,8 @@ export async function updateOrderStatus(orderId, status) {
 
 export async function requestBilling(orderId) {
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/request-billing', {
         method: 'POST',
@@ -487,6 +585,21 @@ export async function requestBilling(orderId) {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] requestBilling edge failed, queuing offline:', edgeErr.message);
+        const requestId = generateRequestId();
+        await addPendingAction({
+          requestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'request-billing',
+          url: `/api/orders/${orderId}/request-billing`,
+          method: 'POST',
+          body: { requestId },
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] requestBilling failed, falling through:', edgeErr.message);
     }
   }
@@ -539,7 +652,8 @@ export async function requestBilling(orderId) {
 
 export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/pay', {
         method: 'POST',
@@ -548,6 +662,21 @@ export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] markOrderPaid edge failed, queuing offline:', edgeErr.message);
+        const requestId = generateRequestId();
+        await addPendingAction({
+          requestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'mark-paid',
+          url: `/api/orders/${orderId}/pay`,
+          method: 'POST',
+          body: { paymentMethod, requestId },
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] markOrderPaid failed, falling through:', edgeErr.message);
     }
   }
@@ -605,7 +734,8 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
   body.requestId = settleRequestId;
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/settle', {
         method: 'POST',
@@ -614,6 +744,26 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] settleOrder edge failed, queuing offline:', edgeErr.message);
+        await addPendingAction({
+          requestId: settleRequestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'settle',
+          url: `/api/orders/${orderId}/settle`,
+          method: 'POST',
+          body,
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        const localId = `offline-txn-${Date.now()}`;
+        body.localTxnId = localId;
+        await addOfflineTransaction({
+          localId, orderId, requestId: settleRequestId,
+          ...extraSettleData, synced: false, createdAt: Date.now(),
+        });
+        return { offline: true, transaction: { id: localId, ...body } };
+      }
       console.warn('[Edge] settleOrder failed, falling through:', edgeErr.message);
     }
   }
@@ -716,7 +866,8 @@ export async function saveTransaction({
   };
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/transaction', {
         method: 'POST',
@@ -725,6 +876,26 @@ export async function saveTransaction({
       });
       if (result && result.success) return { id: result.transaction.id, transaction: result.transaction };
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] saveTransaction edge failed, queuing offline:', edgeErr.message);
+        const requestId = generateRequestId();
+        txnBody.requestId = requestId;
+        await addPendingAction({
+          requestId,
+          entityId: orderId || `walkin-${Date.now()}`,
+          entityType: 'transaction',
+          actionType: 'save-transaction',
+          url: '/api/transactions',
+          method: 'POST',
+          body: txnBody,
+          dependsOnOrderId: orderId && String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        const localId = `offline-txn-${Date.now()}`;
+        await addOfflineTransaction({
+          localId, orderId, requestId, ...txnBody, synced: false, createdAt: Date.now(),
+        });
+        return { offline: true, id: localId, transaction: { id: localId, ...txnBody, paidAt: new Date().toISOString() } };
+      }
       console.warn('[Edge] saveTransaction failed, falling through:', edgeErr.message);
     }
   }
@@ -789,6 +960,14 @@ export async function saveTransaction({
 }
 
 export async function fetchTransactions(restaurantId, limit = 2000, date = null, month = null, outletId = null) {
+  // For edge-local (PIN) auth, the edge server has no transactions list endpoint.
+  // Settled orders exist in order_record but with a different shape than transactions.
+  // Return empty — the UI will show "No Recent Transactions" for offline PIN users.
+  // Offline transactions are stored locally via addOfflineTransaction and shown
+  // optimistically in the UI; they don't need to be re-fetched from here.
+  if (isEdgeLocalAuth()) {
+    return [];
+  }
   const qs = new URLSearchParams({ restaurantId });
   if (limit != null && limit > 0) qs.set('limit', String(limit));
   if (date)  qs.set('date',  date);   // 'YYYY-MM-DD'
@@ -815,7 +994,8 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
   const cancelRequestId = requestId || generateRequestId();
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/cancel', {
         method: 'POST',
@@ -824,6 +1004,20 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] cancelOrderItem edge failed, queuing offline:', edgeErr.message);
+        await addPendingAction({
+          requestId: cancelRequestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'cancel-item',
+          url: `/api/orders/${orderId}/cancel-item`,
+          method: 'PATCH',
+          body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted },
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] cancelOrderItem failed, falling through:', edgeErr.message);
     }
   }
@@ -885,31 +1079,45 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
 }
 
 export async function swapTable(sourceTableBackendId, targetTableBackendId, swappedBy, restaurantId) {
+  const cloudRequestId = generateRequestId();
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/swap-table', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceTableId: sourceTableBackendId, targetTableId: targetTableBackendId, swappedBy }),
+        body: JSON.stringify({ sourceTableId: sourceTableBackendId, targetTableId: targetTableBackendId, swappedBy, requestId: cloudRequestId }),
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] swapTable edge failed, queuing offline:', edgeErr.message);
+        await addPendingAction({
+          requestId: cloudRequestId,
+          entityId: sourceTableBackendId,
+          entityType: 'table',
+          actionType: 'swap-table',
+          url: `/api/tables/${sourceTableBackendId}/swap`,
+          method: 'POST',
+          body: { targetTableId: targetTableBackendId, swappedBy, restaurantId, requestId: cloudRequestId },
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] swapTable failed, falling through:', edgeErr.message);
     }
   }
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing table swap');
-    const requestId = generateRequestId();
     await addPendingAction({
-      requestId,
+      requestId: cloudRequestId,
       entityId: sourceTableBackendId,
       entityType: 'table',
       actionType: 'swap-table',
       url: `/api/tables/${sourceTableBackendId}/swap`,
       method: 'POST',
-      body: { targetTableId: targetTableBackendId, swappedBy, restaurantId, requestId },
+      body: { targetTableId: targetTableBackendId, swappedBy, restaurantId, requestId: cloudRequestId },
     });
     return { offline: true };
   }
@@ -922,7 +1130,7 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
           const res = await fetch(apiUrl(`/api/tables/${sourceTableBackendId}/swap`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ targetTableId: targetTableBackendId, swappedBy, restaurantId }),
+            body: JSON.stringify({ targetTableId: targetTableBackendId, swappedBy, restaurantId, requestId: cloudRequestId }),
             signal: controller.signal,
           });
           return parseResponse(res);
@@ -933,15 +1141,14 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
   } catch (apiErr) {
     if (!isBackendReachable()) {
       console.warn('[Offline] Swap table API failed, queuing for sync:', apiErr.message);
-      const requestId = generateRequestId();
       await addPendingAction({
-        requestId,
+        requestId: cloudRequestId,
         entityId: sourceTableBackendId,
         entityType: 'table',
         actionType: 'swap-table',
         url: `/api/tables/${sourceTableBackendId}/swap`,
         method: 'POST',
-        body: { targetTableId: targetTableBackendId, swappedBy, restaurantId, requestId },
+        body: { targetTableId: targetTableBackendId, swappedBy, restaurantId, requestId: cloudRequestId },
       });
       return { offline: true };
     }
@@ -951,7 +1158,8 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
 
 export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/edit-bill', {
         method: 'POST',
@@ -960,6 +1168,21 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] editBill edge failed, queuing offline:', edgeErr.message);
+        const requestId = generateRequestId();
+        await addPendingAction({
+          requestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'bill-edit',
+          url: `/api/orders/${orderId}/bill-edit`,
+          method: 'PATCH',
+          body: { removedItemIds, editQuantities, addedItems, editedBy, requestId },
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] editBill failed, falling through:', edgeErr.message);
     }
   }
@@ -1017,7 +1240,8 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
 
 export async function transferItems(sourceTableBackendId, targetTableBackendId, itemIds, transferredBy, restaurantId) {
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/transfer-items', {
         method: 'POST',
@@ -1026,6 +1250,20 @@ export async function transferItems(sourceTableBackendId, targetTableBackendId, 
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] transferItems edge failed, queuing offline:', edgeErr.message);
+        const requestId = generateRequestId();
+        await addPendingAction({
+          requestId,
+          entityId: sourceTableBackendId,
+          entityType: 'table',
+          actionType: 'transfer-items',
+          url: `/api/tables/${sourceTableBackendId}/transfer-items`,
+          method: 'POST',
+          body: { targetTableId: targetTableBackendId, itemIds, transferredBy, restaurantId, requestId },
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] transferItems failed, falling through:', edgeErr.message);
     }
   }
@@ -1120,7 +1358,8 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
   if (cardTipAmount != null) body.cardTipAmount = Number(cardTipAmount);
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/confirm-payment', {
         method: 'POST',
@@ -1129,6 +1368,20 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] confirmPayment edge failed, queuing offline:', edgeErr.message);
+        const requestId = generateRequestId();
+        await addPendingAction({
+          requestId,
+          entityId: transactionId,
+          entityType: 'transaction',
+          actionType: 'confirm-payment',
+          url: `/api/transactions/${transactionId}/confirm-payment`,
+          method: 'POST',
+          body: { ...body, requestId },
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] confirmPayment failed, falling through:', edgeErr.message);
     }
   }
@@ -1188,7 +1441,8 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   if (billEventId) qs.set('billEventId', billEventId);
 
   // ── Edge server first (local SQLite, assigns real bill number + prints) ──────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/print-bill', {
         method: 'POST',
@@ -1197,6 +1451,28 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] printBill edge failed, queuing offline:', edgeErr.message);
+        await addPendingAction({
+          requestId: printRequestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'print-bill',
+          url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
+          method: 'POST',
+          body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        if (!localPrinted) {
+          await addOfflinePrintJob({
+            id: `offline-print-${Date.now()}`,
+            orderId, requestId: printRequestId,
+            jobType: 'FINAL_BILL', status: 'pending', createdAt: Date.now(),
+            data: { restaurantId, tableNumber, discountPercent, kotNumbers },
+          });
+        }
+        return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
+      }
       console.warn('[Edge] printBill failed, falling through:', edgeErr.message);
     }
   }
@@ -1282,7 +1558,8 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
   const cancelRequestId = requestId || generateRequestId();
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
-  if (await isEdgeAvailable()) {
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const result = await edgeFetch('/api/edge/order/cancel-items', {
         method: 'POST',
@@ -1291,6 +1568,20 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (useEdgeDirect) {
+        console.warn('[Edge] cancelOrderItems edge failed, queuing offline:', edgeErr.message);
+        await addPendingAction({
+          requestId: cancelRequestId,
+          entityId: orderId,
+          entityType: 'order',
+          actionType: 'cancel-items',
+          url: `/api/orders/${orderId}/cancel-items`,
+          method: 'PATCH',
+          body: { items, cancelledBy, tableNumber, requestId: cancelRequestId, localPrinted },
+          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+        });
+        return { offline: true };
+      }
       console.warn('[Edge] cancelOrderItems failed, falling through:', edgeErr.message);
     }
   }

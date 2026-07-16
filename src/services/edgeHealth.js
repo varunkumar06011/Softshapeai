@@ -12,8 +12,8 @@ const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 
 const DEFAULT_EDGE_URL = 'http://127.0.0.1:3101';
-const EDGE_CHECK_TIMEOUT_MS = 6000;
-const EDGE_CHECK_INTERVAL_MS = 2_000;
+const EDGE_CHECK_TIMEOUT_MS = 1000;
+const EDGE_CHECK_INTERVAL_MS = 30_000;
 const LAN_DISCOVERY_TIMEOUT_MS = 800;
 
 let _edgeAvailable = false;
@@ -87,6 +87,41 @@ export async function ensureEdgeApiKey() {
 export function resetEdgeCache() {
   _edgeLastCheck = 0;
   _edgeAvailable = false;
+}
+
+/**
+ * Manually invalidate the edge health cache. Call this after a known edge server
+ * restart or when the user manually changes the edge URL.
+ */
+export function invalidateEdgeHealthCache() {
+  _edgeLastCheck = 0;
+  _edgeAvailable = false;
+  _discoveredEdgeUrl = null;
+  _discoveryLastFailed = 0;
+}
+
+/**
+ * Pre-warm the edge health cache. Call once on app startup so the first
+ * data fetch doesn't pay the health check latency.
+ */
+export function prewarmEdgeHealth() {
+  isEdgeAvailable().catch(() => {});
+}
+
+/**
+ * Returns true if the current session was established via offline edge PIN
+ * login (the stored token is an `edge-local-*` marker, not a real JWT).
+ * In this state, cloud API fallback calls will always fail because the
+ * cloud backend cannot verify the fake token. Read functions should check
+ * this before attempting a cloud fallback and surface a clear error instead.
+ */
+export function isEdgeLocalAuth() {
+  try {
+    const token = localStorage.getItem('ss_token');
+    return !!token && token.startsWith('edge-local-');
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -269,35 +304,60 @@ export async function edgeFetch(path, options = {}) {
     headers['X-Edge-Key'] = edgeApiKey;
   }
 
-  let res = await _edgeFetchWithKey(path, options, headers, EDGE_FETCH_TIMEOUT_MS);
+  // Retry on network errors (not HTTP error statuses). The edge server is a
+  // separate process that survives page reloads — a transient failure usually
+  // means the sidecar is still starting up or a brief network blip. Retry up
+  // to 2 times with 1s delay before giving up and letting the caller fall
+  // through to cloud.
+  const MAX_RETRIES = 2;
+  let lastError = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      let res = await _edgeFetchWithKey(path, options, headers, EDGE_FETCH_TIMEOUT_MS);
 
-  // If the edge server rejected our API key, the stored key is stale.
-  // Clear it and retry once without the key — the edge server only rejects
-  // a wrong key, not a missing one (unless EDGE_REQUIRE_KEY=true, which is
-  // not the default). This fixes tables not loading when localStorage has
-  // an outdated key from a prior registration or outlet switch.
-  if (res.status === 401 && edgeApiKey) {
-    let body = null;
-    try { body = await res.json(); } catch { /* ignore */ }
-    if (body?.error && /edge api key/i.test(body.error)) {
-      console.warn('[edgeFetch] Stored edge API key was rejected — clearing and retrying without key');
-      try { localStorage.removeItem(EDGE_API_KEY_STORAGE_KEY); } catch { /* ignore */ }
-      const retryHeaders = { ...headers };
-      delete retryHeaders['X-Edge-Key'];
-      res = await _edgeFetchWithKey(path, options, retryHeaders, EDGE_FETCH_TIMEOUT_MS);
+      // If the edge server rejected our API key, the stored key is stale.
+      // Clear it and retry once without the key — the edge server only rejects
+      // a wrong key, not a missing one (unless EDGE_REQUIRE_KEY=true, which is
+      // not the default). This fixes tables not loading when localStorage has
+      // an outdated key from a prior registration or outlet switch.
+      if (res.status === 401 && edgeApiKey) {
+        let body = null;
+        try { body = await res.json(); } catch { /* ignore */ }
+        if (body?.error && /edge api key/i.test(body.error)) {
+          console.warn('[edgeFetch] Stored edge API key was rejected — clearing and retrying without key');
+          try { localStorage.removeItem(EDGE_API_KEY_STORAGE_KEY); } catch { /* ignore */ }
+          const retryHeaders = { ...headers };
+          delete retryHeaders['X-Edge-Key'];
+          res = await _edgeFetchWithKey(path, options, retryHeaders, EDGE_FETCH_TIMEOUT_MS);
+        }
+      }
+
+      if (!res.ok) {
+        let message = `Edge request failed (${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.error) message = body.error;
+        } catch { /* ignore */ }
+        const err = new Error(message);
+        err.status = res.status;
+        throw err;
+      }
+      if (res.status === 204) return null;
+      return res.json();
+    } catch (err) {
+      lastError = err;
+      // Only retry on network errors (not HTTP error statuses which throw
+      // with a .status property). AbortError (timeout) also retries since
+      // the edge server may be slow to respond during startup.
+      if (err?.status) throw err; // HTTP error — don't retry
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000));
+        // Reset edge availability cache so isEdgeAvailable() re-checks
+        _edgeLastCheck = 0;
+        continue;
+      }
+      throw err;
     }
   }
-
-  if (!res.ok) {
-    let message = `Edge request failed (${res.status})`;
-    try {
-      const body = await res.json();
-      if (body?.error) message = body.error;
-    } catch { /* ignore */ }
-    const err = new Error(message);
-    err.status = res.status;
-    throw err;
-  }
-  if (res.status === 204) return null;
-  return res.json();
+  throw lastError;
 }

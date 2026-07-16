@@ -21,6 +21,7 @@ import App from './App.jsx'
 import { MenuProvider } from './context/MenuContext'
 import { registerSW } from './utils/registerSW'
 import { checkAndApplyOtaOnStartup, checkAndDownloadOta } from './services/otaService'
+import { prewarmEdgeHealth } from './services/edgeHealth'
 import * as Sentry from '@sentry/react'
 
 // ── OTA: apply pending update before React renders ───────────────────────────
@@ -28,6 +29,9 @@ import * as Sentry from '@sentry/react'
 // This is async but we don't await it — if it fails, the app loads from
 // bundled assets normally. The OTA check is non-blocking.
 checkAndApplyOtaOnStartup().catch(() => { /* fall back to bundled assets */ });
+
+// Pre-warm edge health cache so first data fetch doesn't pay the probe latency
+prewarmEdgeHealth();
 
 Sentry.init({
   dsn: import.meta.env.VITE_SENTRY_DSN,

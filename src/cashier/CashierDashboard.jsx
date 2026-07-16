@@ -34,11 +34,11 @@ import {
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { bulkImportSpecials } from '../services/menuService';
-import { useTableSync } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment } from '../services/orderApi';
+import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, releaseKotNumber, confirmPayment } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
-import { isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from '../services/edgeHealth';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
@@ -55,7 +55,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../context/SyncStatusContext';
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
 import PendingActionsModal from '../shared/components/PendingActionsModal';
-import { useBarTableSync } from '../services/barTableSyncService';
+import { useBarTableSync, clearTerminatedTable as clearBarTerminatedTable } from '../services/barTableSyncService';
 import { useBarMenuSync } from '../services/barMenuSyncService';
 import { authService } from '../services/authService';
 import ItemAnalytics from './ItemAnalytics';
@@ -71,6 +71,12 @@ import { getKolkataDateString, getKolkataMonthString, KOLKATA_TIME_ZONE, shiftKo
 import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelpers';
 import { withOptimisticUpdate, logCriticalError, BackgroundQueue } from '../utils/resilience';
 import { useSettlementGuards } from '../hooks/useSettlementGuards';
+import { DeadLetterBanner } from '../components/DeadLetterBanner';
+
+// Track KOT numbers that have been locally printed in this session to prevent
+// double-printing the same KOT number (e.g. from rapid double-clicks or retries
+// where the reservation returned the same number).
+const _printedKotNumbers = new Set();
 
 function getVenueTableLabel(sectionTag, tableNumber) {
   return String(tableNumber);
@@ -82,7 +88,10 @@ const toFrontendTableStatus = (backendStatus) => {
   const map = {
     AVAILABLE: 'Free',
     OCCUPIED: 'Occupied',
+    PREPARING: 'Preparing',
+    READY: 'Ready',
     BILLING_REQUESTED: 'Waiting Bill',
+    BILLING: 'Waiting Bill',
     RESERVED: 'Reserved',
     CLEANING: 'Cleaning',
   };
@@ -254,6 +263,7 @@ const CashierDashboard = ({ onLogout }) => {
   console.log('[BUILD] CashierDashboard loaded — version 5.0.0');
   const { user, restaurant } = useAuth();
   const { isOffline, hasPending, pendingCount, lastSyncAt, triggerSync } = useSyncStatus();
+  const isEdgeLocal = isEdgeLocalAuth();
   const settlementQueueRef = useRef(null);
   if (!settlementQueueRef.current) settlementQueueRef.current = new BackgroundQueue('settlement');
   const enabledModules = restaurant?.enabledModules || {};
@@ -323,6 +333,7 @@ const CashierDashboard = ({ onLogout }) => {
   // Fallback: refresh restaurantType/enabledModules and live permissions for existing sessions
   const [userPermissions, setUserPermissions] = useState({});
   useEffect(() => {
+    if (isEdgeLocal) return; // Skip cloud auth call for PIN users — cloud rejects fake token
     httpFetch(`${API_BASE}/api/auth/me`, { credentials: 'include', headers: getAuthHeaders() }, { retries: 1 })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -362,6 +373,26 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   useEffect(() => {
+    // For edge-local (PIN) auth, use edge server — cloud will reject the fake token
+    if (isEdgeLocal) {
+      edgeFetch('/api/edge/sections')
+        .then(data => {
+          const rawSections = Array.isArray(data) ? data : data?.sections || [];
+          const sections = rawSections.map(s => ({
+            ...s,
+            sectionTag: s.sectionTag || s.tables?.[0]?.sectionTag || null,
+          }));
+          setFetchedSections(sections);
+          try {
+            localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+          } catch (e) {
+            console.warn('[fetchedSections] failed to cache sections:', e);
+          }
+        })
+        .catch(err => console.error('[fetchedSections] edge fetch failed:', err))
+        .finally(() => setSectionsLoading(false));
+      return;
+    }
     httpFetch(`${API_BASE}/api/venue/sections`, {
       credentials: 'include',
       headers: getAuthHeaders(),
@@ -946,6 +977,11 @@ const CashierDashboard = ({ onLogout }) => {
   // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles
   const loadExpenditureSummary = useCallback(async (dateParam) => {
     if (!dateParam) {
+      setExpenditureSummary({ totalAmount: 0, count: 0 });
+      return;
+    }
+    // Expenditures are cloud-only — skip for edge-local (PIN) users
+    if (isEdgeLocalAuth()) {
       setExpenditureSummary({ totalAmount: 0, count: 0 });
       return;
     }
@@ -2072,6 +2108,23 @@ const CashierDashboard = ({ onLogout }) => {
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
   const fetchFreshOrderData = async (tableBackendId) => {
     try {
+      // For edge-local (PIN) auth, use edge server — cloud will reject the fake token
+      if (isEdgeLocalAuth()) {
+        try {
+          const allTables = await edgeFetch('/api/edge/tables');
+          if (Array.isArray(allTables)) {
+            for (const section of allTables) {
+              const table = (section.tables || []).find(t => t.id === tableBackendId || t.backendId === tableBackendId);
+              if (table?.activeOrder) return table.activeOrder;
+              if (table?.orders && table.orders.length > 0) return table.orders[0];
+            }
+          }
+          return null;
+        } catch (e) {
+          console.warn('[fetchFreshOrderData] Edge fetch failed:', e.message);
+          return null;
+        }
+      }
       const response = await httpFetch(`${API_BASE}/api/orders/table/${tableBackendId}`, { headers: getAuthHeaders() }, { retries: 1 });
       if (response.ok) {
         const freshOrder = await response.json();
@@ -2472,6 +2525,39 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       const rid = getCurrentRestaurantId();
 
+      // For edge-local (PIN) auth, cloud will reject the fake token.
+      // Fetch all transactions from edge server and filter client-side.
+      if (isEdgeLocalAuth()) {
+        const allTxns = await fetchTransactions(rid, 0, billFinderDate);
+        const filtered = (Array.isArray(allTxns) ? allTxns : []).filter(txn => {
+          let matches = true;
+          if (billFinderBillNo.trim()) {
+            const search = billFinderBillNo.trim().toLowerCase();
+            matches = matches && (
+              String(txn.billNumber || '').toLowerCase() === search ||
+              String(txn.displayId || '').toLowerCase() === search ||
+              String(txn.txnNumber || '').toLowerCase() === search
+            );
+          }
+          const tableNum = parseInt(billFinderTableNo.trim(), 10);
+          if (!isNaN(tableNum)) {
+            matches = matches && String(txn.tableNumber) === String(tableNum);
+          }
+          return matches;
+        });
+
+        const enriched = filtered.map(txn => {
+          const num = txn.tableNumber;
+          const secName = (txn.sectionTag || '').toLowerCase();
+          const tableDisplayName = num ? getVenueTableLabel(secName, num) : '—';
+          return { ...txn, tableDisplayName, itemsList: txn.items || [] };
+        });
+
+        setBillFinderSearched(true);
+        setBillFinderResults(enriched);
+        return;
+      }
+
       // Use backend filters (billNumber + tableNumber) instead of fetching all txns and filtering client-side
       const params = new URLSearchParams();
       params.set('date', billFinderDate);
@@ -2555,6 +2641,14 @@ const CashierDashboard = ({ onLogout }) => {
     }
     setIsVerifyingReprintPin(true);
     try {
+      // For edge-local (PIN) auth, cloud will reject the fake token.
+      // The user already authenticated via edge PIN login — skip cloud verification.
+      if (isEdgeLocalAuth()) {
+        setShowReprintPinModal(false);
+        setReprintPinError('');
+        doReprintFoundBill(reprintPinTarget);
+        return;
+      }
       const res = await httpFetch(`${API_BASE}/api/auth/verify-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -2578,6 +2672,23 @@ const CashierDashboard = ({ onLogout }) => {
     if (!txn) return;
     setIsReprintingFoundBill(true);
     try {
+      // For edge-local (PIN) auth, use edge server — cloud will reject the fake token
+      if (isEdgeLocalAuth()) {
+        try {
+          const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: txn.orderId }),
+          });
+          if (edgeResult && edgeResult.success) {
+            addNotification('Re-print Sent', `Bill #${txn.billNumber || txn.displayId} sent to printer.`, 'success');
+            return;
+          }
+        } catch (edgeErr) {
+          throw new Error(edgeErr.message || 'Edge reprint failed');
+        }
+        return;
+      }
       const response = await httpFetch(`${API_BASE}/api/print/reprint-by-transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -2731,11 +2842,18 @@ const CashierDashboard = ({ onLogout }) => {
           }));
           if (!isOffline) {
             try {
-              await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-                body: JSON.stringify({ discount: discountPercent })
-              }, { retries: 1 });
+              if (isEdgeLocalAuth()) {
+                await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ discount: discountPercent }),
+                });
+              } else {
+                await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                  body: JSON.stringify({ discount: discountPercent })
+                }, { retries: 1 });
+              }
             } catch (discountErr) {
               // Non-fatal: the discount is already saved locally and will be
               // included in the queued bill/settle actions that sync later.
@@ -3101,7 +3219,8 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // ── Edge server first (local SQLite + direct printer) ─────────────────────
-      if (await isEdgeAvailable()) {
+      const useEdgeDirect = isEdgeLocalAuth();
+      if (useEdgeDirect || await isEdgeAvailable()) {
         try {
           const edgeResult = await edgeFetch('/api/edge/kot/reprint', {
             method: 'POST',
@@ -3113,6 +3232,11 @@ const CashierDashboard = ({ onLogout }) => {
             return;
           }
         } catch (edgeErr) {
+          if (useEdgeDirect) {
+            console.error('[handleReprintKOT] Edge reprint failed:', edgeErr.message);
+            addNotification('Reprint Failed', 'Edge server unavailable — please try again.', 'error');
+            return;
+          }
           console.warn('[handleReprintKOT] Edge reprint failed, falling through to cloud:', edgeErr.message);
         }
       }
@@ -3203,7 +3327,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       setIsPrintingBill(true);
 
-      if (isOffline) {
+      if (isOffline || isEdgeLocal) {
         // Offline: queue the walk-in bill action for sync
         const { addPendingAction, addOfflineTransaction } = await import('../utils/offlineDB');
         await addPendingAction({
@@ -3349,11 +3473,18 @@ const CashierDashboard = ({ onLogout }) => {
       try {
         // Apply discount update before reprinting (always send, even 0, to reflect current input)
         if (!selectedTable.isExtra && selectedTable.backendId) {
-          await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ discount: discountPercent }),
-          }, { retries: 1 });
+          if (isEdgeLocalAuth()) {
+            await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ discount: discountPercent }),
+            });
+          } else {
+            await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+              body: JSON.stringify({ discount: discountPercent }),
+            }, { retries: 1 });
+          }
           // Persist discount so it survives modal close/reopen until settlement
           localStorage.setItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`), JSON.stringify({
             value: String(discountPercent),
@@ -4511,6 +4642,12 @@ const CashierDashboard = ({ onLogout }) => {
       //    Shared eventIds ensure the Print Agent deduplicates even if the response is lost.
       let kotEventIds = [];
       if (preReservedKotNumber != null && (selectedTable?.backendId || selectedTable?.isExtra)) {
+        // Guard: prevent double-printing the same KOT number in this session
+        const alreadyPrinted = _printedKotNumbers.has(preReservedKotNumber);
+        if (alreadyPrinted) {
+          console.warn(`[KOT] KOT #${preReservedKotNumber} already printed in this session — skipping local print`);
+          localPrinted = true;
+        } else {
         const kotOrderData = {
           tableNumber: selectedTable?.number ?? selectedTable?.id,
           orderId: selectedTable?.activeOrder?.id || 'pending',
@@ -4566,10 +4703,12 @@ const CashierDashboard = ({ onLogout }) => {
         localPrinted = localPrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
 
         if (localPrinted) {
+          _printedKotNumbers.add(preReservedKotNumber);
           console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber} — backend will skip socket emission`);
         } else {
           console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
         }
+        } // end else (not already printed)
 
         // 3. Send API call with correct localPrinted flag and shared kotEventIds.
         try {
@@ -4647,6 +4786,11 @@ const CashierDashboard = ({ onLogout }) => {
             );
             return;
           }
+          // API failed and local print did not succeed — release the reserved KOT
+          // number so it doesn't create a gap in the sequence.
+          if (preReservedKotNumber != null && requestId) {
+            releaseKotNumber(requestId);
+          }
           throw apiErr;
         }
 
@@ -4712,6 +4856,13 @@ const CashierDashboard = ({ onLogout }) => {
             }
           }
         }
+      }
+
+      // API confirmed: clear any terminated block on this table so socket events
+      // for the new order are not blocked. This is the legitimate re-occupation path.
+      if (selectedTable?.backendId) {
+        clearTerminatedTable(selectedTable.backendId);
+        clearBarTerminatedTable(selectedTable.backendId);
       }
 
       // API confirmed: build KOT display from cart and update the table with server data.
@@ -4983,6 +5134,7 @@ const CashierDashboard = ({ onLogout }) => {
     <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#F8FAFC] font-sans overflow-hidden text-[#1E293B]">
       <OfflineStatusBar />
       <PendingActionsModal open={showPendingModal} onClose={() => setShowPendingModal(false)} />
+      <DeadLetterBanner />
       {/* SIDEBAR / BOTTOM BAR */}
       <aside className="w-full sm:w-20 lg:w-64 h-16 sm:h-auto bg-[#1E3A8A] border-t sm:border-t-0 sm:border-r border-white/15 flex sm:flex-col z-30 transition-all shrink-0">
         <div className="hidden sm:flex p-3 lg:p-4 border-b border-white/15 items-center justify-center shrink-0 bg-[#1E3A8A]">
@@ -5005,7 +5157,10 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'vouchers', label: 'Expenditures', icon: Receipt },
             { id: 'xreport', label: 'X Report', icon: FileText },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
-          ].map((item) => (
+          ].filter(item => {
+            if (isEdgeLocal && (item.id === 'vouchers' || item.id === 'xreport')) return false;
+            return true;
+          }).map((item) => (
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
@@ -5184,8 +5339,8 @@ const CashierDashboard = ({ onLogout }) => {
                           )}
                         </h3>
                         <div className="flex gap-4">
-                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#1E3A8A]" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
-                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bill</span></div>
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Busy</span></div>
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-yellow-400" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bill</span></div>
                           <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-400" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preparing</span></div>
                         </div>
                       </div>
@@ -5216,8 +5371,10 @@ const CashierDashboard = ({ onLogout }) => {
                               return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
                             })
                             .map((table, i) => {
-                              const isWaitingBill = table.status === 'Waiting Bill';
-                              const isPreparing = table.status === 'Preparing';
+                              const hasItems = (table.kotHistory?.length > 0) || (table.activeOrder?.items?.length > 0) || Number(table.currentBill ?? 0) > 0;
+                              const isWaitingBill = table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED' || table.status === 'BILLING';
+                              const isPreparing = table.status === 'Preparing' && hasItems;
+                              const isOccupied = hasItems && !isWaitingBill && !isPreparing;
                               const bill = calculateTableBill(table, restaurantConfig);
                               const billAmt = bill?.subtotal > 0
                                 ? bill.subtotal
@@ -5227,16 +5384,16 @@ const CashierDashboard = ({ onLogout }) => {
                                     Number(table.orders?.[0]?.totalAmount || 0)
                                   );
 
-                              let cardBg = 'bg-[#1E3A8A]/10 border-[#1E3A8A]';
-                              let textColor = 'text-[#1E3A8A]';
-                              let badgeCls = 'bg-[#1E3A8A]/10 text-[#1E3A8A]';
-                              let statusLabel = 'Occupied';
+                              let cardBg = 'bg-white border-gray-200';
+                              let textColor = 'text-gray-400';
+                              let badgeCls = 'bg-gray-100 text-gray-400';
+                              let statusLabel = 'Free';
                               let pulseClass = '';
 
                               if (isWaitingBill) {
-                                cardBg = 'bg-amber-50 border-amber-400';
-                                textColor = 'text-amber-700';
-                                badgeCls = 'bg-amber-100 text-amber-800';
+                                cardBg = 'bg-yellow-100 border-yellow-400';
+                                textColor = 'text-yellow-700';
+                                badgeCls = 'bg-yellow-200 text-yellow-800';
                                 statusLabel = 'Bill Requested';
                                 pulseClass = 'animate-pulse';
                               } else if (isPreparing) {
@@ -5244,6 +5401,11 @@ const CashierDashboard = ({ onLogout }) => {
                                 textColor = 'text-orange-700';
                                 badgeCls = 'bg-orange-100 text-orange-700';
                                 statusLabel = 'Preparing';
+                              } else if (isOccupied) {
+                                cardBg = 'bg-red-50 border-red-400';
+                                textColor = 'text-red-600';
+                                badgeCls = 'bg-red-100 text-red-700';
+                                statusLabel = 'Occupied';
                               }
 
                               return (
@@ -5404,29 +5566,29 @@ const CashierDashboard = ({ onLogout }) => {
                                 .sort((a, b) => String(a.number).localeCompare(String(b.number)))
                             ]
                               .map((table) => {
-                                const isFree = (table.status === 'Free' || !table.status)
-                                  || (Number(table.currentBill ?? 0) === 0 && !(table.kotHistory?.length > 0) && !table.activeOrder);
-                                const isWaitingBill = table.status === 'Waiting Bill';
-                                const isBusy = !isFree && !isWaitingBill;
+                                const hasItems = (table.kotHistory?.length > 0) || (table.activeOrder?.items?.length > 0) || Number(table.currentBill ?? 0) > 0;
+                                const isFree = !hasItems;
+                                const isWaitingBill = hasItems && (table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED' || table.status === 'BILLING');
+                                const isBusy = hasItems && !isWaitingBill;
                                 const isExtra = table.isExtra;
                                 const hasExtra = false; // Always show + button to allow multiple extra tables
 
-                                let containerClass = 'bg-white border border-[#84BFB1] text-[#84BFB1] hover:border-[#84BFB1] hover:shadow-md';
+                                let containerClass = 'bg-white border border-gray-200 text-gray-400 hover:border-gray-300 hover:shadow-md';
                                 let statusText = 'Open';
-                                let statusClass = 'text-[#84BFB1] bg-[#84BFB1]/10';
+                                let statusClass = 'text-gray-400 bg-gray-100';
 
                                 if (isExtra) {
                                   containerClass = 'bg-blue-50 border-2 border-dashed border-blue-400 text-blue-600 hover:border-blue-500 hover:shadow-md';
                                   statusText = 'Extra';
                                   statusClass = 'text-blue-600 bg-blue-100';
                                 } else if (isWaitingBill) {
-                                  containerClass = 'bg-amber-50 border border-amber-400 text-amber-700 shadow-md animate-pulse';
+                                  containerClass = 'bg-yellow-100 border border-yellow-400 text-yellow-700 shadow-md animate-pulse';
                                   statusText = 'Bill';
-                                  statusClass = 'text-amber-700 bg-amber-200';
+                                  statusClass = 'text-yellow-700 bg-yellow-200';
                                 } else if (isBusy) {
-                                  containerClass = 'bg-[#F39B7F]/10 border border-[#F39B7F] text-[#F39B7F] shadow-md';
+                                  containerClass = 'bg-red-50 border border-red-400 text-red-600 shadow-md';
                                   statusText = 'Busy';
-                                  statusClass = 'text-[#F39B7F] bg-[#F39B7F]/10';
+                                  statusClass = 'text-red-600 bg-red-100';
                                 }
 
                                 return (
@@ -6023,11 +6185,27 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'vouchers' && (
-                      <ExpenditureModule />
+                      isEdgeLocal ? (
+                        <div className="p-12 text-center flex flex-col items-center">
+                          <Receipt size={32} className="text-gray-300 mb-2" />
+                          <p className="text-sm font-black text-gray-500 uppercase tracking-wider">Requires Cloud Connectivity</p>
+                          <p className="text-xs text-gray-400 mt-1">Expenditures are not available in offline (PIN) mode.</p>
+                        </div>
+                      ) : (
+                        <ExpenditureModule />
+                      )
                     )}
 
                     {activeTab === 'xreport' && (
-                      <XReportSection />
+                      isEdgeLocal ? (
+                        <div className="p-12 text-center flex flex-col items-center">
+                          <FileText size={32} className="text-gray-300 mb-2" />
+                          <p className="text-sm font-black text-gray-500 uppercase tracking-wider">Requires Cloud Connectivity</p>
+                          <p className="text-xs text-gray-400 mt-1">X Reports are not available in offline (PIN) mode.</p>
+                        </div>
+                      ) : (
+                        <XReportSection />
+                      )
                     )}
 
                     {activeTab === 'billfinder' && (

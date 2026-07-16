@@ -12,6 +12,7 @@
 
 import { isEdgeAvailable, edgeFetch, getEdgeUrl } from './edgeHealth.js';
 import { apiUrl, getAuthHeaders } from './apiConfig';
+import { generateRequestId } from '../utils/requestId.js';
 
 // ── Menu item operations (local-first) ───────────────────────────────────────
 
@@ -65,48 +66,58 @@ export async function deleteMenuItem(id) {
 // ── Table operations (local-first) ───────────────────────────────────────────
 
 export async function createTable(table) {
+  const requestId = table.requestId || generateRequestId();
+  const tableWithId = { ...table, requestId };
   if (await isEdgeAvailable()) {
     try {
       return await edgeFetch('/api/edge/admin/table', {
         method: 'POST',
-        body: JSON.stringify(table),
+        body: JSON.stringify(tableWithId),
       });
     } catch { /* fall through to cloud */ }
   }
   const res = await fetch(apiUrl('/api/tables'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(table),
+    body: JSON.stringify(tableWithId),
   });
   return res.json();
 }
 
 export async function updateTable(id, updates) {
+  const requestId = updates.requestId || generateRequestId();
+  const updatesWithId = { ...updates, requestId };
   if (await isEdgeAvailable()) {
     try {
       return await edgeFetch(`/api/edge/admin/table/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify(updates),
+        body: JSON.stringify(updatesWithId),
       });
     } catch { /* fall through to cloud */ }
   }
   const res = await fetch(apiUrl(`/api/tables/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(updates),
+    body: JSON.stringify(updatesWithId),
   });
   return res.json();
 }
 
 export async function deleteTable(id) {
+  const requestId = generateRequestId();
   if (await isEdgeAvailable()) {
     try {
-      return await edgeFetch(`/api/edge/admin/table/${id}`, { method: 'DELETE' });
+      return await edgeFetch(`/api/edge/admin/table/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId }),
+      });
     } catch { /* fall through to cloud */ }
   }
   const res = await fetch(apiUrl(`/api/tables/${id}`), {
     method: 'DELETE',
-    headers: getAuthHeaders(),
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ requestId }),
   });
   return res.json();
 }
