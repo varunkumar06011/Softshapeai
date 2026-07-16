@@ -353,6 +353,14 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   const [sectionsFetchKey, setSectionsFetchKey] = useState(0);
+  const [sectionsLoading, setSectionsLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(SECTIONS_CACHE_KEY);
+      return !cached || JSON.parse(cached).length === 0;
+    } catch {
+      return true;
+    }
+  });
   useEffect(() => {
     httpFetch(`${API_BASE}/api/venue/sections`, {
       credentials: 'include',
@@ -381,7 +389,8 @@ const CashierDashboard = ({ onLogout }) => {
       })
       .catch(err => {
         console.error('[fetchedSections] fetch failed:', err);
-      });
+      })
+      .finally(() => setSectionsLoading(false));
   }, [SECTIONS_CACHE_KEY, sectionsFetchKey]);
 
   // Build dynamic source maps from fetchedSections (replaces hardcoded constants)
@@ -5363,10 +5372,15 @@ const CashierDashboard = ({ onLogout }) => {
                                   </button>
                                 );
                               })
-                            : (
+                            : sectionsLoading ? (
                               <div className="flex items-center gap-3 py-4">
                                 <div className="inline-block w-6 h-6 border-3 border-gray-200 border-t-[#1E3A8A] rounded-full animate-spin"></div>
                                 <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Loading sections...</p>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-2 py-8">
+                                <p className="text-gray-500 font-bold text-sm">No sections found for this outlet.</p>
+                                <p className="text-gray-400 text-xs">Create sections and tables in the admin panel to see them here.</p>
                               </div>
                             )}
                         </div>

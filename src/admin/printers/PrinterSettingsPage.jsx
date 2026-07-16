@@ -439,7 +439,9 @@ export default function PrinterSettingsPage() {
                 <Server size={14} className={edgeStatus?.registered ? 'text-green-500' : 'text-gray-400'} />
                 <span className={edgeStatus?.registered ? 'text-green-600 font-bold' : 'text-gray-500'}>
                   {edgeStatus?.registered
-                    ? `Registered — ${edgeStatus.restaurantName || edgeStatus.restaurantId || 'connected'}`
+                    ? edgeStatus?.configReady
+                      ? `Registered — ${edgeStatus.restaurantName || edgeStatus.restaurantId || 'connected'}`
+                      : 'Registered — downloading config…'
                     : edgeStatus === null
                     ? 'Edge server not detected'
                     : 'Edge server detected but not registered'}

@@ -72,7 +72,11 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
   // ── Edge server first (local SQLite) ────────────────────────────────────────
   if (await isEdgeAvailable()) {
     try {
-      return await edgeFetch('/api/edge/tables');
+      const edgeData = await edgeFetch('/api/edge/tables');
+      if (edgeData && edgeData.length > 0) {
+        return edgeData;
+      }
+      console.debug('[tableApi] edge returned empty tables, falling through to cloud');
     } catch (e) {
       console.debug('[tableApi] edge fetch tables failed, falling through to cloud:', e);
     }
@@ -94,7 +98,11 @@ export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
   // ── Edge server first (local SQLite) ────────────────────────────────────────
   if (await isEdgeAvailable()) {
     try {
-      return await edgeFetch('/api/edge/sections');
+      const edgeData = await edgeFetch('/api/edge/sections');
+      if (edgeData && edgeData.length > 0) {
+        return edgeData;
+      }
+      console.debug('[tableApi] edge returned empty sections, falling through to cloud');
     } catch (e) {
       console.debug('[tableApi] edge fetch sections failed, falling through to cloud:', e);
     }
@@ -109,7 +117,11 @@ export async function fetchVenues(restaurantId = getCurrentRestaurantId()) {
   // ── Edge server first (local SQLite) ────────────────────────────────────────
   if (await isEdgeAvailable()) {
     try {
-      return await edgeFetch('/api/edge/venues');
+      const edgeData = await edgeFetch('/api/edge/venues');
+      if (edgeData && edgeData.length > 0) {
+        return edgeData;
+      }
+      console.debug('[tableApi] edge returned empty venues, falling through to cloud');
     } catch (e) {
       console.debug('[tableApi] edge fetch venues failed, falling through to cloud:', e);
     }
