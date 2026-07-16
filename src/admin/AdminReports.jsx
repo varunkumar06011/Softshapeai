@@ -26,13 +26,14 @@ import {
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
   RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, AlertTriangle,
-  ArrowUpDown, Wallet,
+  ArrowUpDown, Wallet, WifiOff,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
 import {
   fetchReportDailySales, fetchReportCategorywise,
   fetchReportPaymentMethods, fetchReportDiscounts, fetchReportGST,
+  isOfflineError,
 } from '../services/reportsApi.js';
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
 import { useAuth } from '../context/AuthContext';
@@ -321,6 +322,17 @@ function EmptyCard() {
   );
 }
 
+function OfflineCard({ onRetry }) {
+  return (
+    <div className="bg-white p-8 rounded-3xl border border-[#FFCDD2] shadow-sm text-center">
+      <WifiOff size={40} className="mx-auto text-gray-400 mb-4" />
+      <p className="text-sm font-bold text-gray-700">Reports are not available offline.</p>
+      <p className="text-xs text-gray-500 mb-4">Reports require a connection to the cloud server. Please reconnect to view sales data.</p>
+      <button onClick={onRetry} className="bg-[#B71C1C] text-white px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest">Retry</button>
+    </div>
+  );
+}
+
 function DownloadButtons({ onPDF, onExcel }) {
   return (
     <>
@@ -457,7 +469,7 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalTransactions === 0) return <EmptyCard />;
 
   const trend = data.byDay.map((d) => ({ time: d.date, rev: d.revenue }));
@@ -582,7 +594,7 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalTransactions === 0) return <EmptyCard />;
 
   const outlets = Object.entries(data.byOutlet || {});
@@ -741,7 +753,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   };
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalItems === 0) return <EmptyCard />;
 
   const sorted = [...data.items].sort((a, b) => {
@@ -980,7 +992,7 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.categories.length === 0) return <EmptyCard />;
 
   const top6 = data.categories.slice(0, 6);
@@ -1102,7 +1114,7 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalTransactions === 0) return <EmptyCard />;
 
   const methodIcons = { CASH: Banknote, CARD: CreditCard, UPI: Smartphone, OTHER: Wallet };
@@ -1249,7 +1261,7 @@ function DiscountReport({ dateFilter, outletId, onDownloadRef }) {
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalTransactionsWithDiscount === 0) return <EmptyCard />;
 
   const highDiscount = data.summary.totalDiscountGiven > 10000;
@@ -1369,7 +1381,7 @@ function GSTReport({ dateFilter, outletId, onDownloadRef }) {
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.transactionCount === 0) return <EmptyCard />;
 
   return (
@@ -1836,7 +1848,7 @@ function VenueRevenueReport({ dateFilter, outletId }) {
   useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || !data.venues?.length) return <EmptyCard />;
 
   return (
@@ -1891,7 +1903,7 @@ function MonthlyPLReport({ dateFilter, outletId }) {
   useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data) return <EmptyCard />;
   const s = data.summary;
 
@@ -1961,7 +1973,7 @@ function CancelledItemsReport({ dateFilter, outletId }) {
   useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || (data.cancelledOrders?.length === 0 && data.items?.length === 0)) return <EmptyCard />;
 
   return (
@@ -2021,7 +2033,7 @@ function TableUtilizationReport({ dateFilter, outletId }) {
   useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || !data.tables?.length) return <EmptyCard />;
 
   return (
@@ -2078,7 +2090,7 @@ function HourlyAnalysisReport({ dateFilter, outletId }) {
   useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || !data.hours?.length) return <EmptyCard />;
 
   const activeHours = data.hours.filter((h) => h.orders > 0);
@@ -2124,7 +2136,7 @@ function KOTCountReport({ dateFilter, outletId }) {
   useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   if (loading) return <LoadingCard />;
-  if (error) return <ErrorCard onRetry={fetchData} />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
   if (!data || data.summary.totalKots === 0) return <EmptyCard />;
 
   return (

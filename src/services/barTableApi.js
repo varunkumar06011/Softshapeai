@@ -14,12 +14,20 @@
 
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { isEdgeAvailable, edgeFetch } from "./edgeHealth";
+
+const BAR_VENUE_TYPES = new Set(["BAR", "BAR_LOUNGE", "BREWERY", "PUB"]);
+
+function isBarSection(section) {
+  const vt = section?.venue?.venueType;
+  return !!vt && BAR_VENUE_TYPES.has(String(vt).toUpperCase());
+}
 
 // Helper: parse fetch response, throw on non-OK status with error message
 async function parseResponse(res) {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
-    try { const errBody = await res.json(); if (errBody?.error) message = errBody.error; } catch {}
+    try { const errBody = await res.json(); if (errBody?.error) message = errBody.error; } catch { /* ignore JSON parse error */ }
     throw new Error(message);
   }
   if (res.status === 204) return null;
@@ -57,6 +65,21 @@ async function fetchWithRetry(url, options = {}, { retries = 2, timeoutMs = 1000
 }
 
 export async function fetchBarTables(signal) {
+  // ── Edge server first (local SQLite) ────────────────────────────────────────
+  // GET /api/edge/tables returns all sections with venue.venueType; filter
+  // client-side for bar venue types.
+  if (await isEdgeAvailable()) {
+    try {
+      const allSections = await edgeFetch('/api/edge/tables', { signal });
+      if (Array.isArray(allSections)) {
+        return allSections.filter(isBarSection);
+      }
+      return allSections;
+    } catch (e) {
+      console.debug('[barTableApi] edge fetch failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl(`/api/bar/tables?restaurantId=${getCurrentRestaurantId()}`), {
     cache: "no-store",
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
@@ -66,6 +89,19 @@ export async function fetchBarTables(signal) {
 }
 
 export async function updateBarTableSession(tableId, sessionData) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch(`/api/edge/table/${tableId}/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionData),
+      });
+    } catch (e) {
+      console.debug('[barTableApi] edge session update failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetch(apiUrl(`/api/bar/tables/${tableId}/session`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -75,6 +111,17 @@ export async function updateBarTableSession(tableId, sessionData) {
 }
 
 export async function deleteBarTableSession(tableId) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch(`/api/edge/table/${tableId}/session`, {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      console.debug('[barTableApi] edge session delete failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetch(apiUrl(`/api/bar/tables/${tableId}/session`), {
     method: "DELETE",
     headers: getAuthHeaders(),

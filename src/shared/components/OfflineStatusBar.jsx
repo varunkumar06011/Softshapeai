@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect } from 'react';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, Clock, ChevronDown } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, Clock, ChevronDown, Printer, FileWarning } from 'lucide-react';
 import { useSyncStatus } from '../../context/SyncStatusContext';
 import { getMenuCacheAgeMs } from '../../services/menuSyncService';
 import { getTableCacheAgeMs } from '../../services/tableSyncService';
@@ -25,15 +25,21 @@ export default function OfflineStatusBar() {
     isOffline,
     syncStatus,
     pendingCount,
+    pendingWarning,
     lastSyncAt,
     lastError,
     authExpired,
     hasConflicts,
     conflicts,
+    hasUnprintedBills,
+    unprintedBillCount,
+    hasUnacknowledgedConflicts,
+    unacknowledgedConflictCount,
     triggerSync,
     dismissConflict,
     dismissAllConflicts,
     dismissAuthExpired,
+    acknowledgeAllConflicts,
   } = useSyncStatus();
 
   const [showConflicts, setShowConflicts] = useState(false);
@@ -76,7 +82,7 @@ export default function OfflineStatusBar() {
   }
 
   // Don't render if everything is fine and no pending actions
-  if (isOnline && syncStatus === 'idle' && pendingCount === 0 && !hasConflicts) {
+  if (isOnline && syncStatus === 'idle' && pendingCount === 0 && !hasConflicts && !hasUnprintedBills && !hasUnacknowledgedConflicts) {
     return null;
   }
 
@@ -153,6 +159,27 @@ export default function OfflineStatusBar() {
             <span className="ml-2 flex items-center gap-1 text-white/80">
               <Clock size={10} />
               Last sync {staleMinutes}m ago
+            </span>
+          )}
+
+          {pendingWarning && (
+            <span className="ml-2 flex items-center gap-1 rounded-full bg-red-700 px-2 py-0.5 animate-pulse">
+              <AlertTriangle size={10} />
+              Queue near cap ({pendingCount}/2000) — sync now
+            </span>
+          )}
+
+          {hasUnprintedBills && (
+            <span className="ml-2 flex items-center gap-1 rounded-full bg-red-800 px-2 py-0.5 animate-pulse">
+              <Printer size={10} />
+              {unprintedBillCount} bill{unprintedBillCount !== 1 ? 's' : ''} paid but not printed
+            </span>
+          )}
+
+          {hasUnacknowledgedConflicts && (
+            <span className="ml-2 flex items-center gap-1 rounded-full bg-orange-700 px-2 py-0.5">
+              <FileWarning size={10} />
+              {unacknowledgedConflictCount} unresolved conflict{unacknowledgedConflictCount !== 1 ? 's' : ''}
             </span>
           )}
 
@@ -239,12 +266,14 @@ export default function OfflineStatusBar() {
               Sync Conflicts ({conflicts.length})
             </span>
             <div className="flex items-center gap-2">
-              <button
-                onClick={dismissAllConflicts}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
-                Dismiss all
-              </button>
+              {hasUnacknowledgedConflicts && (
+                <button
+                  onClick={acknowledgeAllConflicts}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Acknowledge conflicts
+                </button>
+              )}
               <button onClick={() => setShowConflicts(false)}>
                 <X size={14} className="text-gray-400 hover:text-gray-600" />
               </button>

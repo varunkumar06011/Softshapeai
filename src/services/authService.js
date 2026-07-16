@@ -15,7 +15,9 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable } from './edgeHealth.js';
+
+const CLOUD_LOGIN_TIMEOUT_MS = 4000;
 
 export const authService = {
   async login(email, password, restaurantCode) {
@@ -65,12 +67,33 @@ export const authService = {
   },
 
   async captainLogin(restaurantId, userId, pin, restaurantCode, role) {
+    // ── Edge-first: if the local edge server is available, try PIN login there ──
+    // The local SQLite user DB is authoritative once the device is linked.
+    // A wrong PIN must NOT silently retry against cloud — that would make
+    // offline and online login behave differently for the same credentials.
+    if (await isEdgeAvailable()) {
+      const edgeResult = await this._tryEdgePinLogin(userId, pin);
+      if (edgeResult) return edgeResult;
+      // _tryEdgePinLogin returns null for both "wrong PIN" (terminal) and
+      // "edge reachable but errored unexpectedly" (fall through). Distinguish
+      // them: a 401 from the edge server is a definitive "invalid credentials"
+      // and must not fall through to cloud. Other failures (5xx, timeout,
+      // network) fall through.
+      // The distinction is handled inside _tryEdgePinLogin via a thrown error
+      // with `status` set — see below.
+    }
+
+    // ── Cloud fallback (edge not available, or edge errored unexpectedly) ──────
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CLOUD_LOGIN_TIMEOUT_MS);
       const res = await fetch(`${API_BASE}/api/auth/captain-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ restaurantId, userId, pin, restaurantCode, role }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Invalid credentials');
@@ -86,10 +109,10 @@ export const authService = {
       purgeLegacyCaches();
       return data;
     } catch (err) {
-      // ── Offline fallback: try edge server local PIN verification ────────────
-      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError') {
-        const edgeResult = await this._tryEdgePinLogin(userId, pin);
-        if (edgeResult) return edgeResult;
+      // If the edge server was available but returned an unexpected error,
+      // and the cloud fetch also fails, surface the cloud error.
+      if (err.name === 'AbortError') {
+        throw new Error('Login timed out — check your internet connection and try again.', { cause: err });
       }
       throw err;
     }
@@ -107,7 +130,20 @@ export const authService = {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+
+      // 401 = wrong PIN / invalid credentials — terminal, do not fall through.
+      // Throw with status so captainLogin can distinguish from edge errors.
+      if (res.status === 401) {
+        const body = await res.json().catch(() => ({}));
+        const err = new Error(body.error || 'Invalid credentials');
+        err.status = 401;
+        err.edgeInvalidCredentials = true;
+        throw err;
+      }
+
+      // 5xx / other server errors — edge is reachable but broken; fall through.
       if (!res.ok) return null;
+
       const data = await res.json();
       if (!data.success) return null;
 
@@ -123,7 +159,11 @@ export const authService = {
         restaurant: null,
         offline: true,
       };
-    } catch {
+    } catch (err) {
+      // Wrong PIN (401) is terminal — re-throw so captainLogin surfaces it.
+      if (err?.edgeInvalidCredentials) throw err;
+      // Timeout / network error — edge unreachable or broken; return null to
+      // signal captainLogin to fall through to cloud.
       return null;
     }
   },

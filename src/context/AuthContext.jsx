@@ -15,7 +15,8 @@
 // Usage: Wrap app in <AuthProvider>, then useAuth() in any component.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
 
 // React Context for auth state — null until AuthProvider wraps the app
 const AuthContext = createContext(null);
@@ -63,6 +64,31 @@ export const AuthProvider = ({ children }) => {
     const saved = localStorage.getItem('ss_restaurant');
     return saved ? JSON.parse(saved) : null;
   });
+
+  // ── Defensive backfill: if using an edge-local token but ss_user is missing
+  // restaurantId (e.g. from an older edge PIN login before Fix 1), fetch it
+  // from the edge server's /api/edge/status endpoint on mount.
+  useEffect(() => {
+    if (!token || !token.startsWith('edge-local-')) return;
+    if (user?.restaurantId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const available = await isEdgeAvailable();
+        if (cancelled || !available) return;
+        const status = await edgeFetch('/api/edge/status');
+        if (cancelled || !status?.restaurantId) return;
+        const updatedUser = { ...user, restaurantId: status.restaurantId };
+        localStorage.setItem('ss_user', JSON.stringify(updatedUser));
+        setUser(updatedUser);
+        console.log('[AuthContext] Backfilled restaurantId from edge status:', status.restaurantId);
+      } catch (e) {
+        console.warn('[AuthContext] Edge restaurantId backfill failed:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token, user]);
 
   const setAuth = ({ token: newToken, user: newUser, restaurant: newRestaurant }) => {
     setToken(newToken);

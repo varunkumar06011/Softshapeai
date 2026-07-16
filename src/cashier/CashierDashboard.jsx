@@ -3849,18 +3849,20 @@ const CashierDashboard = ({ onLogout }) => {
     };
 
     // Use optimistic update with rollback
-    await withOptimisticUpdate({
-      optimisticFn,
-      rollbackFn,
-      commitFn,
-      onError: (error) => {
-        logCriticalError('handlePayment', error, { orderId, method, txnAmount });
-        addNotification('Settlement Failed', error.message || 'Payment could not be processed. Please retry.', 'error');
-      }
-    });
-
-    setIsSettling(false);
-    isSubmittingPaymentRef.current = false;
+    try {
+      await withOptimisticUpdate({
+        optimisticFn,
+        rollbackFn,
+        commitFn,
+        onError: (error) => {
+          logCriticalError('handlePayment', error, { orderId, method, txnAmount });
+          addNotification('Settlement Failed', error.message || 'Payment could not be processed. Please retry.', 'error');
+        }
+      });
+    } finally {
+      setIsSettling(false);
+      isSubmittingPaymentRef.current = false;
+    }
   };
 
   const terminateTableSession = async () => {

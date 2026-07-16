@@ -25,6 +25,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { subscribeSyncStatus, initSyncEngine, syncPendingActions, getSyncStatus, clearAuthExpired, subscribeStuckActions } from '../utils/syncEngine';
 import { subscribeConflicts, clearConflict, clearAllConflicts } from '../utils/conflictResolver';
 import { isBackendReachable, subscribeReachability } from '../services/apiConfig';
+import { getUnprintedBillCount, getUnacknowledgedConflictCount, acknowledgeAllConflictAuditEntries } from '../utils/offlineDB';
 
 const SyncStatusContext = createContext(null);
 
@@ -37,9 +38,40 @@ export function SyncStatusProvider({ children }) {
     authExpired: false,
     stuckCount: 0,
     isOnline: isBackendReachable(),
+    unprintedBillCount: 0,
+    unacknowledgedConflictCount: 0,
   });
 
   const [conflicts, setConflicts] = useState([]);
+
+  // Fix #3 & #4: Poll unprinted bills and unacknowledged conflict audit entries
+  // so the UI can surface dedicated alerts for compliance and audit gaps.
+  useEffect(() => {
+    let mounted = true;
+    async function refreshAlerts() {
+      if (!mounted) return;
+      try {
+        const [unprintedBills, unackConflicts] = await Promise.all([
+          getUnprintedBillCount(),
+          getUnacknowledgedConflictCount(),
+        ]);
+        if (!mounted) return;
+        setStatus((prev) =>
+          prev.unprintedBillCount === unprintedBills && prev.unacknowledgedConflictCount === unackConflicts
+            ? prev
+            : { ...prev, unprintedBillCount: unprintedBills, unacknowledgedConflictCount: unackConflicts }
+        );
+      } catch {
+        // IndexedDB may be unavailable in some environments — ignore
+      }
+    }
+    refreshAlerts();
+    const interval = setInterval(refreshAlerts, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     // Initialize the sync engine on mount
@@ -94,17 +126,25 @@ export function SyncStatusProvider({ children }) {
     clearAuthExpired();
   }, []);
 
+  const acknowledgeAllConflicts = useCallback(() => {
+    acknowledgeAllConflictAuditEntries().catch(() => {});
+  }, []);
+
   const value = {
     ...status,
     isOffline: !status.isOnline,
     hasPending: status.pendingCount > 0,
     hasConflicts: conflicts.length > 0,
     hasStuckActions: status.stuckCount > 0,
+    pendingWarning: status.pendingCount >= 1500,
+    hasUnprintedBills: status.unprintedBillCount > 0,
+    hasUnacknowledgedConflicts: status.unacknowledgedConflictCount > 0,
     conflicts,
     triggerSync,
     dismissConflict,
     dismissAllConflicts,
     dismissAuthExpired,
+    acknowledgeAllConflicts,
   };
 
   return (
@@ -130,11 +170,17 @@ export function useSyncStatus() {
       hasPending: false,
       hasConflicts: false,
       hasStuckActions: false,
+      pendingWarning: false,
+      unprintedBillCount: 0,
+      hasUnprintedBills: false,
+      unacknowledgedConflictCount: 0,
+      hasUnacknowledgedConflicts: false,
       conflicts: [],
       triggerSync: () => {},
       dismissConflict: () => {},
       dismissAllConflicts: () => {},
       dismissAuthExpired: () => {},
+      acknowledgeAllConflicts: () => {},
     };
   }
   return ctx;

@@ -169,6 +169,18 @@ export async function fetchTablesForOutlet(outletId, signal) {
 }
 
 export async function updateTableStatus(tableId, status) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch(`/api/edge/admin/table/${tableId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+    } catch (e) {
+      console.debug('[tableApi] edge status update failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl(`/api/tables/${tableId}/status`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -178,6 +190,18 @@ export async function updateTableStatus(tableId, status) {
 }
 
 export async function updateTableSession(tableId, session) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch(`/api/edge/table/${tableId}/session`, {
+        method: 'POST',
+        body: JSON.stringify(session),
+      });
+    } catch (e) {
+      console.debug('[tableApi] edge session update failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl(`/api/tables/${tableId}/session`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -187,6 +211,18 @@ export async function updateTableSession(tableId, session) {
 }
 
 export async function createTable({ number, capacity, sectionId, restaurantId }) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch('/api/edge/admin/table', {
+        method: 'POST',
+        body: JSON.stringify({ number, capacity, sectionId }),
+      });
+    } catch (e) {
+      console.debug('[tableApi] edge create table failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl("/api/tables"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -196,6 +232,18 @@ export async function createTable({ number, capacity, sectionId, restaurantId })
 }
 
 export async function bulkCreateTables({ sectionId, count, capacity, startNumber }) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch('/api/edge/admin/tables/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ sectionId, count, capacity, startNumber }),
+      });
+    } catch (e) {
+      console.debug('[tableApi] edge bulk create failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl("/api/tables/bulk"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -205,6 +253,17 @@ export async function bulkCreateTables({ sectionId, count, capacity, startNumber
 }
 
 export async function deleteTable(tableId) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch(`/api/edge/admin/table/${tableId}`, {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      console.debug('[tableApi] edge delete table failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl(`/api/tables/${tableId}`), {
     method: "DELETE",
     headers: getAuthHeaders(),
@@ -213,6 +272,17 @@ export async function deleteTable(tableId) {
 }
 
 export async function deleteAllTables() {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch('/api/edge/admin/tables/all', {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      console.debug('[tableApi] edge delete all failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl("/api/tables/all"), {
     method: "DELETE",
     headers: getAuthHeaders(),
@@ -279,6 +349,18 @@ export async function deleteSection(id) {
 // ── Table update (layout fields) ────────────────────────────────────────────
 
 export async function updateTable(id, { number, capacity, sectionId }) {
+  // ── Edge server first (local SQLite, offline write) ──────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      return await edgeFetch(`/api/edge/admin/table/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ number, capacity, sectionId }),
+      });
+    } catch (e) {
+      console.debug('[tableApi] edge update table failed, falling through to cloud:', e);
+    }
+  }
+
   const res = await fetchWithRetry(apiUrl(`/api/tables/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },

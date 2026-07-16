@@ -61,7 +61,8 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
     }
   });
 
-  // Flow: subtotal → discount on subtotal → GST on discounted subtotal (minus exempt) → grand total rounded
+  // Flow: subtotal → discount on subtotal → GST on (discounted subtotal minus exempt) → grand total rounded
+  // Matches cloud orderService.ts settleOrder and escpos.ts buildBill calculation.
   const subtotal = foodSubtotal + liquorSubtotal;
   const discountAmount = discountPercent > 0
     ? Math.round(subtotal * (discountPercent / 100) * 100) / 100

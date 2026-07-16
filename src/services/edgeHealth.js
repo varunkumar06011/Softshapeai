@@ -238,18 +238,9 @@ export async function isEdgeAvailable() {
 
 const EDGE_FETCH_TIMEOUT_MS = 30_000;
 
-export async function edgeFetch(path, options = {}) {
-  const edgeApiKey = getStoredEdgeApiKey();
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
-  };
-  if (edgeApiKey) {
-    headers['X-Edge-Key'] = edgeApiKey;
-  }
-
+async function _edgeFetchWithKey(path, options, headers, timeoutMs) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EDGE_FETCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
     res = await fetch(`${getEdgeUrl()}${path}`, {
@@ -260,11 +251,43 @@ export async function edgeFetch(path, options = {}) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err?.name === 'AbortError') {
-      throw new Error(`Edge request to ${path} timed out after ${EDGE_FETCH_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Edge request to ${path} timed out after ${timeoutMs / 1000}s`);
     }
     throw err;
   }
   clearTimeout(timeoutId);
+  return res;
+}
+
+export async function edgeFetch(path, options = {}) {
+  const edgeApiKey = getStoredEdgeApiKey();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+  if (edgeApiKey) {
+    headers['X-Edge-Key'] = edgeApiKey;
+  }
+
+  let res = await _edgeFetchWithKey(path, options, headers, EDGE_FETCH_TIMEOUT_MS);
+
+  // If the edge server rejected our API key, the stored key is stale.
+  // Clear it and retry once without the key — the edge server only rejects
+  // a wrong key, not a missing one (unless EDGE_REQUIRE_KEY=true, which is
+  // not the default). This fixes tables not loading when localStorage has
+  // an outdated key from a prior registration or outlet switch.
+  if (res.status === 401 && edgeApiKey) {
+    let body = null;
+    try { body = await res.json(); } catch { /* ignore */ }
+    if (body?.error && /edge api key/i.test(body.error)) {
+      console.warn('[edgeFetch] Stored edge API key was rejected — clearing and retrying without key');
+      try { localStorage.removeItem(EDGE_API_KEY_STORAGE_KEY); } catch { /* ignore */ }
+      const retryHeaders = { ...headers };
+      delete retryHeaders['X-Edge-Key'];
+      res = await _edgeFetchWithKey(path, options, retryHeaders, EDGE_FETCH_TIMEOUT_MS);
+    }
+  }
+
   if (!res.ok) {
     let message = `Edge request failed (${res.status})`;
     try {

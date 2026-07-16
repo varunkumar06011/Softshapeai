@@ -25,7 +25,7 @@
 import { getDeviceId } from './deviceId';
 
 const DB_NAME = 'softshape-offline';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -108,6 +108,15 @@ function openDB() {
       if (!db.objectStoreNames.contains('inventoryCache')) {
         const store = db.createObjectStore('inventoryCache', { keyPath: 'menuItemId' });
         store.createIndex('name', 'name', { unique: false });
+      }
+
+      // v6 stores — persistent conflict audit log so auto-resolved conflicts
+      // survive page refreshes and cannot be silently dismissed without a trace.
+      if (!db.objectStoreNames.contains('conflictAuditLog')) {
+        const store = db.createObjectStore('conflictAuditLog', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('requestId', 'requestId', { unique: false });
+        store.createIndex('actionType', 'actionType', { unique: false });
+        store.createIndex('acknowledged', 'acknowledged', { unique: false });
       }
     };
 
@@ -872,5 +881,140 @@ export async function restoreLocalInventory(menuItemId, quantity) {
     };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ── conflictAuditLog (v6) ───────────────────────────────────────────────────
+// Persistent audit trail for auto-resolved sync conflicts. Survives page
+// refreshes so cashiers and managers can review what was silently adopted.
+
+export async function addConflictAuditEntry(entry) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('conflictAuditLog', 'readwrite');
+    const store = tx.objectStore('conflictAuditLog');
+    const req = store.add({
+      ...entry,
+      acknowledged: false,
+      createdAt: entry.createdAt || Date.now(),
+    });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getConflictAuditEntries(filter = {}) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('conflictAuditLog', 'readonly');
+    const store = tx.objectStore('conflictAuditLog');
+    const results = [];
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const entry = cursor.value;
+        if (
+          (filter.acknowledged === undefined || entry.acknowledged === filter.acknowledged) &&
+          (!filter.actionType || entry.actionType === filter.actionType)
+        ) {
+          results.push(entry);
+        }
+        cursor.continue();
+      } else {
+        resolve(results.sort((a, b) => b.createdAt - a.createdAt));
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getUnacknowledgedConflictCount() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('conflictAuditLog', 'readonly');
+    const idx = tx.objectStore('conflictAuditLog').index('acknowledged');
+    const req = idx.count(false);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function acknowledgeConflictAuditEntry(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('conflictAuditLog', 'readwrite');
+    const store = tx.objectStore('conflictAuditLog');
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const existing = getReq.result;
+      if (!existing) return;
+      store.put({ ...existing, acknowledged: true, acknowledgedAt: Date.now() });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function acknowledgeAllConflictAuditEntries() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('conflictAuditLog', 'readwrite');
+    const store = tx.objectStore('conflictAuditLog');
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (!cursor.value.acknowledged) {
+          cursor.update({ ...cursor.value, acknowledged: true, acknowledgedAt: Date.now() });
+        }
+        cursor.continue();
+      }
+    };
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function pruneConflictAuditLog(maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
+  const db = await openDB();
+  const cutoff = Date.now() - maxAgeMs;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('conflictAuditLog', 'readwrite');
+    const store = tx.objectStore('conflictAuditLog');
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (cursor.value.createdAt < cutoff && cursor.value.acknowledged) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ── unprinted bill tracking ──────────────────────────────────────────────────
+// Counts pending FINAL_BILL/BILL print jobs so the UI can surface a dedicated
+// "paid but not printed" compliance alert distinct from generic print failures.
+
+export async function getUnprintedBillCount() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('offlinePrintJobs', 'readonly');
+    const store = tx.objectStore('offlinePrintJobs');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const bills = (req.result || []).filter(
+        j => j.status === 'pending' && (j.jobType === 'FINAL_BILL' || j.jobType === 'BILL')
+      );
+      resolve(bills.length);
+    };
+    req.onerror = () => reject(req.error);
   });
 }

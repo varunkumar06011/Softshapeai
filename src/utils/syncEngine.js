@@ -36,6 +36,8 @@ import {
   getAllOrderIdMappings,
   updatePendingActionEntityIds,
   restoreLocalInventory,
+  addConflictAuditEntry,
+  pruneConflictAuditLog,
 } from './offlineDB';
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 import { httpFetch } from './httpClient';
@@ -226,8 +228,10 @@ async function syncSingleAction(action) {
   const errBody = await res.json().catch(() => ({}));
 
   // 409 Conflict — order already paid, already printed, etc.
+  // Include errBody as data so the conflict resolution path can extract
+  // existingOrderId for create-order orderIdMap writing.
   if (res.status === 409) {
-    return { requestId: action.requestId, status: 'conflict', statusCode: 409, error: errBody.error || 'Conflict' };
+    return { requestId: action.requestId, status: 'conflict', statusCode: 409, error: errBody.error || 'Conflict', data: errBody };
   }
 
   // 401 — auth expired, pause sync
@@ -360,12 +364,25 @@ export async function syncPendingActions() {
         }
         // Fix A: After a successful create-order, store the offline→real ID mapping
         // and update all child actions that were blocked on this offline ID.
+        // Fix #1: If realId cannot be extracted from the response, surface a warning
+        // and mark the action for retry so child actions don't stay blocked forever.
         if (action.actionType === 'create-order' && action.offlineOrderId) {
           const realId = result.data?.order?.id || result.data?.id;
           if (realId) {
             await setOrderIdMapping(action.offlineOrderId, realId);
             await updatePendingActionEntityIds(action.offlineOrderId, realId);
             console.log(`[SyncEngine] Mapped ${action.offlineOrderId} → ${realId}, updated child actions`);
+          } else {
+            console.error(
+              `[SyncEngine] create-order succeeded but no real ID found in response for ${action.offlineOrderId}. ` +
+              `Response keys: ${JSON.stringify(Object.keys(result.data || {}))}. ` +
+              `Child actions will remain blocked. Requesting manual review.`
+            );
+            await updatePendingAction(action.id, {
+              status: 'error',
+              lastError: 'Order created on server but ID mapping failed — child actions blocked. Manual review needed.',
+              attempts: (action.attempts || 0) + 1,
+            });
           }
         }
         succeeded++;
@@ -381,6 +398,19 @@ export async function syncPendingActions() {
           attempts: (action.attempts || 0) + 1,
         });
         if (autoResolved) {
+          // Root cause fix: Write orderIdMap on create-order conflict resolution.
+          // When a create-order gets a 409 (another device already created the order),
+          // the conflict is auto-resolved as adopt_server, but the orderIdMap was never
+          // written — leaving child actions blocked forever. Extract the real ID from
+          // the conflict data and write the mapping now.
+          if (action.actionType === 'create-order' && action.offlineOrderId) {
+            const conflictRealId = result.data?.order?.id || result.data?.existingOrderId || result.data?.id;
+            if (conflictRealId) {
+              await setOrderIdMapping(action.offlineOrderId, conflictRealId);
+              await updatePendingActionEntityIds(action.offlineOrderId, conflictRealId);
+              console.log(`[SyncEngine] Mapped ${action.offlineOrderId} → ${conflictRealId} from conflict resolution`);
+            }
+          }
           await removePendingAction(action.id);
           // Keep conflict visible until user dismisses it, then clear it
           addConflict({
@@ -389,6 +419,17 @@ export async function syncPendingActions() {
             actionType: action.actionType,
             ...resolution,
           });
+          // Fix #2: Persist the auto-resolved conflict to the audit log so it
+          // survives page refreshes and cannot be silently dismissed without a trace.
+          addConflictAuditEntry({
+            actionId: action.id,
+            requestId: action.requestId,
+            actionType: action.actionType,
+            resolution: resolution.resolution,
+            message: resolution.message,
+            alertLevel: resolution.alertLevel || 'warning',
+            serverData: result.data || null,
+          }).catch((e) => console.warn('[SyncEngine] Failed to write conflict audit entry:', e.message));
           if (action.actionType === 'settle' || action.actionType === 'quick-settle') {
             finalizeSettlementAudit(action.requestId, { status: 'skipped' });
             if (action.body?.localTxnId) {
@@ -515,7 +556,26 @@ export async function syncPendingActions() {
             attempts: (action.attempts || 0) + 1,
           });
           if (autoResolved) {
+            // Root cause fix: Write orderIdMap on create-order conflict resolution (second pass).
+            if (action.actionType === 'create-order' && action.offlineOrderId) {
+              const conflictRealId = result.data?.order?.id || result.data?.existingOrderId || result.data?.id;
+              if (conflictRealId) {
+                await setOrderIdMapping(action.offlineOrderId, conflictRealId);
+                await updatePendingActionEntityIds(action.offlineOrderId, conflictRealId);
+                console.log(`[SyncEngine] Mapped ${action.offlineOrderId} → ${conflictRealId} from conflict resolution (pass 2)`);
+              }
+            }
             await removePendingAction(action.id);
+            addConflict({ actionId: action.id, requestId: action.requestId, actionType: action.actionType, ...resolution });
+            addConflictAuditEntry({
+              actionId: action.id,
+              requestId: action.requestId,
+              actionType: action.actionType,
+              resolution: resolution.resolution,
+              message: resolution.message,
+              alertLevel: resolution.alertLevel || 'warning',
+              serverData: result.data || null,
+            }).catch((e) => console.warn('[SyncEngine] Failed to write conflict audit entry:', e.message));
             succeeded++;
           } else {
             addConflict({ actionId: action.id, requestId: action.requestId, actionType: action.actionType, ...resolution });
@@ -572,6 +632,9 @@ export async function syncPendingActions() {
 
     // Prune old synced actions
     await pruneOldPendingActions();
+
+    // Fix #2: Prune old acknowledged conflict audit entries (30 days)
+    await pruneConflictAuditLog().catch(() => {});
 
     // Flush any queued offline print jobs now that we're online
     try {

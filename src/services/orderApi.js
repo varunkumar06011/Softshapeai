@@ -538,6 +538,20 @@ export async function requestBilling(orderId) {
 }
 
 export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/order/pay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, paymentMethod }),
+      });
+      if (result && result.success) return result.order || result;
+    } catch (edgeErr) {
+      console.warn('[Edge] markOrderPaid failed, falling through:', edgeErr.message);
+    }
+  }
+
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
     console.warn('[Offline] Backend unreachable — fast-pathing mark-paid');
@@ -700,6 +714,20 @@ export async function saveTransaction({
     cgst, sgst, grandTotal, roundOff, tipAmount, sectionId, sectionTag,
     billNumber, platform,
   };
+
+  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  if (await isEdgeAvailable()) {
+    try {
+      const result = await edgeFetch('/api/edge/transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(txnBody),
+      });
+      if (result && result.success) return { id: result.transaction.id, transaction: result.transaction };
+    } catch (edgeErr) {
+      console.warn('[Edge] saveTransaction failed, falling through:', edgeErr.message);
+    }
+  }
 
   // Fast path: if backend is known unreachable, queue instantly.
   if (!isBackendReachable()) {
