@@ -143,7 +143,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
   };
 };
 
-const WALKIN_TABLES = Array.from({ length: 20 }, (_, i) => ({
+const buildWalkInTables = () => Array.from({ length: 20 }, (_, i) => ({
   id: `W${i + 1}`,
   number: i + 1,
   backendId: null,
@@ -260,8 +260,7 @@ const HighlightedText = ({ text, highlight }) => {
 };
 
 const CashierDashboard = ({ onLogout }) => {
-  console.log('[BUILD] CashierDashboard loaded — version 5.0.0');
-  const { user, restaurant } = useAuth();
+  const { user, restaurant, setRestaurant } = useAuth();
   const { isOffline, hasPending, pendingCount, lastSyncAt, triggerSync } = useSyncStatus();
   const isEdgeLocal = isEdgeLocalAuth();
   const settlementQueueRef = useRef(null);
@@ -339,15 +338,8 @@ const CashierDashboard = ({ onLogout }) => {
       .then(data => {
         if (data?.permissions) setUserPermissions(data.permissions);
         if (!restaurant?.enabledModules && data?.restaurant?.enabledModules) {
-          // Merge into auth context via localStorage since we can't directly setAuth here
-          const authKey = Object.keys(localStorage).find(k => k.includes('auth') && localStorage.getItem(k));
-          if (authKey) {
-              const parsed = safeGetJSON(authKey, null);
-              if (parsed) {
-                parsed.restaurant = { ...parsed.restaurant, ...data.restaurant };
-                localStorage.setItem(authKey, JSON.stringify(parsed));
-              }
-            }
+          // Merge enabledModules into AuthContext so all subscribed components re-render.
+          setRestaurant({ ...restaurant, ...data.restaurant });
         }
       })
       .catch(() => {});
@@ -5760,7 +5752,7 @@ const CashierDashboard = ({ onLogout }) => {
                           <div className="mt-4">
                             <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Walk-in (Direct Bill — No KOT)</p>
                             <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
-                              {WALKIN_TABLES.map((wt) => (
+                              {buildWalkInTables().map((wt) => (
                                 <div
                                   key={wt.id}
                                   onClick={() => {

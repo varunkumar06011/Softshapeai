@@ -14,6 +14,7 @@
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getBarMenuCacheKey } from "../utils/cacheKeys";
 import { getMenuStorageKey } from "./menuService";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth } from "./edgeHealth";
 
 // Default placeholder images for items without uploaded images
 export const DEFAULT_FOOD_IMG = "/placeholder.svg";
@@ -346,6 +347,42 @@ async function fetchRestaurantItemsRaw() {
 }
 
 export async function fetchBarMenuFromBackend() {
+  // ── Edge server first (local SQLite) — primary path for offline ───────────
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
+    try {
+      const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const allItems = await res.json();
+        // Filter for bar/liquor items only
+        const barItems = (allItems || []).filter(
+          item => (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR'
+        );
+        if (barItems.length > 0) {
+          // For edge path, use cached restaurant items for image resolution
+          let restaurantItems = [];
+          try {
+            const savedMenu = localStorage.getItem(getMenuStorageKey());
+            if (savedMenu) restaurantItems = JSON.parse(savedMenu);
+          } catch { /* ignore */ }
+          return mapBarMenuItems(barItems, restaurantItems);
+        }
+        if (useEdgeDirect) {
+          // Edge-local auth but no bar items — return empty, don't hit cloud with fake token
+          return [];
+        }
+      }
+    } catch (err) {
+      if (useEdgeDirect) {
+        console.warn('[BarMenu] Edge fetch failed, returning cache:', err.message);
+        return readBarMenuCache();
+      }
+      console.warn('[BarMenu] Edge fetch failed, falling through to cloud:', err.message);
+    }
+  }
+
   const [barRes, restaurantItems] = await Promise.all([
     fetchWithRetry(apiUrl("/api/bar/menu/items"), {
       cache: "no-store",

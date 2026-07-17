@@ -70,6 +70,7 @@ const KitchenView = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [, setTick] = useState(0); // force re-render every minute for elapsed times
+  const [now, setNow] = useState(() => Date.now()); // stable clock updated by tick interval
 
   // Fetch all active (non-paid) orders from the backend
   const loadOrders = useCallback(async () => {
@@ -87,7 +88,10 @@ const KitchenView = () => {
     loadOrders();
 
     // Re-tick every 60 s so elapsed timers update visually
-    const tick = setInterval(() => setTick((n) => n + 1), 60_000);
+    const tick = setInterval(() => {
+      setTick((n) => n + 1);
+      setNow(Date.now());
+    }, 60_000);
 
     // Socket subscriptions for real-time updates
     let socket;
@@ -118,7 +122,7 @@ const KitchenView = () => {
 
   const elapsedMin = (createdAt) => {
     if (!createdAt) return 0;
-    return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60_000);
+    return Math.floor((now - new Date(createdAt).getTime()) / 60_000);
   };
 
   const formatElapsed = (min) => {
@@ -150,7 +154,7 @@ const KitchenView = () => {
           <div className="flex items-center gap-2 justify-end">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <p className="text-sm font-black tabular-nums">
-              {new Date().toLocaleTimeString()}
+              {new Date(now).toLocaleTimeString()}
             </p>
           </div>
         </div>
@@ -371,10 +375,10 @@ function CashierLoginWrapper() {
   const [edgeCheck, setEdgeCheck] = useState(null); // null = checking, true = registered, false = needs setup
   const [edgeRestaurantId, setEdgeRestaurantId] = useState(null);
   const isLoggedIn = user && token && isTokenValid(token) && ['CASHIER','OWNER','ADMIN'].includes(user.role);
-  if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
 
   // Check edge server registration status on mount
   useEffect(() => {
+    if (isLoggedIn) return; // logged-in users go straight to dashboard; skip edge check
     let cancelled = false;
     (async () => {
       try {
@@ -393,7 +397,9 @@ function CashierLoginWrapper() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [isLoggedIn]);
+
+  if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />;
 
   // If edge is available but not registered, redirect to setup
   if (edgeCheck === 'setup') {
@@ -433,9 +439,9 @@ function CaptainLoginWrapper() {
   const [edgeCheck, setEdgeCheck] = useState(null);
   const [edgeRestaurantId, setEdgeRestaurantId] = useState(null);
   const isLoggedIn = user && token && isTokenValid(token) && ['CAPTAIN', 'OWNER', 'ADMIN'].includes(user.role);
-  if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
 
   useEffect(() => {
+    if (isLoggedIn) return; // logged-in users go straight to dashboard; skip edge check
     let cancelled = false;
     (async () => {
       try {
@@ -454,7 +460,9 @@ function CaptainLoginWrapper() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [isLoggedIn]);
+
+  if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
 
   if (edgeCheck === 'setup') {
     return <Navigate to="/edge-setup" replace />;

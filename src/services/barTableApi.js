@@ -109,7 +109,7 @@ export async function updateBarTableSession(tableId, sessionData) {
     }
   }
 
-  const res = await fetch(apiUrl(`/api/bar/tables/${tableId}/session`), {
+  const res = await fetchWithRetry(apiUrl(`/api/bar/tables/${tableId}/session`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(sessionWithId),
@@ -131,7 +131,7 @@ export async function deleteBarTableSession(tableId) {
     }
   }
 
-  const res = await fetch(apiUrl(`/api/bar/tables/${tableId}/session`), {
+  const res = await fetchWithRetry(apiUrl(`/api/bar/tables/${tableId}/session`), {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
