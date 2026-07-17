@@ -15,6 +15,7 @@ import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getBarMenuCacheKey } from "../utils/cacheKeys";
 import { getMenuStorageKey } from "./menuService";
 import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth } from "./edgeHealth";
+import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 // Default placeholder images for items without uploaded images
 export const DEFAULT_FOOD_IMG = "/placeholder.svg";
@@ -347,7 +348,27 @@ async function fetchRestaurantItemsRaw() {
 }
 
 export async function fetchBarMenuFromBackend() {
-  // ── Edge server first (local SQLite) — primary path for offline ───────────
+  const restaurantId = getMenuStorageKey().split('_').pop() || 'default';
+
+  // ── Path 0: IndexedDB cache (instant render) ───────────────────────────────
+  try {
+    const cachedMenu = await getCachedMenu(restaurantId);
+    if (cachedMenu && cachedMenu.length > 0) {
+      const barItems = cachedMenu.filter(
+        item => (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR'
+      );
+      if (barItems.length > 0) {
+        console.log(`[BarMenu] Loaded ${barItems.length} items from IndexedDB cache`);
+        // Trigger background sync without blocking UI
+        syncBarMenuInBackground(restaurantId);
+        return mapBarMenuItems(barItems, cachedMenu);
+      }
+    }
+  } catch (err) {
+    console.warn('[BarMenu] IndexedDB cache read failed:', err.message);
+  }
+
+  // ── Path 1: Edge server (local SQLite) — primary path for offline ───────────
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
@@ -361,6 +382,8 @@ export async function fetchBarMenuFromBackend() {
           item => (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR'
         );
         if (barItems.length > 0) {
+          // Cache to IndexedDB for offline use
+          cacheMenu(restaurantId, allItems).catch(err => console.warn('[BarMenu] Failed to cache menu:', err.message));
           // For edge path, use cached restaurant items for image resolution
           let restaurantItems = [];
           try {
@@ -434,6 +457,52 @@ export async function repairBarMenuCloudinaryUrls(apiBase, { force = false } = {
 
   localStorage.setItem(REPAIR_STORAGE_KEY, "done");
   return { repaired: 0, total: 0, skipped: true, source: "skipped" };
+}
+
+/** Background sync: fetch from edge/cloud and update IndexedDB cache without blocking UI */
+async function syncBarMenuInBackground(restaurantId) {
+  try {
+    const useEdgeDirect = isEdgeLocalAuth();
+    let freshItems = null;
+
+    if (useEdgeDirect || await isEdgeAvailable()) {
+      try {
+        const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (res.ok) {
+          freshItems = await res.json();
+        }
+      } catch (err) {
+        if (useEdgeDirect) return;
+        console.warn('[BarMenu] Background edge sync failed:', err.message);
+      }
+    }
+
+    if (!freshItems || freshItems.length === 0) {
+      try {
+        const barRes = await fetchWithRetry(apiUrl("/api/bar/menu/items"), {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...getAuthHeaders() },
+        });
+        if (barRes.ok) {
+          const restaurantItems = await fetchRestaurantItemsRaw();
+          freshItems = await barRes.json();
+        }
+      } catch (err) {
+        console.warn('[BarMenu] Background cloud sync failed:', err.message);
+      }
+    }
+
+    if (freshItems && freshItems.length > 0) {
+      await cacheMenu(restaurantId, freshItems);
+      console.log(`[BarMenu] Background sync cached ${freshItems.length} items`);
+      // Dispatch event to notify UI components to refresh
+      window.dispatchEvent(new CustomEvent('bar-menu-synced', { detail: { restaurantId, items: freshItems } }));
+    }
+  } catch (err) {
+    console.warn('[BarMenu] Background sync error:', err.message);
+  }
 }
 
 export function readBarMenuCache(barId) {

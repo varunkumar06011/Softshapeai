@@ -95,8 +95,8 @@ import { hapticSuccess } from '../shared/hooks/useHaptics';
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
 
-// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
-const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+// Bar-like venue types — expanded to include all bar-related venue types
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE', 'BAR_LOUNGE', 'BREWERY', 'PUB', 'LOUNGE', 'NIGHTCLUB', 'WINE_BAR', 'COCKTAIL_BAR'];
 function isBarLikeVenue(venueType) {
   if (!venueType) return false;
   return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase());
@@ -510,7 +510,7 @@ export default function CaptainApp({ onLogout }) {
           localStorage.setItem('last_working_print_agent_url', data.httpUrl);
         }
         if (data?.lanIp) {
-          const lanUrl = `http://${data.lanIp}:3101`;
+          const lanUrl = `http://${data.lanIp}:3102`;
           if (!localStorage.getItem('last_working_print_agent_url')) {
             localStorage.setItem('last_working_print_agent_url', lanUrl);
           }
@@ -520,25 +520,58 @@ export default function CaptainApp({ onLogout }) {
     return () => clearTimeout(timeout);
   }, []);
 
-  // Fetch sections dynamically
+  // Fetch sections dynamically - edge-first with cloud fallback
   const [fetchedSections, setFetchedSections] = useState([]);
   useEffect(() => {
-    fetch(`${API_BASE}/api/venue/sections`, {
-      credentials: 'include',
-      headers: getAuthHeaders(),
-    })
-      .then(r => {
+    const fetchSections = async () => {
+      // Edge-first: try edge server first, fall back to cloud
+      const useEdgeDirect = isEdgeLocalAuth();
+      if (useEdgeDirect || await isEdgeAvailable()) {
+        try {
+          const data = await edgeFetch('/api/edge/sections');
+          const rawSections = Array.isArray(data) ? data : data?.sections || [];
+          setFetchedSections(rawSections);
+        } catch (err) {
+          console.warn('[fetchedSections] edge fetch failed, trying cloud:', err.message);
+          // Fall back to cloud if edge fails
+          try {
+            const r = await fetch(`${API_BASE}/api/venue/sections`, {
+              credentials: 'include',
+              headers: getAuthHeaders(),
+            });
+            if (!r.ok) {
+              console.error('[fetchedSections] cloud API error:', r.status, r.statusText);
+              setFetchedSections([]);
+              return;
+            }
+            const data = await r.json();
+            setFetchedSections(Array.isArray(data) ? data : data.sections || []);
+          } catch (err) {
+            console.error('[fetchedSections] cloud fetch failed:', err);
+            setFetchedSections([]);
+          }
+        }
+        return;
+      }
+      // Edge unavailable: use cloud directly
+      try {
+        const r = await fetch(`${API_BASE}/api/venue/sections`, {
+          credentials: 'include',
+          headers: getAuthHeaders(),
+        });
         if (!r.ok) {
           console.error('[fetchedSections] API error:', r.status, r.statusText);
-          return [];
+          setFetchedSections([]);
+          return;
         }
-        return r.json();
-      })
-      .then(data => setFetchedSections(Array.isArray(data) ? data : data.sections || []))
-      .catch(err => {
+        const data = await r.json();
+        setFetchedSections(Array.isArray(data) ? data : data.sections || []);
+      } catch (err) {
         console.error('[fetchedSections] fetch failed:', err);
         setFetchedSections([]);
-      });
+      }
+    };
+    fetchSections();
   }, []);
 
   // Refs needed by table sync guards — declared early so they're available to useTableSync/useBarTableSync
@@ -4254,9 +4287,9 @@ export default function CaptainApp({ onLogout }) {
                   {fetchedSections.length > 0
                     ? fetchedSections
                         .filter(section => {
-                          const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
-                          if (activeOutlet === 'both') return true;
-                          return sectionOutlet === activeOutlet;
+                          // Show all sections from backend (onboarding/admin) without venue type filtering
+                          // Sections should display exactly as configured in the system
+                          return true;
                         })
                         .map(section => {
                         const sourceKey = section.sectionTag || section.name;

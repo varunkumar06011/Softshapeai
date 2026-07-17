@@ -159,8 +159,8 @@ const buildWalkInTables = () => Array.from({ length: 20 }, (_, i) => ({
 // Source sets and sectionTag→source mapping are now built dynamically from fetchedSections
 // (see sectionTagToSource, barSources, restaurantSources memos inside the component)
 
-// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
-const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+// Bar-like venue types — expanded to include all bar-related venue types
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE', 'BAR_LOUNGE', 'BREWERY', 'PUB', 'LOUNGE', 'NIGHTCLUB', 'WINE_BAR', 'COCKTAIL_BAR'];
 function isBarLikeVenue(venueType) {
   if (!venueType) return false;
   return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase());
@@ -365,10 +365,12 @@ const CashierDashboard = ({ onLogout }) => {
     }
   });
   useEffect(() => {
-    // For edge-local (PIN) auth, use edge server — cloud will reject the fake token
-    if (isEdgeLocal) {
-      edgeFetch('/api/edge/sections')
-        .then(data => {
+    const fetchSections = async () => {
+      // Edge-first: try edge server first, fall back to cloud
+      const useEdgeDirect = isEdgeLocal;
+      if (useEdgeDirect || await isEdgeAvailable()) {
+        try {
+          const data = await edgeFetch('/api/edge/sections');
           const rawSections = Array.isArray(data) ? data : data?.sections || [];
           const sections = rawSections.map(s => ({
             ...s,
@@ -380,25 +382,52 @@ const CashierDashboard = ({ onLogout }) => {
           } catch (e) {
             console.warn('[fetchedSections] failed to cache sections:', e);
           }
-        })
-        .catch(err => console.error('[fetchedSections] edge fetch failed:', err))
-        .finally(() => setSectionsLoading(false));
-      return;
-    }
-    httpFetch(`${API_BASE}/api/venue/sections`, {
-      credentials: 'include',
-      headers: getAuthHeaders(),
-    }, { retries: 1 })
-      .then(r => {
+        } catch (err) {
+          console.warn('[fetchedSections] edge fetch failed, trying cloud:', err.message);
+          // Fall back to cloud if edge fails
+          try {
+            const r = await httpFetch(`${API_BASE}/api/venue/sections`, {
+              credentials: 'include',
+              headers: getAuthHeaders(),
+            }, { retries: 1 });
+            if (!r.ok) {
+              console.error('[fetchedSections] cloud API error:', r.status, r.statusText);
+              setFetchedSections([]);
+              return;
+            }
+            const data = await r.json();
+            const rawSections = Array.isArray(data) ? data : data?.sections || [];
+            const sections = rawSections.map(s => ({
+              ...s,
+              sectionTag: s.sectionTag || s.tables?.[0]?.sectionTag || null,
+            }));
+            setFetchedSections(sections);
+            try {
+              localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+            } catch (e) {
+              console.warn('[fetchedSections] failed to cache sections:', e);
+            }
+          } catch (err) {
+            console.error('[fetchedSections] cloud fetch failed:', err);
+          }
+        } finally {
+          setSectionsLoading(false);
+        }
+        return;
+      }
+      // Edge unavailable: use cloud directly
+      try {
+        const r = await httpFetch(`${API_BASE}/api/venue/sections`, {
+          credentials: 'include',
+          headers: getAuthHeaders(),
+        }, { retries: 1 });
         if (!r.ok) {
           console.error('[fetchedSections] API error:', r.status, r.statusText);
-          return [];
+          setFetchedSections([]);
+          return;
         }
-        return r.json();
-      })
-      .then(data => {
-        const rawSections = Array.isArray(data) ? data : data.sections || [];
-        // Enrich sections with sectionTag derived from their tables (Section model has no sectionTag field)
+        const data = await r.json();
+        const rawSections = Array.isArray(data) ? data : data?.sections || [];
         const sections = rawSections.map(s => ({
           ...s,
           sectionTag: s.sectionTag || s.tables?.[0]?.sectionTag || null,
@@ -409,11 +438,13 @@ const CashierDashboard = ({ onLogout }) => {
         } catch (e) {
           console.warn('[fetchedSections] failed to cache sections:', e);
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('[fetchedSections] fetch failed:', err);
-      })
-      .finally(() => setSectionsLoading(false));
+      } finally {
+        setSectionsLoading(false);
+      }
+    };
+    fetchSections();
   }, [SECTIONS_CACHE_KEY, sectionsFetchKey]);
 
   // Build dynamic source maps from fetchedSections (replaces hardcoded constants)
@@ -1229,14 +1260,10 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [activeOutlet, txnCustomDate, txnInitialLoaded, loadExpenditureSummary]);
 
-  // Venue filter sections — sections filtered by current outlet, for venue filter pills
+  // Venue filter sections — show all sections from backend (onboarding/admin)
   const venueFilterSections = useMemo(() => {
-    return fetchedSections.filter(section => {
-      const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
-      if (activeOutlet === 'both') return true;
-      return sectionOutlet === activeOutlet;
-    });
-  }, [fetchedSections, activeOutlet]);
+    return fetchedSections;
+  }, [fetchedSections]);
 
   // Reset venue filter when outlet changes
   useEffect(() => {
@@ -1871,13 +1898,14 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Guard: mark table as recently terminated so stale socket events (order:updated,
       // table:updated from before settlement) cannot revive it and cause flicker.
+      // Reduced to 5 seconds to match tableSyncService behavior and prevent table disappearance.
       if (tableId) {
         terminatedTableIdsRef.current.add(tableId);
         recentlyTerminatedRef.current[tableId] = Date.now();
         try {
           localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
         } catch {}
-        setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 15000);
+        setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 5000);
       }
 
       // For extra tables: do NOT reset the parent table in the main grid — it's still occupied with its own session
@@ -5721,9 +5749,9 @@ const CashierDashboard = ({ onLogout }) => {
                             if (section.venue?.venueType === 'BAR' && section.name === firstBarIdentifier && firstBarIdentifier) return false;
                             // Skip KOT-off sections — they show walk-in tables instead of regular tables
                             if (section.venue?.kotEnabled === false) return false;
-                            const sectionOutlet = isBarLikeVenue(section.venue?.venueType) ? 'bar' : 'restaurant';
-                            if (activeOutlet === 'both') return true;
-                            return sectionOutlet === activeOutlet;
+                            // Show all sections from backend (onboarding/admin) without venue type filtering
+                            // Sections should display exactly as configured in the system
+                            return true;
                           })
                           .map(section => {
                             const sourceKey = sectionTagToSource[section.sectionTag] || section.name;
@@ -5733,6 +5761,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 key={section.id || sourceKey}
                                 venueId={section.sectionTag || section.venueId || sourceKey}
                                 sectionName={section.name}
+                                sectionId={section.id}
                                 restaurantId={getCurrentRestaurantId()}
                                 roomMode="single"
                                 onTableSelect={handleTableSelect}

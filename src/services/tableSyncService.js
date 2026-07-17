@@ -23,22 +23,23 @@ import { getTablesCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 // ── Cross-device termination grace window (in-memory, not localStorage) ───────
 // When a table is settled/terminated, the server emits "table:terminated" with a
 // server-authoritative timestamp. All devices in the outlet receive it and enter
-// a 30-second grace window during which stale non-Free events for that table are
-// blocked. This replaces the old localStorage-based guard which was per-device
-// and didn't work across tabs/devices.
+// a 5-second grace window during which stale non-Free events for that table are
+// blocked. This prevents flickering during the settlement transition.
 //
 // Map<tableId, terminatedAtMs>
-// Once a table is terminated, it is permanently blocked for the entire page session.
-// A terminated table must NEVER be revived by stale socket events — only a new
-// order creation (which goes through the full edge/cloud flow) can re-occupy it.
-const terminatedTables = new Set();
+// Tables are only blocked briefly during settlement, not permanently.
+// A table can be re-occupied immediately after settlement.
+const terminatedTables = new Map();
 
 function isRecentlyTerminated(tableId) {
-  return terminatedTables.has(tableId);
+  const terminatedAt = terminatedTables.get(tableId);
+  if (!terminatedAt) return false;
+  // Block for 5 seconds only to prevent flickering during settlement
+  return Date.now() - terminatedAt < 5000;
 }
 
 function markRecentlyTerminated(tableId) {
-  terminatedTables.add(tableId);
+  terminatedTables.set(tableId, Date.now());
 }
 
 export function clearTerminatedTable(tableId) {

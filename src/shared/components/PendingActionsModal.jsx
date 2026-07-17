@@ -14,7 +14,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, RefreshCw, Trash2, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
-import { getPendingActions, removePendingAction, updatePendingAction } from '../../utils/offlineDB';
+import { getPendingActions, removePendingAction, updatePendingAction, clearAllPendingActions, clearAllOfflinePrintJobs } from '../../utils/offlineDB';
 import { syncPendingActions } from '../../utils/syncEngine';
 
 export default function PendingActionsModal({ open, onClose }) {
@@ -63,6 +63,19 @@ export default function PendingActionsModal({ open, onClose }) {
     syncPendingActions();
   };
 
+  const handleClearAll = async () => {
+    if (!confirm('Are you sure you want to clear all pending actions and print jobs? This cannot be undone.')) {
+      return;
+    }
+    try {
+      await clearAllPendingActions();
+      await clearAllOfflinePrintJobs();
+      await loadActions();
+    } catch (err) {
+      console.error('[PendingActionsModal] Failed to clear all:', err);
+    }
+  };
+
   if (!open) return null;
 
   const statusColors = {
@@ -93,6 +106,16 @@ export default function PendingActionsModal({ open, onClose }) {
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <h2 className="text-lg font-bold text-gray-800">Pending Offline Actions</h2>
           <div className="flex items-center gap-2">
+            {actions.length > 0 && (
+              <button
+                onClick={handleClearAll}
+                className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-600 transition-colors"
+                title="Clear all pending actions and print jobs"
+              >
+                <Trash2 size={12} />
+                Clear All
+              </button>
+            )}
             {actions.some(a => a.status === 'error' || a.status === 'conflict') && (
               <button
                 onClick={handleRetryAll}

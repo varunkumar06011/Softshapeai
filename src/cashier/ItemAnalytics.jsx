@@ -27,8 +27,8 @@ import { getKolkataDateString, shiftKolkataDate, getKolkataMonthString } from '.
 const BAR_UNIT_ML = 30;
 const FULL_BOTTLE_ML = 750;
 
-// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
-const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+// Bar-like venue types — expanded to include all bar-related venue types
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE', 'BAR_LOUNGE', 'BREWERY', 'PUB', 'LOUNGE', 'NIGHTCLUB', 'WINE_BAR', 'COCKTAIL_BAR'];
 function isBarLikeVenue(venueType) {
   if (!venueType) return false;
   return BAR_LIKE_VENUE_TYPES.includes(venueType.toUpperCase());

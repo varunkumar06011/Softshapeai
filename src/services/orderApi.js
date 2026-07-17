@@ -752,7 +752,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         entityId: orderId,
         entityType: 'order',
         actionType: 'settle',
-        url: `/api/orders/${orderId}/settle`,
+        url: `/api/edge/order/settle`,
         method: 'POST',
         body,
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
@@ -774,7 +774,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
     entityId: orderId,
     entityType: 'order',
     actionType: 'settle',
-    url: `/api/orders/${orderId}/settle`,
+    url: `/api/edge/order/settle`,
     method: 'POST',
     body,
     dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
@@ -1392,50 +1392,34 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   if (localPrinted) qs.set('localPrinted', 'true');
   if (billEventId) qs.set('billEventId', billEventId);
 
-  // ── Edge server only (local SQLite, assigns real bill number + prints) ──────
-  // Final bill must be edge-first with idempotent bill number generation and printing
-  // No cloud fallback - if edge is unavailable, queue for offline processing
+  // ── Edge server first (local SQLite, assigns real bill number + prints) ──────
+  // Edge-first: always try edge first, even with internet
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
-      const result = await edgeFetch('/api/edge/order/print-bill', {
+      const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId, restaurantId, tableNumber, discountPercent, kotNumbers, localPrinted, billEventId }),
       });
-      if (result && result.success) return result;
+      if (edgeResult && edgeResult.success) {
+        return edgeResult;
+      }
     } catch (edgeErr) {
       console.warn('[Edge] printBill edge failed, queuing offline:', edgeErr.message);
-      await addPendingAction({
-        requestId: printRequestId,
-        entityId: orderId,
-        entityType: 'order',
-        actionType: 'print-bill',
-        url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
-        method: 'POST',
-        body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
-        dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-      });
-      if (!localPrinted) {
-        await addOfflinePrintJob({
-          id: `offline-print-${Date.now()}`,
-          orderId, requestId: printRequestId,
-          jobType: 'FINAL_BILL', status: 'pending', createdAt: Date.now(),
-          data: { restaurantId, tableNumber, discountPercent, kotNumbers },
-        });
-      }
-      return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
     }
   }
 
-  // Edge server unavailable - queue for offline processing
+  // ── Edge server unavailable: queue for offline processing ──────
+  // No cloud fallback - print bill must be edge-first for bill number generation
+  // Cloud sync happens later via sync worker, not during print
   console.warn('[Edge] Edge server unavailable for print-bill, queuing offline');
   await addPendingAction({
     requestId: printRequestId,
     entityId: orderId,
     entityType: 'order',
     actionType: 'print-bill',
-    url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
+    url: `/api/edge/order/print-bill`,
     method: 'POST',
     body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
     dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,

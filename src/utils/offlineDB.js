@@ -216,6 +216,16 @@ export async function removePendingAction(id) {
   });
 }
 
+export async function clearAllPendingActions() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pendingActions', 'readwrite');
+    tx.objectStore('pendingActions').clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function getPendingActionByRequestId(requestId) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -416,6 +426,16 @@ export async function updateOfflinePrintJob(id, updates) {
       if (!existing) return;
       store.put({ ...existing, ...updates });
     };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function clearAllOfflinePrintJobs() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('offlinePrintJobs', 'readwrite');
+    tx.objectStore('offlinePrintJobs').clear();
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -711,7 +731,7 @@ export async function setLocalPrinterMapping(mapping) {
 
 export async function getPrintAgentUrl() {
   const config = await getLocalPrinterConfig();
-  return config.printAgentUrl || 'http://127.0.0.1:3101';
+  return config.printAgentUrl || 'http://127.0.0.1:3102';
 }
 
 export async function setPrintAgentUrl(url) {

@@ -20,6 +20,7 @@ import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
 
 export default function VenueSectionView({
   sectionName,
+  sectionId,
   restaurantId,
   roomMode,
   selectedRoom,
@@ -36,34 +37,17 @@ export default function VenueSectionView({
   compactMode = false,
 }) {
 
-  const targetSectionId = null; // always use sectionName match — actual DB IDs are dynamic UUIDs
+  const targetSectionId = sectionId; // use sectionId for stable matching
   const targetName = (sectionName || '').trim().toLowerCase();
-
-  const recentlyTerminated = (() => {
-    try {
-      const raw = localStorage.getItem('cashier_recently_terminated');
-      const map = raw ? JSON.parse(raw) : {};
-      const now = Date.now();
-      Object.keys(map).forEach(k => { if (now - map[k] > 30000) delete map[k]; });
-      return map;
-    } catch { return {}; }
-  })();
 
   const cleanVenueTables = (venueTables || []).filter(Boolean);
   const sectionTables = cleanVenueTables.filter((table) => {
+    // Primary match by sectionId (stable UUID)
     if (targetSectionId) {
       return table.sectionId === targetSectionId || table.section?.id === targetSectionId;
     }
-    
-    // Check recently terminated guard — ONLY for occupied tables.
-    // Free tables must always show so they can be re-used immediately.
-    const tableStatus = (table.status || '').toLowerCase();
-    const isFree = tableStatus === 'free' || tableStatus === 'available';
-    if (!isFree) {
-      const termTs = recentlyTerminated[table.backendId];
-      if (termTs && Date.now() - termTs < 30000) return false;
-    }
 
+    // Fallback to sectionName match for backward compatibility
     const currentName = (table.sectionName || table.section?.name || '').trim().toLowerCase();
     const target = targetName;
     

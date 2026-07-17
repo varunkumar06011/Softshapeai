@@ -22,8 +22,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchVenues } from '../services/tableApi';
 
-// Bar-like venue types — PDR, Conference, Room Service, Banquet are bar outlets too
-const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE'];
+// Bar-like venue types — expanded to include all bar-related venue types
+const BAR_LIKE_VENUE_TYPES = ['BAR', 'PDR', 'CONFERENCE', 'BANQUET', 'ROOM_SERVICE', 'BAR_LOUNGE', 'BREWERY', 'PUB', 'LOUNGE', 'NIGHTCLUB', 'WINE_BAR', 'COCKTAIL_BAR'];
 
 // Maps a venue type to the outlet type for routing purposes
 function getOutletForVenueType(venueType) {

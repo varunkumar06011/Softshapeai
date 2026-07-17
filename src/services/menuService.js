@@ -17,6 +17,7 @@ import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth } from "./edgeHealth.js";
+import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 async function edgeFetchMenuItems() {
   const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
@@ -201,11 +202,24 @@ async function fetchPosViewMenu(restaurantId = getCurrentRestaurantId()) {
   return mapPosViewToMenuItems(categories);
 }
 
-/** Prefer edge server (local SQLite); then lean /items endpoint; fall back to pos-view; final fallback to localStorage cache */
+/** Offline-first menu fetch: load from IndexedDB first, then sync in background */
 export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId()) {
   if (!restaurantId || restaurantId === 'null' || restaurantId === 'undefined') {
     console.warn("[MenuService] No valid restaurantId provided, skipping backend fetch.");
     return readStoredMenu();
+  }
+
+  // ── Path 0: IndexedDB cache (instant render) ───────────────────────────────
+  try {
+    const cachedMenu = await getCachedMenu(restaurantId);
+    if (cachedMenu && cachedMenu.length > 0) {
+      console.log(`[MenuService] Loaded ${cachedMenu.length} items from IndexedDB cache`);
+      // Trigger background sync without blocking UI
+      syncMenuInBackground(restaurantId);
+      return cachedMenu;
+    }
+  } catch (err) {
+    console.warn("[MenuService] IndexedDB cache read failed:", err.message);
   }
 
   // ── Path 1: Edge server (local SQLite) — primary path ──────────────────────
@@ -215,6 +229,8 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
       const edgeItems = await edgeFetchMenuItems();
       if (edgeItems.length > 0) {
         console.log(`[MenuService] Loaded ${edgeItems.length} items from edge server`);
+        // Cache to IndexedDB for offline use
+        cacheMenu(restaurantId, edgeItems).catch(err => console.warn("[MenuService] Failed to cache menu:", err.message));
         return edgeItems;
       }
       // For edge-local auth, return the empty array — don't fall through to
@@ -234,7 +250,10 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
     console.warn("[MenuService] /api/menu/items failed:", err.message);
   }
 
-  if (lean.length > 0) return lean;
+  if (lean.length > 0) {
+    cacheMenu(restaurantId, lean).catch(err => console.warn("[MenuService] Failed to cache menu:", err.message));
+    return lean;
+  }
 
   let posView = [];
   try {
@@ -243,7 +262,10 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
     console.warn("[MenuService] /api/menu/pos-view failed:", err.message);
   }
 
-  if (posView.length > 0) return posView;
+  if (posView.length > 0) {
+    cacheMenu(restaurantId, posView).catch(err => console.warn("[MenuService] Failed to cache menu:", err.message));
+    return posView;
+  }
 
   // Final fallback: return cached menu from localStorage
   const cached = readStoredMenu();
@@ -258,6 +280,40 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
     `Cannot reach backend at ${API_BASE}. ` +
     "Check backend deployment status and ensure the service is active."
   );
+}
+
+/** Background sync: fetch from edge/cloud and update IndexedDB cache without blocking UI */
+async function syncMenuInBackground(restaurantId) {
+  try {
+    const useEdgeDirect = isEdgeLocalAuth();
+    let freshItems = null;
+
+    if (useEdgeDirect || await isEdgeAvailable()) {
+      try {
+        freshItems = await edgeFetchMenuItems();
+      } catch (err) {
+        if (useEdgeDirect) return;
+        console.warn("[MenuService] Background edge sync failed:", err.message);
+      }
+    }
+
+    if (!freshItems || freshItems.length === 0) {
+      try {
+        freshItems = await fetchLeanMenu(restaurantId);
+      } catch (err) {
+        console.warn("[MenuService] Background cloud sync failed:", err.message);
+      }
+    }
+
+    if (freshItems && freshItems.length > 0) {
+      await cacheMenu(restaurantId, freshItems);
+      console.log(`[MenuService] Background sync cached ${freshItems.length} items`);
+      // Dispatch event to notify UI components to refresh
+      window.dispatchEvent(new CustomEvent('menu-synced', { detail: { restaurantId, items: freshItems } }));
+    }
+  } catch (err) {
+    console.warn("[MenuService] Background sync error:", err.message);
+  }
 }
 
 export async function createMenuItem(data) {
