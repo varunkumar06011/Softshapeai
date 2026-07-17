@@ -650,7 +650,13 @@ const CashierDashboard = ({ onLogout }) => {
     : activeOutlet === 'both'
       ? Array.from(new Map([...barTables, ...tables].map(t => [t.backendId ?? t.id, t])).values())
       : tables;
-  const setActiveTables = activeOutlet === 'bar' ? setBarTables : setTables;
+  const setActiveTables = activeOutlet === 'bar' ? setBarTables
+    : activeOutlet === 'both'
+      ? (updater, options) => {
+          setTables(updater, options);
+          setBarTables(updater, options);
+        }
+      : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
   const [configVersion, setConfigVersion] = useState(0);
   useEffect(() => {
@@ -1633,7 +1639,6 @@ const CashierDashboard = ({ onLogout }) => {
         };
       });
       setActiveTables(updateTables, { skipPersist: true });
-      if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(updateTables, { skipPersist: true });
     };
 
     const dedupKotHistory = (existing = [], incoming = []) => {
@@ -1694,7 +1699,6 @@ const CashierDashboard = ({ onLogout }) => {
         };
       });
       setActiveTables(updateTables, { skipPersist: true });
-      if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(updateTables, { skipPersist: true });
     };
 
     const onTableUpdated = ({ table, requestId } = {}) => {
@@ -1884,7 +1888,6 @@ const CashierDashboard = ({ onLogout }) => {
             : t
         );
         setActiveTables(clearTable, { skipPersist: true });
-        if ((activeOutlet === 'bar' || activeOutlet === 'both') && setBarTables) setBarTables(clearTable, { skipPersist: true });
 
         // Remove from billing alerts
         setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));

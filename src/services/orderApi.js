@@ -733,7 +733,9 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
   const settleRequestId = requestId || generateRequestId();
   body.requestId = settleRequestId;
 
-  // ── Edge server first (local SQLite, instant) ───────────────────────────────
+  // ── Edge server only (local SQLite, instant) ───────────────────────────────
+  // Settlement must be local-first and sync to cloud later
+  // No cloud fallback - if edge is unavailable, queue for offline processing
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
@@ -744,74 +746,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (useEdgeDirect) {
-        console.warn('[Edge] settleOrder edge failed, queuing offline:', edgeErr.message);
-        await addPendingAction({
-          requestId: settleRequestId,
-          entityId: orderId,
-          entityType: 'order',
-          actionType: 'settle',
-          url: `/api/orders/${orderId}/settle`,
-          method: 'POST',
-          body,
-          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-        });
-        const localId = `offline-txn-${Date.now()}`;
-        body.localTxnId = localId;
-        await addOfflineTransaction({
-          localId, orderId, requestId: settleRequestId,
-          ...extraSettleData, synced: false, createdAt: Date.now(),
-        });
-        return { offline: true, transaction: { id: localId, ...body } };
-      }
-      console.warn('[Edge] settleOrder failed, falling through:', edgeErr.message);
-    }
-  }
-
-  // Fast path: if backend is known unreachable, queue instantly without API wait.
-  if (!isBackendReachable()) {
-    console.warn('[Offline] Backend unreachable — fast-pathing settle to offline queue');
-    await addPendingAction({
-      requestId: settleRequestId,
-      entityId: orderId,
-      entityType: 'order',
-      actionType: 'settle',
-      url: `/api/orders/${orderId}/settle`,
-      method: 'POST',
-      body,
-      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-    });
-    const localId = `offline-txn-${Date.now()}`;
-    body.localTxnId = localId;
-    await addOfflineTransaction({
-      localId, orderId, requestId: settleRequestId,
-      ...extraSettleData, synced: false, createdAt: Date.now(),
-    });
-    return { offline: true, transaction: { id: localId, ...body } };
-  }
-
-  // Try API first — isBackendReachable() can be falsely negative on slow networks.
-  // Only fall back to offline queue if the API call actually fails after retries.
-  try {
-    return await withRetry(
-      async () => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10_000);
-        try {
-          const res = await fetch(apiUrl(`/api/orders/${orderId}/settle`), {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-            body: JSON.stringify(body),
-            signal: controller.signal,
-          });
-          return parseResponse(res);
-        } finally { clearTimeout(timeoutId); }
-      },
-      { ...RETRY_CONFIG.SETTLE, shouldRetry: (err) => err.status !== 409 }
-    );
-  } catch (apiErr) {
-    if (!isBackendReachable()) {
-      console.warn('[Offline] Settle API failed, queuing for sync:', apiErr.message);
+      console.warn('[Edge] settleOrder edge failed, queuing offline:', edgeErr.message);
       await addPendingAction({
         requestId: settleRequestId,
         entityId: orderId,
@@ -823,17 +758,34 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
       });
       const localId = `offline-txn-${Date.now()}`;
+      body.localTxnId = localId;
       await addOfflineTransaction({
         localId, orderId, requestId: settleRequestId,
         ...extraSettleData, synced: false, createdAt: Date.now(),
       });
-      if (import.meta.env.DEV) {
-        console.log('[Offline] Settlement queued for sync:', orderId);
-      }
       return { offline: true, transaction: { id: localId, ...body } };
     }
-    throw apiErr;
   }
+
+  // Edge server unavailable - queue for offline processing
+  console.warn('[Edge] Edge server unavailable for settle, queuing offline');
+  await addPendingAction({
+    requestId: settleRequestId,
+    entityId: orderId,
+    entityType: 'order',
+    actionType: 'settle',
+    url: `/api/orders/${orderId}/settle`,
+    method: 'POST',
+    body,
+    dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+  });
+  const localId = `offline-txn-${Date.now()}`;
+  body.localTxnId = localId;
+  await addOfflineTransaction({
+    localId, orderId, requestId: settleRequestId,
+    ...extraSettleData, synced: false, createdAt: Date.now(),
+  });
+  return { offline: true, transaction: { id: localId, ...body } };
 }
 
 export async function saveTransaction({
@@ -1440,7 +1392,9 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   if (localPrinted) qs.set('localPrinted', 'true');
   if (billEventId) qs.set('billEventId', billEventId);
 
-  // ── Edge server first (local SQLite, assigns real bill number + prints) ──────
+  // ── Edge server only (local SQLite, assigns real bill number + prints) ──────
+  // Final bill must be edge-first with idempotent bill number generation and printing
+  // No cloud fallback - if edge is unavailable, queue for offline processing
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
@@ -1451,72 +1405,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (useEdgeDirect) {
-        console.warn('[Edge] printBill edge failed, queuing offline:', edgeErr.message);
-        await addPendingAction({
-          requestId: printRequestId,
-          entityId: orderId,
-          entityType: 'order',
-          actionType: 'print-bill',
-          url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
-          method: 'POST',
-          body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
-          dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-        });
-        if (!localPrinted) {
-          await addOfflinePrintJob({
-            id: `offline-print-${Date.now()}`,
-            orderId, requestId: printRequestId,
-            jobType: 'FINAL_BILL', status: 'pending', createdAt: Date.now(),
-            data: { restaurantId, tableNumber, discountPercent, kotNumbers },
-          });
-        }
-        return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
-      }
-      console.warn('[Edge] printBill failed, falling through:', edgeErr.message);
-    }
-  }
-
-  // Fast path: if backend is known unreachable, queue instantly without API wait.
-  if (!isBackendReachable()) {
-    console.warn('[Offline] Backend unreachable — fast-pathing print-bill to offline queue');
-    await addPendingAction({
-      requestId: printRequestId,
-      entityId: orderId,
-      entityType: 'order',
-      actionType: 'print-bill',
-      url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
-      method: 'POST',
-      body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
-      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
-    });
-    if (!localPrinted) {
-      await addOfflinePrintJob({
-        id: `offline-print-${Date.now()}`,
-        orderId, requestId: printRequestId,
-        jobType: 'FINAL_BILL', status: 'pending', createdAt: Date.now(),
-        data: { restaurantId, tableNumber, discountPercent, kotNumbers },
-      });
-    }
-    return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
-  }
-
-  // Try API first — isBackendReachable() can be falsely negative on slow networks.
-  // Only fall back to offline queue if the API call actually fails.
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8_000);
-    try {
-      const res = await fetch(apiUrl(`/api/orders/${orderId}/print-bill?${qs.toString()}`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        signal: controller.signal,
-      });
-      return parseResponse(res);
-    } finally { clearTimeout(timeoutId); }
-  } catch (apiErr) {
-    if (!isBackendReachable()) {
-      console.warn('[Offline] Print bill API failed, queuing for sync:', apiErr.message);
+      console.warn('[Edge] printBill edge failed, queuing offline:', edgeErr.message);
       await addPendingAction({
         requestId: printRequestId,
         entityId: orderId,
@@ -1530,25 +1419,36 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       if (!localPrinted) {
         await addOfflinePrintJob({
           id: `offline-print-${Date.now()}`,
-          orderId,
-          requestId: printRequestId,
-          jobType: 'final-bill',
-          status: 'pending',
-          createdAt: Date.now(),
+          orderId, requestId: printRequestId,
+          jobType: 'FINAL_BILL', status: 'pending', createdAt: Date.now(),
           data: { restaurantId, tableNumber, discountPercent, kotNumbers },
         });
       }
-      if (import.meta.env.DEV) {
-        console.log('[Offline] Print bill queued for sync:', orderId);
-      }
-      return {
-        offline: true,
-        billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`,
-        order: { id: orderId },
-      };
+      return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
     }
-    throw apiErr;
   }
+
+  // Edge server unavailable - queue for offline processing
+  console.warn('[Edge] Edge server unavailable for print-bill, queuing offline');
+  await addPendingAction({
+    requestId: printRequestId,
+    entityId: orderId,
+    entityType: 'order',
+    actionType: 'print-bill',
+    url: `/api/orders/${orderId}/print-bill?${qs.toString()}`,
+    method: 'POST',
+    body: { restaurantId, tableNumber, discountPercent, kotNumbers, requestId: printRequestId, localPrinted, billEventId },
+    dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
+  });
+  if (!localPrinted) {
+    await addOfflinePrintJob({
+      id: `offline-print-${Date.now()}`,
+      orderId, requestId: printRequestId,
+      jobType: 'FINAL_BILL', status: 'pending', createdAt: Date.now(),
+      data: { restaurantId, tableNumber, discountPercent, kotNumbers },
+    });
+  }
+  return { offline: true, billNumber: `OFFLINE-${printRequestId.slice(0, 8).toUpperCase()}`, order: { id: orderId } };
 }
 
 export { generateRequestId };
