@@ -40,6 +40,7 @@ import {
   pruneConflictAuditLog,
 } from './offlineDB';
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
+import { isEdgeLocalAuth } from '../services/edgeHealth';
 import { httpFetch } from './httpClient';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
 import { finalizeSettlementAudit } from './settlementAuditLog';
@@ -95,9 +96,45 @@ let lastSyncAt = null;
 let lastError = null;
 let authExpired = false;
 let stuckCount = 0;
+let refreshInProgress = null; // Promise<boolean> | null — guards concurrent refresh attempts
 
 const statusListeners = new Set();
 const stuckActionListeners = new Set();
+
+// ── Silent token refresh ─────────────────────────────────────────────────────
+// Attempts a refresh-token exchange against /api/auth/refresh using the current
+// JWT. Returns true if a new token was obtained, false otherwise. Concurrent
+// callers share the same in-flight refresh promise to avoid duplicate calls.
+async function silentTokenRefresh() {
+  if (refreshInProgress) return refreshInProgress;
+  refreshInProgress = (async () => {
+    const token = localStorage.getItem('ss_token');
+    if (!token || token.startsWith('edge-local-')) return false;
+    try {
+      const refreshRes = await httpFetch(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      }, { timeoutMs: 10_000, retries: 0 });
+      if (refreshRes.ok) {
+        const { token: newToken } = await refreshRes.json();
+        if (newToken) {
+          localStorage.setItem('ss_token', newToken);
+          console.log('[SyncEngine] Silent token refresh succeeded');
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.warn('[SyncEngine] Silent token refresh failed:', err.message);
+      return false;
+    }
+  })();
+  try {
+    return await refreshInProgress;
+  } finally {
+    refreshInProgress = null;
+  }
+}
 
 export function getSyncStatus() {
   return { syncStatus, pendingCount, lastSyncAt, lastError, authExpired, stuckCount };
@@ -129,6 +166,23 @@ export function clearAuthExpired() {
   authExpired = false;
   lastError = null;
   notifyStatusListeners();
+  // Reset auth_error actions back to 'pending' so the next sync cycle retries them.
+  // Dismissal of the banner should not leave actions permanently stuck.
+  (async () => {
+    try {
+      const all = await getPendingActions();
+      const authErrors = all.filter(a => a.status === 'auth_error');
+      for (const a of authErrors) {
+        await updatePendingAction(a.id, { status: 'pending', lastError: null });
+      }
+      if (authErrors.length > 0) {
+        console.log(`[SyncEngine] Reset ${authErrors.length} auth_error action(s) to pending after banner dismissal`);
+        syncPendingActions();
+      }
+    } catch (e) {
+      console.warn('[SyncEngine] Failed to reset auth_error actions:', e.message);
+    }
+  })();
 }
 
 function notifyStatusListeners() {
@@ -188,6 +242,26 @@ async function bulkSync(actions) {
     body: JSON.stringify(payload),
   }, { timeoutMs: 30_000, retries: 1 });
 
+  if (res.status === 401) {
+    // Attempt silent refresh, then retry bulk sync once
+    const refreshed = await silentTokenRefresh();
+    if (refreshed) {
+      const retryRes = await httpFetch(`${API_BASE}/api/orders/offline-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(payload),
+      }, { timeoutMs: 30_000, retries: 0 });
+      if (retryRes.ok) {
+        const retryData = await retryRes.json();
+        return retryData.results || [];
+      }
+      const retryErrBody = await retryRes.json().catch(() => ({}));
+      throw new Error(retryErrBody.error || `Bulk sync failed: ${retryRes.status}`);
+    }
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || `Bulk sync failed: ${res.status}`);
+  }
+
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
     throw new Error(errBody.error || `Bulk sync failed: ${res.status}`);
@@ -234,8 +308,29 @@ async function syncSingleAction(action) {
     return { requestId: action.requestId, status: 'conflict', statusCode: 409, error: errBody.error || 'Conflict', data: errBody };
   }
 
-  // 401 — auth expired, pause sync
+  // 401 — attempt silent refresh before declaring auth_error
   if (res.status === 401) {
+    const refreshed = await silentTokenRefresh();
+    if (refreshed) {
+      // Retry the action once with the new token
+      const retryRes = await httpFetch(`${API_BASE}${url}`, {
+        method: action.method,
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: body ? JSON.stringify(body) : undefined,
+      }, { timeoutMs: 30_000, retries: 0 });
+      if (retryRes.ok) {
+        return { requestId: action.requestId, status: 'success', statusCode: retryRes.status, data: await retryRes.json().catch(() => ({})) };
+      }
+      if (retryRes.status === 409) {
+        const retryErrBody = await retryRes.json().catch(() => ({}));
+        return { requestId: action.requestId, status: 'conflict', statusCode: 409, error: retryErrBody.error || 'Conflict', data: retryErrBody };
+      }
+      if (retryRes.status === 401) {
+        return { requestId: action.requestId, status: 'auth_error', statusCode: 401, error: 'Authentication expired' };
+      }
+      const retryErrBody = await retryRes.json().catch(() => ({}));
+      return { requestId: action.requestId, status: 'error', statusCode: retryRes.status, error: retryErrBody.error || `Server returned ${retryRes.status}` };
+    }
     return { requestId: action.requestId, status: 'auth_error', statusCode: 401, error: 'Authentication expired' };
   }
 
@@ -462,7 +557,10 @@ export async function syncPendingActions() {
           attempts: (action.attempts || 0) + 1,
         });
         failed++;
-        break; // Stop syncing — need re-login
+        // Don't break — continue syncing other actions that may not be auth-dependent.
+        // The silent refresh already failed inside syncSingleAction/bulkSync, so
+        // remaining actions will also get auth_error, but we let them try rather
+        // than abandoning the entire batch. The 30s interval will retry automatically.
       } else {
         // Generic error — increment attempts, keep for retry
         const newAttempts = (action.attempts || 0) + 1;
@@ -586,7 +684,7 @@ export async function syncPendingActions() {
           hadAuthError = true;
           await updatePendingAction(action.id, { status: 'auth_error', lastError: result.error, attempts: (action.attempts || 0) + 1 });
           failed++;
-          break;
+          // Don't break — continue syncing other actions (same as first pass)
         } else {
           await updatePendingAction(action.id, { status: 'error', lastError: result.error, attempts: (action.attempts || 0) + 1 });
           failed++;
@@ -613,9 +711,22 @@ export async function syncPendingActions() {
     await setSyncMeta('lastSyncAt', lastSyncAt);
 
     if (hadAuthError) {
-      authExpired = true;
-      setSyncStatus('paused');
-      lastError = 'Authentication expired — please log in again';
+      if (isEdgeLocalAuth()) {
+        // Edge-local (PIN) auth: cloud 401 is expected — the fake JWT can't
+        // authenticate against the cloud. Don't surface "Session expired".
+        // The edge server's own sync worker handles cloud sync separately.
+        authExpired = false;
+        setSyncStatus('error');
+        lastError = `${failed} action(s) waiting for edge server sync`;
+      } else {
+        // Silent refresh already failed inside syncSingleAction/bulkSync — surface
+        // the re-login banner. But do NOT pause the sync loop: the 30s interval
+        // keeps running and will auto-retry auth_error actions after a successful
+        // re-auth (e.g. user logs in elsewhere, or refresh token becomes valid again).
+        authExpired = true;
+        setSyncStatus('error');
+        lastError = 'Authentication expired — please log in again';
+      }
     } else if (failed > 0 && succeeded === 0) {
       authExpired = false;
       setSyncStatus('error');
@@ -632,6 +743,25 @@ export async function syncPendingActions() {
 
     // Prune old synced actions
     await pruneOldPendingActions();
+
+    // Edge-local auth: auto-reset auth_error actions to pending so the next
+    // 30s cycle retries them. The "Session expired" banner is hidden for
+    // edge-local, so the manual dismiss path (clearAuthExpired) is unavailable.
+    // The edge server's own sync worker handles cloud sync separately.
+    if (hadAuthError && isEdgeLocalAuth()) {
+      try {
+        const all = await getPendingActions();
+        const authErrors = all.filter(a => a.status === 'auth_error');
+        for (const a of authErrors) {
+          await updatePendingAction(a.id, { status: 'pending', lastError: null });
+        }
+        if (authErrors.length > 0) {
+          console.log(`[SyncEngine] Edge-local: reset ${authErrors.length} auth_error action(s) to pending for auto-retry`);
+        }
+      } catch (e) {
+        console.warn('[SyncEngine] Failed to reset auth_error actions for edge-local:', e.message);
+      }
+    }
 
     // Fix #2: Prune old acknowledged conflict audit entries (30 days)
     await pruneConflictAuditLog().catch(() => {});
@@ -678,7 +808,9 @@ async function syncIndividually(actions) {
         groupResults.set(action.id, result);
 
         if (result.status === 'auth_error') {
-          break; // Stop this group — auth expired
+          // Don't break the group — the silent refresh already failed inside
+          // syncSingleAction, but let remaining actions in this group try too.
+          // They'll get auth_error as well, but the 30s interval retries automatically.
         }
       } catch (err) {
         groupResults.set(action.id, { status: 'error', error: err.message });

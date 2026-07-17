@@ -18,6 +18,7 @@ import { useSyncStatus } from '../../context/SyncStatusContext';
 import { getMenuCacheAgeMs } from '../../services/menuSyncService';
 import { getTableCacheAgeMs } from '../../services/tableSyncService';
 import { flushQueuedPrintJobs, getOfflinePrintLog } from '../../utils/printOffline';
+import { isEdgeLocalAuth } from '../../services/edgeHealth';
 
 export default function OfflineStatusBar() {
   const {
@@ -183,7 +184,7 @@ export default function OfflineStatusBar() {
             </span>
           )}
 
-          {authExpired && (
+          {authExpired && !isEdgeLocalAuth() && (
             <span className="ml-2 flex items-center gap-1 rounded-full bg-red-700 px-2 py-0.5 animate-pulse">
               <AlertTriangle size={10} />
               Session expired

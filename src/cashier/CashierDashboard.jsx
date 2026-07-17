@@ -266,12 +266,9 @@ const CashierDashboard = ({ onLogout }) => {
   const settlementQueueRef = useRef(null);
   if (!settlementQueueRef.current) settlementQueueRef.current = new BackgroundQueue('settlement');
   const enabledModules = restaurant?.enabledModules || {};
-  const defaultOutlet = enabledModules.bar && enabledModules.food ? 'both'
-    : enabledModules.bar && !enabledModules.food ? 'bar'
-    : 'restaurant';
   const [activeOutlet, setActiveOutlet] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('cashier_active_outlet'));
-    return saved || defaultOutlet;
+    return saved || 'both';
   });
   useEffect(() => {
     localStorage.setItem(getTenantScopedKey('cashier_active_outlet'), activeOutlet);
@@ -480,6 +477,31 @@ const CashierDashboard = ({ onLogout }) => {
     }
     return set;
   }, [fetchedSections, sectionTagToSource]);
+
+  const hasBarSections = useMemo(() => fetchedSections.some(s => isBarLikeVenue(s.venue?.venueType)), [fetchedSections]);
+  const hasRestaurantSections = useMemo(() => fetchedSections.some(s => !isBarLikeVenue(s.venue?.venueType)), [fetchedSections]);
+  const hasMultipleOutlets = hasBarSections && hasRestaurantSections;
+
+  // Debug: log why the outlet toggle may not show
+  useEffect(() => {
+    if (fetchedSections.length > 0) {
+      const barTypes = fetchedSections.filter(s => isBarLikeVenue(s.venue?.venueType)).map(s => ({ name: s.name, venueType: s.venue?.venueType }));
+      const restTypes = fetchedSections.filter(s => !isBarLikeVenue(s.venue?.venueType)).map(s => ({ name: s.name, venueType: s.venue?.venueType }));
+      console.log('[OutletToggle] fetchedSections:', fetchedSections.length, 'bar:', barTypes, 'restaurant:', restTypes, 'hasMultipleOutlets:', hasMultipleOutlets);
+    }
+  }, [fetchedSections, hasMultipleOutlets]);
+
+  // Correct stale activeOutlet once sections are loaded: if the saved outlet
+  // has no matching sections (e.g. localStorage says 'restaurant' but only bar
+  // sections exist, or vice versa), reset to 'both' so all sections are visible.
+  useEffect(() => {
+    if (fetchedSections.length === 0) return;
+    if (activeOutlet === 'bar' && !hasBarSections) {
+      setActiveOutlet('both');
+    } else if (activeOutlet === 'restaurant' && !hasRestaurantSections) {
+      setActiveOutlet('both');
+    }
+  }, [fetchedSections, hasBarSections, hasRestaurantSections, activeOutlet]);
 
   // Refs to keep section mappings current inside loadTransactions (stale closure fix)
   const sectionTagToSourceRef = useRef(sectionTagToSource);
@@ -1934,6 +1956,16 @@ const CashierDashboard = ({ onLogout }) => {
       // NOTE: Do NOT call loadTransactions here — the settlement flow already triggers
       // a reload after commitFn succeeds. Calling it here creates a race where the socket
       // event fires BEFORE the backend has invalidated its cache, causing stale data.
+      //
+      // FALLBACK: If socketTxn is missing (e.g. edge sync emit without transaction payload),
+      // refetch transactions so the settled order appears instantly in Past Transactions.
+      // This is safe for the edge-sync path because the transaction is already committed
+      // in the cloud DB before the socket event fires.
+      if (!socketTxn) {
+        setTimeout(() => {
+          loadTransactions(txnDateFilterRef.current, null, { silent: true });
+        }, 500);
+      }
     };
 
     const onTableSwapped = (payload) => {
@@ -2712,12 +2744,85 @@ const CashierDashboard = ({ onLogout }) => {
         }
         return;
       }
+
+      // Step 1: Try local print first using the transaction data we already have.
+      // This avoids the round-trip to the backend and prevents auth-expiry stalls.
+      let localPrinted = false;
+      const reprintEventId = `reprint-${txn.orderId || txn.id}-${Date.now()}`;
+      try {
+        const { printLocal } = await import('../utils/printOffline');
+        const billItems = (txn.itemsList || []).map(i => ({
+          name: i.name || i.n || '',
+          quantity: i.quantity || i.q || 1,
+          price: i.price || i.p || 0,
+          amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
+          menuType: i.menuType || i.type || 'FOOD',
+          notes: i.notes || null,
+        }));
+        const reprintEscpos = buildBillEscpos({
+          billNumber: txn.billNumber || 'REPRINT',
+          tableNumber: txn.tableDisplayName || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
+          sectionTag: txn.sectionTag || null,
+          items: billItems,
+          subtotal: Number(txn.subtotal ?? 0),
+          discount: (txn.discountPercent > 0 || txn.discountAmount > 0)
+            ? { percent: Number(txn.discountPercent ?? 0), amount: Number(txn.discountAmount ?? 0) }
+            : null,
+          tax: (txn.cgst || txn.sgst) ? { cgst: Number(txn.cgst ?? 0), sgst: Number(txn.sgst ?? 0), total: (Number(txn.cgst ?? 0) + Number(txn.sgst ?? 0)) } : null,
+          roundOff: Number(txn.roundOff ?? 0),
+          grandTotal: Number(txn.grandTotal ?? txn.amount ?? 0),
+          itemCount: billItems.length,
+          qtyCount: billItems.reduce((s, i) => s + i.quantity, 0),
+          isReprint: true,
+          section: txn.source || undefined,
+          restaurant: {
+            name: restaurant?.name || undefined,
+            receiptHeader: restaurant?.receiptHeader || undefined,
+            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+            address: restaurant?.address || undefined,
+            phone: restaurant?.phone || undefined,
+          },
+        });
+        const result = await printLocal({
+          type: 'FINAL_BILL',
+          escposData: reprintEscpos,
+          eventId: reprintEventId,
+          data: {
+            tableNumber: txn.tableDisplayName || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
+            items: billItems,
+            subtotal: Number(txn.subtotal ?? 0),
+            discount: (txn.discountPercent > 0 || txn.discountAmount > 0)
+              ? { percent: Number(txn.discountPercent ?? 0), amount: Number(txn.discountAmount ?? 0) }
+              : null,
+            cgst: Number(txn.cgst ?? 0),
+            sgst: Number(txn.sgst ?? 0),
+            grandTotal: Number(txn.grandTotal ?? txn.amount ?? 0),
+            roundOff: Number(txn.roundOff ?? 0),
+            billNumber: txn.billNumber || 'REPRINT',
+            isReprint: true,
+            restaurant: {
+              name: restaurant?.name || undefined,
+              receiptHeader: restaurant?.receiptHeader || undefined,
+              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+              address: restaurant?.address || undefined,
+              phone: restaurant?.phone || undefined,
+            },
+          },
+        });
+        localPrinted = result?.printed || false;
+      } catch (printErr) {
+        console.warn('[doReprintFoundBill] Local print failed:', printErr.message);
+      }
+
+      // Step 2: Call backend with localPrinted flag (for bill number assignment / dedup)
       const response = await httpFetch(`${API_BASE}/api/print/reprint-by-transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           orderId: txn.orderId,
-          restaurantId: txn._sourceRestaurantId || txn.restaurantId || activeRestaurantId
+          restaurantId: txn._sourceRestaurantId || txn.restaurantId || activeRestaurantId,
+          localPrinted,
+          billEventId: reprintEventId,
         }),
       }, { retries: 1 });
       if (!response.ok) throw new Error('Print request failed');
@@ -2901,6 +3006,11 @@ const CashierDashboard = ({ onLogout }) => {
         : Math.random().toString(36).slice(2) + Date.now().toString(36));
       const billEventId = `${billRequestId}-bill`;
 
+      // Edge-local (PIN) auth: skip local print agent — the edge server prints
+      // directly via Tauri with a real bill number. Calling printLocal() here
+      // would waste up to 10s waiting for the print agent at :3102 (which may
+      // not be running) and produce a 'PENDING' bill number on the printout.
+      if (!isEdgeLocalAuth()) {
       try {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
@@ -2965,6 +3075,7 @@ const CashierDashboard = ({ onLogout }) => {
       } catch (printErr) {
         console.warn('[handleFinalBill] Local print failed:', printErr.message);
       }
+      } // end if (!isEdgeLocalAuth)
 
       // Call backend print-bill endpoint with localPrinted flag and shared billEventId
       const orderId = selectedTable?.activeOrder?.id;
@@ -3387,11 +3498,80 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
 
+      // Step 1: Try local print first (same pattern as handleFinalBill)
+      let localPrinted = false;
+      const walkinBillEventId = `walkin-${requestId}-bill`;
+      try {
+        const { printLocal } = await import('../utils/printOffline');
+        const walkinItems = cart.map(i => ({
+          name: i.n || i.name,
+          quantity: i.q,
+          price: Number(i.p),
+          amount: Number(i.p) * i.q,
+          menuType: i.menuType || 'FOOD',
+          notes: i.notes || null,
+        }));
+        const walkinEscpos = buildBillEscpos({
+          billNumber: 'PENDING',
+          tableNumber: tableLabel,
+          items: walkinItems,
+          subtotal: subtotalAmt,
+          discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+          tax: (cgstAmt || sgstAmt) ? { cgst: cgstAmt, sgst: sgstAmt, total: (cgstAmt || 0) + (sgstAmt || 0) } : null,
+          roundOff: Math.round((Math.round(grandTotalAmt) - grandTotalAmt) * 100) / 100,
+          grandTotal: grandTotalAmt,
+          itemCount: walkinItems.length,
+          qtyCount: walkinItems.reduce((s, i) => s + i.quantity, 0),
+          section: 'Walk-in',
+          restaurant: {
+            name: restaurant?.name || undefined,
+            receiptHeader: restaurant?.receiptHeader || undefined,
+            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+            address: restaurant?.address || undefined,
+            phone: restaurant?.phone || undefined,
+          },
+        });
+        const result = await printLocal({
+          type: 'FINAL_BILL',
+          escposData: walkinEscpos,
+          eventId: walkinBillEventId,
+          data: {
+            tableNumber: tableLabel,
+            items: cart.map(i => ({
+              name: i.n || i.name,
+              quantity: i.q,
+              price: Number(i.p),
+              menuType: i.menuType || 'FOOD',
+              notes: i.notes || null
+            })),
+            subtotal: subtotalAmt,
+            discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+            cgst: cgstAmt,
+            sgst: sgstAmt,
+            grandTotal: grandTotalAmt,
+            billNumber: 'PENDING',
+            restaurant: {
+              name: restaurant?.name || undefined,
+              receiptHeader: restaurant?.receiptHeader || undefined,
+              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+              address: restaurant?.address || undefined,
+              phone: restaurant?.phone || undefined,
+            },
+          },
+        });
+        localPrinted = result?.printed || false;
+      } catch (printErr) {
+        console.warn('[handleWalkinFinalBill] Local print failed:', printErr.message);
+      }
+
+      // Step 2: Call backend with localPrinted flag and shared billEventId
       const response = await httpFetch(`${API_BASE}/api/print/final-bill-emit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           restaurantId: activeRestaurantId,
+          localPrinted,
+          billEventId: walkinBillEventId,
           billData: {
             tableNumber: tableLabel,
             items: cart.map(i => ({
@@ -3489,9 +3669,75 @@ const CashierDashboard = ({ onLogout }) => {
           .map(k => k.id)
           .filter(Boolean)
           .join(',');
+
+        // Try local print first (same pattern as handleFinalBill)
+        let localPrinted = false;
+        const reprintBillEventId = `reprint-${orderId}-${Date.now()}`;
+        try {
+          const { printLocal } = await import('../utils/printOffline');
+          const reprintItems = getBillableItems(selectedTable);
+          const reprintCalc = calculateOrderTotal(reprintItems, discountPercent, restaurantConfig);
+          const reprintEscpos = buildBillEscpos({
+            billNumber: selectedTable.billNumber || 'REPRINT',
+            tableNumber: selectedTable.number,
+            sectionTag: selectedTable.sectionTag || null,
+            items: reprintItems.map(i => ({
+              name: i.name || i.n || '',
+              quantity: i.quantity || i.q || 1,
+              price: i.price || i.p || 0,
+              amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
+              menuType: i.menuType || i.type || undefined,
+              notes: i.notes || null,
+            })),
+            subtotal: reprintCalc.rawSubtotal ?? reprintCalc.subtotal,
+            discount: discountPercent > 0 ? { percent: discountPercent, amount: reprintCalc.discountAmount } : null,
+            tax: (reprintCalc.cgst || reprintCalc.sgst) ? { cgst: reprintCalc.cgst, sgst: reprintCalc.sgst, total: (reprintCalc.cgst || 0) + (reprintCalc.sgst || 0) } : null,
+            roundOff: reprintCalc.roundOff ?? 0,
+            grandTotal: reprintCalc.grandTotal,
+            itemCount: reprintItems.length,
+            qtyCount: reprintItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
+            isReprint: true,
+            section: selectedTable.section?.name || undefined,
+            restaurant: {
+              name: restaurant?.name || undefined,
+              receiptHeader: restaurant?.receiptHeader || undefined,
+              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+              address: restaurant?.address || undefined,
+              phone: restaurant?.phone || undefined,
+            },
+          });
+          const result = await printLocal({
+            type: 'FINAL_BILL',
+            escposData: reprintEscpos,
+            eventId: reprintBillEventId,
+            data: {
+              tableNumber: selectedTable.number,
+              items: reprintItems,
+              subtotal: reprintCalc.rawSubtotal ?? reprintCalc.subtotal,
+              discount: discountPercent > 0 ? { percent: discountPercent, amount: reprintCalc.discountAmount } : null,
+              cgst: reprintCalc.cgst,
+              sgst: reprintCalc.sgst,
+              grandTotal: reprintCalc.grandTotal,
+              roundOff: reprintCalc.roundOff ?? 0,
+              billNumber: selectedTable.billNumber || 'REPRINT',
+              isReprint: true,
+              restaurant: {
+                name: restaurant?.name || undefined,
+                receiptHeader: restaurant?.receiptHeader || undefined,
+                receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                address: restaurant?.address || undefined,
+                phone: restaurant?.phone || undefined,
+              },
+            },
+          });
+          localPrinted = result?.printed || false;
+        } catch (printErr) {
+          console.warn('[handleReprintBill] Local print failed:', printErr.message);
+        }
+
         const response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId: reprintBillEventId })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId: reprintBillEventId });
 
         // Backend returns 409 if PAID — handle gracefully
         if (response && response.error && !response.offline) {
@@ -3757,8 +4003,36 @@ const CashierDashboard = ({ onLogout }) => {
           });
 
           // Merge returned transaction into pastTransactions immediately (fixes fast-settlement disappearing bills)
-          if (settleData?.transaction) {
-            const txn = settleData.transaction;
+          // Edge server settleOrderEdge returns { success, order, table } — no transaction field.
+          // Build a synthetic transaction from the client's data so it appears in Past Transactions instantly.
+          const settleTxn = settleData?.transaction || (settleData?.success ? {
+            id: `edge-txn-${orderId}-${Date.now()}`,
+            orderId,
+            txnNumber: null,
+            billNumber: selectedTable?.billNumber || null,
+            paidAt: new Date().toISOString(),
+            grandTotal: Number(activeGrandTotal),
+            subtotal: Number(activeSubtotal),
+            discountPercent: discountPercent || 0,
+            discountAmount: Number(activeDiscountAmount),
+            cgst: Number(activeCgst),
+            sgst: Number(activeSgst),
+            roundOff: Number(activeOrderCalc.roundOff ?? 0),
+            tipAmount: Number(tipAmount) || 0,
+            itemCount: getBillableItems(selectedTable).filter(i => Number(i.quantity ?? i.q ?? 1) > 0).length,
+            items: getBillableItems(selectedTable)
+              .filter(i => Number(i.quantity ?? i.q ?? 1) > 0)
+              .map(i => ({ name: i.name ?? i.n, quantity: Number(i.quantity ?? i.q ?? 1), price: Number(i.price ?? i.p ?? 0) })),
+            captainId: 'CASHIER',
+            captainName: 'Head Cashier',
+            method,
+            tableNumber: selectedTable?.number || null,
+            tableLabel: selectedTable?.sectionTag && isBarLikeVenue(fetchedSectionsRef.current.find(s => s.sectionTag === selectedTable.sectionTag)?.venue?.venueType) ? `B${selectedTable.number}` : `T${selectedTable.number}`,
+            sectionTag: selectedTable?.sectionTag || null,
+          } : null);
+
+          if (settleTxn) {
+            const txn = settleTxn;
             const mappedTxn = {
               id: txn.id,
               orderId: txn.orderId || null,
@@ -3787,6 +4061,7 @@ const CashierDashboard = ({ onLogout }) => {
               tableDisplayName: txn.tableLabel || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
               source: sectionTagToSourceRef.current[txn.sectionTag] || activeOutlet,
               restaurantId: activeRestaurantId,
+              _optimistic: true,
             };
             if (isTxnInDateFilter(txn.paidAt)) {
               setPastTransactions(prev => {
@@ -3917,6 +4192,7 @@ const CashierDashboard = ({ onLogout }) => {
               tableDisplayName: 'Walk-in',
               source: sectionTagToSourceRef.current[txn.sectionTag] || activeOutlet,
               restaurantId: activeRestaurantId,
+              _optimistic: true,
             };
             if (isTxnInDateFilter(txn.paidAt)) {
               setPastTransactions(prev => {
@@ -5449,7 +5725,7 @@ const CashierDashboard = ({ onLogout }) => {
                             || tableSubCategory)
                           : activeTab.replace('-', ' ') + ' Feed'}
                       </h2>
-                      {enabledModules.bar && enabledModules.food && (
+                      {hasMultipleOutlets && (
                         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
                           {['both', 'bar', 'restaurant'].map(outlet => (
                             <button

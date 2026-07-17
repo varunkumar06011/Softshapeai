@@ -55,7 +55,7 @@ export default function PendingActionsModal({ open, onClose }) {
 
   const handleRetryAll = async () => {
     for (const action of actions) {
-      if (action.status === 'error' || action.status === 'conflict') {
+      if (action.status === 'error' || action.status === 'conflict' || action.status === 'auth_error') {
         await updatePendingAction(action.id, { status: 'pending', lastError: null, attempts: 0 });
       }
     }
@@ -116,7 +116,7 @@ export default function PendingActionsModal({ open, onClose }) {
                 Clear All
               </button>
             )}
-            {actions.some(a => a.status === 'error' || a.status === 'conflict') && (
+            {actions.some(a => a.status === 'error' || a.status === 'conflict' || a.status === 'auth_error') && (
               <button
                 onClick={handleRetryAll}
                 className="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600 transition-colors"
@@ -181,7 +181,7 @@ export default function PendingActionsModal({ open, onClose }) {
                       )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {(action.status === 'error' || action.status === 'conflict') && (
+                      {(action.status === 'error' || action.status === 'conflict' || action.status === 'auth_error') && (
                         <button
                           onClick={() => handleRetry(action.id)}
                           className="rounded p-1.5 text-blue-500 hover:bg-blue-50 transition-colors"

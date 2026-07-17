@@ -893,13 +893,20 @@ export async function saveTransaction({
 }
 
 export async function fetchTransactions(restaurantId, limit = 2000, date = null, month = null, outletId = null) {
-  // For edge-local (PIN) auth, the edge server has no transactions list endpoint.
-  // Settled orders exist in order_record but with a different shape than transactions.
-  // Return empty — the UI will show "No Recent Transactions" for offline PIN users.
-  // Offline transactions are stored locally via addOfflineTransaction and shown
-  // optimistically in the UI; they don't need to be re-fetched from here.
+  // For edge-local (PIN) auth, fetch settled orders + walk-in transactions
+  // from the edge server's local SQLite via GET /api/edge/transactions.
   if (isEdgeLocalAuth()) {
-    return [];
+    try {
+      const qs = new URLSearchParams();
+      if (limit != null && limit > 0) qs.set('limit', String(limit));
+      if (date) qs.set('date', date);
+      if (month) qs.set('month', month);
+      const data = await edgeFetch(`/api/edge/transactions?${qs}`);
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.warn('[fetchTransactions] Edge fetch failed:', err.message);
+      return [];
+    }
   }
   const qs = new URLSearchParams({ restaurantId });
   if (limit != null && limit > 0) qs.set('limit', String(limit));
