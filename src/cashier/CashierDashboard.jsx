@@ -2988,7 +2988,7 @@ const CashierDashboard = ({ onLogout }) => {
 
           printBill(orderId, printBillArgs)
             .then(resp => {
-              if (resp?.billNumber) {
+              if (resp?.success && resp?.billNumber) {
                 setSelectedTable(prev => prev ? { ...prev, billNumber: resp.billNumber } : prev);
                 if (selectedTable.isExtra) {
                   setExtraTables(prev => prev.map(et =>
@@ -3000,14 +3000,14 @@ const CashierDashboard = ({ onLogout }) => {
                   ));
                 }
               }
-              if (resp?.offline) {
-                addNotification('Offline', `Bill queued — will sync when online. Ref: ${resp.billNumber}`, 'warning');
+              if (resp && !resp.success) {
+                addNotification('Sync Pending', 'Bill printed locally. Bill number will be assigned when edge server reconnects.', 'warning');
               }
               window.dispatchEvent(new Event('softshape_order_updated'));
             })
             .catch(err => {
               console.warn('[handleFinalBill] Background printBill failed:', err.message);
-              addNotification('Sync Pending', 'Bill printed, bill number will sync when online.', 'warning');
+              addNotification('Sync Pending', 'Bill printed locally. Bill number will be assigned when edge server reconnects.', 'warning');
             })
             .finally(() => {
               isPrintingBillRef.current = false;
@@ -3041,78 +3041,38 @@ const CashierDashboard = ({ onLogout }) => {
           return;
         }
 
-        // localPrinted=false — MUST await backend (socket path prints the bill)
+        // localPrinted=false — MUST await edge (edge path prints the bill)
         response = selectedTable.isExtra
           ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
           : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
-        if (response?.offline) {
-          addNotification('Offline', `Bill queued — will sync when online. Ref: ${response.billNumber}`, 'warning');
-          // If local print didn't succeed above, try again with the offline bill number
-          if (!localPrinted) {
+        if (response && !response.success) {
+          // Edge server unavailable and local print failed — bill was NOT printed.
+          // Do NOT queue; show error and let user retry.
+          isPrintingBillRef.current = false;
+          setIsPrintingBill(false);
+          // Roll back the bill-printed flag since nothing was printed
+          const rollbackTableId = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
+          setBillPrintedTableIds(prev => {
+            const next = new Set(prev);
+            next.delete(rollbackTableId);
             try {
-              const { printLocal } = await import('../utils/printOffline');
-              const billItems = getBillableItems(selectedTable);
-              const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
-              const billEscpos = buildBillEscpos({
-                billNumber: response.billNumber,
-                tableNumber: selectedTable.number,
-                sectionTag: selectedTable.sectionTag || null,
-                items: billItems.map(i => ({
-                  name: i.name || i.n || '',
-                  quantity: i.quantity || i.q || 1,
-                  price: i.price || i.p || 0,
-                  amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
-                  menuType: i.menuType || i.type || undefined,
-                  notes: i.notes || null,
-                })),
-                subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-                discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
-                tax: (billCalc.cgst || billCalc.sgst) ? { cgst: billCalc.cgst, sgst: billCalc.sgst, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) } : null,
-                roundOff: billCalc.roundOff ?? 0,
-                grandTotal: billCalc.grandTotal,
-                itemCount: billItems.length,
-                qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
-                section: selectedTable.section?.name || undefined,
-                restaurant: {
-                  name: restaurant?.name || undefined,
-                  receiptHeader: restaurant?.receiptHeader || undefined,
-                  receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-                  address: restaurant?.address || undefined,
-                  phone: restaurant?.phone || undefined,
-                },
-              });
-              const result = await printLocal({
-                type: 'FINAL_BILL',
-                escposData: billEscpos,
-                eventId: billEventId,
-                data: {
-                  tableNumber: selectedTable.number,
-                  items: billItems,
-                  subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
-                  discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
-                  cgst: billCalc.cgst,
-                  sgst: billCalc.sgst,
-                  grandTotal: billCalc.grandTotal,
-                  roundOff: billCalc.roundOff ?? 0,
-                  billNumber: response.billNumber,
-                  restaurant: {
-                    name: restaurant?.name || undefined,
-                    receiptHeader: restaurant?.receiptHeader || undefined,
-                    receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-                    address: restaurant?.address || undefined,
-                    phone: restaurant?.phone || undefined,
-                  },
-                },
-              });
-              if (result.printed) {
-                addNotification('Local Print', 'Bill printed to local printer.', 'success');
-              } else if (result.queued) {
-                addNotification('Print Queued', `No local printer: ${result.error || 'queued'}. Click "Retry prints" in the offline bar.`, 'warning');
-              }
-            } catch (printErr) {
-              console.warn('[handleFinalBill] Local print failed:', printErr.message);
-            }
+              localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
+            } catch {}
+            return next;
+          });
+          addNotification('Error', `${response.error || 'Edge server unavailable'} — could not print bill.`, 'error');
+          // Restore table status from 'Waiting Bill' back to previous
+          setSelectedTable(prev => prev ? { ...prev, status: 'Occupied', workflowStatus: 'Occupied' } : prev);
+          if (selectedTable.isExtra) {
+            setExtraTables(prev => prev.map(et =>
+              et.id === rollbackTableId ? { ...et, status: 'Occupied', workflowStatus: 'Occupied' } : et
+            ));
+          } else {
+            setActiveTables(prev => prev.map(t =>
+              t.backendId === rollbackTableId ? { ...t, status: 'Occupied', workflowStatus: 'Occupied' } : t
+            ));
           }
+          return;
         } else {
           const returnedItems = response?.order?.items || response?.items || [];
           const snapshotCount = billItemsSnapshotRef.current.length;
@@ -3763,49 +3723,27 @@ const CashierDashboard = ({ onLogout }) => {
             }
           );
 
-          if (settleData?.offline) {
-            console.log(`[Settlement] orderId=${orderId} queued offline`);
+          if (settleData && !settleData.success) {
+            // Edge server unavailable — settlement failed. Do NOT queue.
+            // Roll back the optimistic UI and let the user retry.
+            console.warn(`[Settlement] orderId=${orderId} failed: ${settleData.error || 'Edge server unavailable'}`);
             recordSettlementAudit({
               requestId: settleRequestId,
               orderId,
               tableId: selectedTable?.backendId || null,
               method,
               amount: txnAmount,
-              offline: true,
-              status: 'pending',
+              offline: false,
+              status: 'failed',
+              error: settleData.error,
             });
-            // Mark as settled locally to prevent retries
-            setSettledOrderIds(prev => new Set([...prev, orderId]));
-            if (selectedTable?.backendId) {
-              setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
-              syncPauseUntilRef.current = Date.now() + 5000;
-              terminatedTableIdsRef.current.add(selectedTable.backendId);
-              recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
-              try {
-                localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
-              } catch {}
-              setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
-            }
-
-            // Show settlement in Past Transactions immediately while offline
-            const offlineTxn = settleData?.transaction;
-            if (offlineTxn && isTxnInDateFilter(Date.now())) {
-              const mappedOffline = mapOfflineTransaction({
-                ...offlineTxn,
-                localId: offlineTxn.id,
-                orderId,
-                createdAt: Date.now(),
-              });
-              setPastTransactions(prev => {
-                if (prev.some(t => t.id === mappedOffline.id)) return prev;
-                return [mappedOffline, ...prev];
-              });
-            }
-            loadTransactions(txnDateFilterRef.current, null, { silent: true });
+            rollbackFn();
+            setIsSettling(false);
+            addNotification('Settlement Failed', `${settleData.error || 'Edge server unavailable'}.`, 'error');
             return;
           }
 
-          console.log(`[Settlement] orderId=${orderId} settled on server`);
+          console.log(`[Settlement] orderId=${orderId} settled on edge server`);
 
           recordSettlementAudit({
             requestId: settleRequestId,
@@ -4043,25 +3981,52 @@ const CashierDashboard = ({ onLogout }) => {
     setIsTerminating(true);
 
     try {
-      // Step 1: Call backend FIRST — do not touch UI until we know it succeeded
+      // Step 1: Call edge FIRST (kill switch — local SQLite, instant)
       if (tableSnap?.backendId) {
-        const resId = tableSnap.section?.restaurantId || activeRestaurantId;
-        const terminateUrl = (activeOutlet === 'bar' || activeOutlet === 'both')
-          ? `${API_BASE}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}` 
-          : `${API_BASE}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
+        const useEdgeDirect = isEdgeLocalAuth();
+        let edgeSucceeded = false;
 
-        const response = await httpFetch(terminateUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        }, { retries: 1 });
-
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(errBody.error || `Server returned ${response.status}`);
+        if (useEdgeDirect || await isEdgeAvailable()) {
+          try {
+            const edgeResult = await edgeFetch(`/api/edge/table/${tableSnap.backendId}/session`, {
+              method: 'DELETE',
+            });
+            if (edgeResult?.success) {
+              edgeSucceeded = true;
+              console.log('[Terminate] Edge terminate success:', tableSnap.backendId);
+            }
+          } catch (edgeErr) {
+            if (edgeErr?.status) {
+              // Edge rejected the request — real error, don't fall through to cloud
+              console.warn('[Terminate] Edge rejected:', edgeErr.status, edgeErr.message);
+              throw new Error(edgeErr.message);
+            }
+            console.warn('[Terminate] Edge unreachable:', edgeErr.message);
+          }
         }
 
-        // Step 2: Backend confirmed success — table is already fully reset by terminate endpoint
-        // (order items deleted, order cancelled, table status set to Free, kotHistory cleared)
+        if (!edgeSucceeded && !useEdgeDirect) {
+          // Edge unavailable and not edge-local auth — fall back to cloud API
+          const resId = tableSnap.section?.restaurantId || activeRestaurantId;
+          const terminateUrl = (activeOutlet === 'bar' || activeOutlet === 'both')
+            ? `${API_BASE}/api/bar/tables/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`
+            : `${API_BASE}/api/orders/terminate-table/${tableSnap.backendId}?restaurantId=${resId}`;
+
+          const response = await httpFetch(terminateUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          }, { retries: 1 });
+
+          if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new Error(errBody.error || `Server returned ${response.status}`);
+          }
+        } else if (!edgeSucceeded && useEdgeDirect) {
+          // Edge-local auth but edge failed — can't fall back to cloud (fake token)
+          throw new Error('Edge server unavailable — cannot terminate. Please restart the edge server.');
+        }
+
+        // Step 2: Edge/cloud confirmed success — table is already fully reset
       }
 
       // Step 3: Update local state (only runs if backend succeeded or no backendId)
@@ -5572,185 +5537,15 @@ const CashierDashboard = ({ onLogout }) => {
                             )}
                         </div>
 
-                        {/* ── MAIN TABLES ── */}
-                        {/* Main bar section — uses activeTables from current restaurant */}
-                        {(activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (fetchedSections.find(s => s.venue?.venueType === 'BAR')?.name || '') && tableSubCategory !== '' && (
-                          <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-3.5">
-                            {[...activeTables.filter((table) => {
-                                const matchingSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
-                                const sectionName = (table.sectionName || table.section?.name || '').toLowerCase();
-                                return matchingSection ? sectionName === matchingSection.name.toLowerCase() : false;
-                              }).sort((a, b) => Number(a.number || a.id) - Number(b.number || b.id)),
-                              ...extraTables
-                                .filter(et => {
-                                  const termTs = recentlyTerminatedRef.current[et.id];
-                                  return !(termTs && Date.now() - termTs < 5000);
-                                })
-                                .sort((a, b) => String(a.number).localeCompare(String(b.number)))
-                            ]
-                              .map((table) => {
-                                const hasItems = (table.kotHistory?.length > 0) || (table.activeOrder?.items?.length > 0) || Number(table.currentBill ?? 0) > 0;
-                                const isFree = !hasItems;
-                                const isWaitingBill = hasItems && (table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED' || table.status === 'BILLING');
-                                const isBusy = hasItems && !isWaitingBill;
-                                const isExtra = table.isExtra;
-                                const hasExtra = false; // Always show + button to allow multiple extra tables
-
-                                let containerClass = 'bg-white border border-gray-200 text-gray-400 hover:border-gray-300 hover:shadow-md';
-                                let statusText = 'Open';
-                                let statusClass = 'text-gray-400 bg-gray-100';
-
-                                if (isExtra) {
-                                  containerClass = 'bg-blue-50 border-2 border-dashed border-blue-400 text-blue-600 hover:border-blue-500 hover:shadow-md';
-                                  statusText = 'Extra';
-                                  statusClass = 'text-blue-600 bg-blue-100';
-                                } else if (isWaitingBill) {
-                                  containerClass = 'bg-yellow-100 border border-yellow-400 text-yellow-700 shadow-md animate-pulse';
-                                  statusText = 'Bill';
-                                  statusClass = 'text-yellow-700 bg-yellow-200';
-                                } else if (isBusy) {
-                                  containerClass = 'bg-red-50 border border-red-400 text-red-600 shadow-md';
-                                  statusText = 'Busy';
-                                  statusClass = 'text-red-600 bg-red-100';
-                                }
-
-                                return (
-                                  <div
-                                    key={isExtra ? `extra-${table.id}` : (table.backendId || table.id)}
-                                    onClick={() => handleTableSelect(table)}
-                                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-center p-2.5 cursor-pointer transition-all hover:scale-105 active:scale-95 relative shadow-sm ${containerClass}`}
-                                  >
-                                    {/* Add Extra (+) button — top-left, only on non-extra tables */}
-                                    {!isExtra && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          // Generate sequential extra ID: B1-X, B1-X2, B1-X3...
-                                          const existingCount = extraTables.filter(et => et.baseBackendId === table.backendId).length;
-                                          const extraId = existingCount === 0 ? `${table.number}-X` : `${table.number}-X${existingCount + 1}`;
-                                          const localOrderId = `extra-${extraId}-${Date.now()}`;
-                                          setExtraTables(prev => [...prev, {
-                                            id: extraId,
-                                            number: extraId,
-                                            backendId: table.backendId,
-                                            baseBackendId: table.backendId,
-                                            isExtra: true,
-                                            localOrderId,
-                                            status: 'Free',
-                                            sectionId: table.sectionId,
-                                            section: table.section,
-                                            sectionName: table.sectionName,
-                                            kotHistory: [],
-                                            currentBill: 0,
-                                            activeOrder: null,
-                                            captainId: null,
-                                            guests: 0,
-                                            time: null,
-                                          }]);
-                                        }}
-                                        className="absolute top-1 left-1 w-4 h-4 bg-green-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-green-600 z-10 shadow"
-                                        title={`Add extra session for B${table.number}`}
-                                      >+</button>
-                                    )}
-                                    {/* Remove Extra (−) button — top-left on extra tables */}
-                                    {isExtra && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          // Find the original/main table
-                                          const mainTable = activeTables.find(t => t.backendId === table.baseBackendId);
-                                          if (!mainTable) {
-                                            setExtraTables(prev => prev.filter(et => et.id !== table.id));
-                                            return;
-                                          }
-                                          // Collect items from the extra table
-                                          const extraItems = getAllOrderItems(table);
-                                          if (extraItems.length > 0) {
-                                            // Merge items into main table's activeOrder.items and kotHistory
-                                            const mainItems = mainTable.activeOrder?.items || [];
-                                            const mainKotHistory = mainTable.kotHistory || [];
-                                            const extraKotHistory = table.kotHistory || [];
-                                            const mergedItems = [...mainItems, ...extraItems.map(i => ({
-                                              id: null,
-                                              n: i.n || i.name,
-                                              name: i.n || i.name,
-                                              p: Number(i.p ?? i.price ?? 0),
-                                              price: Number(i.p ?? i.price ?? 0),
-                                              q: Number(i.q ?? i.quantity ?? 1),
-                                              quantity: Number(i.q ?? i.quantity ?? 1),
-                                              menuType: (i.menuType || 'FOOD').toUpperCase(),
-                                              removedFromBill: false,
-                                              notes: i.notes || null,
-                                            }))];
-                                            const mergedKotHistory = [...mainKotHistory, ...extraKotHistory];
-                                            const newBill = calculateOrderTotal(mergedItems, 0, restaurantConfig).total;
-                                            // Update main table
-                                            const updater = prev => prev.map(t => {
-                                              if (t.backendId === mainTable.backendId) {
-                                                return {
-                                                  ...t,
-                                                  status: t.status === 'Free' ? 'Occupied' : t.status,
-                                                  kotHistory: mergedKotHistory,
-                                                  currentBill: newBill,
-                                                  activeOrder: t.activeOrder
-                                                    ? { ...t.activeOrder, items: mergedItems }
-                                                    : { id: null, items: mergedItems, totalAmount: newBill },
-                                                };
-                                              }
-                                              return t;
-                                            });
-                                            setActiveTables(updater);
-                                            // Also update selectedTable if it's the main table
-                                            setSelectedTable(prev => {
-                                              if (!prev || prev.backendId !== mainTable.backendId) return prev;
-                                              return {
-                                                ...prev,
-                                                kotHistory: mergedKotHistory,
-                                                currentBill: newBill,
-                                                activeOrder: prev.activeOrder
-                                                  ? { ...prev.activeOrder, items: mergedItems }
-                                                  : { id: null, items: mergedItems, totalAmount: newBill },
-                                              };
-                                            });
-                                          }
-                                          // Remove extra table
-                                          setExtraTables(prev => prev.filter(et => et.id !== table.id));
-                                        }}
-                                        className="absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-red-600 z-10 shadow"
-                                        title={`Remove extra session B${table.number} — items move to main table`}
-                                      >−</button>
-                                    )}
-                                    {/* Captain Name Badge - Top Right */}
-                                    {table.captainName && (
-                                      <div className="absolute top-1 right-1 bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-[6px] text-[8px] font-black uppercase tracking-widest max-w-[70%] truncate shadow-sm">
-                                        {table.captainName.split(' ')[0]}
-                                      </div>
-                                    )}
-                                    <span className="text-3xl font-black leading-none">{isExtra ? `B${table.number}` : `B${table.number ?? table.id}`}</span>
-                                    <span className={`mt-1.5 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-black uppercase tracking-wider ${statusClass}`}>{statusText}</span>
-                                    {!isFree && (
-                                      <span className="text-xs md:text-sm font-black opacity-70 mt-1">₹{calculateTableBill(table, restaurantConfig).grandTotal}</span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        )}
-
-
-                        {/* ── GENERIC VENUE SECTION VIEWS (data-driven from fetchedSections) ── */}
+                        {/* ── VENUE SECTION VIEWS (data-driven from fetchedSections) ── */}
+                        {/* All sections — including BAR — render through the unified VenueSectionView. */}
+                        {/* No hardcoded venueType checks; sections display exactly as configured in admin. */}
                         {fetchedSections
                           .filter(section => {
                             const sourceKey = sectionTagToSource[section.sectionTag] || section.name;
-                            // Skip the first bar section (main bar hall) — it has its own dedicated view above.
-                            // Use the same identifier the dedicated view uses: the section's .name
-                            const firstBarSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
-                            const firstBarIdentifier = firstBarSection?.name || '';
-                            if (section.venue?.venueType === 'BAR' && section.name === firstBarIdentifier && firstBarIdentifier) return false;
                             // Skip KOT-off sections — they show walk-in tables instead of regular tables
                             if (section.venue?.kotEnabled === false) return false;
                             // Show all sections from backend (onboarding/admin) without venue type filtering
-                            // Sections should display exactly as configured in the system
                             return true;
                           })
                           .map(section => {

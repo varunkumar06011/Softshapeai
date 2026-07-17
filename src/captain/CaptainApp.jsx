@@ -1399,35 +1399,11 @@ export default function CaptainApp({ onLogout }) {
 
     let baseTables = displayTables;
 
-
-
-    // When in bar outlet main bar section, further narrow to bar-section tables
-
-    const mainBarSourceKey = fetchedSections.find(s => s.venue?.venueType === 'BAR')?.name || '';
-
-    if ((activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === mainBarSourceKey && mainBarSourceKey !== '') {
-
-      const mainBarSection = fetchedSections.find(s => s.venue?.venueType === 'BAR');
-
-      const barTables = displayTables.filter(t => {
-
-        const sec = (t.sectionName || t.section?.name || '').toLowerCase();
-
-        return mainBarSection ? sec === mainBarSection.name.toLowerCase() : false;
-
-      });
-
-      baseTables = barTables.length > 0 ? barTables : displayTables;
-
-    }
-
-
-
     if (tableFilter === 'all') return baseTables;
 
     return baseTables.filter(t => t.captainId === currentCaptain?.id);
 
-  }, [displayTables, tableFilter, currentCaptain?.id, activeOutlet, tableSubCategory, fetchedSections, sectionTagToSource]);
+  }, [displayTables, tableFilter, currentCaptain?.id]);
 
 
 
@@ -4320,11 +4296,11 @@ export default function CaptainApp({ onLogout }) {
                 <div className="text-center p-10 text-gray-500">
                   <p className="text-lg font-semibold">Table management is not enabled for this restaurant type.</p>
                 </div>
-              ) : (activeOutlet === 'bar' || activeOutlet === 'both') && tableSubCategory === (fetchedSections.find(s => s.venue?.venueType === 'BAR')?.name || '') && tableSubCategory !== '' ? (
+              ) : (
 
                 <>
 
-                  {/* Table Filter Toggle */}
+                  {/* Table Filter Toggle — shown for all section types */}
 
                   <div className="flex gap-2 mb-6">
 
@@ -4370,164 +4346,54 @@ export default function CaptainApp({ onLogout }) {
 
                   </div>
 
+                  <VenueSectionView
 
+                    venueId={(() => {
+                      const section = fetchedSections.find(s => {
+                        const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
+                        return sourceKey === tableSubCategory;
+                      });
+                      return section?.sectionTag || section?.venueId || tableSubCategory;
+                    })()}
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    sectionName={(() => {
+                      const section = fetchedSections.find(s => {
+                        const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
+                        return sourceKey === tableSubCategory;
+                      });
+                      return section?.name || tableSubCategory;
+                    })()}
 
-                {filteredTables.map(table => {
+                    sectionId={(() => {
+                      const section = fetchedSections.find(s => {
+                        const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
+                        return sourceKey === tableSubCategory;
+                      });
+                      return section?.id;
+                    })()}
 
-                  const isMyTable = table.captainId === currentCaptain?.id;
+                    restaurantId={getCurrentRestaurantId()}
 
-                  const assignedCaptain = table.captainId ? getCaptain(table.captainId) : null;
+                    roomMode="single"
 
-                  const borderColor = isMyTable ? getCaptainBorderColor(table.captainId) : '';
+                    selectedRoom={selectedPDRRoom}
 
+                    onSelectRoom={setSelectedPDRRoom}
 
+                    captainId={currentCaptain?.id}
 
-                  return (
+                    onTableSelect={openTableSession}
 
-                    <button
+                    onOrderPlaced={() => {}}
 
-                      key={table.backendId || table.id}
+                    venueTables={tableFilter === 'my' ? displayTables.filter(t => t.captainId === currentCaptain?.id) : displayTables}
+                    isSyncing={false}
+                    refetch={refetchRestaurantTables}
+                  />
 
-                      onClick={() => openTableSession(table)}
-                      className={`aspect-square p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 w-full ${
-                        isMyTable ? `border-l-4 ${borderColor}` : ''
+                </>
 
-                      } ${table.status === TABLE_STATUS.FREE ? 'bg-white border-gray-100 hover:border-gray-300' :
-
-                        table.status === TABLE_STATUS.BILLING ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100' :
-
-                          table.status === TABLE_STATUS.READY ? 'bg-green-50 border-green-200 text-green-700' :
-
-                            'bg-red-50 border-red-100 text-red-600'
-
-                        }`}
-
-                    >
-
-                      {/* Section Badge - Top Left */}
-
-                      {(table.sectionName || table.section?.name) && (
-
-                        <div className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shadow-sm z-10 ${getSectionBadgeColor(table)}`}>
-
-                          {getTableSectionLabel(table)}
-
-                        </div>
-
-                      )}
-
-
-
-                      <div className="w-full flex justify-between items-start">
-
-                        <div className="flex flex-col items-start gap-0.5">
-
-                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{(activeOutlet === 'bar' || activeOutlet === 'both') ? 'B' : 'T'}{table.number ?? table.id}</span>
-
-                          {table.captainName && (
-
-                            <span className="text-[7px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-1 py-0.5 rounded leading-none">
-
-                              {table.captainName.split(' ')[0]}
-
-                            </span>
-
-                          )}
-
-                        </div>
-
-
-
-                        {/* Captain Initials Badge - Top Right */}
-
-                        {isMyTable && assignedCaptain && (
-
-                          <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg ${assignedCaptain.color} flex items-center justify-center text-[8px] font-black shadow-sm z-10`}>
-
-                            {assignedCaptain.initials}
-
-                          </div>
-
-                        )}
-
-                      </div>
-
-                      <span className="text-3xl sm:text-4xl font-black leading-none">{table.number ?? table.id}</span>
-
-
-
-                      <div className="w-full flex flex-col items-center gap-1.5">
-                        <div className={`w-full py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 ${table.status === TABLE_STATUS.FREE ? 'bg-gray-100 text-gray-400' :
-                          table.status === TABLE_STATUS.BILLING ? 'bg-amber-500 text-white animate-pulse' :
-
-                            table.status === TABLE_STATUS.READY ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-
-                          }`}>
-
-                          {table.status}
-
-                        </div>
-
-                        {table.status !== TABLE_STATUS.FREE && (
-
-                          <span className="text-[10px] font-black opacity-60">₹{getStableTableBill(table).grandTotal}</span>
-
-                        )}
-
-                      </div>
-
-                    </button>
-
-                );
-
-              })}
-
-            </div>
-
-          </>
-
-        ) : (
-
-          <VenueSectionView
-
-            venueId={(() => {
-              const section = fetchedSections.find(s => {
-                const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
-                return sourceKey === tableSubCategory;
-              });
-              return section?.sectionTag || section?.venueId || tableSubCategory;
-            })()}
-
-            sectionName={(() => {
-              const section = fetchedSections.find(s => {
-                const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
-                return sourceKey === tableSubCategory;
-              });
-              return section?.name || tableSubCategory;
-            })()}
-
-            restaurantId={getCurrentRestaurantId()}
-
-            roomMode="single"
-
-            selectedRoom={selectedPDRRoom}
-
-            onSelectRoom={setSelectedPDRRoom}
-
-            captainId={currentCaptain?.id}
-
-            onTableSelect={openTableSession}
-
-            onOrderPlaced={() => {}}
-
-            venueTables={activeTables}
-            isSyncing={false}
-            refetch={refetchRestaurantTables}
-          />
-
-        )}
+              )}
 
             </div>
 
