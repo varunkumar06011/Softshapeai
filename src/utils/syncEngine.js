@@ -468,6 +468,32 @@ export async function syncPendingActions() {
             await updatePendingActionEntityIds(action.offlineOrderId, realId);
             console.log(`[SyncEngine] Mapped ${action.offlineOrderId} → ${realId}, updated child actions`);
           } else {
+            // Bug E: Auto-recover after 3 failed attempts — re-fetch the order from
+            // the backend using the tableId to find the real order ID.
+            const newAttempts = (action.attempts || 0) + 1;
+            if (newAttempts >= 3 && action.body?.tableId) {
+              try {
+                const recoverRes = await httpFetch(
+                  `${API_BASE}/api/orders/table/${action.body.tableId}`,
+                  { headers: getAuthHeaders() },
+                  { timeoutMs: 10_000, retries: 1 }
+                );
+                if (recoverRes.ok) {
+                  const recoverData = await recoverRes.json().catch(() => null);
+                  const recoveredId = recoverData?.id || recoverData?.order?.id;
+                  if (recoveredId) {
+                    await setOrderIdMapping(action.offlineOrderId, recoveredId);
+                    await updatePendingActionEntityIds(action.offlineOrderId, recoveredId);
+                    console.log(`[SyncEngine] Auto-recovered: mapped ${action.offlineOrderId} → ${recoveredId} via table lookup`);
+                    await removePendingAction(action.id);
+                    succeeded++;
+                    continue;
+                  }
+                }
+              } catch (recoverErr) {
+                console.warn(`[SyncEngine] Auto-recover lookup failed for ${action.offlineOrderId}:`, recoverErr.message);
+              }
+            }
             console.error(
               `[SyncEngine] create-order succeeded but no real ID found in response for ${action.offlineOrderId}. ` +
               `Response keys: ${JSON.stringify(Object.keys(result.data || {}))}. ` +
@@ -476,7 +502,7 @@ export async function syncPendingActions() {
             await updatePendingAction(action.id, {
               status: 'error',
               lastError: 'Order created on server but ID mapping failed — child actions blocked. Manual review needed.',
-              attempts: (action.attempts || 0) + 1,
+              attempts: newAttempts,
             });
           }
         }

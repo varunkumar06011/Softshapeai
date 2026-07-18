@@ -71,28 +71,11 @@ export default function VenueSectionView({
     // If cleanVenueTables is empty (still loading on slow device), show spinner + auto-retry hint.
     const isStillLoading = cleanVenueTables.length === 0;
     return (
-      <div className="p-8 text-center">
-        {isStillLoading ? (
-          <>
-            <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-[#E53935] rounded-full animate-spin mb-3"></div>
-            <p className="text-gray-500 font-bold uppercase tracking-widest text-sm mb-4">
-              Loading {sectionName} tables...
-            </p>
-          </>
-        ) : (
-          <p className="text-gray-500 font-bold uppercase tracking-widest mb-4">
-            NO TABLES FOUND FOR {sectionName.toUpperCase()}
-          </p>
-        )}
-        {refetch && (
-          <button
-            onClick={refetch}
-            className="px-6 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase tracking-widest text-sm hover:bg-red-700 transition-colors"
-          >
-            Refresh Tables
-          </button>
-        )}
-      </div>
+      <LoadingOrEmpty
+        isStillLoading={isStillLoading}
+        sectionName={sectionName}
+        refetch={refetch}
+      />
     );
   }
 
@@ -242,5 +225,76 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
         )}
       </div>
     </button>
+  );
+}
+
+function LoadingOrEmpty({ isStillLoading, sectionName, refetch }) {
+  const [showTimeout, setShowTimeout] = useState(false);
+
+  useEffect(() => {
+    if (!isStillLoading) return;
+    const timer = setTimeout(() => setShowTimeout(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [isStillLoading]);
+
+  if (isStillLoading && !showTimeout) {
+    return (
+      <div className="p-8 text-center">
+        <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-[#E53935] rounded-full animate-spin mb-3"></div>
+        <p className="text-gray-500 font-bold uppercase tracking-widest text-sm mb-4">
+          Loading {sectionName} tables...
+        </p>
+        {refetch && (
+          <button
+            onClick={refetch}
+            className="px-6 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase tracking-widest text-sm hover:bg-red-700 transition-colors"
+          >
+            Refresh Tables
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (isStillLoading && showTimeout) {
+    return (
+      <div className="p-8 text-center">
+        <div className="inline-flex items-center justify-center w-12 h-12 bg-amber-100 rounded-full mb-3">
+          <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <p className="text-gray-700 font-bold uppercase tracking-widest text-sm mb-1">
+          Taking too long?
+        </p>
+        <p className="text-gray-400 text-xs mb-4 max-w-xs mx-auto">
+          The edge server may be offline. Tap refresh to retry — if it still doesn't load, check that the Cashier PC is running.
+        </p>
+        {refetch && (
+          <button
+            onClick={refetch}
+            className="px-6 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase tracking-widest text-sm hover:bg-red-700 transition-colors"
+          >
+            Refresh Tables
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8 text-center">
+      <p className="text-gray-500 font-bold uppercase tracking-widest mb-4">
+        NO TABLES FOUND FOR {sectionName.toUpperCase()}
+      </p>
+      {refetch && (
+        <button
+          onClick={refetch}
+          className="px-6 py-3 bg-[#E53935] text-white rounded-xl font-black uppercase tracking-widest text-sm hover:bg-red-700 transition-colors"
+        >
+          Refresh Tables
+        </button>
+      )}
+    </div>
   );
 }

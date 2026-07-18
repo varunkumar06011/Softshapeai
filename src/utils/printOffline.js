@@ -484,6 +484,8 @@ async function queuePrintJob(job, text, reason) {
     requestId: job.data?.requestId || null,
     text,
     data: job.data || {},
+    escposData: job.escposData || null,
+    eventId: job.eventId || null,
     printerName: job.printerName || null,
     status: 'pending',
     failReason: reason,
@@ -513,6 +515,8 @@ export async function flushQueuedPrintJobs() {
         jobType: job.jobType,
         text: job.text,
         data: job.data,
+        escposData: job.escposData || undefined,
+        eventId: job.eventId || undefined,
         printerName: job.printerName,
       });
 

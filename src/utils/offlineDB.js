@@ -25,7 +25,7 @@
 import { getDeviceId } from './deviceId';
 
 const DB_NAME = 'softshape-offline';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -118,6 +118,11 @@ function openDB() {
         store.createIndex('actionType', 'actionType', { unique: false });
         store.createIndex('acknowledged', 'acknowledged', { unique: false });
       }
+
+      // v7 stores — section cache as fallback when both edge and cloud are down
+      if (!db.objectStoreNames.contains('sectionCache')) {
+        db.createObjectStore('sectionCache', { keyPath: 'restaurantId' });
+      }
     };
 
     req.onsuccess = () => resolve(req.result);
@@ -181,6 +186,21 @@ export async function getPendingActionsByEntity(entityId) {
     const tx = db.transaction('pendingActions', 'readonly');
     const idx = tx.objectStore('pendingActions').index('entityId');
     const req = idx.getAll(entityId);
+    req.onsuccess = () => {
+      const actions = req.result;
+      actions.sort((a, b) => a.createdAt - b.createdAt);
+      resolve(actions);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getPendingActionsByType(actionType) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pendingActions', 'readonly');
+    const idx = tx.objectStore('pendingActions').index('actionType');
+    const req = idx.getAll(actionType);
     req.onsuccess = () => {
       const actions = req.result;
       actions.sort((a, b) => a.createdAt - b.createdAt);
@@ -303,6 +323,28 @@ export async function getCachedTables(restaurantId) {
     const tx = db.transaction('tableCache', 'readonly');
     const req = tx.objectStore('tableCache').get(restaurantId);
     req.onsuccess = () => resolve(req.result?.tables || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// ── sectionCache ────────────────────────────────────────────────────────────
+
+export async function cacheSections(restaurantId, sections) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('sectionCache', 'readwrite');
+    tx.objectStore('sectionCache').put({ restaurantId, sections, cachedAt: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getCachedSections(restaurantId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('sectionCache', 'readonly');
+    const req = tx.objectStore('sectionCache').get(restaurantId);
+    req.onsuccess = () => resolve(req.result?.sections || null);
     req.onerror = () => reject(req.error);
   });
 }

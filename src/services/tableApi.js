@@ -16,7 +16,7 @@
 
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from "./edgeHealth.js";
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, EDGE_READ_TIMEOUT_MS } from "./edgeHealth.js";
 import { generateRequestId } from "../utils/requestId.js";
 
 // Helper: parse fetch response, throw on non-OK status with error message
@@ -77,7 +77,7 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
-      const edgeData = await edgeFetch('/api/edge/tables');
+      const edgeData = await edgeFetch('/api/edge/tables', { timeoutMs: EDGE_READ_TIMEOUT_MS });
       if (edgeData && edgeData.length > 0) {
         return edgeData;
       }
@@ -108,7 +108,7 @@ export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
-      const edgeData = await edgeFetch('/api/edge/sections');
+      const edgeData = await edgeFetch('/api/edge/sections', { timeoutMs: EDGE_READ_TIMEOUT_MS });
       if (edgeData && edgeData.length > 0) {
         return edgeData;
       }
@@ -130,7 +130,7 @@ export async function fetchVenues(restaurantId = getCurrentRestaurantId()) {
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
-      const edgeData = await edgeFetch('/api/edge/venues');
+      const edgeData = await edgeFetch('/api/edge/venues', { timeoutMs: EDGE_READ_TIMEOUT_MS });
       if (edgeData && edgeData.length > 0) {
         return edgeData;
       }

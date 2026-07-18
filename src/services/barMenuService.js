@@ -14,7 +14,7 @@
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getBarMenuCacheKey } from "../utils/cacheKeys";
 import { getMenuStorageKey } from "./menuService";
-import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth } from "./edgeHealth";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS } from "./edgeHealth";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 // Default placeholder images for items without uploaded images
@@ -372,11 +372,8 @@ export async function fetchBarMenuFromBackend() {
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
-      const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        const allItems = await res.json();
+      const allItems = await edgeFetch('/api/edge/menu/items', { timeoutMs: EDGE_READ_TIMEOUT_MS });
+      if (allItems) {
         // Filter for bar/liquor items only
         const barItems = (allItems || []).filter(
           item => (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR'
@@ -467,12 +464,7 @@ async function syncBarMenuInBackground(restaurantId) {
 
     if (useEdgeDirect || await isEdgeAvailable()) {
       try {
-        const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (res.ok) {
-          freshItems = await res.json();
-        }
+        freshItems = await edgeFetch('/api/edge/menu/items', { timeoutMs: EDGE_READ_TIMEOUT_MS });
       } catch (err) {
         if (useEdgeDirect) return;
         console.warn('[BarMenu] Background edge sync failed:', err.message);

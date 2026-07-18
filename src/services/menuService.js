@@ -16,15 +16,11 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
-import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth } from "./edgeHealth.js";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS } from "./edgeHealth.js";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 async function edgeFetchMenuItems() {
-  const res = await fetch(`${getEdgeUrl()}/api/edge/menu/items`, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) throw new Error(`Edge menu fetch failed (${res.status})`);
-  const items = await res.json();
+  const items = await edgeFetch('/api/edge/menu/items', { timeoutMs: EDGE_READ_TIMEOUT_MS });
   return mapFlatMenuItems(items);
 }
 
@@ -86,7 +82,7 @@ async function fetchWithRetry(url, options, { retries = 3, timeoutMs = FETCH_TIM
     // Only retry on network errors, not on abort errors
     if (retries > 0 && err.name !== 'AbortError' && !err.message?.includes('aborted')) {
       console.warn(`[MenuService] Retrying ${url} after error:`, err.message);
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 1000));
       return fetchWithRetry(url, options, { retries: retries - 1, timeoutMs });
     }
     throw err;

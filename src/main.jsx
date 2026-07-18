@@ -21,7 +21,7 @@ import App from './App.jsx'
 import { MenuProvider } from './context/MenuContext'
 import { registerSW } from './utils/registerSW'
 import { checkAndApplyOtaOnStartup, checkAndDownloadOta } from './services/otaService'
-import { prewarmEdgeHealth } from './services/edgeHealth'
+import { prewarmEdgeHealth, startEdgeAutoRecovery } from './services/edgeHealth'
 import * as Sentry from '@sentry/react'
 
 // ── OTA: apply pending update before React renders ───────────────────────────
@@ -32,6 +32,9 @@ checkAndApplyOtaOnStartup().catch(() => { /* fall back to bundled assets */ });
 
 // Pre-warm edge health cache so first data fetch doesn't pay the probe latency
 prewarmEdgeHealth();
+
+// Start edge server auto-recovery (Tauri desktop only — no-op in browser)
+startEdgeAutoRecovery();
 
 Sentry.init({
   dsn: import.meta.env.VITE_SENTRY_DSN,
@@ -52,9 +55,15 @@ Sentry.init({
   ],
 });
 
-// Catch unhandled promise rejections that React Error Boundaries cannot intercept
+// Catch unhandled promise rejections that React Error Boundaries cannot intercept.
+// Dispatches a global event so app components can reset critical UI state
+// (e.g. isSubmittingKotRef, sendingKOT) that may be stuck by the rejection.
 window.addEventListener('unhandledrejection', (event) => {
   console.error('[UnhandledRejection]', event.reason);
+  try { Sentry.captureException(event.reason); } catch {}
+  window.dispatchEvent(new CustomEvent('app:unhandled-rejection', {
+    detail: { message: event.reason?.message || String(event.reason) },
+  }));
   event.preventDefault();
 });
 

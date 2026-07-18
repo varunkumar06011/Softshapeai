@@ -109,6 +109,44 @@ export function prewarmEdgeHealth() {
 }
 
 /**
+ * Discover the edge server URL from the cloud backend.
+ * The backend stores the print agent's LAN IP when it registers.
+ * The edge server runs on port 3101 on the same machine as the print agent.
+ * Call this after login so the captain app on a different device can find
+ * the edge server without relying on 127.0.0.1 (which only works on the
+ * cashier PC itself).
+ */
+export async function discoverEdgeUrlFromBackend() {
+  try {
+    // Don't overwrite a user-configured URL
+    const stored = localStorage.getItem(EDGE_URL_STORAGE_KEY);
+    if (stored) return null;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${API_BASE}/api/print/agent-endpoint`, {
+      headers: getAuthHeaders(),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.lanIp) {
+      const edgeUrl = `http://${data.lanIp}:3101`;
+      // Don't persist to localStorage — keep it in-memory so it refreshes
+      // on each login. But set it as the discovered URL so getEdgeUrl() returns it.
+      _discoveredEdgeUrl = edgeUrl;
+      _edgeLastCheck = 0; // force re-check
+      console.log('[edgeHealth] Discovered edge server at', edgeUrl, 'from backend');
+      return edgeUrl;
+    }
+  } catch (err) {
+    console.debug('[edgeHealth] Backend edge URL discovery failed:', err.message);
+  }
+  return null;
+}
+
+/**
  * Returns true if the current session was established via offline edge PIN
  * login (the stored token is an `edge-local-*` marker, not a real JWT).
  * In this state, cloud API fallback calls will always fail because the
@@ -271,7 +309,8 @@ export async function isEdgeAvailable() {
   return _edgeAvailable;
 }
 
-const EDGE_FETCH_TIMEOUT_MS = 30_000;
+export const EDGE_FETCH_TIMEOUT_MS = 30_000;
+export const EDGE_READ_TIMEOUT_MS = 3_000; // Fast-fail for reads (tables/sections/venues)
 
 async function _edgeFetchWithKey(path, options, headers, timeoutMs) {
   const controller = new AbortController();
@@ -296,9 +335,13 @@ async function _edgeFetchWithKey(path, options, headers, timeoutMs) {
 
 export async function edgeFetch(path, options = {}) {
   const edgeApiKey = getStoredEdgeApiKey();
+  // Allow callers to override timeout — reads use 3s, writes keep 30s.
+  const timeoutMs = options.timeoutMs ?? EDGE_FETCH_TIMEOUT_MS;
+  const fetchOptions = { ...options };
+  delete fetchOptions.timeoutMs; // don't pass to native fetch
   const headers = {
     'Content-Type': 'application/json',
-    ...(options.headers || {}),
+    ...(fetchOptions.headers || {}),
   };
   if (edgeApiKey) {
     headers['X-Edge-Key'] = edgeApiKey;
@@ -313,7 +356,7 @@ export async function edgeFetch(path, options = {}) {
   let lastError = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      let res = await _edgeFetchWithKey(path, options, headers, EDGE_FETCH_TIMEOUT_MS);
+      let res = await _edgeFetchWithKey(path, fetchOptions, headers, timeoutMs);
 
       // If the edge server rejected our API key, the stored key is stale.
       // Clear it and retry once without the key — the edge server only rejects
@@ -328,7 +371,7 @@ export async function edgeFetch(path, options = {}) {
           try { localStorage.removeItem(EDGE_API_KEY_STORAGE_KEY); } catch { /* ignore */ }
           const retryHeaders = { ...headers };
           delete retryHeaders['X-Edge-Key'];
-          res = await _edgeFetchWithKey(path, options, retryHeaders, EDGE_FETCH_TIMEOUT_MS);
+          res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
         }
       }
 
@@ -360,4 +403,49 @@ export async function edgeFetch(path, options = {}) {
     }
   }
   throw lastError;
+}
+
+// ── Frontend auto-recovery (Tauri desktop only) ──────────────────────────────
+// Polls edge health every 30 seconds. If the edge server is unreachable AND
+// we're running inside the Tauri desktop app, auto-invokes restart_edge_server.
+// This is a fallback for the Rust-side watchdog — if the watchdog somehow
+// misses a crash (e.g. the process is alive but hung), the frontend catches it.
+// Avoids rapid restart loops with a 60-second cooldown between restart attempts.
+
+let _autoRecoveryStarted = false;
+let _lastRestartAttempt = 0;
+const AUTO_RECOVERY_INTERVAL_MS = 30_000;
+const AUTO_RECOVERY_COOLDOWN_MS = 60_000;
+
+function getTauriInvoke() {
+  if (typeof window === 'undefined') return null;
+  return window.__TAURI__?.core?.invoke
+    || window.__TAURI__?.invoke
+    || window.__TAURI_INTERNALS__?.invoke
+    || null;
+}
+
+export function startEdgeAutoRecovery() {
+  if (_autoRecoveryStarted) return;
+  _autoRecoveryStarted = true;
+
+  setInterval(async () => {
+    const invoke = getTauriInvoke();
+    if (!invoke) return; // Not running in Tauri desktop app
+
+    try {
+      const available = await isEdgeAvailable();
+      if (available) return;
+
+      const now = Date.now();
+      if (now - _lastRestartAttempt < AUTO_RECOVERY_COOLDOWN_MS) return;
+      _lastRestartAttempt = now;
+
+      console.warn('[EdgeAutoRecovery] Edge server unreachable — auto-restarting via Tauri');
+      await invoke('restart_edge_server');
+      invalidateEdgeHealthCache();
+    } catch (err) {
+      console.warn('[EdgeAutoRecovery] Restart attempt failed:', err?.message || err);
+    }
+  }, AUTO_RECOVERY_INTERVAL_MS);
 }

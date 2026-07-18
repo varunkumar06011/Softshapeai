@@ -35,12 +35,12 @@ import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { bulkImportSpecials } from '../services/menuService';
 import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, releaseKotNumber, confirmPayment } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, releaseKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from '../services/edgeHealth';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
-import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs } from '../utils/offlineDB';
+import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
 import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { validateTableIntegrity } from '../utils/syncInvariant';
@@ -376,6 +376,7 @@ const CashierDashboard = ({ onLogout }) => {
           setFetchedSections(sections);
           try {
             localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+            cacheSections(getCurrentRestaurantId(), sections).catch(() => {});
           } catch (e) {
             console.warn('[fetchedSections] failed to cache sections:', e);
           }
@@ -401,6 +402,7 @@ const CashierDashboard = ({ onLogout }) => {
             setFetchedSections(sections);
             try {
               localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+              cacheSections(getCurrentRestaurantId(), sections).catch(() => {});
             } catch (e) {
               console.warn('[fetchedSections] failed to cache sections:', e);
             }
@@ -432,11 +434,20 @@ const CashierDashboard = ({ onLogout }) => {
         setFetchedSections(sections);
         try {
           localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+          cacheSections(getCurrentRestaurantId(), sections).catch(() => {});
         } catch (e) {
           console.warn('[fetchedSections] failed to cache sections:', e);
         }
       } catch (err) {
         console.error('[fetchedSections] fetch failed:', err);
+        // Last-resort fallback: try IndexedDB section cache
+        try {
+          const cached = await getCachedSections(getCurrentRestaurantId());
+          if (cached && cached.length > 0) {
+            console.log('[fetchedSections] Using IndexedDB section cache as fallback');
+            setFetchedSections(cached);
+          }
+        } catch {}
       } finally {
         setSectionsLoading(false);
       }
@@ -1087,11 +1098,19 @@ const CashierDashboard = ({ onLogout }) => {
       });
 
       // Better deduping by transaction ID (UUIDs are globally unique)
-      const seen = new Set();
+      // Also dedup by orderId — the same settlement may appear as an optimistic
+      // synthetic txn (id=edge-txn-...) and later as a real txn from the server.
+      const seenIds = new Set();
+      const seenOrderIds = new Set();
       const deduped = allTxns.filter(txn => {
         const key = txn.id;
-        if (seen.has(key)) return false;
-        seen.add(key);
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
+        // If this txn has an orderId, check if we've already seen it
+        if (txn.orderId) {
+          if (seenOrderIds.has(txn.orderId)) return false;
+          seenOrderIds.add(txn.orderId);
+        }
         return true;
       });
 
@@ -1913,6 +1932,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (isTxnInDateFilter(socketTxn.paidAt)) {
           setPastTransactions(prev => {
             if (prev.some(t => t.id === mappedTxn.id)) return prev;
+            if (mappedTxn.orderId && prev.some(t => t.orderId === mappedTxn.orderId)) return prev;
             return [mappedTxn, ...prev];
           });
         }
@@ -2087,6 +2107,23 @@ const CashierDashboard = ({ onLogout }) => {
     }, pollInterval);
     return () => clearInterval(interval);
   }, [activeOutlet, refetchBarTables, refetchRestaurantTables, socket?.connected]);
+
+  // ── Drain queued settlements when edge comes back ──────────────────────────
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const result = await drainSettlementQueue();
+        if (result.drained > 0) {
+          console.log(`[SettlementQueue] Drained ${result.drained} queued settlement(s)`);
+          addNotification('Settlement Synced', `${result.drained} pending settlement(s) completed.`, 'success');
+          loadTransactions('today', null, { silent: true, force: true });
+        }
+      } catch (err) {
+        // Non-fatal — will retry next interval
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [loadTransactions]);
 
   // Keep refs in sync so socket handlers and payment callbacks can read latest filter
   useEffect(() => {
@@ -3970,8 +4007,35 @@ const CashierDashboard = ({ onLogout }) => {
           );
 
           if (settleData && !settleData.success) {
-            // Edge server unavailable — settlement failed. Do NOT queue.
-            // Roll back the optimistic UI and let the user retry.
+            if (settleData.queued) {
+              // Settlement was queued — edge is temporarily down but will recover.
+              // Show an info notification and keep the table marked as settled.
+              console.log(`[Settlement] orderId=${orderId} queued for retry`);
+              recordSettlementAudit({
+                requestId: settleRequestId,
+                orderId,
+                tableId: selectedTable?.backendId || null,
+                method,
+                amount: txnAmount,
+                offline: true,
+                status: 'queued',
+                error: settleData.error,
+              });
+              addNotification('Settlement Queued', 'Edge server is restarting. Settlement will complete automatically.', 'info');
+              // Still mark as settled locally so the user doesn't retry
+              setSettledOrderIds(prev => new Set([...prev, orderId]));
+              if (selectedTable?.backendId) {
+                setSettledTableIds(prev => new Set([...prev, selectedTable.backendId]));
+                terminatedTableIdsRef.current.add(selectedTable.backendId);
+                recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
+              }
+              setIsSettling(false);
+              setSelectedTable(null);
+              setSelectedOrder(null);
+              setCart([]);
+              return;
+            }
+            // Hard failure — roll back the optimistic UI and let the user retry.
             console.warn(`[Settlement] orderId=${orderId} failed: ${settleData.error || 'Edge server unavailable'}`);
             recordSettlementAudit({
               requestId: settleRequestId,
@@ -4066,6 +4130,7 @@ const CashierDashboard = ({ onLogout }) => {
             if (isTxnInDateFilter(txn.paidAt)) {
               setPastTransactions(prev => {
                 if (prev.some(t => t.id === mappedTxn.id)) return prev;
+                if (mappedTxn.orderId && prev.some(t => t.orderId === mappedTxn.orderId)) return prev;
                 return [mappedTxn, ...prev];
               });
             }

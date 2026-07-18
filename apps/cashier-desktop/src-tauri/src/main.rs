@@ -49,6 +49,12 @@ static EDGE_SERVER_READY: AtomicBool = AtomicBool::new(false);
 static EDGE_SERVER_EXE: Mutex<Option<PathBuf>> = Mutex::new(None);
 static EDGE_SERVER_PORT: Mutex<String> = Mutex::new(String::new());
 static EDGE_PRINT_BRIDGE_URL: Mutex<String> = Mutex::new(String::new());
+static EDGE_WATCHDOG_STOP: AtomicBool = AtomicBool::new(false);
+static EDGE_LAST_RESPAWN: Mutex<Option<Instant>> = Mutex::new(None);
+static EDGE_RESPAWN_COUNT: Mutex<u32> = Mutex::new(0);
+const EDGE_WATCHDOG_INTERVAL_SECS: u64 = 10;
+const EDGE_RESPAWN_CRASH_LIMIT: u32 = 5;
+const EDGE_RESPAWN_WINDOW_SECS: u64 = 30;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct EdgeServerStatus {
@@ -510,6 +516,104 @@ fn detect_legacy_edge_server(_port: &str) -> Option<String> {
     None
 }
 
+// ── Edge server watchdog ─────────────────────────────────────────────────────
+// Monitors the edge server child process every 10 seconds. If the process has
+// exited unexpectedly (crash, OOM, segfault), respawns it automatically so the
+// cashier doesn't lose edge-local functionality during service.
+//
+// Crash-loop guard: if the process dies 5+ times within 30 seconds, stops
+// respawning and surfaces an error to the UI — this prevents an infinite
+// respawn loop from a broken binary or unrecoverable DB corruption.
+
+fn start_edge_server_watchdog(app: tauri::AppHandle) {
+    EDGE_WATCHDOG_STOP.store(false, Ordering::Relaxed);
+    thread::spawn(move || {
+        eprintln!("[EdgeServer] Watchdog started — checking every {}s", EDGE_WATCHDOG_INTERVAL_SECS);
+        loop {
+            thread::sleep(Duration::from_secs(EDGE_WATCHDOG_INTERVAL_SECS));
+
+            if EDGE_WATCHDOG_STOP.load(Ordering::Relaxed) {
+                eprintln!("[EdgeServer] Watchdog stopped (app shutting down)");
+                return;
+            }
+
+            let needs_restart = {
+                let mut guard = EDGE_SERVER_CHILD.lock().unwrap();
+                if let Some(child) = guard.as_mut() {
+                    match child.try_wait() {
+                        Ok(Some(_status)) => {
+                            eprintln!("[EdgeServer] Watchdog: process exited, will respawn");
+                            guard.take();
+                            true
+                        }
+                        Err(_e) => {
+                            eprintln!("[EdgeServer] Watchdog: process inspect failed, will respawn");
+                            guard.take();
+                            true
+                        }
+                        Ok(None) => false, // still running
+                    }
+                } else {
+                    // No child handle at all — needs spawn
+                    true
+                }
+            };
+
+            if !needs_restart {
+                continue;
+            }
+
+            // ── Crash-loop guard ───────────────────────────────────────────────
+            let now = Instant::now();
+            let mut count = EDGE_RESPAWN_COUNT.lock().unwrap();
+            let mut last = EDGE_LAST_RESPAWN.lock().unwrap();
+
+            if let Some(t) = *last {
+                if now.duration_since(t) < Duration::from_secs(EDGE_RESPAWN_WINDOW_SECS) {
+                    *count += 1;
+                } else {
+                    *count = 1;
+                }
+            } else {
+                *count = 1;
+            }
+
+            if *count >= EDGE_RESPAWN_CRASH_LIMIT {
+                eprintln!(
+                    "[EdgeServer] Watchdog: crash-loop detected ({} crashes in {}s) — stopping respawn",
+                    *count, EDGE_RESPAWN_WINDOW_SECS
+                );
+                set_edge_server_state("crash_loop");
+                set_edge_server_error(format!(
+                    "Edge server is crash-looping ({} times in {}s). Reinstall the app or contact support.",
+                    *count, EDGE_RESPAWN_WINDOW_SECS
+                ));
+                // Keep the watchdog alive so it can resume if the binary is
+                // replaced (e.g. via an app update) — reset the counter after
+                // a cooldown so a future respawn attempt is allowed.
+                *count = 0;
+                *last = None;
+                continue;
+            }
+
+            *last = Some(now);
+            drop(count);
+            drop(last);
+
+            // ── Respawn ────────────────────────────────────────────────────────
+            set_edge_server_state("respawning");
+            eprintln!("[EdgeServer] Watchdog: respawning edge server (attempt #{})", {
+                let c = EDGE_RESPAWN_COUNT.lock().unwrap();
+                *c
+            });
+            let print_bridge_url = EDGE_PRINT_BRIDGE_URL.lock()
+                .map(|g| g.clone())
+                .unwrap_or_else(|_| "http://127.0.0.1:3102".to_string());
+            spawn_edge_server(&app, &print_bridge_url);
+        }
+    });
+}
+
 fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
     let _ = EDGE_SERVER_LAST_ERROR.lock().map(|mut guard| *guard = None);
     let _ = EDGE_SERVER_DIAGNOSTICS.lock().map(|mut guard| *guard = None);
@@ -724,14 +828,20 @@ fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
 #[tauri::command]
 fn restart_edge_server(app: tauri::AppHandle) -> Result<(), String> {
     kill_edge_server();
+    // Reset crash-loop counters so the watchdog doesn't carry over stale state
+    *EDGE_RESPAWN_COUNT.lock().unwrap() = 0;
+    *EDGE_LAST_RESPAWN.lock().unwrap() = None;
     let print_bridge_url = EDGE_PRINT_BRIDGE_URL.lock()
         .map(|guard| guard.clone())
         .unwrap_or_else(|_| "http://127.0.0.1:3102".to_string());
     spawn_edge_server(&app, &print_bridge_url);
+    // Restart the watchdog for the new process
+    start_edge_server_watchdog(app);
     Ok(())
 }
 
 fn kill_edge_server() {
+    EDGE_WATCHDOG_STOP.store(true, Ordering::Relaxed);
     set_edge_server_ready(false);
     set_edge_server_state("stopping");
     if let Some(mut child) = EDGE_SERVER_CHILD.lock().unwrap().take() {
@@ -889,6 +999,7 @@ fn main() {
 
     let (print_bridge_stop, print_bridge_url) = start_print_bridge();
     spawn_edge_server(&app.handle(), &print_bridge_url);
+    start_edge_server_watchdog(app.handle().clone());
 
     app.run(move |_app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {

@@ -32,6 +32,8 @@ import {
   addOfflineTransaction,
   addOfflinePrintJob,
   getNextOfflineKotNumber,
+  getPendingActionsByType,
+  removePendingAction,
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
 import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from "./edgeHealth.js";
@@ -765,8 +767,65 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
     }
   }
 
-  console.warn('[settleOrder] Edge server unreachable — returning error (no queue)');
-  return { success: false, error: 'Edge server unreachable', offline: false };
+  console.warn('[settleOrder] Edge server unreachable — queuing settlement for retry');
+  try {
+    await addPendingAction({
+      requestId: settleRequestId,
+      entityId: orderId,
+      entityType: 'settlement',
+      actionType: 'settle-order',
+      url: '/api/edge/order/settle',
+      method: 'POST',
+      body: {
+        orderId,
+        requestId: settleRequestId,
+        removedItemIds: removedItemIds || [],
+        removedBy,
+        ...extraSettleData,
+      },
+      createdAt: Date.now(),
+      status: 'pending',
+    });
+    return { success: false, error: 'Edge server unreachable — settlement queued for retry', offline: true, queued: true };
+  } catch (queueErr) {
+    console.error('[settleOrder] Failed to queue settlement:', queueErr);
+    return { success: false, error: 'Edge server unreachable', offline: false };
+  }
+}
+
+// ── Settlement queue: retry queued settlements when edge comes back ──────────
+// When edge is briefly down (restart, crash), settlements are queued in
+// IndexedDB. This function drains the queue by retrying each settlement.
+// Called periodically from the cashier dashboard.
+
+export async function drainSettlementQueue() {
+  const actions = await getPendingActionsByType('settle-order');
+  if (actions.length === 0) return { drained: 0, remaining: 0 };
+
+  const edgeUp = isEdgeLocalAuth() || await isEdgeAvailable();
+  if (!edgeUp) return { drained: 0, remaining: actions.length };
+
+  let drained = 0;
+  for (const action of actions) {
+    if (action.status === 'synced') continue;
+    try {
+      const result = await edgeFetch('/api/edge/order/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action.body),
+      });
+      if (result && result.success) {
+        await removePendingAction(action.id);
+        drained++;
+        console.log(`[settleQueue] Drained settlement for orderId=${action.body.orderId}`);
+      }
+    } catch (err) {
+      console.warn(`[settleQueue] Retry failed for orderId=${action.body.orderId}:`, err.message);
+      break; // edge went down again — stop draining
+    }
+  }
+
+  return { drained, remaining: actions.length - drained };
 }
 
 export async function saveTransaction({

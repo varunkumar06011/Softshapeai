@@ -25,6 +25,25 @@ import CaptainApp from './captain/CaptainApp'
 import AppUpdateBanner from './shared/components/AppUpdateBanner'
 import { reconnectSocket } from './hooks/useSocket'
 import { ErrorBoundary } from './shared/components/ErrorBoundary'
+import * as Sentry from '@sentry/react'
+
+// Bug G: Catch unhandled promise rejections that Error Boundaries cannot intercept.
+// Dispatches a global event so CaptainApp can reset critical UI state
+// (isSubmittingKotRef, sendingKOT) that may be stuck by the rejection.
+Sentry.init({
+  dsn: import.meta.env.VITE_SENTRY_DSN,
+  environment: import.meta.env.MODE,
+  enabled: !!import.meta.env.VITE_SENTRY_DSN,
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[UnhandledRejection]', event.reason);
+  try { Sentry.captureException(event.reason); } catch {}
+  window.dispatchEvent(new CustomEvent('app:unhandled-rejection', {
+    detail: { message: event.reason?.message || String(event.reason) },
+  }));
+  event.preventDefault();
+});
 
 function CaptainLoginWrapper() {
   const { user, setAuth } = useAuth()

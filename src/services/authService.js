@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend } from './edgeHealth.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
 
@@ -43,6 +43,8 @@ export const authService = {
       localStorage.setItem('ss_user', JSON.stringify(data.user));
       // Pre-fetch the LAN edge API key while we have cloud access.
       ensureEdgeApiKey().catch(() => {});
+      // Discover edge server LAN URL so captain/cashier on other devices can find it.
+      discoverEdgeUrlFromBackend().catch(() => {});
       if (data.restaurant) {
         localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
       }
@@ -102,6 +104,8 @@ export const authService = {
       localStorage.setItem('ss_user', JSON.stringify(data.user));
       // Pre-fetch the LAN edge API key while we have cloud access.
       ensureEdgeApiKey().catch(() => {});
+      // Discover edge server LAN URL so captain on WiFi can find the cashier PC.
+      discoverEdgeUrlFromBackend().catch(() => {});
       if (data.restaurant) {
         localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
       }
@@ -184,6 +188,8 @@ export const authService = {
     localStorage.setItem('ss_user', JSON.stringify(data.user));
     // Pre-fetch the LAN edge API key for the new outlet.
     ensureEdgeApiKey().catch(() => {});
+    // Discover edge server LAN URL for the new outlet.
+    discoverEdgeUrlFromBackend().catch(() => {});
     if (data.restaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
