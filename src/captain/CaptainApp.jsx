@@ -3079,6 +3079,7 @@ export default function CaptainApp({ onLogout }) {
               if (edgePrintPromises.length > 0) {
                 const edgePrintResults = await Promise.allSettled(edgePrintPromises);
                 edgeLocalPrinted = edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+                localPrinted = edgeLocalPrinted;
                 if (edgeLocalPrinted) {
                   _printedKotNumbers.current.add(edgePreReservedKotNumber);
                   console.log(`[KOT] Edge fallback local print succeeded for KOT #${edgePreReservedKotNumber}`);
@@ -3257,6 +3258,27 @@ export default function CaptainApp({ onLogout }) {
       }
 
       // Background listener for print confirmation (non-blocking)
+      // When the edge server handled printing, it returns printResults directly
+      // and never emits kot:printed via cloud socket. Skip the socket listener
+      // to avoid a false "print failed" timeout after 30s.
+      // Similarly, when localPrinted is true, the cloud backend skips the
+      // print_job socket emit, so kot:printed never fires — skip the listener.
+      if (savedOrder?.edge && savedOrder?.printResults) {
+        const printResults = savedOrder.printResults;
+        const hasFailures = printResults.length > 0 &&
+          printResults.some(r => !r.ok);
+        if (hasFailures) {
+          const failed = printResults.filter(r => !r.ok);
+          addNotification(
+            `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
+            failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+            'warning'
+          );
+        }
+      } else if (localPrinted) {
+        // Captain already printed locally — cloud backend skips print_job emit,
+        // so kot:printed will never fire. No need to wait for socket confirmation.
+      } else {
       const socket = getSocket();
       const handler = ({ requestId: ackRequestId, status }) => {
         if (ackRequestId === requestId) {
@@ -3274,6 +3296,7 @@ export default function CaptainApp({ onLogout }) {
         printTimeoutRef.current = null;
         addNotification(`KOT #${realKotId || newKOT.id} ⚠ Saved, print failed`, 'warning');
       }, 30000);
+      }
 
     } catch (err) {
 

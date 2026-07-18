@@ -141,6 +141,8 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         requestId: requestId || generateRequestId(),
         platform,
         orderByRole: authService.getUserRole?.() || undefined,
+        localPrinted: localPrinted || false,
+        kotEventIds: kotEventIds || null,
       };
       const result = await edgeFetch('/api/edge/order', {
         method: 'POST',
@@ -153,6 +155,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
           kotId: result.kotId,
           ...result.order,
           edge: true,
+          printResults: result.printResults || null,
         };
       }
     } catch (edgeErr) {
@@ -360,6 +363,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         captainName,
         requestId: requestId || generateRequestId(),
         orderByRole: authService.getUserRole?.() || undefined,
+        localPrinted: localPrinted || false,
+        kotEventIds: kotEventIds || null,
       };
       const result = await edgeFetch('/api/edge/order/update', {
         method: 'POST',
@@ -372,6 +377,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
           kotId: result.kotId,
           ...result.order,
           edge: true,
+          printResults: result.printResults || null,
         };
       }
     } catch (edgeErr) {
