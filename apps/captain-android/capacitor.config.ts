@@ -11,9 +11,13 @@ const server: CapacitorConfig['server'] | undefined = liveReload
   ? { url: liveReload, androidScheme: 'https' }
   : undefined;
 
-const android: CapacitorConfig['android'] = liveReload
-  ? { allowMixedContent: true }
-  : {};
+// allowMixedContent is required in production too: the captain app loads from
+// https://localhost (Capacitor's default androidScheme), but the edge server
+// runs on HTTP (http://<cashier-lan-ip>:3101). Without this, the Android WebView
+// blocks all edge server requests as mixed content, preventing KOT printing via LAN.
+const android: CapacitorConfig['android'] = {
+  allowMixedContent: true,
+};
 
 const config: CapacitorConfig = {
   appId: 'ai.softshape.captain',

@@ -12,9 +12,9 @@ const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 
 const DEFAULT_EDGE_URL = 'http://127.0.0.1:3101';
-const EDGE_CHECK_TIMEOUT_MS = 1000;
+const EDGE_CHECK_TIMEOUT_MS = 3000;
 const EDGE_CHECK_INTERVAL_MS = 30_000;
-const LAN_DISCOVERY_TIMEOUT_MS = 800;
+const LAN_DISCOVERY_TIMEOUT_MS = 1500;
 
 let _edgeAvailable = false;
 let _edgeLastCheck = 0;
@@ -205,8 +205,8 @@ export async function discoverEdgeOnLAN() {
               const parts = ip.split('.');
               candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.1:3101`);
               candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.100:3101`);
-              // Also try the device's own subnet range
-              for (let i = 2; i <= 20; i++) {
+              // Probe the full subnet range — routers assign IPs across 2-254
+              for (let i = 2; i <= 254; i++) {
                 candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.${i}:3101`);
               }
             }
@@ -232,8 +232,8 @@ export async function discoverEdgeOnLAN() {
       if (!candidates.includes(c)) candidates.push(c);
     }
 
-    // Probe candidates in parallel (batch of 5 at a time)
-    const BATCH_SIZE = 5;
+    // Probe candidates in parallel (batch of 20 for full-subnet scan)
+    const BATCH_SIZE = 20;
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
       const batch = candidates.slice(i, i + BATCH_SIZE);
       const results = await Promise.allSettled(batch.map(async (url) => {
@@ -287,13 +287,32 @@ export async function isEdgeAvailable() {
     _edgeAvailable = false;
   }
 
-  // If health check failed and we're using default localhost, try LAN discovery
+  // If health check failed and we're using default localhost, try backend discovery first
+  // (fast — single API call), then fall back to LAN scanning (slow — probes 254 IPs)
   if (!_edgeAvailable && edgeUrl === DEFAULT_EDGE_URL) {
-    // Skip discovery if it recently failed — avoids re-probing ~30 IPs (5-6s)
-    // on every 2s poll cycle, which starves the localhost health checks.
+    // Skip discovery if it recently failed — avoids re-probing on every poll cycle.
     if (Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
       return _edgeAvailable;
     }
+    // Try backend discovery first (cashier's LAN IP from print agent heartbeat)
+    try {
+      const backendDiscovered = await discoverEdgeUrlFromBackend();
+      if (backendDiscovered) {
+        // Re-check health with the discovered URL
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
+          const res = await fetch(`${backendDiscovered}/health`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            _edgeAvailable = true;
+            return true;
+          }
+        } catch { /* fall through to LAN scan */ }
+      }
+    } catch { /* fall through to LAN scan */ }
+
+    // Fall back to LAN scanning if backend discovery didn't work
     try {
       const discovered = await discoverEdgeOnLAN();
       if (discovered) {

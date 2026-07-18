@@ -10,9 +10,9 @@ const server: CapacitorConfig['server'] = liveReload
   ? { url: liveReload, androidScheme: 'https' }
   : { url: 'https://www.softshape.in/cashier', androidScheme: 'https' };
 
-const android: CapacitorConfig['android'] = liveReload
-  ? { allowMixedContent: true }
-  : {};
+const android: CapacitorConfig['android'] = {
+  allowMixedContent: true,
+};
 
 const config: CapacitorConfig = {
   appId: 'ai.softshape.cashier',
