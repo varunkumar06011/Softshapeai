@@ -354,15 +354,10 @@ export async function fetchBarMenuFromBackend() {
   try {
     const cachedMenu = await getCachedMenu(restaurantId);
     if (cachedMenu && cachedMenu.length > 0) {
-      const barItems = cachedMenu.filter(
-        item => (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR'
-      );
-      if (barItems.length > 0) {
-        console.log(`[BarMenu] Loaded ${barItems.length} items from IndexedDB cache`);
-        // Trigger background sync without blocking UI
-        syncBarMenuInBackground(restaurantId);
-        return mapBarMenuItems(barItems, cachedMenu);
-      }
+      console.log(`[BarMenu] Loaded ${cachedMenu.length} items from IndexedDB cache`);
+      // Trigger background sync without blocking UI
+      syncBarMenuInBackground(restaurantId);
+      return mapBarMenuItems(cachedMenu, cachedMenu);
     }
   } catch (err) {
     console.warn('[BarMenu] IndexedDB cache read failed:', err.message);
@@ -373,26 +368,20 @@ export async function fetchBarMenuFromBackend() {
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const allItems = await edgeFetch('/api/edge/menu/items', { timeoutMs: EDGE_READ_TIMEOUT_MS });
-      if (allItems) {
-        // Filter for bar/liquor items only
-        const barItems = (allItems || []).filter(
-          item => (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR'
-        );
-        if (barItems.length > 0) {
-          // Cache to IndexedDB for offline use
-          cacheMenu(restaurantId, allItems).catch(err => console.warn('[BarMenu] Failed to cache menu:', err.message));
-          // For edge path, use cached restaurant items for image resolution
-          let restaurantItems = [];
-          try {
-            const savedMenu = localStorage.getItem(getMenuStorageKey());
-            if (savedMenu) restaurantItems = JSON.parse(savedMenu);
-          } catch { /* ignore */ }
-          return mapBarMenuItems(barItems, restaurantItems);
-        }
-        if (useEdgeDirect) {
-          // Edge-local auth but no bar items — return empty, don't hit cloud with fake token
-          return [];
-        }
+      if (allItems && allItems.length > 0) {
+        // Cache to IndexedDB for offline use
+        cacheMenu(restaurantId, allItems).catch(err => console.warn('[BarMenu] Failed to cache menu:', err.message));
+        // For edge path, use cached restaurant items for image resolution
+        let restaurantItems = [];
+        try {
+          const savedMenu = localStorage.getItem(getMenuStorageKey());
+          if (savedMenu) restaurantItems = JSON.parse(savedMenu);
+        } catch { /* ignore */ }
+        return mapBarMenuItems(allItems, restaurantItems);
+      }
+      if (useEdgeDirect && allItems && allItems.length === 0) {
+        // Edge-local auth but no items — return empty, don't hit cloud with fake token
+        return [];
       }
     } catch (err) {
       if (useEdgeDirect) {

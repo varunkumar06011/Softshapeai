@@ -64,7 +64,7 @@ function resolvePrinter(jobType, mapping) {
   // Fall back to mapping
   if (jobType === 'KOT' || jobType === 'CANCEL_KOT') return mapping.kitchen;
   if (jobType === 'BAR_KOT') return mapping.bar;
-  if (jobType === 'FINAL_BILL' || jobType === 'BILL' || jobType === 'VOUCHER' || jobType === 'EXPENDITURE') return mapping.bill;
+  if (jobType === 'FINAL_BILL' || jobType === 'BILL' || jobType === 'VOUCHER' || jobType === 'EXPENDITURE') return mapping.bill || mapping.kitchen;
   if (jobType === 'TABLE_SWAP') return mapping.kitchen;
   return null;
 }

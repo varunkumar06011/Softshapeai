@@ -118,11 +118,57 @@ const TABLE_STATUS = {
 
 };
 
+const toFrontendTableStatus = (backendStatus) => {
+  const map = {
+    AVAILABLE: 'Free',
+    OCCUPIED: 'Occupied',
+    PREPARING: 'Preparing',
+    BILLING_REQUESTED: 'Waiting Bill',
+    TERMINATED: 'Free',
+    CLEANING: 'Free',
+  };
+  return map[backendStatus] || backendStatus || 'Free';
+};
 
+const normalizeKotsModule = (kots) => {
+  if (!Array.isArray(kots)) return [];
+  return kots.map(kot => ({
+    id: String(kot.kotNumber ?? kot.id ?? ''),
+    time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+    items: (kot.items || []).map(ki => ({
+      id: ki.menuItemId || ki.id,
+      n: ki.name ?? ki.n,
+      p: Number(ki.price ?? ki.p ?? 0),
+      q: Number(ki.quantity ?? ki.q ?? 0),
+      s: ki.status === 'CANCELLED' ? 'Cancelled' : (ki.s ?? 'KOT Sent'),
+      orderItemId: ki.orderItemId,
+      notes: ki.notes,
+    })),
+  }));
+};
 
-
-
-
+const mapRealtimeTablePayload = (row, existing = null) => {
+  if (!row) return existing;
+  const dbStatus = row.status;
+  const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
+  return {
+    backendId: row.id,
+    id: Number(row.number) || row.number,
+    number: row.number,
+    dbStatus: row.status,
+    status: isFreeWorkflow ? 'Free' : (row.workflowStatus || toFrontendTableStatus(row.status)),
+    capacity: row.capacity,
+    sectionId: row.sectionId,
+    section: row.section,
+    guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
+    time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
+    captainId: isFreeWorkflow ? null : (row.captainId ?? null),
+    kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKotsModule(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory || []))),
+    currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
+    activeOrder: isFreeWorkflow ? null : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null)),
+    ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
+  };
+};
 
 function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
@@ -758,6 +804,19 @@ export default function CaptainApp({ onLogout }) {
   // Bug A: Dedup socket echoes from our own KOT submissions (same pattern as cashier)
   const processedSocketRequestIds = useRef(new Set());
 
+  // Guards against stale socket events reviving settled tables (same pattern as cashier)
+  const terminatedTableIdsRef = useRef(new Set());
+  const recentlyTerminatedRef = useRef((() => {
+    try {
+      const raw = localStorage.getItem(getTenantScopedKey('captain_recently_terminated'));
+      const map = raw ? JSON.parse(raw) : {};
+      const now = Date.now();
+      // 30-second TTL: keeps terminated tables hidden briefly to prevent flicker
+      Object.keys(map).forEach(k => { if (now - map[k] > 30000) delete map[k]; });
+      return map;
+    } catch { return {}; }
+  })());
+
   // Bug B: Guard against printing the same KOT number twice (same pattern as cashier)
   const _printedKotNumbers = useRef(new Set());
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
@@ -774,6 +833,21 @@ export default function CaptainApp({ onLogout }) {
     const bill = calculateTableBill(table);
     tableBillCacheRef.current.set(cacheKey, { sig, bill });
     return bill;
+  }, []);
+
+
+
+  // On mount: clean up stale entries in localStorage so they don't grow forever
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(getTenantScopedKey('captain_recently_terminated'));
+      const map = raw ? JSON.parse(raw) : {};
+      const now = Date.now();
+      let changed = false;
+      Object.keys(map).forEach(k => { if (now - map[k] > 30000) { delete map[k]; changed = true; } });
+      if (changed) localStorage.setItem(getTenantScopedKey('captain_recently_terminated'), JSON.stringify(map));
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -1237,8 +1311,14 @@ export default function CaptainApp({ onLogout }) {
       const overridePrice = venueSpecificPrices[item.id];
       let finalPrice;
       if (isBarVenueContext) {
-        // Bar venue: only show items with an explicit venue price > 0 (no base-price fallback)
-        finalPrice = overridePrice !== undefined ? Number(overridePrice) : 0;
+        const isLiquor = (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR';
+        if (isLiquor) {
+          // Liquor/bar items: only show with explicit venue price > 0 (no base-price fallback)
+          finalPrice = overridePrice !== undefined ? Number(overridePrice) : 0;
+        } else {
+          // Food items: fall back to base price if no venue-specific price is set
+          finalPrice = overridePrice !== undefined ? Number(overridePrice) : Number(item.p || item.price || 0);
+        }
       } else {
         finalPrice = overridePrice !== undefined
           ? Number(overridePrice)
@@ -1593,6 +1673,13 @@ export default function CaptainApp({ onLogout }) {
     const onTableSettled = (e) => {
       const { tableId } = e.detail || {};
       if (!tableId) return;
+      // Mark table as recently terminated so stale socket events cannot revive it
+      terminatedTableIdsRef.current.add(tableId);
+      recentlyTerminatedRef.current[tableId] = Date.now();
+      try {
+        localStorage.setItem(getTenantScopedKey('captain_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+      } catch {}
+      setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 5000);
       // Clear cart for this table from localStorage-backed state
       setTableCarts(prev => {
         const next = { ...prev };
@@ -1647,6 +1734,16 @@ export default function CaptainApp({ onLogout }) {
     const onOrderPaid = (payload) => {
       const tableId = payload?.tableId;
       if (!tableId) return;
+
+      // Mark table as recently terminated so stale socket events (order:updated,
+      // table:updated from before settlement) cannot revive it and cause ghost items.
+      // Same pattern as cashier — 5s grace window.
+      terminatedTableIdsRef.current.add(tableId);
+      recentlyTerminatedRef.current[tableId] = Date.now();
+      try {
+        localStorage.setItem(getTenantScopedKey('captain_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
+      } catch {}
+      setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 5000);
 
       const clearTable = (prev) => prev.map(t =>
         t.backendId === tableId || t.id === tableId
@@ -1711,6 +1808,16 @@ export default function CaptainApp({ onLogout }) {
       if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
       // Bug A: Skip echoes from our own KOT submission
       if (requestId && processedSocketRequestIds.current.has(requestId)) return;
+      // Guard: block stale non-Free events for recently terminated tables
+      if (terminatedTableIdsRef.current.has(table.id)) {
+        const incomingFree = table.status === 'AVAILABLE' || table.status === 'Free' || table.workflowStatus === 'Free';
+        if (!incomingFree) return;
+      }
+      const termTsTbl = recentlyTerminatedRef.current[table.id];
+      if (termTsTbl && Date.now() - termTsTbl < 5000) {
+        const incomingFree = table.status === 'AVAILABLE' || table.status === 'Free' || table.workflowStatus === 'Free';
+        if (!incomingFree) return;
+      }
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
@@ -1731,7 +1838,8 @@ export default function CaptainApp({ onLogout }) {
         // Server is now authoritative — directly use its items and kots (no merge)
         // When table is Free (settled), clear items and activeOrder to prevent ghost items
         const serverItems = isTableFree ? [] : (incomingOrder?.items ?? (t.activeOrder?.items || []));
-        const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) ? table.kotHistory : []));
+        // Preserve existing kotHistory when incoming event has no kots data (partial update)
+        const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) && table.kotHistory.length > 0 ? table.kotHistory : (t.kotHistory || [])));
         return {
           ...t,
           status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
@@ -1754,6 +1862,10 @@ export default function CaptainApp({ onLogout }) {
       if (!order?.tableId) return;
       // Bug A: Skip echoes from our own KOT submission
       if (payload?.requestId && processedSocketRequestIds.current.has(payload.requestId)) return;
+      // Guard: block stale events for recently terminated tables
+      if (terminatedTableIdsRef.current.has(order.tableId)) return;
+      const termTsUpd = recentlyTerminatedRef.current[order.tableId];
+      if (termTsUpd && Date.now() - termTsUpd < 5000) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
@@ -1765,7 +1877,8 @@ export default function CaptainApp({ onLogout }) {
           console.warn('[CaptainApp] Ignoring stale order:updated (no items) for settled table', t.number);
           return t;
         }
-        const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+        // Preserve existing kotHistory when incoming event has no kots data (partial update)
+        const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
         return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: incomingKotArr };
       });
       setActiveTables(updateTables);
@@ -1777,6 +1890,10 @@ export default function CaptainApp({ onLogout }) {
       if (!order?.tableId) return;
       // Bug A: Skip echoes from our own KOT submission
       if (payload?.requestId && processedSocketRequestIds.current.has(payload.requestId)) return;
+      // Guard: block stale events for recently terminated tables
+      if (terminatedTableIdsRef.current.has(order.tableId)) return;
+      const termTsCre = recentlyTerminatedRef.current[order.tableId];
+      if (termTsCre && Date.now() - termTsCre < 5000) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
@@ -1788,8 +1905,9 @@ export default function CaptainApp({ onLogout }) {
           console.warn('[CaptainApp] Ignoring stale order:created (no items) for settled table', t.number);
           return t;
         }
-        const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory
-          : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+        // Preserve existing kotHistory when incoming event has no kots data (partial update)
+        const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory
+          : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
         return {
           ...t,
           activeOrder: { ...order, items: serverItems },
@@ -1814,6 +1932,49 @@ export default function CaptainApp({ onLogout }) {
 
     socket.on('order:paid', onOrderPaid);
 
+    // Real-time table swap and item transfer sync (same events as cashier)
+    const onTableSwapped = (payload) => {
+      const { sourceTableId, targetTableId, sourceTable: rawSource, targetTable: rawTarget } = payload;
+      const existingSource = activeTables.find(t => t.backendId === sourceTableId) || null;
+      const existingTarget = activeTables.find(t => t.backendId === targetTableId) || null;
+      const mappedSource = mapRealtimeTablePayload(rawSource, existingSource);
+      const mappedTarget = mapRealtimeTablePayload(rawTarget, existingTarget);
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId === sourceTableId) return mappedSource || t;
+        if (t.backendId === targetTableId) return mappedTarget || t;
+        return t;
+      });
+      setActiveTables(updateTables);
+      // If captain had the source table open, switch selection to the new table
+      if (activeTableIdRef.current && String(sourceTableId) === String(activeTableIdRef.current)) {
+        if (mappedTarget && ((mappedTarget.kotHistory?.length > 0) || mappedTarget.activeOrder || (mappedTarget.currentBill > 0))) {
+          setActiveTableId(String(mappedTarget.id));
+          setView('session');
+          addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
+        } else {
+          setActiveTableId(null);
+          setView('tables');
+          addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
+        }
+      }
+    };
+    socket.on('table:swapped', onTableSwapped);
+
+    const onTableItemsTransferred = (payload) => {
+      const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
+      const existingSource = activeTables.find(t => t.backendId === sourceTableId) || null;
+      const existingTarget = activeTables.find(t => t.backendId === targetTableId) || null;
+      const mappedSource = mapRealtimeTablePayload(sourceTable, existingSource);
+      const mappedTarget = mapRealtimeTablePayload(targetTable, existingTarget);
+      const updateTables = (prev) => prev.map(t => {
+        if (t.backendId === sourceTableId) return mappedSource || t;
+        if (t.backendId === targetTableId) return mappedTarget || t;
+        return t;
+      });
+      setActiveTables(updateTables);
+    };
+    socket.on('table:items-transferred', onTableItemsTransferred);
+
     return () => {
       window.removeEventListener('softshape_menu_updated', onMenuUpdated);
       window.removeEventListener('table:settled', onTableSettled);
@@ -1825,6 +1986,8 @@ export default function CaptainApp({ onLogout }) {
       socket.off('order:created', onOrderCreated);
       socket.off('billing:requested', onBillingRequested);
       socket.off('order:paid', onOrderPaid);
+      socket.off('table:swapped', onTableSwapped);
+      socket.off('table:items-transferred', onTableItemsTransferred);
       socket.emit('leave', activeRestaurantId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5325,7 +5488,7 @@ export default function CaptainApp({ onLogout }) {
                     const visibleItems = kot.items.filter(i => (i.q ?? i.quantity ?? 0) > 0);
                     const cancellableItems = visibleItems.filter(i => i.s !== 'Cancelled' && !!i.orderItemId);
 
-                    return visibleItems.length > 0 ? (
+                    return kot.items.length > 0 ? (
 
                       <div key={kot.id} className="space-y-4">
 
