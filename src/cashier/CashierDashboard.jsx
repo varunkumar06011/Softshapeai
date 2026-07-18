@@ -7408,11 +7408,6 @@ const CashierDashboard = ({ onLogout }) => {
                       disabled={isSettling}
                       className="py-2.5 rounded-lg bg-[#F59E0B] border border-[#B45309] text-[#1E293B] text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#D97706] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
-                      {(selectedTable?.billNumber || selectedTable?.activeOrder?.billNumber) && (
-                        <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">
-                          #{selectedTable?.billNumber || selectedTable?.activeOrder?.billNumber}
-                        </span>
-                      )}
                       Settlement
                     </button>
                   ) : (
