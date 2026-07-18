@@ -404,9 +404,9 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
   }, [tables]);
 
   const loadTables = useCallback(async () => {
-    if (isFetchingRef.current) {
-      console.log('[BarTableSync] Fetch already in progress, skipping');
-      return;
+    // Abort any in-flight fetch instead of silently dropping the refresh click.
+    if (isFetchingRef.current && abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
     isFetchingRef.current = true;
     abortControllerRef.current = new AbortController();
@@ -423,11 +423,14 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
       } else {
         console.error("[BarTableSync] GET /api/tables failed:", err);
       }
+    } finally {
+      // Always reset the fetching flag so the refresh button works even if
+      // the fetch hung and was aborted by a subsequent call.
+      isFetchingRef.current = false;
+      abortControllerRef.current = null;
     }
 
     if (!mountedRef.current || cancelledRef.current) {
-      isFetchingRef.current = false;
-      abortControllerRef.current = null;
       return;
     }
 
@@ -451,8 +454,6 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
           })
           .catch(err => console.warn('[BarTableSync] Retry fetch failed:', err.message));
       }, 1500);
-      isFetchingRef.current = false;
-      abortControllerRef.current = null;
       if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
       return;
     }
@@ -475,8 +476,6 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
       return deduped;
     });
 
-    isFetchingRef.current = false;
-    abortControllerRef.current = null;
     if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
   }, []);
 
@@ -602,15 +601,16 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
             if (t.backendId !== order.tableId) return t;
             // Guard: skip active table during KOT submission to prevent duplicate items in display
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
-            // Guard: skip stale order:created for settled/Free tables to prevent ghost items
-            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
-              console.warn('[BarTableSync] Ignoring stale order:created for settled table', t.number);
+            // Guard: skip stale order:created with no items for settled/Free tables to prevent ghost items
+            const hasItems = (order.items || []).length > 0;
+            if ((t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') && !hasItems) {
+              console.warn('[BarTableSync] Ignoring stale order:created (no items) for settled table', t.number);
               return t;
             }
             return {
               ...t,
               status: t.status === 'Free' ? 'Occupied' : t.status,
-              workflowStatus: t.status === 'Free' ? 'Occupied' : t.workflowStatus,
+              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
               activeOrder: mergeOrder(order, t.activeOrder),
               items: mergeOrderItems(t.items || [], order.items || []),
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
@@ -630,12 +630,15 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
             if (t.backendId !== order.tableId) return t;
             // Guard: skip active table during KOT submission to prevent duplicate items in display
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
-            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
-              console.warn('[BarTableSync] Ignoring stale order:updated for settled table', t.number);
+            const hasItems = (order.items || []).length > 0;
+            if ((t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') && !hasItems) {
+              console.warn('[BarTableSync] Ignoring stale order:updated (no items) for settled table', t.number);
               return t;
             }
             return {
               ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
               activeOrder: mergeOrder(order, t.activeOrder),
               items: mergeOrderItems(t.items || [], order.items || []),
               currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),

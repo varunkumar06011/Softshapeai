@@ -479,9 +479,9 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
       setIsSyncing(false);
       return;
     }
-    if (isFetchingRef.current) {
-      console.log('[TableSync] Fetch already in progress, skipping');
-      return;
+    // Abort any in-flight fetch instead of silently dropping the user's refresh click.
+    if (isFetchingRef.current && abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
     isFetchingRef.current = true;
     abortControllerRef.current = new AbortController();
@@ -497,11 +497,14 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
       } else {
         console.error("[TableSync] GET /api/tables failed:", err);
       }
+    } finally {
+      // Always reset the fetching flag so the refresh button works even if
+      // the fetch hung and was aborted by a subsequent call.
+      isFetchingRef.current = false;
+      abortControllerRef.current = null;
     }
 
     if (!mountedRef.current || cancelledRef.current) {
-      isFetchingRef.current = false;
-      abortControllerRef.current = null;
       return;
     }
 
@@ -523,8 +526,6 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
       return deduped;
     });
 
-    isFetchingRef.current = false;
-    abortControllerRef.current = null;
     if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
   }, []);
 
@@ -658,8 +659,9 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
           const next = prev.map((t) => {
             if (t.backendId !== order.tableId) return t;
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
-            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
-              console.warn('[TableSync] Ignoring stale order:created for settled table', t.number);
+            const hasItems = (order.items || []).length > 0;
+            if ((t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') && !hasItems) {
+              console.warn('[TableSync] Ignoring stale order:created (no items) for settled table', t.number);
               return t;
             }
             return {
@@ -683,12 +685,15 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
           const next = prev.map((t) => {
             if (t.backendId !== order.tableId) return t;
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
-            if (t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') {
-              console.warn('[TableSync] Ignoring stale order:updated for settled table', t.number);
+            const hasItems = (order.items || []).length > 0;
+            if ((t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') && !hasItems) {
+              console.warn('[TableSync] Ignoring stale order:updated (no items) for settled table', t.number);
               return t;
             }
             return {
               ...t,
+              status: t.status === 'Free' ? 'Occupied' : t.status,
+              workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
               activeOrder: mergeOrder(order, t.activeOrder),
               items: mergeOrderItems(t.items || [], order.items || []),
               currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),

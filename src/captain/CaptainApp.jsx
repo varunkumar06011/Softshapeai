@@ -40,7 +40,7 @@ import { StarIcon } from '../shared/icons/StarIcon';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useMenuSync } from '../hooks/useMenuSync';
-import { useSocket, getSocket } from '../hooks/useSocket';
+import { getSocket } from '../hooks/useSocket';
 import { useTableSync } from '../services/tableSyncService';
 import { useLongPress } from '../hooks/useLongPress';
 import KotConfirmModal from '../shared/components/KotConfirmModal';
@@ -62,7 +62,7 @@ import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, discoverEdgeOnLAN } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 
 
 
@@ -496,7 +496,14 @@ export default function CaptainApp({ onLogout }) {
   }, []);
 
   // Proactive Print Agent URL caching — fetch on startup so it's available when offline
+  // Also discover the edge server URL from the backend so the captain app on a
+  // different device (phone/tablet) can find the edge server on the cashier PC.
   useEffect(() => {
+    // Discover edge server LAN URL from backend (non-blocking, 3s timeout)
+    discoverEdgeUrlFromBackend().catch(() => {});
+    // Pre-warm edge health cache so first table fetch doesn't pay the health check latency
+    prewarmEdgeHealth();
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
     fetch(`${API_BASE}/api/print/agent-endpoint`, {
@@ -528,7 +535,7 @@ export default function CaptainApp({ onLogout }) {
       const useEdgeDirect = isEdgeLocalAuth();
       if (useEdgeDirect || await isEdgeAvailable()) {
         try {
-          const data = await edgeFetch('/api/edge/sections');
+          const data = await edgeFetch('/api/edge/sections', { timeoutMs: EDGE_READ_TIMEOUT_MS });
           const rawSections = Array.isArray(data) ? data : data?.sections || [];
           setFetchedSections(rawSections);
         } catch (err) {
@@ -591,11 +598,6 @@ export default function CaptainApp({ onLogout }) {
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
 
 
-
-  // Socket hooks must be called at top level, not conditionally
-  // Preserve hook count; actual room management is done in the socket effect below
-  useSocket(null);
-  useSocket(null);
 
   const { activeCalls, clearCall } = useWaiterCalls(activeOutlet);
 
@@ -752,6 +754,12 @@ export default function CaptainApp({ onLogout }) {
 
   const kotSubmitStartRef = useRef(0); // timestamp guard against stuck submissions
   const printTimeoutRef = useRef(null); // timeout for KOT print acknowledgement
+
+  // Bug A: Dedup socket echoes from our own KOT submissions (same pattern as cashier)
+  const processedSocketRequestIds = useRef(new Set());
+
+  // Bug B: Guard against printing the same KOT number twice (same pattern as cashier)
+  const _printedKotNumbers = useRef(new Set());
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const lastAnyItemAddedRef = useRef(0);
   const tableBillCacheRef = useRef(new Map()); // stable bill cache to prevent table view flickering
@@ -1606,6 +1614,16 @@ export default function CaptainApp({ onLogout }) {
     };
     window.addEventListener('table:settled', onTableSettled);
 
+    // Bug G: Reset stuck KOT submission state on unhandled promise rejection
+    const onUnhandledRejection = () => {
+      if (isSubmittingKotRef.current) {
+        console.warn('[CaptainApp] Resetting stuck KOT submission due to unhandled rejection');
+        isSubmittingKotRef.current = false;
+        setSendingKOT(false);
+      }
+    };
+    window.addEventListener('app:unhandled-rejection', onUnhandledRejection);
+
     if (!activeRestaurantId) return;
 
     const socket = getSocket();
@@ -1688,9 +1706,11 @@ export default function CaptainApp({ onLogout }) {
       }));
     };
 
-    const onTableUpdated = ({ table } = {}) => {
+    const onTableUpdated = ({ table, requestId } = {}) => {
       if (!table?.id) return;
       if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
+      // Bug A: Skip echoes from our own KOT submission
+      if (requestId && processedSocketRequestIds.current.has(requestId)) return;
       const applyUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id && t.id !== table.id) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
@@ -1732,17 +1752,19 @@ export default function CaptainApp({ onLogout }) {
     const onOrderUpdated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      // Bug A: Skip echoes from our own KOT submission
+      if (payload?.requestId && processedSocketRequestIds.current.has(payload.requestId)) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
-        // Guard: skip stale order:updated for settled/Free tables to prevent ghost items
-        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
-          console.warn('[CaptainApp] Ignoring stale order:updated for settled table', t.number);
-          return t;
-        }
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || (t.activeOrder?.items || []);
+        // Skip stale order:updated with no items for settled/Free tables to prevent ghost items
+        if ((t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') && serverItems.length === 0) {
+          console.warn('[CaptainApp] Ignoring stale order:updated (no items) for settled table', t.number);
+          return t;
+        }
         const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
         return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: incomingKotArr };
       });
@@ -1753,17 +1775,19 @@ export default function CaptainApp({ onLogout }) {
     const onOrderCreated = (payload) => {
       const order = payload?.order || payload;
       if (!order?.tableId) return;
+      // Bug A: Skip echoes from our own KOT submission
+      if (payload?.requestId && processedSocketRequestIds.current.has(payload.requestId)) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
-        // Guard: skip stale order:created for settled/Free tables to prevent ghost items
-        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
-          console.warn('[CaptainApp] Ignoring stale order:created for settled table', t.number);
-          return t;
-        }
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || [];
+        // Skip stale order:created with no items for settled/Free tables
+        if ((t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') && serverItems.length === 0) {
+          console.warn('[CaptainApp] Ignoring stale order:created (no items) for settled table', t.number);
+          return t;
+        }
         const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory
           : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
         return {
@@ -1793,6 +1817,7 @@ export default function CaptainApp({ onLogout }) {
     return () => {
       window.removeEventListener('softshape_menu_updated', onMenuUpdated);
       window.removeEventListener('table:settled', onTableSettled);
+      window.removeEventListener('app:unhandled-rejection', onUnhandledRejection);
       socket.off('connect', onConnect);
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('table:updated', onTableUpdated);
@@ -2408,7 +2433,7 @@ export default function CaptainApp({ onLogout }) {
 
     kotRequestIdRef.current = null;
 
-    if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0)) {
+    if (activeTable && (!activeTable.kotHistory || activeTable.kotHistory.length === 0) && (!activeTable.activeOrder || (activeTable.activeOrder.items || []).length === 0)) {
       setActiveTables(currentTables => currentTables.map(t => {
         if (t.id === activeTable.id) {
 
@@ -2605,6 +2630,11 @@ export default function CaptainApp({ onLogout }) {
 
     kotRequestIdRef.current = requestId;
 
+    // Bug A: Register this requestId so socket echoes from our own KOT submission are skipped
+    processedSocketRequestIds.current.add(requestId);
+    // Clean up after 30s to prevent unbounded growth (same as cashier)
+    setTimeout(() => { processedSocketRequestIds.current.delete(requestId); }, 30000);
+
     // Snapshot items before the API call — needed for retry in the catch block.
     // Must be declared outside the try block so it's accessible in catch.
     var retrySnapshot = [...currentSessionItems];
@@ -2672,6 +2702,11 @@ export default function CaptainApp({ onLogout }) {
       //    also emits via socket (localPrinted is false since we don't wait for print).
       let kotEventIds = [];
       if (preReservedKotNumber != null) {
+        // Bug B: Guard against printing the same KOT number twice
+        if (_printedKotNumbers.current.has(preReservedKotNumber)) {
+          console.warn(`[KOT] KOT #${preReservedKotNumber} already printed in this session — skipping local print`);
+          localPrinted = true;
+        } else {
         const kotOrderData = {
           tableNumber: activeTable?.number ?? activeTable?.id,
           orderId: existingOrderId || 'pending',
@@ -2702,7 +2737,9 @@ export default function CaptainApp({ onLogout }) {
         if (foodEscpos.length > 0) kotEventIds.push(foodEventId);
         if (liquorEscpos.length > 0) kotEventIds.push(liquorEventId);
 
-        // Fire local print (non-blocking — don't await before API call)
+        // Bug D: Await local print FIRST, then pass the correct localPrinted flag to the API.
+        // This matches the cashier's approach and eliminates dependency on eventId dedup
+        // for the common case (local print succeeds → backend skips socket emission).
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
           localPrintPromises.push(
@@ -2711,7 +2748,7 @@ export default function CaptainApp({ onLogout }) {
               escposData: foodEscpos,
               eventId: foodEventId,
               data: kotOrderData,
-            }).catch(err => console.warn('[KOT] Local food print failed:', err.message))
+            }).catch(err => { console.warn('[KOT] Local food print failed:', err.message); return { printed: false }; })
           );
         }
         if (liquorEscpos.length > 0) {
@@ -2721,96 +2758,71 @@ export default function CaptainApp({ onLogout }) {
               escposData: liquorEscpos,
               eventId: liquorEventId,
               data: kotOrderData,
-            }).catch(err => console.warn('[KOT] Local liquor print failed:', err.message))
+            }).catch(err => { console.warn('[KOT] Local liquor print failed:', err.message); return { printed: false }; })
           );
         }
 
-        // Track local print result in background — don't block API call on it
-        const localPrintTracker = Promise.allSettled(localPrintPromises).then(results => {
-          localPrinted = results.some(r => r.status === 'fulfilled' && r.value?.printed);
-          if (localPrinted) {
-            console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber}`);
-          } else {
-            console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
-          }
-          return localPrinted;
-        });
+        const printResults = await Promise.allSettled(localPrintPromises);
+        localPrinted = printResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+        if (localPrinted) {
+          _printedKotNumbers.current.add(preReservedKotNumber);
+          console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber}`);
+        } else {
+          console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
+        }
 
-        // Fire API call concurrently with local print.
-        // Pass localPrinted: false — we don't know the result yet.
-        // The shared eventId dedup mechanism handles any overlap.
+        // Now call the API with the correct localPrinted flag.
         const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
         const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
 
-        const apiPromise = (async () => {
-          try {
-            if (existingOrderId) {
-              const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, false, preReservedKotNumber, kotEventIds, activeTableId);
-              return response;
-            } else {
-              try {
-                return await createOrder({
-                  tableId: activeTable?.backendId,
-                  tableNumber: activeTable?.number ?? activeTable?.id,
-                  restaurantId: orderRestaurantId,
-                  items: apiItems,
-                  requestId,
-                  captainName: currentCaptain?.name || undefined,
-                  sectionTag: activeTable?.sectionTag || undefined,
-                  preReservedKotNumber,
-                  localPrinted: false,
-                  kotEventIds,
-                });
-              } catch (createErr) {
-                if (createErr.statusCode === 409 && createErr.existingOrderId) {
-                  console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
-                  activeOrderIdRef.current = createErr.existingOrderId;
-                  return await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, false, preReservedKotNumber, kotEventIds, activeTableId);
-                }
+        try {
+          if (existingOrderId) {
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, localPrinted, preReservedKotNumber, kotEventIds, activeTableId);
+            savedOrder = response;
+          } else {
+            try {
+              savedOrder = await createOrder({
+                tableId: activeTable?.backendId,
+                tableNumber: activeTable?.number ?? activeTable?.id,
+                restaurantId: orderRestaurantId,
+                items: apiItems,
+                requestId,
+                captainName: currentCaptain?.name || undefined,
+                sectionTag: activeTable?.sectionTag || undefined,
+                preReservedKotNumber,
+                localPrinted,
+                kotEventIds,
+              });
+            } catch (createErr) {
+              if (createErr.statusCode === 409 && createErr.existingOrderId) {
+                console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
+                activeOrderIdRef.current = createErr.existingOrderId;
+                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, localPrinted, preReservedKotNumber, kotEventIds, activeTableId);
+              } else {
                 throw createErr;
               }
             }
-          } catch (apiErr) {
-            // Wait for local print to finish so we know if kitchen got the ticket
-            const printed = await localPrintTracker;
-            if (printed) {
-              console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
-              addNotification(
-                `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
-                'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
-                'warning'
-              );
-              setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
-              setKotError({
-                message: 'KOT printed but server sync failed — tap Retry to confirm.',
-                retryItems: retrySnapshot,
-              });
-              return null;
-            }
-            throw apiErr;
           }
-        })();
-
-        // Show optimistic UI as soon as local print resolves (don't wait for API)
-        // If local print fails fast, show UI when API resolves instead.
-        // Race: first to resolve wins the UI update.
-        const printResolved = localPrintTracker.then(() => true).catch(() => false);
-
-        // Wait for both: API must complete for order ID reconciliation,
-        // but show "Sent" notification as soon as print succeeds.
-        // If print fails, show "Sent" when API completes.
-        const [printResult, apiResult] = await Promise.all([
-          printResolved,
-          apiPromise,
-        ]);
-
-        if (apiResult === null) {
-          // API failed but local print succeeded — error already handled above
-          return;
+        } catch (apiErr) {
+          if (localPrinted) {
+            console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
+            addNotification(
+              `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
+              'KOT was printed to kitchen but server sync failed. Please retry to confirm.',
+              'warning'
+            );
+            setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
+            setKotError({
+              message: 'KOT printed but server sync failed — tap Retry to confirm.',
+              retryItems: retrySnapshot,
+            });
+            return;
+          }
+          throw apiErr;
         }
 
-        savedOrder = apiResult?.order || apiResult;
-        const _kotHistory = apiResult?.order?.kotHistory || apiResult?.kotHistory;
+        if (savedOrder?.order) savedOrder = savedOrder.order;
+        const _kotHistory = savedOrder?.kotHistory;
         realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
           ? _kotHistory[_kotHistory.length - 1].id
           : null;
@@ -2821,6 +2833,8 @@ export default function CaptainApp({ onLogout }) {
           realKotId = Array.isArray(_savedKotHistory) && _savedKotHistory.length > 0
             ? _savedKotHistory[_savedKotHistory.length - 1].id
             : null;
+        }
+
         }
 
       } else {
@@ -3027,7 +3041,14 @@ export default function CaptainApp({ onLogout }) {
 
     } finally {
 
-      isSubmittingKotRef.current = false;
+      // Delay releasing the KOT submission guard by 500ms so that socket
+      // table:updated / order:created events arriving in the same tick don't
+      // overwrite the optimistic setActiveTables updates above. React batches
+      // state updates, so the guard must stay active until the next render
+      // cycle processes the new table state.
+      setTimeout(() => {
+        isSubmittingKotRef.current = false;
+      }, 500);
 
       setSendingKOT(false);
 
@@ -3237,7 +3258,7 @@ export default function CaptainApp({ onLogout }) {
 
               items: kot.items.map(i =>
 
-                i.orderItemId === kotItem.orderItemId ? { ...i, s: 'KOT Sent', removedFromBill: false } : i
+                i.orderItemId === kotItem.orderItemId ? { ...i, s: 'KOT Sent', removedFromBill: false, q: (Number(i.q ?? 0) + cancelQty) } : i
 
               ),
 
@@ -3248,7 +3269,7 @@ export default function CaptainApp({ onLogout }) {
           activeOrder: t.activeOrder ? {
             ...t.activeOrder,
             items: (t.activeOrder.items || []).map(i =>
-              i.id === kotItem.orderItemId ? { ...i, removedFromBill: false } : i
+              i.id === kotItem.orderItemId ? { ...i, removedFromBill: false, quantity: (Number(i.quantity ?? 0) + cancelQty), q: (Number(i.q ?? 0) + cancelQty) } : i
             ),
           } : t.activeOrder,
 
@@ -3325,6 +3346,17 @@ export default function CaptainApp({ onLogout }) {
         }));
 
       }
+
+    } else {
+
+      addNotification('Cannot request bill — no active order found. Refresh and retry.', 'error');
+
+      setActiveTables(prev => prev.map(t => {
+        if (t.id === activeTableId || t.backendId === activeTableId) {
+          return { ...t, status: previousStatus };
+        }
+        return t;
+      }));
 
     }
 
@@ -4387,7 +4419,7 @@ export default function CaptainApp({ onLogout }) {
                     onOrderPlaced={() => {}}
 
                     venueTables={tableFilter === 'my' ? displayTables.filter(t => t.captainId === currentCaptain?.id) : displayTables}
-                    isSyncing={false}
+                    isSyncing={tablesLoading}
                     refetch={refetchRestaurantTables}
                   />
 
@@ -6145,6 +6177,11 @@ export default function CaptainApp({ onLogout }) {
                             );
 
                             setShowMoveModal(false);
+
+                            setActiveTableId(null);
+                            activeOrderIdRef.current = null;
+                            lastConfirmedItemsRef.current = [];
+                            kotRequestIdRef.current = null;
 
                             setView('tables');
 
