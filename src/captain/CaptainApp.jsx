@@ -62,7 +62,7 @@ import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 
 
 
