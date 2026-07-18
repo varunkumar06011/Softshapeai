@@ -125,9 +125,12 @@ const toFrontendTableStatus = (backendStatus) => {
     AVAILABLE: 'Free',
     OCCUPIED: 'Occupied',
     PREPARING: 'Preparing',
+    READY: 'Ready',
     BILLING_REQUESTED: 'Waiting Bill',
+    BILLING: 'Waiting Bill',
+    RESERVED: 'Reserved',
     TERMINATED: 'Free',
-    CLEANING: 'Free',
+    CLEANING: 'Cleaning',
   };
   return map[backendStatus] || backendStatus || 'Free';
 };
@@ -806,6 +809,11 @@ export default function CaptainApp({ onLogout }) {
   // Bug A: Dedup socket echoes from our own KOT submissions (same pattern as cashier)
   const processedSocketRequestIds = useRef(new Set());
 
+  // Issue 17: Track tables where billing was requested — freeze items from stale
+  // order:updated/order:created events, same pattern as cashier's billPrintedTableIdsRef.
+  // Cleared when the table is settled (order:paid) or goes Free.
+  const billRequestedTableIdsRef = useRef(new Set());
+
   // Guards against stale socket events reviving settled tables (same pattern as cashier)
   const terminatedTableIdsRef = useRef(new Set());
   const recentlyTerminatedRef = useRef((() => {
@@ -821,6 +829,16 @@ export default function CaptainApp({ onLogout }) {
 
   // Bug B: Guard against printing the same KOT number twice (same pattern as cashier)
   const _printedKotNumbers = useRef(new Set());
+  const PRINTED_KOT_NUMBERS_MAX = 200;
+  const markKotNumberPrinted = useCallback((kotNumber) => {
+    const set = _printedKotNumbers.current;
+    set.add(kotNumber);
+    if (set.size > PRINTED_KOT_NUMBERS_MAX) {
+      const arr = Array.from(set);
+      set.clear();
+      arr.slice(-PRINTED_KOT_NUMBERS_MAX).forEach(n => set.add(n));
+    }
+  }, []);
   const addItemCooldownRef = useRef({}); // key: item.id or item.n → last add timestamp
   const lastAnyItemAddedRef = useRef(0);
   const tableBillCacheRef = useRef(new Map()); // stable bill cache to prevent table view flickering
@@ -1243,6 +1261,10 @@ export default function CaptainApp({ onLogout }) {
   const activeTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? barTables : tables;
 
   const setActiveTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? setBarTables : setTables;
+
+  // Ref mirror so async socket handlers read the latest tables without stale closure
+  const activeTablesRef = useRef(activeTables);
+  useEffect(() => { activeTablesRef.current = activeTables; }, [activeTables]);
 
   const activeTable = useMemo(() =>
     activeTables.find(t => t.id === activeTableId),
@@ -1682,6 +1704,8 @@ export default function CaptainApp({ onLogout }) {
     const onTableSettled = (e) => {
       const { tableId } = e.detail || {};
       if (!tableId) return;
+      // Issue 17: Clear billing-requested freeze
+      billRequestedTableIdsRef.current.delete(tableId);
       // Mark table as recently terminated so stale socket events cannot revive it
       terminatedTableIdsRef.current.add(tableId);
       recentlyTerminatedRef.current[tableId] = Date.now();
@@ -1762,6 +1786,9 @@ export default function CaptainApp({ onLogout }) {
     const onOrderPaid = (payload) => {
       const tableId = payload?.tableId;
       if (!tableId) return;
+
+      // Issue 17: Clear billing-requested freeze
+      billRequestedTableIdsRef.current.delete(tableId);
 
       // Mark table as recently terminated so stale socket events (order:updated,
       // table:updated from before settlement) cannot revive it and cause ghost items.
@@ -1851,7 +1878,9 @@ export default function CaptainApp({ onLogout }) {
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
 
-        const incomingIsAvailable = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
+        // Issue 14: Map backend status to frontend status (same as cashier)
+        const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
+        const incomingIsAvailable = incomingStatus === 'Free' || incomingStatus === 'AVAILABLE' || table.status === 'AVAILABLE';
         if (incomingIsAvailable && t.activeOrder) {
           const incomingHasLiveData = Array.isArray(table.orders) && table.orders.length > 0 && table.orders[0]?.items?.length > 0;
           const incomingHasBill = (table.currentBill ?? 0) > 0;
@@ -1861,8 +1890,15 @@ export default function CaptainApp({ onLogout }) {
           }
         }
 
+        // Issue 16: Protect "Waiting Bill" status from being downgraded by stale events
+        // (same pattern as cashier — once bill is requested, hold until Free/settled)
+        const isWaitingBill = t.status === 'Waiting Bill' || t.workflowStatus === 'Waiting Bill';
+        const protectedStatus = isWaitingBill && incomingStatus !== 'Free' && incomingStatus !== 'AVAILABLE'
+          ? 'Waiting Bill'
+          : incomingStatus;
+
         const incomingOrder = (table.orders?.[0] && table.orders[0].tableId === table.id) ? table.orders[0] : (table.activeOrder || null);
-        const isTableFree = table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
+        const isTableFree = incomingStatus === 'Free' || incomingStatus === 'AVAILABLE' || table.workflowStatus === 'Free' || table.status === 'AVAILABLE';
         // Server is now authoritative — directly use its items and kots (no merge)
         // When table is Free (settled), clear items and activeOrder to prevent ghost items
         const serverItems = isTableFree ? [] : (incomingOrder?.items ?? (t.activeOrder?.items || []));
@@ -1870,8 +1906,8 @@ export default function CaptainApp({ onLogout }) {
         const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) && table.kotHistory.length > 0 ? table.kotHistory : (t.kotHistory || [])));
         return {
           ...t,
-          status: table.workflowStatus || (table.status !== undefined ? table.status : t.status),
-          workflowStatus: table.workflowStatus ?? t.workflowStatus,
+          status: protectedStatus,
+          workflowStatus: protectedStatus,
           currentBill: isTableFree ? 0 : (table.currentBill ?? t.currentBill),
           activeOrder: isTableFree
             ? null
@@ -1894,6 +1930,9 @@ export default function CaptainApp({ onLogout }) {
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTsUpd = recentlyTerminatedRef.current[order.tableId];
       if (termTsUpd && Date.now() - termTsUpd < 5000) return;
+      // Issue 17: Freeze items once billing is requested — stale order:updated
+      // events must not change items while the cashier is processing the bill.
+      if (billRequestedTableIdsRef.current.has(order.tableId)) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
@@ -1922,6 +1961,8 @@ export default function CaptainApp({ onLogout }) {
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTsCre = recentlyTerminatedRef.current[order.tableId];
       if (termTsCre && Date.now() - termTsCre < 5000) return;
+      // Issue 17: Freeze items once billing is requested
+      if (billRequestedTableIdsRef.current.has(order.tableId)) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
@@ -1951,6 +1992,9 @@ export default function CaptainApp({ onLogout }) {
     const onBillingRequested = (payload) => {
       const { table } = payload;
       if (!table?.id) return;
+      // Issue 17: Mark this table as billing-requested so stale order events
+      // don't change items while the bill is being processed by the cashier.
+      billRequestedTableIdsRef.current.add(table.id);
       const updateTables = (prev) => prev.map(t =>
         t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
       );
@@ -1963,8 +2007,11 @@ export default function CaptainApp({ onLogout }) {
     // Real-time table swap and item transfer sync (same events as cashier)
     const onTableSwapped = (payload) => {
       const { sourceTableId, targetTableId, sourceTable: rawSource, targetTable: rawTarget } = payload;
-      const existingSource = activeTables.find(t => t.backendId === sourceTableId) || null;
-      const existingTarget = activeTables.find(t => t.backendId === targetTableId) || null;
+      // Issue 18: Use activeTablesRef.current instead of activeTables closure
+      // so we always read the latest table state (avoids stale data in long-lived useEffect)
+      const allTables = activeTablesRef.current;
+      const existingSource = allTables.find(t => t.backendId === sourceTableId) || null;
+      const existingTarget = allTables.find(t => t.backendId === targetTableId) || null;
       const mappedSource = mapRealtimeTablePayload(rawSource, existingSource);
       const mappedTarget = mapRealtimeTablePayload(rawTarget, existingTarget);
       const updateTables = (prev) => prev.map(t => {
@@ -1990,8 +2037,10 @@ export default function CaptainApp({ onLogout }) {
 
     const onTableItemsTransferred = (payload) => {
       const { sourceTableId, targetTableId, sourceTable, targetTable } = payload;
-      const existingSource = activeTables.find(t => t.backendId === sourceTableId) || null;
-      const existingTarget = activeTables.find(t => t.backendId === targetTableId) || null;
+      // Issue 18: Use activeTablesRef.current instead of activeTables closure
+      const allTables = activeTablesRef.current;
+      const existingSource = allTables.find(t => t.backendId === sourceTableId) || null;
+      const existingTarget = allTables.find(t => t.backendId === targetTableId) || null;
       const mappedSource = mapRealtimeTablePayload(sourceTable, existingSource);
       const mappedTarget = mapRealtimeTablePayload(targetTable, existingTarget);
       const updateTables = (prev) => prev.map(t => {
@@ -2778,9 +2827,10 @@ export default function CaptainApp({ onLogout }) {
   }, [view, activeTableId]);
 
   const sendIncrementalKOT = async () => {
-    // Cancel any pending print timeout from a previous KOT before any early return
-    clearTimeout(printTimeoutRef.current);
-
+    // Issue 9: Don't clear previous print timeouts here — each KOT's timeout
+    // is self-managed via a local closure variable. Clearing the shared ref
+    // would cancel the WRONG timeout if a second KOT was sent before the first
+    // one's 30s print ack window expired.
     // Stuck-guard: if a previous submission has been running for >15s, force-reset
     if (isSubmittingKotRef.current && kotSubmitStartRef.current && Date.now() - kotSubmitStartRef.current > 15000) {
       console.warn('[KOT] Stuck submission detected (>15s), forcing reset');
@@ -2824,8 +2874,8 @@ export default function CaptainApp({ onLogout }) {
 
     // Bug A: Register this requestId so socket echoes from our own KOT submission are skipped
     processedSocketRequestIds.current.add(requestId);
-    // Clean up after 30s to prevent unbounded growth (same as cashier)
-    setTimeout(() => { processedSocketRequestIds.current.delete(requestId); }, 30000);
+    // Clean up after 60s to prevent unbounded growth (same as cashier)
+    setTimeout(() => { processedSocketRequestIds.current.delete(requestId); }, 60000);
 
     // Snapshot items before the API call — needed for retry in the catch block.
     // Must be declared outside the try block so it's accessible in catch.
@@ -2957,7 +3007,7 @@ export default function CaptainApp({ onLogout }) {
         const printResults = await Promise.allSettled(localPrintPromises);
         localPrinted = printResults.some(r => r.status === 'fulfilled' && r.value?.printed);
         if (localPrinted) {
-          _printedKotNumbers.current.add(preReservedKotNumber);
+          markKotNumberPrinted(preReservedKotNumber);
           console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber}`);
         } else {
           console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
@@ -3081,7 +3131,7 @@ export default function CaptainApp({ onLogout }) {
                 edgeLocalPrinted = edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
                 localPrinted = edgeLocalPrinted;
                 if (edgeLocalPrinted) {
-                  _printedKotNumbers.current.add(edgePreReservedKotNumber);
+                  markKotNumberPrinted(edgePreReservedKotNumber);
                   console.log(`[KOT] Edge fallback local print succeeded for KOT #${edgePreReservedKotNumber}`);
                 }
               }
@@ -3280,20 +3330,21 @@ export default function CaptainApp({ onLogout }) {
         // so kot:printed will never fire. No need to wait for socket confirmation.
       } else {
       const socket = getSocket();
+      // Issue 9: Use a local variable for this KOT's timeout so rapid KOT
+      // submissions don't overwrite each other's timeout IDs in the shared ref.
+      let printTimeoutId = null;
       const handler = ({ requestId: ackRequestId, status }) => {
         if (ackRequestId === requestId) {
           socket.off('kot:printed', handler);
-          clearTimeout(printTimeoutRef.current);
-          printTimeoutRef.current = null;
+          clearTimeout(printTimeoutId);
           if (status !== 'success') {
             addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print failed`, 'warning');
           }
         }
       };
       socket.on('kot:printed', handler);
-      printTimeoutRef.current = setTimeout(() => {
+      printTimeoutId = setTimeout(() => {
         socket.off('kot:printed', handler);
-        printTimeoutRef.current = null;
         addNotification(`KOT #${realKotId || newKOT.id} ⚠ Saved, print failed`, 'warning');
       }, 30000);
       }

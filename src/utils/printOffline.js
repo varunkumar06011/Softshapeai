@@ -295,6 +295,11 @@ async function tryPrintAgentUrls(body, jobType) {
         await setPrintAgentUrl(workingUrl);
       }
     } catch { /* ignore */ }
+  } else {
+    // All URLs failed — invalidate cache so next call re-discovers fresh URLs
+    // (agent may have restarted with a new DHCP lease)
+    _cachedAgentUrls = null;
+    _lastDiscoveryTime = 0;
   }
 
   return workingUrl;
@@ -400,6 +405,7 @@ export async function printLocal(job) {
         printerName: printerName || undefined,
         text,
         bytes,
+        eventId: job.eventId || undefined,
         data: job.data || {},
       };
 

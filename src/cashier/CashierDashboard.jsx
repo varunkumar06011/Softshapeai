@@ -78,6 +78,15 @@ import { DeadLetterBanner } from '../components/DeadLetterBanner';
 // double-printing the same KOT number (e.g. from rapid double-clicks or retries
 // where the reservation returned the same number).
 const _printedKotNumbers = new Set();
+const PRINTED_KOT_NUMBERS_MAX = 200;
+function markKotNumberPrinted(kotNumber) {
+  _printedKotNumbers.add(kotNumber);
+  if (_printedKotNumbers.size > PRINTED_KOT_NUMBERS_MAX) {
+    const arr = Array.from(_printedKotNumbers);
+    _printedKotNumbers.clear();
+    arr.slice(-PRINTED_KOT_NUMBERS_MAX).forEach(n => _printedKotNumbers.add(n));
+  }
+}
 
 function getVenueTableLabel(sectionTag, tableNumber) {
   return String(tableNumber);
@@ -4958,8 +4967,8 @@ const CashierDashboard = ({ onLogout }) => {
     }
     // Register this requestId so socket echoes from our own KOT submission are skipped
     processedSocketRequestIds.current.add(requestId);
-    // Clean up after 30s to prevent unbounded growth
-    setTimeout(() => { processedSocketRequestIds.current.delete(requestId); }, 30000);
+    // Clean up after 60s to prevent unbounded growth
+    setTimeout(() => { processedSocketRequestIds.current.delete(requestId); }, 60000);
 
     const apiItems = cart
       .map(i => ({
@@ -5055,7 +5064,7 @@ const CashierDashboard = ({ onLogout }) => {
         localPrinted = localPrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
 
         if (localPrinted) {
-          _printedKotNumbers.add(preReservedKotNumber);
+          markKotNumberPrinted(preReservedKotNumber);
           console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber} — backend will skip socket emission`);
         } else {
           console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
