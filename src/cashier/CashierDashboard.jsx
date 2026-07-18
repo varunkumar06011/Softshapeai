@@ -2484,7 +2484,7 @@ const CashierDashboard = ({ onLogout }) => {
           };
         }
         return t;
-      }));
+      }), { skipPersist: true });
 
       // Update selectedTable if it's the source
       if (selectedTable?.backendId === sourceId) {
@@ -2992,7 +2992,7 @@ const CashierDashboard = ({ onLogout }) => {
           prev.map((t) =>
             t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
           );
-        setActiveTables(updateBillStatus);
+        setActiveTables(updateBillStatus, { skipPersist: true });
       }
 
       // Step 1: Update table discount if entered (only when online; otherwise
@@ -3145,7 +3145,7 @@ const CashierDashboard = ({ onLogout }) => {
                 } else {
                   setActiveTables(prev => prev.map(t =>
                     t.backendId === selectedTable.backendId ? { ...t, billNumber: resp.billNumber } : t
-                  ));
+                  ), { skipPersist: true });
                 }
               }
               if (resp && !resp.success) {
@@ -3241,7 +3241,7 @@ const CashierDashboard = ({ onLogout }) => {
         } else {
           setActiveTables(prev => prev.map(t =>
             t.backendId === selectedTable.backendId ? { ...t, billNumber: printedBillNumber } : t
-          ));
+          ), { skipPersist: true });
         }
       }
 
@@ -4493,7 +4493,7 @@ const CashierDashboard = ({ onLogout }) => {
             currentBill: updatedOrder.totalAmount,
             activeOrder: { ...t.activeOrder, ...updatedOrder },
           };
-        }));
+        }), { skipPersist: true });
         setBillRemovals([]);
         setBillEditQuantities({});
         setBillAdditions([]);
@@ -4838,7 +4838,7 @@ const CashierDashboard = ({ onLogout }) => {
         return { ...t, status: newTableStatus, kotHistory: updatedKotHistory };
       }
       return t;
-    }));
+    }), { skipPersist: true });
 
     // Find the active orderId for this table from current state
     const targetTable = activeTables.find(t => t.id === tableId || t.backendId === tableId);
@@ -5386,7 +5386,7 @@ const CashierDashboard = ({ onLogout }) => {
                   const existingKot = t.kotHistory || [];
                   const existingIds = new Set(existingKot.map(k => String(k.id)));
                   return { ...t, kotHistory: [...existingKot, ...serverKotHistory.filter(k => !existingIds.has(String(k.id)))], activeOrder: { ...t.activeOrder, id: freshOrder.id, items: serverItems } };
-                }));
+                }), { skipPersist: true });
               }
               setSelectedTable(prev => prev ? {
                 ...prev,

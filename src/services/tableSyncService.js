@@ -209,7 +209,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   }, 0);
   const hasNoSession = incomingItemCount === 0 && (row.currentBill ?? 0) === 0 && (row.guests ?? 0) === 0;
   const claimsNonFree = row.workflowStatus !== 'Free' && row.status !== 'Free' && dbStatus !== 'AVAILABLE';
-  const isGhost = claimsNonFree && hasNoSession;
+  const isGhost = Array.isArray(row.orders) && claimsNonFree && hasNoSession;
   if (isGhost) {
     console.warn('[TableSync] Normalizing ghost table to Free (no session data) for table', row.number, row.workflowStatus || row.status);
   }
@@ -757,9 +757,14 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             const idx = findTableIndex(updated, result.updated.id);
             if (idx === -1) continue;
             const copy = [...updated];
-            copy[idx] = mapBackendTable(result.updated, copy[idx], {
-              keepWorkflowStatus: true,
-            });
+            if (shouldSkipTableUpdate && shouldSkipTableUpdate(copy[idx])) {
+              // Bill printed but not settled — preserve full table state, skip ghost detection
+              copy[idx] = copy[idx];
+            } else {
+              copy[idx] = mapBackendTable(result.updated, copy[idx], {
+                keepWorkflowStatus: true,
+              });
+            }
             updated = copy;
           }
           // Deduplicate after persisting changes
