@@ -18,6 +18,7 @@ import { getSocket } from "../hooks/useSocket";
 import { fetchTables, updateTableSession } from "./tableApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
+import { connectEdgeSocket, disconnectEdgeSocket, onEdgeEvent } from "./edgeSocketService";
 import { getTablesCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 
 // ── Cross-device termination grace window (in-memory, not localStorage) ───────
@@ -705,11 +706,30 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
       },
     });
 
+    // ── Edge WebSocket: connect for LAN real-time updates (Bug 2 fix) ────────
+    // The edge server broadcasts order/table events over WebSocket to all
+    // LAN clients. We connect and listen for events — on any event, we
+    // trigger a debounced refetch to pull the updated state from the edge.
+    connectEdgeSocket();
+    let edgeDebounceTimer = null;
+    const edgeUnsub = onEdgeEvent((type, data) => {
+      if (edgeDebounceTimer) clearTimeout(edgeDebounceTimer);
+      edgeDebounceTimer = setTimeout(() => {
+        edgeDebounceTimer = null;
+        if (mountedRef.current && !cancelledRef.current) {
+          loadTables();
+        }
+      }, 300);
+    });
+
     return () => {
       mountedRef.current = false;
       cancelledRef.current = true;
       abortControllerRef.current?.abort();
       releaseSocket();
+      // Disconnect edge socket when no more table sync instances are active
+      disconnectEdgeSocket();
+      if (edgeUnsub) edgeUnsub();
     };
   }, [loadTables]);
 

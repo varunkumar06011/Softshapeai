@@ -19,6 +19,7 @@ import { fetchBarTables, updateBarTableSession } from "./barTableApi";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 import { getBarTablesCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { connectEdgeSocket, disconnectEdgeSocket, onEdgeEvent } from "./edgeSocketService";
 
 // ── Cross-device termination grace window (in-memory, not localStorage) ───────
 // When a table is settled/terminated, the server emits "table:terminated" with a
@@ -661,12 +662,27 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
     };
     socket.on("connect", onReconnect);
 
+    // ── Edge WebSocket: connect for LAN real-time updates (Bug 2 fix) ────────
+    connectEdgeSocket();
+    let edgeDebounceTimer = null;
+    const edgeUnsub = onEdgeEvent((type, data) => {
+      if (edgeDebounceTimer) clearTimeout(edgeDebounceTimer);
+      edgeDebounceTimer = setTimeout(() => {
+        edgeDebounceTimer = null;
+        if (mountedRef.current && !cancelledRef.current) {
+          loadTables();
+        }
+      }, 300);
+    });
+
     return () => {
       mountedRef.current = false;
       cancelledRef.current = true;
       abortControllerRef.current?.abort();
       releaseSocket();
       socket.off("connect", onReconnect);
+      disconnectEdgeSocket();
+      if (edgeUnsub) edgeUnsub();
     };
   }, [loadTables]);
 
