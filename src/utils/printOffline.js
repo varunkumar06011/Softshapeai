@@ -64,7 +64,7 @@ function resolvePrinter(jobType, mapping) {
   // Fall back to mapping
   if (jobType === 'KOT' || jobType === 'CANCEL_KOT') return mapping.kitchen;
   if (jobType === 'BAR_KOT') return mapping.bar;
-  if (jobType === 'FINAL_BILL' || jobType === 'BILL' || jobType === 'VOUCHER' || jobType === 'EXPENDITURE') return mapping.bill || mapping.kitchen;
+  if (jobType === 'FINAL_BILL' || jobType === 'BILL' || jobType === 'VOUCHER' || jobType === 'EXPENDITURE') return mapping.bill || null;
   if (jobType === 'TABLE_SWAP') return mapping.kitchen;
   return null;
 }
@@ -191,16 +191,19 @@ async function discoverPrintAgentUrls() {
     }
   }
 
-  // 1. User-configured URL
+  // 1. User-configured URL (always add — 127.0.0.1 is valid on desktop, not on mobile)
   const configuredUrl = await getPrintAgentUrl();
-  if (configuredUrl && configuredUrl !== 'http://127.0.0.1:3102') {
+  if (configuredUrl) {
     add(configuredUrl);
   }
 
   // 2. Backend-reported URL (from Print Agent registration/heartbeat)
+  //    Increased from 300ms to 2000ms — captain on mobile WiFi needs more time
+  //    to reach the cloud backend, and 300ms was causing the fetch to abort
+  //    before the response arrived, so the LAN IP was never discovered.
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 300);
+    const timeout = setTimeout(() => controller.abort(), 2000);
     const res = await fetch(apiUrl('/api/print/agent-endpoint'), {
       method: 'GET',
       headers: getAuthHeaders(),
