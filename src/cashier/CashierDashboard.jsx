@@ -38,6 +38,7 @@ import { useTableSync, clearTerminatedTable } from '../services/tableSyncService
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, releaseKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
+import { setLocalPrinterMapping } from '../utils/offlineDB';
 import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from '../services/edgeHealth';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
@@ -2083,6 +2084,15 @@ const CashierDashboard = ({ onLogout }) => {
     };
     socket.on('menu-item-updated', onMenuItemUpdated);
 
+    // Sync printer config when admin updates printer settings
+    const onPrinterConfigUpdated = (payload) => {
+      if (payload?.printerMapping && Object.keys(payload.printerMapping).length > 0) {
+        setLocalPrinterMapping(payload.printerMapping).catch(() => {});
+        console.log('[CashierDashboard] Printer mapping updated from admin');
+      }
+    };
+    socket.on('printer:config-updated', onPrinterConfigUpdated);
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
@@ -2093,6 +2103,7 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('table:swapped', onTableSwapped);
       socket.off('table:items-transferred', onTableItemsTransferred);
       socket.off('menu-item-updated', onMenuItemUpdated);
+      socket.off('printer:config-updated', onPrinterConfigUpdated);
       socket.off('table:updated', onTableUpdated);
     };
   }, [socket, activeRestaurantId, selectedTable?.backendId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
@@ -2460,6 +2471,8 @@ const CashierDashboard = ({ onLogout }) => {
       const targetId = itemSwapTargetId;
       const transferredIds = new Set(itemSwapSelectedIds);
 
+      // skipPersist: true — transferItems API call already mutated backend state; this is a
+      // local optimistic update. Persisting it risks sending a partial table snapshot.
       setActiveTables(prev => prev.map(t => {
         if (t.backendId === sourceId) {
           const updatedItems = (t.activeOrder?.items || [])
@@ -2992,6 +3005,9 @@ const CashierDashboard = ({ onLogout }) => {
           prev.map((t) =>
             t.backendId === tableId ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
           );
+        // skipPersist: true — the backend will emit the authoritative table:updated event
+        // once the bill is processed. Persisting this optimistic status change locally would
+        // trigger a partial PATCH that can ghost-detect the table and wipe its items.
         setActiveTables(updateBillStatus, { skipPersist: true });
       }
 
@@ -3216,9 +3232,11 @@ const CashierDashboard = ({ onLogout }) => {
               et.id === rollbackTableId ? { ...et, status: 'Occupied', workflowStatus: 'Occupied' } : et
             ));
           } else {
+            // skipPersist: true — rolling back to 'Occupied' is purely a local UI correction.
+            // The backend still has the real state; avoid a partial persist that could wipe items.
             setActiveTables(prev => prev.map(t =>
               t.backendId === rollbackTableId ? { ...t, status: 'Occupied', workflowStatus: 'Occupied' } : t
-            ));
+            ), { skipPersist: true });
           }
           return;
         } else {
@@ -4485,7 +4503,9 @@ const CashierDashboard = ({ onLogout }) => {
         setShowBillEditor(false);
         addNotification('Bill Edit Queued', 'Changes saved locally — will sync when online.', 'warning');
       } else {
-        // Update local table state so bill total reflects immediately
+        // Update local table state so bill total reflects immediately.
+        // skipPersist: true — editBill already updated the backend; a local persist could
+        // clobber active order data with a partial table response.
         setActiveTables(prev => prev.map(t => {
           if (t.backendId !== selectedTable.backendId) return t;
           return {
@@ -4812,6 +4832,9 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const updateKotStatus = (tableId, kotId, newStatus) => {
+    // skipPersist: true — this is a pure local UI state change. updateOrderStatus below
+    // already syncs to the backend; persisting the table again here is redundant and can
+    // trigger ghost-detection in a partial PATCH response.
     setActiveTables(prev => prev.map(t => {
       if (t.id === tableId || t.backendId === tableId) {
         let allReady = true;
@@ -5381,6 +5404,9 @@ const CashierDashboard = ({ onLogout }) => {
                   return { ...et, kotHistory: [...existingKot, ...serverKotHistory.filter(k => !existingIds.has(String(k.id)))], activeOrder: { ...et.activeOrder, id: freshOrder.id, items: serverItems } };
                 }));
               } else {
+                // skipPersist: true — the createOrder/updateOrderItems backend call already produced
+                // the authoritative state; the next socket/table fetch will confirm it. Persisting
+                // this optimistic merge risks a partial response ghost-wiping the table.
                 setActiveTables(prev => prev.map(t => {
                   if (t.backendId !== selectedTable.backendId) return t;
                   const existingKot = t.kotHistory || [];

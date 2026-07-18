@@ -399,10 +399,15 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(false);
   const abortControllerRef = useRef(null);
+  const shouldSkipTableUpdateRef = useRef(shouldSkipTableUpdate);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
+
+  useEffect(() => {
+    shouldSkipTableUpdateRef.current = shouldSkipTableUpdate;
+  }, [shouldSkipTableUpdate]);
 
   const loadTables = useCallback(async () => {
     // Abort any in-flight fetch instead of silently dropping the refresh click.
@@ -711,13 +716,23 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
             const idx = findTableIndex(updated, result.updated.id);
             if (idx === -1) continue;
             const copy = [...updated];
-            if (shouldSkipTableUpdate && shouldSkipTableUpdate(copy[idx])) {
-              // Bill printed but not settled — preserve full table state, skip ghost detection
-              copy[idx] = copy[idx];
+            const existing = copy[idx];
+
+            // Guard: skip persisting for the active table when the consumer explicitly
+            // asks us to (e.g. during KOT submission). Applying a partial response here can
+            // overwrite optimistic state and cause ghost items or flicker.
+            if (shouldSkipTableUpdateRef.current && shouldSkipTableUpdateRef.current(existing)) {
+              continue;
+            }
+
+            // If the PATCH response includes the full order/kot data, use the server-
+            // authoritative mapBackendTable. If it doesn't (partial response), only merge
+            // top-level session fields so we don't ghost-detect and wipe activeOrder/kotHistory.
+            if (result.updated.orders || result.updated.activeOrder) {
+              copy[idx] = mapBackendTable(result.updated, existing, { keepWorkflowStatus: true });
             } else {
-              copy[idx] = mapBackendTable(result.updated, copy[idx], {
-                keepWorkflowStatus: true,
-              });
+              const { orders, activeOrder, kotHistory, ...sessionFields } = result.updated;
+              copy[idx] = { ...existing, ...sessionFields };
             }
             updated = copy;
           }

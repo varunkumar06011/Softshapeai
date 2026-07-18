@@ -150,7 +150,18 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const isStale = incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated;
 
   const dbStatus = isStale && existing ? existing.dbStatus : row.status;
-  const persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
+  let persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
+
+  // Protect "Waiting Bill" status from being downgraded by stale API data.
+  // If the existing table is "Waiting Bill" and the incoming status is not Free/AVAILABLE
+  // (which would indicate settlement), keep "Waiting Bill" so the table doesn't
+  // revert to "Occupied" and lose its billing state.
+  if (existing && (existing.status === 'Waiting Bill' || existing.workflowStatus === 'Waiting Bill')) {
+    const incomingIsFree = row.status === 'AVAILABLE' || row.status === 'Free' || row.workflowStatus === 'Free';
+    if (!incomingIsFree) {
+      persistedStatus = 'Waiting Bill';
+    }
+  }
 
   const rawIncomingOrder = row.orders?.[0] || row.activeOrder || null;
   // Defensive: an order can only belong to this table if its tableId matches the row id.
@@ -271,12 +282,28 @@ function mergeTablesFromApi(apiTables, currentTables) {
   
   flat = flat.sort((a, b) => Number(a.number) - Number(b.number));
 
-  return flat.map((row) => {
+  const merged = flat.map((row) => {
     const existing = currentTables.find((t) => t.backendId === row.id || (row.id.startsWith("local-") && t.number === row.number));
     const after = mapBackendTable(row, existing);
     if (existing) validateTableIntegrity('tableSync.mergeTablesFromApi', existing, after);
     return after;
   });
+
+  // Preserve locally-updated tables that are missing from the API response.
+  // This prevents "Waiting Bill" tables from disappearing when the API refetch
+  // returns stale data before the billing request is reflected in the backend.
+  // Only preserve tables with active state (non-Free with data).
+  const apiBackendIds = new Set(flat.map(t => t.id));
+  for (const current of currentTables) {
+    if (current.backendId && apiBackendIds.has(current.backendId)) continue;
+    const isWaitingBill = current.status === 'Waiting Bill' || current.workflowStatus === 'Waiting Bill';
+    const hasActiveData = (current.kotHistory?.length > 0) || (current.currentBill ?? 0) > 0 || current.activeOrder;
+    if (isWaitingBill || (hasActiveData && current.status !== 'Free' && current.status !== 'AVAILABLE')) {
+      merged.push(current);
+    }
+  }
+
+  return merged;
 }
 
 function getFallbackTables() {
@@ -468,10 +495,15 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(false);
   const abortControllerRef = useRef(null);
+  const shouldSkipTableUpdateRef = useRef(shouldSkipTableUpdate);
 
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
+
+  useEffect(() => {
+    shouldSkipTableUpdateRef.current = shouldSkipTableUpdate;
+  }, [shouldSkipTableUpdate]);
 
   const loadTables = useCallback(async () => {
     const rid = getCurrentRestaurantId();
@@ -757,13 +789,23 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             const idx = findTableIndex(updated, result.updated.id);
             if (idx === -1) continue;
             const copy = [...updated];
-            if (shouldSkipTableUpdate && shouldSkipTableUpdate(copy[idx])) {
-              // Bill printed but not settled — preserve full table state, skip ghost detection
-              copy[idx] = copy[idx];
+            const existing = copy[idx];
+
+            // Guard: skip persisting for the active table when the consumer explicitly
+            // asks us to (e.g. during KOT submission). Applying a partial response here can
+            // overwrite optimistic state and cause ghost items or flicker.
+            if (shouldSkipTableUpdateRef.current && shouldSkipTableUpdateRef.current(existing)) {
+              continue;
+            }
+
+            // If the PATCH response includes the full order/kot data, use the server-
+            // authoritative mapBackendTable. If it doesn't (partial response), only merge
+            // top-level session fields so we don't ghost-detect and wipe activeOrder/kotHistory.
+            if (result.updated.orders || result.updated.activeOrder) {
+              copy[idx] = mapBackendTable(result.updated, existing, { keepWorkflowStatus: true });
             } else {
-              copy[idx] = mapBackendTable(result.updated, copy[idx], {
-                keepWorkflowStatus: true,
-              });
+              const { orders, activeOrder, kotHistory, ...sessionFields } = result.updated;
+              copy[idx] = { ...existing, ...sessionFields };
             }
             updated = copy;
           }

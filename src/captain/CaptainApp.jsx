@@ -61,6 +61,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { getItemCategory } from '../utils/itemHelpers';
 import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
+import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
+import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
 import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 
@@ -83,7 +85,7 @@ import { getTableSectionLabel, getSectionBadgeColor } from '../utils/tableHelper
 
 
 import { authService } from '../services/authService';
-import { API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { API_BASE, apiUrl, getAuthHeaders } from '../services/apiConfig';
 
 import { fetchCaptainTarget } from '../services/captainTargetService';
 
@@ -1263,7 +1265,9 @@ export default function CaptainApp({ onLogout }) {
   }, [activeOutlet, tableSubCategory]);
 
   const outletFilteredMenuItems = useMemo(() => {
-    let base = ((activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu).filter(item => item.isAvailable !== false);
+    const sourceMenu = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu;
+    const unavailableCount = sourceMenu.filter(item => item.isAvailable === false).length;
+    let base = sourceMenu.filter(item => item.isAvailable !== false);
 
     // Resolve currentVenueId from the active table's section → venue relationship
     let currentVenueId = activeTable?.section?.venueId || activeTable?.section?.venue?.id || null;
@@ -1293,7 +1297,12 @@ export default function CaptainApp({ onLogout }) {
 
     // Filter out items disabled for this venue
     if (currentVenueId) {
+      const beforeVenueFilter = base.length;
       base = base.filter(item => item.venueAvailabilities?.[currentVenueId] !== false);
+      const venueFilteredCount = beforeVenueFilter - base.length;
+      if (venueFilteredCount > 0) {
+        console.log(`[CaptainApp] Menu filter: ${unavailableCount} unavailable, ${venueFilteredCount} excluded by venueAvailabilities[venue=${currentVenueId}], ${base.length} remaining`);
+      }
     }
 
     // Build venue price map from item.venuePrices keyed by venue ID
@@ -1721,6 +1730,16 @@ export default function CaptainApp({ onLogout }) {
 
     const onConnect = () => {
       socket.emit('join', activeRestaurantId);
+      // Fetch latest printer mapping on (re)connect — ensures captain inherits admin printer settings
+      fetch(apiUrl('/api/print/agent-endpoint'), { headers: getAuthHeaders(), signal: AbortSignal.timeout(3000) })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.printerMapping && Object.keys(data.printerMapping).length > 0) {
+            setLocalPrinterMapping(data.printerMapping).catch(() => {});
+            console.log('[CaptainApp] Printer mapping synced on connect');
+          }
+        })
+        .catch(() => {});
     };
     socket.on('connect', onConnect);
 
@@ -1730,6 +1749,15 @@ export default function CaptainApp({ onLogout }) {
       window.dispatchEvent(new CustomEvent('menu-item-updated', { detail: payload }));
     };
     socket.on('menu-item-updated', onMenuItemUpdated);
+
+    // Sync printer config when admin updates printer settings
+    const onPrinterConfigUpdated = (payload) => {
+      if (payload?.printerMapping && Object.keys(payload.printerMapping).length > 0) {
+        setLocalPrinterMapping(payload.printerMapping).catch(() => {});
+        console.log('[CaptainApp] Printer mapping updated from admin');
+      }
+    };
+    socket.on('printer:config-updated', onPrinterConfigUpdated);
 
     const onOrderPaid = (payload) => {
       const tableId = payload?.tableId;
@@ -1981,6 +2009,7 @@ export default function CaptainApp({ onLogout }) {
       window.removeEventListener('app:unhandled-rejection', onUnhandledRejection);
       socket.off('connect', onConnect);
       socket.off('menu-item-updated', onMenuItemUpdated);
+      socket.off('printer:config-updated', onPrinterConfigUpdated);
       socket.off('table:updated', onTableUpdated);
       socket.off('order:updated', onOrderUpdated);
       socket.off('order:created', onOrderCreated);
@@ -3001,16 +3030,75 @@ export default function CaptainApp({ onLogout }) {
         }
 
       } else {
-        // Fallback: cloud-only flow (reserve failed or not available)
+        // Edge or cloud-only flow (edge returned null kotNumber, or reserve failed)
+        // Try local print with offline counter as fallback — edge server may not have a printer
+        let edgeLocalPrinted = false;
+        let edgeKotEventIds = [];
+        let edgePreReservedKotNumber = null;
+        try {
+          const mapping = await getLocalPrinterMapping().catch(() => ({}));
+          if (mapping && Object.keys(mapping).length > 0) {
+            edgePreReservedKotNumber = await getNextOfflineKotNumber().catch(() => null);
+            if (edgePreReservedKotNumber != null) {
+              const edgeKotOrderData = {
+                tableNumber: activeTable?.number ?? activeTable?.id,
+                orderId: existingOrderId || 'pending',
+                items: itemsForPrint.map(i => ({
+                  name: i.n || i.name,
+                  quantity: i.q ?? i.quantity ?? 1,
+                  price: Number(i.p ?? i.price ?? 0),
+                  notes: i.notes || null,
+                  type: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'liquor' : 'food',
+                })),
+                kotId: String(edgePreReservedKotNumber),
+                sectionName: activeTable?.section?.name || 'Main Hall',
+                captainName: currentCaptain?.name || 'Captain',
+                sectionTag: activeTable?.sectionTag || undefined,
+                restaurantName: restaurant?.name || undefined,
+              };
+              const edgeFoodEscpos = buildFoodKOT(edgeKotOrderData);
+              const edgeLiquorEscpos = buildLiquorKOT(edgeKotOrderData);
+              const edgeFoodEventId = `${requestId}-food`;
+              const edgeLiquorEventId = `${requestId}-liquor`;
+              edgeKotEventIds = [];
+              if (edgeFoodEscpos.length > 0) edgeKotEventIds.push(edgeFoodEventId);
+              if (edgeLiquorEscpos.length > 0) edgeKotEventIds.push(edgeLiquorEventId);
+              const edgePrintPromises = [];
+              if (edgeFoodEscpos.length > 0) {
+                edgePrintPromises.push(
+                  printLocal({ type: 'KOT', escposData: edgeFoodEscpos, eventId: edgeFoodEventId, data: edgeKotOrderData })
+                    .catch(() => ({ printed: false }))
+                );
+              }
+              if (edgeLiquorEscpos.length > 0) {
+                edgePrintPromises.push(
+                  printLocal({ type: 'BAR_KOT', escposData: edgeLiquorEscpos, eventId: edgeLiquorEventId, data: edgeKotOrderData })
+                    .catch(() => ({ printed: false }))
+                );
+              }
+              if (edgePrintPromises.length > 0) {
+                const edgePrintResults = await Promise.allSettled(edgePrintPromises);
+                edgeLocalPrinted = edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+                if (edgeLocalPrinted) {
+                  _printedKotNumbers.current.add(edgePreReservedKotNumber);
+                  console.log(`[KOT] Edge fallback local print succeeded for KOT #${edgePreReservedKotNumber}`);
+                }
+              }
+            }
+          }
+        } catch (edgePrintErr) {
+          console.warn('[KOT] Edge local print fallback failed:', edgePrintErr.message);
+        }
+
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, false, null, null, activeTableId);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeLocalPrinted ? edgePreReservedKotNumber : null, edgeLocalPrinted ? edgeKotEventIds : null, activeTableId);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
             ? _kotHistory[_kotHistory.length - 1].id
-            : null;
+            : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeLocalPrinted && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
         } else {
           try {
             savedOrder = await createOrder({
@@ -3021,6 +3109,9 @@ export default function CaptainApp({ onLogout }) {
               requestId,
               captainName: currentCaptain?.name || undefined,
               sectionTag: activeTable?.sectionTag || undefined,
+              localPrinted: edgeLocalPrinted,
+              preReservedKotNumber: edgeLocalPrinted ? edgePreReservedKotNumber : null,
+              kotEventIds: edgeLocalPrinted ? edgeKotEventIds : null,
             });
           } catch (createErr) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -3028,12 +3119,12 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, false, null, null, activeTableId);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeLocalPrinted ? edgePreReservedKotNumber : null, edgeLocalPrinted ? edgeKotEventIds : null, activeTableId);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
                 ? _kotHistory[_kotHistory.length - 1].id
-                : null;
+                : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeLocalPrinted && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
             } else {
               throw createErr;
             }
@@ -3042,7 +3133,7 @@ export default function CaptainApp({ onLogout }) {
           const _savedKotHistory = savedOrder?.kotHistory;
           realKotId = Array.isArray(_savedKotHistory) && _savedKotHistory.length > 0
             ? _savedKotHistory[_savedKotHistory.length - 1].id
-            : null;
+            : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeLocalPrinted && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
         }
       }
 
@@ -3487,8 +3578,9 @@ export default function CaptainApp({ onLogout }) {
         if (billingResult?.offline) {
           addNotification('Billing requested — will sync when online', 'warning');
         }
-        setView('tables');
-        setActiveTableId(null);
+        // Stay in session — captain can continue viewing the table, send more KOTs,
+        // navigate to other tables, and settle later. The table status is already
+        // 'Waiting Bill' from the optimistic update above.
 
       } catch (err) {
 
