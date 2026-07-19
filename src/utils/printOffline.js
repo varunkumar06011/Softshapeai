@@ -252,7 +252,7 @@ async function tryPrintAgentUrls(body, jobType) {
 
   const tryUrl = async (url) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 25000);
     try {
       const res = await fetch(`${url}/print`, {
         method: 'POST',
