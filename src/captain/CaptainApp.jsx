@@ -564,11 +564,18 @@ export default function CaptainApp({ onLogout }) {
     })
       .then(r => { clearTimeout(timeout); return r.ok ? r.json() : null; })
       .then(data => {
+        if (data?.cacheVersion) {
+          const storedVersion = localStorage.getItem('print_agent_cache_version');
+          if (storedVersion !== data.cacheVersion) {
+            localStorage.removeItem('last_working_print_agent_url');
+            localStorage.setItem('print_agent_cache_version', data.cacheVersion);
+          }
+        }
         if (data?.httpUrl) {
           localStorage.setItem('last_working_print_agent_url', data.httpUrl);
         }
         if (data?.lanIp) {
-          const lanUrl = `http://${data.lanIp}:3102`;
+          const lanUrl = `http://${data.lanIp}:3101`;
           if (!localStorage.getItem('last_working_print_agent_url')) {
             localStorage.setItem('last_working_print_agent_url', lanUrl);
           }

@@ -3070,8 +3070,8 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Edge-local (PIN) auth: skip local print agent — the edge server prints
       // directly via Tauri with a real bill number. Calling printLocal() here
-      // would waste up to 10s waiting for the print agent at :3102 (which may
-      // not be running) and produce a 'PENDING' bill number on the printout.
+      // would waste up to 10s waiting for the print agent (which may not be
+      // running) and produce a 'PENDING' bill number on the printout.
       if (!isEdgeLocalAuth()) {
       try {
         const { printLocal } = await import('../utils/printOffline');

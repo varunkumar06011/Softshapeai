@@ -212,6 +212,15 @@ async function discoverPrintAgentUrls() {
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
+      // Version check: invalidate stale cached URL before any code reads it.
+      // Only clear on a confirmed version mismatch — never on network failure.
+      if (data?.cacheVersion) {
+        const storedVersion = localStorage.getItem('print_agent_cache_version');
+        if (storedVersion !== data.cacheVersion) {
+          localStorage.removeItem('last_working_print_agent_url');
+          localStorage.setItem('print_agent_cache_version', data.cacheVersion);
+        }
+      }
       if (data.httpUrl) add(data.httpUrl);
       if (data.lanIp) {
         // Edge server (port 3101) is the LAN print path — broadcasts via
