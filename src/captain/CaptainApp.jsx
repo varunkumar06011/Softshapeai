@@ -3081,12 +3081,15 @@ export default function CaptainApp({ onLogout }) {
 
       } else {
         // Edge or cloud-only flow (edge returned null kotNumber, or reserve failed)
-        // Try local print with offline counter as fallback — edge server may not have a printer
+        // Try local print with offline counter as fallback — edge server may not have a printer.
+        // For edge-local (PIN) auth, skip local print: the edge server has the printer
+        // and will use its own KOT counter. Printing locally with getNextOfflineKotNumber()
+        // would produce a mismatched KOT number on the printout vs the saved order.
         let edgeLocalPrinted = false;
         let edgeKotEventIds = [];
         let edgePreReservedKotNumber = null;
         try {
-          const mapping = await getLocalPrinterMapping().catch(() => ({}));
+          const mapping = isEdgeLocalAuth() ? {} : await getLocalPrinterMapping().catch(() => ({}));
           if (mapping && Object.keys(mapping).length > 0) {
             edgePreReservedKotNumber = await getNextOfflineKotNumber().catch(() => null);
             if (edgePreReservedKotNumber != null) {
@@ -3308,27 +3311,39 @@ export default function CaptainApp({ onLogout }) {
       }
 
       // Background listener for print confirmation (non-blocking)
-      // When the edge server handled printing, it returns printResults directly
-      // and never emits kot:printed via cloud socket. Skip the socket listener
-      // to avoid a false "print failed" timeout after 30s.
-      // Similarly, when localPrinted is true, the cloud backend skips the
-      // print_job socket emit, so kot:printed never fires — skip the listener.
+      // When the edge server handled printing AND all prints succeeded, it returns
+      // printResults with ok:true and we skip the cloud socket listener.
+      // If some prints failed, fall through to the cloud socket listener so the
+      // cloud backend can emit print_job as a fallback.
       if (savedOrder?.edge && savedOrder?.printResults) {
         const printResults = savedOrder.printResults;
         const hasFailures = printResults.length > 0 &&
           printResults.some(r => !r.ok);
-        if (hasFailures) {
-          const failed = printResults.filter(r => !r.ok);
-          addNotification(
-            `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
-            failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
-            'warning'
-          );
+        if (hasFailures && !localPrinted) {
+          // Edge print failed — fall through to cloud socket fallback below
+          console.warn('[KOT] Edge print had failures, falling back to cloud socket:', printResults.filter(r => !r.ok));
+        } else {
+          if (hasFailures) {
+            const failed = printResults.filter(r => !r.ok);
+            addNotification(
+              `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
+              failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+              'warning'
+            );
+          }
+          // All edge prints succeeded or local print handled it — skip cloud socket
+          if (!localPrinted) {
+            // edge prints succeeded — no need to wait for kot:printed
+          }
+          // Use a flag to skip the else block below
+          var _edgePrintHandled = true;
         }
       } else if (localPrinted) {
         // Captain already printed locally — cloud backend skips print_job emit,
         // so kot:printed will never fire. No need to wait for socket confirmation.
-      } else {
+        var _edgePrintHandled = true;
+      }
+      if (!_edgePrintHandled) {
       const socket = getSocket();
       // Issue 9: Use a local variable for this KOT's timeout so rapid KOT
       // submissions don't overwrite each other's timeout IDs in the shared ref.

@@ -142,6 +142,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         platform,
         orderByRole: authService.getUserRole?.() || undefined,
         localPrinted: localPrinted || false,
+        preReservedKotNumber: preReservedKotNumber ?? null,
         kotEventIds: kotEventIds || null,
       };
       const result = await edgeFetch('/api/edge/order', {
@@ -159,6 +160,10 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         };
       }
     } catch (edgeErr) {
+      // Propagate business-logic errors (409/404/400) so the caller can handle
+      // them (e.g. retry as update on 409). Only network errors (no statusCode)
+      // should queue offline / fall through to cloud.
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         // Edge-local auth: queue offline instead of cloud fallback (cloud will reject fake token)
         console.warn('[Edge] createOrder edge failed, queuing offline:', edgeErr.message);
@@ -364,6 +369,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         requestId: requestId || generateRequestId(),
         orderByRole: authService.getUserRole?.() || undefined,
         localPrinted: localPrinted || false,
+        preReservedKotNumber: preReservedKotNumber ?? null,
         kotEventIds: kotEventIds || null,
       };
       const result = await edgeFetch('/api/edge/order/update', {
@@ -381,6 +387,10 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         };
       }
     } catch (edgeErr) {
+      // Propagate business-logic errors (409/404/400) so the caller can handle
+      // them. Only network errors (no statusCode) should queue offline / fall
+      // through to cloud.
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         // Edge-local auth: queue offline instead of cloud fallback
         console.warn('[Edge] updateOrderItems edge failed, queuing offline:', edgeErr.message);
@@ -518,6 +528,7 @@ export async function updateOrderStatus(orderId, status) {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] updateOrderStatus edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -593,6 +604,7 @@ export async function requestBilling(orderId) {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] requestBilling edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -670,6 +682,7 @@ export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] markOrderPaid edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -874,6 +887,7 @@ export async function saveTransaction({
       });
       if (result && result.success) return { id: result.transaction.id, transaction: result.transaction };
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] saveTransaction edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1009,6 +1023,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] cancelOrderItem edge failed, queuing offline:', edgeErr.message);
         await addPendingAction({
@@ -1096,6 +1111,7 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] swapTable edge failed, queuing offline:', edgeErr.message);
         await addPendingAction({
@@ -1173,6 +1189,7 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] editBill edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1255,6 +1272,7 @@ export async function transferItems(sourceTableBackendId, targetTableBackendId, 
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] transferItems edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1373,6 +1391,7 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] confirmPayment edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1491,6 +1510,7 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
+      if (edgeErr?.statusCode) throw edgeErr;
       if (useEdgeDirect) {
         console.warn('[Edge] cancelOrderItems edge failed, queuing offline:', edgeErr.message);
         await addPendingAction({

@@ -396,12 +396,16 @@ export async function edgeFetch(path, options = {}) {
 
       if (!res.ok) {
         let message = `Edge request failed (${res.status})`;
+        let body = null;
         try {
-          const body = await res.json();
+          body = await res.json();
           if (body?.error) message = body.error;
         } catch { /* ignore */ }
         const err = new Error(message);
         err.status = res.status;
+        err.statusCode = res.status;
+        if (body?.orderId) err.existingOrderId = body.orderId;
+        if (body?.missing) err.missing = body.missing;
         throw err;
       }
       if (res.status === 204) return null;
