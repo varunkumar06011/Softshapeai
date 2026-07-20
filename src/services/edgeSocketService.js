@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getEdgeUrl, isEdgeAvailable } from './edgeHealth';
+import { getLocalPrinterMapping } from '../utils/offlineDB';
 
 let ws = null;
 let reconnectTimer = null;
@@ -51,11 +52,24 @@ function getTauriInvoke() {
 async function handlePrintJob(msgData) {
   const eventId = msgData?.eventId;
   const printData = msgData?.data || {};
-  const { printerName, escposData } = printData;
+  let { printerName, escposData } = printData;
+  const jobType = msgData?.type || printData.type;
   if (!eventId || !escposData) return;
 
   const invoke = getTauriInvoke();
   if (!invoke) return; // Not running in Tauri — ignore (captain web/APK)
+
+  // Resolve printer name from local mapping when edge server sends null.
+  // The edge server sends printerName: null when no printer is configured
+  // for that item type — the Tauri frontend resolves from its local mapping.
+  if (!printerName) {
+    try {
+      const mapping = await getLocalPrinterMapping();
+      if (jobType === 'KOT' || jobType === 'CANCEL_KOT') printerName = mapping.kitchen;
+      else if (jobType === 'BAR_KOT') printerName = mapping.bar;
+      else if (jobType === 'FINAL_BILL' || jobType === 'BILL') printerName = mapping.bill;
+    } catch { /* ignore — will fail with empty printer name */ }
+  }
 
   // Convert escposData [{ type, format, data }] → byte array
   const rawString = escposData.map(d => d.data || '').join('');
