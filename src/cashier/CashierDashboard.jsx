@@ -269,6 +269,20 @@ const HighlightedText = ({ text, highlight }) => {
   return <span>{parts}</span>;
 };
 
+const LiveClock = () => {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="flex items-center gap-2.5 text-white/80">
+      <Clock size={18} />
+      <span className="text-xs md:text-sm font-black tabular-nums">{time.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
+    </div>
+  );
+};
+
 const CashierDashboard = ({ onLogout }) => {
   const { user, restaurant, setRestaurant } = useAuth();
   const { isOffline, hasPending, pendingCount, lastSyncAt, triggerSync } = useSyncStatus();
@@ -664,6 +678,10 @@ const CashierDashboard = ({ onLogout }) => {
   const lsWriteTimerRef = useRef(null);
   const lastFetchUpdateRef = useRef({ backendId: null, ts: 0 }); // guards selectedTable against stale activeTables sync
 
+  // P1-13: Ref for selectedTable to avoid re-subscribing socket handlers on every table selection
+  const selectedTableRef = useRef(null);
+  useEffect(() => { selectedTableRef.current = selectedTable; }, [selectedTable]);
+
   function shallowEqualSelectedTable(prev, next) {
     if (!prev || !next) return prev === next;
     return (
@@ -744,7 +762,7 @@ const CashierDashboard = ({ onLogout }) => {
   // always uses current GST rates, printer config, etc.
   useEffect(() => {
     refreshOutletConfigFromEdge();
-    const interval = setInterval(refreshOutletConfigFromEdge, 30_000);
+    const interval = setInterval(refreshOutletConfigFromEdge, 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -805,13 +823,6 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [extraTables]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // DEBUG: trace modal render state for extra tables
-  useEffect(() => {
-    if (!showTableModal || !selectedTable?.isExtra) return;
-    const items = getAllOrderItems(selectedTable);
-    console.log('[DebugModal] selectedTable.id:', selectedTable.id, 'activeOrder?.id:', selectedTable.activeOrder?.id, 'items.length:', items.length, 'firstItem:', items[0] || null, 'currentBill:', selectedTable.currentBill);
-  }, [showTableModal, selectedTable?.activeOrder?.id, selectedTable?.activeOrder?.items?.length, selectedTable?.currentBill]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Helper: determine if an incoming table update should be blocked
   const shouldBlockTableUpdate = (tableId, incomingStatus) => {
     // --- Recently terminated: block non-Free events for 5s, but always allow Free/AVAILABLE ---
@@ -855,7 +866,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [isCartExpanded, setIsCartExpanded] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  // currentTime state removed — moved to Clock component to prevent 1s re-renders
 
   // Persist selections to localStorage (debounced to avoid micro-stutters)
   // NEVER save activeOrder/items — prevents stale/wrong items from leaking on refresh
@@ -916,10 +927,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [isSwappingItems, setIsSwappingItems] = useState(false);
   const [showTerminateModal, setShowTerminateModal] = useState(false);
 
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // P0-6: Clock extracted to separate component to prevent 1s re-renders of CashierDashboard
 
   // Poll pending offline print jobs so the Retry Print button appears when needed
   useEffect(() => {
@@ -932,7 +940,7 @@ const CashierDashboard = ({ onLogout }) => {
       } catch { /* IndexedDB may not be available */ }
     };
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 30000);
     return () => { mounted = false; clearInterval(interval); };
   }, []);
 
@@ -1380,7 +1388,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [billingAlerts, setBillingAlerts] = useState([]);
 
   const addNotification = (title, desc, type = 'success') => {
-    const id = Date.now() + Math.random();
+    const id = crypto.randomUUID?.() ?? (Date.now() + Math.random());
     setNotifications(prev => [...prev, { id, title, desc, type }]);
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== id));
@@ -1683,7 +1691,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (billPrintedTableIdsRef.current.has(order.tableId) && !settledTableIdsRef.current.has(order.tableId)) return;
       // Skip updating selectedTable if it's an extra table OR if the incoming order belongs to an extra table.
       // Extra tables share backendId with parent, so we must not merge an extra-table order into the parent table view.
-      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra && !payload?.isExtraTable) {
+      if (selectedTableRef.current?.backendId === order.tableId && !selectedTableRef.current?.isExtra && !payload?.isExtraTable) {
         // Guard: skip during KOT submission to prevent duplicate items in display cart
         // (socket event would add items to sessionItems while they're still in pendingItems)
         if (!isSubmittingKotRef.current) {
@@ -1693,7 +1701,7 @@ const CashierDashboard = ({ onLogout }) => {
             const incomingKotHistory = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
             const nextVal = {
               ...prev,
-              activeOrder: mergeOrder(order, prev.activeOrder),
+              activeOrder: order,
               status: prev.status === 'Free' ? 'Occupied' : prev.status,
               workflowStatus: prev.workflowStatus === 'Free' ? 'Occupied' : prev.workflowStatus,
               currentBill: Number(order.totalAmount ?? prev.currentBill ?? 0),
@@ -1716,7 +1724,7 @@ const CashierDashboard = ({ onLogout }) => {
         }
         return {
           ...t,
-          activeOrder: mergeOrder(order, t.activeOrder),
+          activeOrder: order,
           status: t.status === 'Free' ? 'Occupied' : t.status,
           workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
           currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
@@ -1724,16 +1732,6 @@ const CashierDashboard = ({ onLogout }) => {
         };
       });
       setActiveTables(updateTables, { skipPersist: true });
-    };
-
-    const dedupKotHistory = (existing = [], incoming = []) => {
-      // Server is authoritative — use incoming directly
-      return incoming;
-    };
-
-    const mergeOrder = (incoming, existing) => {
-      // Server is authoritative — directly use incoming items (no merge)
-      return incoming;
     };
 
     const onOrderUpdated = (payload) => {
@@ -1747,19 +1745,16 @@ const CashierDashboard = ({ onLogout }) => {
       if (termTs2 && Date.now() - termTs2 < 5000) return;
       // FREEZE: once bill is printed, hold items steady until settlement
       if (billPrintedTableIdsRef.current.has(order.tableId) && !settledTableIdsRef.current.has(order.tableId)) return;
-      // ── DIAGNOSTIC: trace socket order:updated ──
-      console.log('[DIAG order:updated] incoming items:', (order.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
-      // ── END DIAGNOSTIC ──
       // Extra tables share backendId with parent — skip selectedTable update if incoming order is from an extra table
       // to prevent overwriting the parent table's activeOrder with the extra table's order.
-      if (selectedTable?.backendId === order.tableId && !selectedTable?.isExtra && !payload?.isExtraTable) {
+      if (selectedTableRef.current?.backendId === order.tableId && !selectedTableRef.current?.isExtra && !payload?.isExtraTable) {
         // Guard: skip during KOT submission to prevent duplicate items in display cart
         if (!isSubmittingKotRef.current) {
           setSelectedTable(prev => {
             if (!prev) return prev;
             const before = prev;
             const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
-            const nextVal = { ...prev, activeOrder: mergeOrder(order, prev.activeOrder), kotHistory: incomingKotArr };
+            const nextVal = { ...prev, activeOrder: order, kotHistory: incomingKotArr };
             validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
             return nextVal;
           });
@@ -1778,7 +1773,7 @@ const CashierDashboard = ({ onLogout }) => {
         }
         return {
           ...t,
-          activeOrder: mergeOrder(order, t.activeOrder),
+          activeOrder: order,
           currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
           kotHistory: incomingGridKotArr,
         };
@@ -1796,10 +1791,6 @@ const CashierDashboard = ({ onLogout }) => {
         const incomingFree = table.status === 'AVAILABLE' || table.status === 'Free' || table.workflowStatus === 'Free';
         if (!incomingFree) return;
       }
-      // ── DIAGNOSTIC: trace socket table:updated ──
-      const _tblOrdersItems = (table.orders?.[0]?.items || []).map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill }));
-      console.log('[DIAG table:updated] table.id:', table.id, 'orders[0].items:', _tblOrdersItems, 'workflowStatus:', table.workflowStatus);
-      // ── END DIAGNOSTIC ──
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
 
@@ -1847,11 +1838,11 @@ const CashierDashboard = ({ onLogout }) => {
           status: protectedStatus,
           workflowStatus: protectedStatus,
           billNumber: incomingBillNumber,
-          activeOrder: isFrozenGrid ? t.activeOrder : (incomingIsAvailable ? null : (incomingOrder ? mergeOrder(incomingOrder, t.activeOrder) : t.activeOrder)),
+          activeOrder: isFrozenGrid ? t.activeOrder : (incomingIsAvailable ? null : (incomingOrder ? incomingOrder : t.activeOrder)),
         };
       });
       setActiveTables(applyTableUpdate, { skipPersist: true });
-      if (selectedTable?.backendId === table.id && !selectedTable?.isExtra) {
+      if (selectedTableRef.current?.backendId === table.id && !selectedTableRef.current?.isExtra) {
         // Guard: skip during KOT submission to prevent duplicate items in display cart
         if (isSubmittingKotRef.current) return;
         setSelectedTable(prev => {
@@ -1901,7 +1892,7 @@ const CashierDashboard = ({ onLogout }) => {
             billNumber: effectiveIsTableFree && isTableSettled ? null : selBillNumber,
             activeOrder: effectiveIsTableFree
               ? null
-              : (isFrozenSel ? prev.activeOrder : (incomingHasOrdersSel ? mergeOrder(table.orders[0], prev.activeOrder) : prev.activeOrder)),
+              : (isFrozenSel ? prev.activeOrder : (incomingHasOrdersSel ? table.orders[0] : prev.activeOrder)),
           };
           validateTableIntegrity('CashierDashboard.onTableUpdated', prev, nextVal);
           if (shallowEqualSelectedTable(prev, nextVal)) return prev; // bail out if nothing changed
@@ -1980,7 +1971,7 @@ const CashierDashboard = ({ onLogout }) => {
         setBillingAlerts(prev => prev.filter(a => a.tableBackendId !== tableId));
       }
       // Clear selectedTable only if it's the actual paid table (not an extra table that shares backendId)
-      if (selectedTable?.backendId === tableId && !selectedTable?.isExtra && !isExtraTable) {
+      if (selectedTableRef.current?.backendId === tableId && !selectedTableRef.current?.isExtra && !isExtraTable) {
         setSelectedTable(null);
         setSelectedOrder(null);
         setCart([]);
@@ -2034,7 +2025,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // If cashier had the source table open, switch selection to the new table
-      if (selectedTable?.backendId === sourceTableId && mappedTarget) {
+      if (selectedTableRef.current?.backendId === sourceTableId && mappedTarget) {
         // Clear stale localStorage for the source table before switching
         localStorage.removeItem(getTenantScopedKey('cashier_selected_table'));
         localStorage.removeItem(getTenantScopedKey(`cashier_cart_${sourceTableId}`));
@@ -2051,8 +2042,8 @@ const CashierDashboard = ({ onLogout }) => {
       }
 
       // Cooldown on both tables to prevent socket echo flickering on all devices
-      if (payload?.sourceTableId) tableClickCooldownRef.current.set(payload.sourceTableId, Date.now() + 1500);
-      if (payload?.targetTableId) tableClickCooldownRef.current.set(payload.targetTableId, Date.now() + 1500);
+      if (sourceTableId) tableClickCooldownRef.current.set(sourceTableId, Date.now() + 1500);
+      if (targetTableId) tableClickCooldownRef.current.set(targetTableId, Date.now() + 1500);
       syncPauseUntilRef.current = Date.now() + 1500;
     };
 
@@ -2076,11 +2067,11 @@ const CashierDashboard = ({ onLogout }) => {
       });
       setActiveTables(updateTables, { skipPersist: true });
 
-      if (selectedTable?.backendId === sourceTableId && mappedSource) {
+      if (selectedTableRef.current?.backendId === sourceTableId && mappedSource) {
         setSelectedTable(mappedSource);
       }
 
-      if (selectedTable?.backendId === targetTableId && mappedTarget) {
+      if (selectedTableRef.current?.backendId === targetTableId && mappedTarget) {
         setSelectedTable(mappedTarget);
       }
     };
@@ -2122,18 +2113,10 @@ const CashierDashboard = ({ onLogout }) => {
       socket.off('printer:config-updated', onPrinterConfigUpdated);
       socket.off('table:updated', onTableUpdated);
     };
-  }, [socket, activeRestaurantId, selectedTable?.backendId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
+  }, [socket, activeRestaurantId, loadTransactions, activeOutlet, refetchBarTables, refetchRestaurantTables, setBarTables]);
 
-  // ── Periodic re-sync poll: safety net for missed socket events ────────────
-  useEffect(() => {
-    const pollInterval = socket?.connected ? 60_000 : 30_000;
-    const interval = setInterval(() => {
-      if (!isBackendReachable()) return;
-      if (activeOutlet === 'bar' || activeOutlet === 'both') refetchBarTables();
-      refetchRestaurantTables();
-    }, pollInterval);
-    return () => clearInterval(interval);
-  }, [activeOutlet, refetchBarTables, refetchRestaurantTables, socket?.connected]);
+  // ── Periodic re-sync poll removed — tableSyncService already polls every 60s ──
+  // The redundant interval here caused duplicate loadTables() calls.
 
   // ── Drain queued settlements when edge comes back ──────────────────────────
   useEffect(() => {
@@ -2364,10 +2347,8 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
       
-      // Prevent infinite loops by checking deep equality or just relying on reference updates if needed
-      // Actually, since we use `liveTable` object directly, let's only update if something changed
-      // to avoid infinite re-renders. A simple stringify comparison works for our needs here.
-      if (JSON.stringify(selectedTable) !== JSON.stringify(liveTable)) {
+      // P2-10: Use shallow comparison instead of JSON.stringify to avoid O(n) serialization
+      if (!shallowEqualSelectedTable(selectedTable, liveTable)) {
         // Merge live table but never lose items that are in selectedTable but not in liveTable
         setSelectedTable(prev => {
           if (!prev) return liveTable;
@@ -2954,16 +2935,6 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Loading', 'Table data is refreshing — please wait a moment.', 'warning');
       return;
     }
-
-    // ── DIAGNOSTIC: trace cancelled-item display bug ──
-    const _allItems = getAllOrderItems(selectedTable);
-    const _billable = getBillableItems(selectedTable);
-    const _activeItems = selectedTable?.activeOrder?.items || [];
-    console.log('[DIAG finalBill] selectedTable.activeOrder.items (raw):', _activeItems.map(i => ({ id: i.id, name: i.name ?? i.n, qty: i.quantity ?? i.q, removedFromBill: i.removedFromBill })));
-    console.log('[DIAG finalBill] getAllOrderItems:', _allItems.map(i => ({ id: i.id, name: i.n ?? i.name, qty: i.q ?? i.quantity, removedFromBill: i.removedFromBill })));
-    console.log('[DIAG finalBill] getBillableItems:', _billable.map(i => ({ id: i.id, name: i.n ?? i.name, qty: i.q ?? i.quantity, removedFromBill: i.removedFromBill })));
-    console.log('[DIAG finalBill] kotHistory items:', (selectedTable?.kotHistory || []).flatMap(k => (k.items || []).map(i => ({ kotId: k.id, name: i.n, q: i.q, s: i.s, removedFromBill: i.removedFromBill }))));
-    // ── END DIAGNOSTIC ──
 
     // Ref guard - synchronous check to prevent race condition
     if (isPrintingBillRef.current) return;
@@ -3699,9 +3670,6 @@ const CashierDashboard = ({ onLogout }) => {
 
     addNotification('Re-print Sent', 'Bill sent to printer again.', 'success');
 
-    // Reset loading state immediately after optimistic UI update
-    setIsReprintingBill(false);
-
     // Run reprint in background without blocking UI
     (async () => {
       try {
@@ -3817,6 +3785,8 @@ const CashierDashboard = ({ onLogout }) => {
       } catch (error) {
         console.error('[Reprint] Failed:', error.message);
         addNotification('Re-print Failed', error.message || 'Could not send bill to printer.', 'error');
+      } finally {
+        setIsReprintingBill(false);
       }
     })();
   };
@@ -5564,10 +5534,7 @@ const CashierDashboard = ({ onLogout }) => {
         <header className="h-18 bg-[#1E3A8A] border-b border-white/15 px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
 
-            <div className="flex items-center gap-2.5 text-white/80">
-              <Clock size={18} />
-              <span className="text-xs md:text-sm font-black tabular-nums">{currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
-            </div>
+            <LiveClock />
           </div>
 
           <div className="flex items-center gap-4">
@@ -8869,8 +8836,6 @@ const CashierDashboard = ({ onLogout }) => {
                 return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
               };
               setSelectedTable(applyCancelOptimistic);
-              // ── DIAGNOSTIC: confirm optimistic cancel landed ──
-              console.log('[DIAG cancel] optimistic update applied, cancelQtyMap:', [...cancelQtyMap.entries()]);
 
               const setTargetTables = setActiveTables;
               setTargetTables(prev => prev.map(t => {

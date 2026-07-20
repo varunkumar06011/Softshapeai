@@ -100,6 +100,26 @@ function writeCache(tables) {
   }
 }
 
+let _cacheWriteTimer = null;
+let _pendingCacheTables = null;
+function writeCacheDebounced(tables) {
+  _pendingCacheTables = tables;
+  if (_cacheWriteTimer) clearTimeout(_cacheWriteTimer);
+  _cacheWriteTimer = setTimeout(() => {
+    _cacheWriteTimer = null;
+    if (_pendingCacheTables) writeCache(_pendingCacheTables);
+  }, 1000);
+}
+
+function isBarModuleEnabled() {
+  try {
+    const config = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
+    return config?.enabledModules?.bar === true;
+  } catch {
+    return false;
+  }
+}
+
 function parseDisplayId(number) {
   const match = String(number).match(/(\d+)/);
   return match ? parseInt(match[1], 10) : number;
@@ -381,7 +401,12 @@ async function persistStatusChanges(prevTables, nextTables) {
 }
 
 export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
+  // Skip all sync work when bar module is disabled — avoids unnecessary fetches,
+  // socket subscriptions, and edge WebSocket connections.
+  const barEnabled = isBarModuleEnabled();
+
   const [tables, setTablesState] = useState(() => {
+    if (!barEnabled) return [];
     const cached = readCache();
     if (cached.length > 0) {
       return cached.map(t => {
@@ -393,7 +418,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
     }
     return []; // No local fakes — wait for real API data
   });
-  const [isSyncing, setIsSyncing] = useState(() => readCache().length === 0);
+  const [isSyncing, setIsSyncing] = useState(() => barEnabled && readCache().length === 0);
   const tablesRef = useRef(tables);
   const cancelledRef = useRef(false);
   const isFetchingRef = useRef(false);
@@ -410,6 +435,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
   }, [shouldSkipTableUpdate]);
 
   const loadTables = useCallback(async () => {
+    if (!barEnabled) return;
     // Abort any in-flight fetch instead of silently dropping the refresh click.
     if (isFetchingRef.current && abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -486,6 +512,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
   }, []);
 
   useEffect(() => {
+    if (!barEnabled) return;
     mountedRef.current = true;
     loadTables();
 
@@ -570,7 +597,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
             validateTableIntegrity('barTableSync', before, after);
             return after;
           });
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -586,7 +613,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
           const next = [...prev, after];
           // Deduplicate by backendId to prevent duplicate cards
           const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
-          writeCache(deduped);
+          writeCacheDebounced(deduped);
           return deduped;
         });
       },
@@ -594,7 +621,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
         if (restaurantId && restaurantId !== getCurrentRestaurantId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -623,7 +650,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
               lastUpdatedAt: Date.now(),
             };
           });
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -651,7 +678,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
               lastUpdatedAt: Date.now(),
             };
           });
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -698,7 +725,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
     // Deduplicate by backendId to prevent duplicate cards
     const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
 
-    writeCache(deduped);
+    writeCacheDebounced(deduped);
     tablesRef.current = deduped;
     setTablesState(deduped);
 
@@ -738,7 +765,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
           }
           // Deduplicate after persisting changes
           const finalDeduped = Array.from(new Map(updated.map(t => [t.backendId, t])).values());
-          writeCache(finalDeduped);
+          writeCacheDebounced(finalDeduped);
           tablesRef.current = finalDeduped;
           return finalDeduped;
         });

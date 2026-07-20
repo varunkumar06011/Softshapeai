@@ -25,7 +25,7 @@ export function getRestaurantConfig() {
 
 let _edgeRefreshInProgress = false;
 let _lastEdgeRefresh = 0;
-const EDGE_REFRESH_INTERVAL_MS = 30_000;
+const EDGE_REFRESH_INTERVAL_MS = 60_000;
 
 /**
  * Fetches fresh outlet settings from the edge server and updates localStorage.
@@ -103,6 +103,7 @@ function getDefaultConfig() {
     gstRate: null,
     gstRegistered: true,
     pricesIncludeGst: false,
+    serviceChargePercent: 0,
   };
 }
 

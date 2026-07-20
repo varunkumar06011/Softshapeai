@@ -15,12 +15,6 @@
 
 export type GstCategory = 'NON_AC' | 'AC' | 'TAKEAWAY';
 
-export interface GstRates {
-  totalRate: number;
-  cgstRate: number;
-  sgstRate: number;
-}
-
 export function getEffectiveGstRate(
   gstRate: number | null | undefined,
   gstCategory: string | null | undefined,
@@ -32,46 +26,23 @@ export function getEffectiveGstRate(
   return category === 'AC' ? 18 : 5;
 }
 
-export function getGstRates(gstCategory: string | null | undefined): GstRates {
-  const category = (gstCategory || 'NON_AC').toUpperCase() as GstCategory;
-  const ratePercent = category === 'AC' ? 18 : 5;
-  const totalRate = ratePercent / 100;
-  const half = totalRate / 2;
-  return { totalRate, cgstRate: half, sgstRate: half };
-}
-
 export function getGstBreakdownWithRate(
   taxableAmount: number,
   ratePercent: number,
-  pricesIncludeGst: boolean,
 ): { cgst: number; sgst: number; tax: number; baseAmount: number } {
   const amount = Math.max(0, Number(taxableAmount) || 0);
-  const totalRate = ratePercent / 100;
-  const halfRate = totalRate / 2;
 
   if (ratePercent <= 0) {
     return { cgst: 0, sgst: 0, tax: 0, baseAmount: amount };
   }
 
-  if (pricesIncludeGst) {
-    const baseAmount = Math.round((amount / (1 + totalRate)) * 100) / 100;
-    const cgst = Math.round(baseAmount * halfRate * 100) / 100;
-    const sgst = Math.round(baseAmount * halfRate * 100) / 100;
-    const tax = cgst + sgst;
-    return { cgst, sgst, tax, baseAmount };
-  }
-
-  const cgst = Math.round(amount * halfRate * 100) / 100;
-  const sgst = Math.round(amount * halfRate * 100) / 100;
-  const tax = cgst + sgst;
+  // GST is always added on top of the taxable amount.
+  // Per-item GST control is handled via menuItem.gstEnabled flag from admin panel,
+  // not via pricesIncludeGst. CGST/SGST are NOT rounded — only grand total is rounded.
+  const totalRate = ratePercent / 100;
+  const halfRate = totalRate / 2;
+  const tax = amount * totalRate;
+  const cgst = amount * halfRate;
+  const sgst = amount * halfRate;
   return { cgst, sgst, tax, baseAmount: amount };
-}
-
-export function getGstBreakdown(
-  taxableAmount: number,
-  gstCategory: string | null | undefined,
-  pricesIncludeGst: boolean,
-): { cgst: number; sgst: number; tax: number; baseAmount: number } {
-  const ratePercent = getEffectiveGstRate(null, gstCategory, true);
-  return getGstBreakdownWithRate(taxableAmount, ratePercent, pricesIncludeGst);
 }

@@ -287,13 +287,21 @@ export async function isEdgeAvailable() {
     _edgeAvailable = false;
   }
 
-  // If health check failed and we're using default localhost, try backend discovery first
-  // (fast — single API call), then fall back to LAN scanning (slow — probes 254 IPs)
-  if (!_edgeAvailable && edgeUrl === DEFAULT_EDGE_URL) {
+  // If health check failed, try discovery regardless of whether we're using
+  // DEFAULT_EDGE_URL or a stale discovered URL. This handles DHCP IP changes
+  // where the cashier desktop gets a new LAN IP and the old discovered URL
+  // becomes unreachable.
+  if (!_edgeAvailable) {
     // Skip discovery if it recently failed — avoids re-probing on every poll cycle.
     if (Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
       return _edgeAvailable;
     }
+
+    // If using a stale discovered URL, reset it so discovery can find the new one
+    if (edgeUrl !== DEFAULT_EDGE_URL && _discoveredEdgeUrl === edgeUrl) {
+      _discoveredEdgeUrl = null;
+    }
+
     // Try backend discovery first (cashier's LAN IP from print agent heartbeat)
     try {
       const backendDiscovered = await discoverEdgeUrlFromBackend();
@@ -326,6 +334,64 @@ export async function isEdgeAvailable() {
   }
 
   return _edgeAvailable;
+}
+
+// ── Connectivity state machine ───────────────────────────────────────────────
+// Returns a richer state than just boolean isEdgeAvailable:
+//   'edge_reachable'    — edge server is online and session is valid
+//   'edge_not_ready'    — edge server is reachable but session invalid/not registered
+//   'cloud_reachable'   — edge unreachable but cloud backend is reachable
+//   'fully_offline'     — neither edge nor cloud is reachable
+//   'checking'          — still determining
+
+let _connectivityState = 'checking';
+let _connectivityLastCheck = 0;
+const CONNECTIVITY_CHECK_INTERVAL_MS = 10_000;
+
+export async function getEdgeConnectivityState() {
+  const now = Date.now();
+  if (now - _connectivityLastCheck < CONNECTIVITY_CHECK_INTERVAL_MS) {
+    return _connectivityState;
+  }
+  _connectivityLastCheck = now;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
+    const res = await fetch(`${getEdgeUrl()}/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const health = await res.json().catch(() => ({}));
+      if (health.sessionValid || health.status === 'ok') {
+        _connectivityState = 'edge_reachable';
+      } else {
+        _connectivityState = 'edge_not_ready';
+      }
+      return _connectivityState;
+    }
+  } catch { /* edge unreachable */ }
+
+  // Edge unreachable — check if cloud is reachable
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${API_BASE}/api/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    _connectivityState = res.ok ? 'cloud_reachable' : 'fully_offline';
+  } catch {
+    _connectivityState = 'fully_offline';
+  }
+
+  // Trigger background discovery if not yet attempted
+  if (_connectivityState === 'cloud_reachable' || _connectivityState === 'fully_offline') {
+    isEdgeAvailable().catch(() => {});
+  }
+
+  return _connectivityState;
+}
+
+export function getConnectivityState() {
+  return _connectivityState;
 }
 
 export const EDGE_FETCH_TIMEOUT_MS = 30_000;

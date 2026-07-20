@@ -38,17 +38,11 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 
-import AppsSection from './settings/AppsSection';
-
 import {
 
   ChartNoAxesCombined,
 
   ClipboardList,
-
-  Bot,
-
-  Megaphone,
 
   Sparkles,
 
@@ -64,15 +58,11 @@ import {
 
   Calendar,
 
-  Aperture,
-
   Send,
 
   Share2,
 
   ArrowLeft,
-
-  Smartphone,
 
   CheckCircle2,
 
@@ -82,37 +72,21 @@ import {
 
   TrendingUp,
 
-  TrendingDown,
-
   User,
 
   Users,
 
-  DollarSign,
-
   Layers,
-
-  Briefcase,
 
   AlertCircle,
 
   Package,
 
-  History,
-
-  Settings,
-
   Clock,
-
-  ChevronRight,
 
   ChevronDown,
 
   ChevronUp,
-
-  Filter,
-
-  ArrowRightLeft,
 
   Plus,
 
@@ -149,7 +123,7 @@ import { StarIcon } from '../shared/icons/StarIcon';
 
 import { 
 
-  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart, CartesianGrid
+  Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid
 
 } from 'recharts';
 
@@ -160,8 +134,6 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 
 import UnifiedOrdersDashboard from './UnifiedOrdersDashboard';
-
-import { getSmartRecommendation } from '../services/pricingEngine';
 
 import { STYLES, generateRandomConfig } from '../services/creativeEngine';
 
@@ -183,8 +155,6 @@ import { fetchVenues } from '../services/tableApi';
 
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 
-import { fetchTransactions } from '../services/orderApi';
-
 import { getTodayAttendanceSummary, getAttendance, getAttendanceRange, markAttendance, markAttendanceBulk, checkIn, checkOut } from '../services/attendanceService';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
@@ -195,7 +165,7 @@ import { authService } from '../services/authService';
 
 import { useVenueSections } from '../hooks/useVenueSections';
 
-import { fetchBarInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustStock, recordPurchase, fetchLowStockItems, fetchTransactions as fetchBarTransactions, fetchBarTopSelling, fetchBarDeductionCheck } from '../services/barInventoryApi';
+import { fetchBarInventory, createInventoryItem, updateInventoryItem, adjustStock, recordPurchase, fetchTransactions as fetchBarTransactions, fetchBarTopSelling, fetchBarDeductionCheck } from '../services/barInventoryApi';
 
 import FloorPlanEditor from './FloorPlanEditor';
 
@@ -1043,7 +1013,7 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
 
 
 
-export function Pos() {
+export function Pos({ onKOTSend = () => {}, onOrderComplete = () => {} }) {
 
   const [cart, setCart] = useState([]);
 
@@ -9689,7 +9659,7 @@ function SalesReport({ inventory }) {
 
       if (!window.jspdf) {
 
-        showNotification('PDF library not loaded. Please refresh the page and try again.', 'error');
+        console.error('PDF library not loaded. Please refresh the page and try again.');
 
         return;
 
@@ -9929,7 +9899,7 @@ function SalesReport({ inventory }) {
 
       console.error('PDF export failed:', error);
 
-      showNotification(`Failed to export PDF: ${error.message || 'Please try again.'}`, 'error');
+      console.error(`Failed to export PDF: ${error.message || 'Please try again.'}`);
 
     }
 

@@ -105,6 +105,15 @@ async function loadBarMenu({ skipRepair = false } = {}) {
 // Lazy load only when a component subscribes; do not fetch at module import time
 // because onboarding pages may import this service before the user is authenticated.
 
+function isBarModuleEnabled() {
+  try {
+    const config = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
+    return config?.enabledModules?.bar === true;
+  } catch {
+    return false;
+  }
+}
+
 export function useBarMenuSync() {
   const [state, setState] = useState({
     menuItems: barGlobalMenu ?? [],
@@ -113,11 +122,16 @@ export function useBarMenuSync() {
   });
 
   useEffect(() => {
+    // Skip bar menu fetch entirely when bar module is disabled
+    if (!isBarModuleEnabled()) {
+      setState({ menuItems: [], loading: false, error: null });
+      return;
+    }
     const cb = ({ menu, loading, error }) =>
       setState({ menuItems: menu, loading, error });
     subscribers.add(cb);
     if (barGlobalMenu !== null) cb({ menu: barGlobalMenu, loading: _isLoading, error: _loadError });
-    else loadBarMenu();
+    else loadBarMenu({ skipRepair: true });
     return () => subscribers.delete(cb);
   }, []);
 

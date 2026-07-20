@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
+import { getEffectiveGstRate, getGstBreakdownWithRate } from '../../utils/gstFrontend';
 
 /**
  * Calculates the subtotal, taxes, and total for a given array of items.
@@ -23,14 +24,16 @@ import { getRestaurantConfig } from '../../utils/getRestaurantConfig';
 export const calculateOrderTotal = (items, discountPercent = 0, options = {}) => {
   const needsConfig =
     options.gstCategory == null ||
-    options.gstRegistered == null;
+    options.gstRegistered == null ||
+    options.serviceChargePercent == null;
   const config = needsConfig ? getRestaurantConfig() : {};
   const gstCategory = options.gstCategory ?? config.gstCategory ?? 'NON_AC';
   const gstRegistered = options.gstRegistered ?? config.gstRegistered ?? true;
-  const isAc = String(gstCategory).toUpperCase() === 'AC';
-  const ratePercent = gstRegistered === false ? 0 : (options.gstRate ?? config.gstRate ?? (isAc ? 18 : 5));
-  const totalGstRate = ratePercent / 100;
-  const halfGstRate = totalGstRate / 2;
+  const ratePercent = getEffectiveGstRate(
+    options.gstRate ?? config.gstRate ?? null,
+    gstCategory,
+    gstRegistered,
+  );
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return { subtotal: 0, taxes: 0, total: 0, grandTotal: 0, discountAmount: 0, serviceCharge: undefined, serviceChargeAmount: 0, foodSubtotal: 0, liquorSubtotal: 0, cgst: 0, sgst: 0, roundOff: 0 };
@@ -51,8 +54,10 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
 
     if (isLiquor) {
       liquorSubtotal += price * qty;
-      // Bar/liquor items never attract GST
-      gstExemptTotal += price * qty;
+      // Liquor defaults to gstEnabled=false (no GST) but admin can enable it per item
+      if (item.gstEnabled === false) {
+        gstExemptTotal += price * qty;
+      }
     } else {
       foodSubtotal += price * qty;
       if (item.gstEnabled === false) {
@@ -73,11 +78,10 @@ export const calculateOrderTotal = (items, discountPercent = 0, options = {}) =>
   const taxableAmount = Math.max(0, discountedSubtotal - gstExemptAfterDiscount);
 
   // GST: CGST and SGST are NOT rounded — only grand total is rounded
-  const cgst = taxableAmount * halfGstRate;
-  const sgst = taxableAmount * halfGstRate;
-  const taxes = cgst + sgst;
+  // Uses getGstBreakdownWithRate from gstFrontend.ts (single source of truth, mirrors backend gst.ts)
+  const { cgst, sgst, tax: taxes } = getGstBreakdownWithRate(taxableAmount, ratePercent);
 
-  const scPercent = Number(options.serviceChargePercent ?? 0);
+  const scPercent = Number(options.serviceChargePercent ?? config.serviceChargePercent ?? 0);
   const serviceChargeAmount = scPercent > 0
     ? (discountedSubtotal + taxes) * (scPercent / 100)
     : 0;

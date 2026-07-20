@@ -32,7 +32,7 @@ import {
 
   Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart, ChevronUp,
 
-  Wifi, WifiOff, AlertTriangle
+  Wifi, WifiOff, AlertTriangle, Cloud
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -64,7 +64,7 @@ import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 
 
 
@@ -478,6 +478,113 @@ function ItemCard({ item, onAdd, children, className }) {
   );
 }
 
+const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOutlet, onAdd, onMinus }) {
+  const isVeg = item.t === 'veg';
+  const className = `cursor-pointer rounded-2xl p-3.5 flex gap-4 items-center group transition-all duration-300 active:scale-[0.98] relative overflow-hidden ${
+    item.isSpecial
+      ? 'bg-gradient-to-br from-amber-50 to-white border border-amber-300 hover:border-amber-500 hover:shadow-[0_12px_30px_rgba(245,158,11,0.12)] shadow-[0_4px_20px_rgba(245,158,11,0.05)]'
+      : 'bg-white border border-gray-100 hover:border-[#E53935]/40 hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] shadow-[0_4px_20px_rgba(0,0,0,0.015)]'
+  }`;
+  return (
+    <ItemCard item={item} onAdd={onAdd} className={className}>
+      {item.isSpecial && (
+        <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
+          <Flame size={7} className="fill-white" /> Special
+        </div>
+      )}
+      <div className="w-8 h-8 shrink-0 flex items-center justify-center">
+        <div className={`w-5 h-5 rounded-[4px] border-2 flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
+          <div className={`w-2.5 h-2.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
+        </div>
+      </div>
+      <div className="flex-grow min-w-0 py-0.5 flex flex-col justify-between h-full">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[9px] font-black text-red-500/80 uppercase tracking-widest truncate">
+              {item.c || 'Dish'}
+            </span>
+            {item.spice > 0 && (
+              <span className="flex items-center gap-0.5 text-[8px] font-bold text-orange-600 bg-orange-50 border border-orange-100 px-1 py-0.2 rounded shrink-0">
+                <Flame size={8} className="fill-orange-600" /> Lvl {item.spice}
+              </span>
+            )}
+            {item.menuType === 'LIQUOR' && (
+              <span className="text-[7px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
+                🥃 Liquor
+              </span>
+            )}
+            {(activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'FOOD' && (
+              <span className="text-[7px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
+                🍽️ Food
+              </span>
+            )}
+          </div>
+          <h3 className="captain-item-title font-extrabold text-[11px] sm:text-[12px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 transition-colors group-hover:text-red-600">
+            {item.n}
+          </h3>
+          {item.desc && (
+            <p className="text-[10px] text-gray-400 font-medium line-clamp-1 leading-normal">
+              {item.desc}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center justify-between mt-2.5">
+          <div className="flex items-baseline">
+            <span className="text-[11px] font-bold text-[#E53935] mr-0.5">₹</span>
+            <span className="text-sm sm:text-base font-black text-gray-900 tracking-tight">
+              {item.p}
+            </span>
+            {item.variants && item.variants.length > 0 && (
+              <span className="text-[8px] font-bold text-gray-400 ml-1.5 shrink-0">
+                ({item.variants.length} Opt)
+              </span>
+            )}
+          </div>
+          <div onClick={(e) => e.stopPropagation()}>
+            {totalQty > 0 ? (
+              <div className="flex items-center gap-1 bg-red-50/80 rounded-full p-0.5 border border-red-100 shadow-sm">
+                {item.variants && item.variants.length > 0 ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAdd(e, item); }}
+                    className="px-3 py-1 text-[9px] font-black text-[#E53935] uppercase tracking-wider"
+                  >
+                    {totalQty} Added
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onMinus(item.n, -1); }}
+                      className="w-6.5 h-6.5 rounded-full bg-white text-[#E53935] flex items-center justify-center hover:bg-gray-50 active:scale-90 transition-all shadow-sm border border-red-100"
+                    >
+                      <Minus size={10} strokeWidth={3.5} />
+                    </button>
+                    <span className="text-xs font-black w-4 text-center text-gray-900">
+                      {totalQty}
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onAdd(e, item); }}
+                      className="w-6.5 h-6.5 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"
+                    >
+                      <Plus size={10} strokeWidth={3.5} />
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onAdd(e, item); }}
+                className="px-4 py-1.5 rounded-full bg-white border border-red-100 text-[9px] font-black uppercase tracking-widest text-[#E53935] hover:bg-[#E53935] hover:text-white hover:border-[#E53935] transition-all shadow-sm active:scale-95 duration-200"
+              >
+                Add
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </ItemCard>
+  );
+}, (prev, next) => prev.item === next.item && prev.totalQty === next.totalQty && prev.activeOutlet === next.activeOutlet);
+
 export default function CaptainApp({ onLogout }) {
 
   const { restaurant, user, setAuth } = useAuth();
@@ -498,16 +605,37 @@ export default function CaptainApp({ onLogout }) {
     setEdgeStatus(prev => ({ ...prev, checking: true }));
     const url = getEdgeUrl();
     const available = await isEdgeAvailable();
-    setEdgeStatus({ checking: false, available, url });
+    const connState = await getEdgeConnectivityState();
+    setEdgeStatus({ checking: false, available, url, connState });
   }, []);
 
   // Fallback: refresh restaurantType/enabledModules for existing sessions
   useEffect(() => {
     // Periodically refresh outlet config from edge server
     refreshOutletConfigFromEdge();
-    const interval = setInterval(refreshOutletConfigFromEdge, 30_000);
+    const interval = setInterval(refreshOutletConfigFromEdge, 60_000);
     return () => clearInterval(interval);
   }, []);
+
+  // P1-10: Track config changes so billing inherits admin panel updates
+  const [configVersion, setConfigVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => setConfigVersion(v => v + 1);
+    window.addEventListener('ss_restaurant_config_changed', handler);
+    return () => window.removeEventListener('ss_restaurant_config_changed', handler);
+  }, []);
+  const restaurantConfig = useMemo(() => getRestaurantConfig(), [configVersion]);
+
+  // ── Periodic edge connectivity polling ──────────────────────────────────────
+  // Poll every 10 seconds so the status card reflects real-time connectivity.
+  // The getEdgeConnectivityState function has its own 10s cache, so this is
+  // effectively a continuous check that doesn't overload the edge server.
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      checkEdgeStatus();
+    }, 10_000);
+    return () => clearInterval(pollInterval);
+  }, [checkEdgeStatus]);
 
   // ── Trigger LAN discovery on mount for captain devices ──────────────────────
   useEffect(() => {
@@ -857,10 +985,10 @@ export default function CaptainApp({ onLogout }) {
     const cacheKey = String(table.backendId ?? table.id ?? table.number ?? '');
     const cached = tableBillCacheRef.current.get(cacheKey);
     if (cached && cached.sig === sig) return cached.bill;
-    const bill = calculateTableBill(table);
+    const bill = calculateTableBill(table, restaurantConfig);
     tableBillCacheRef.current.set(cacheKey, { sig, bill });
     return bill;
-  }, []);
+  }, [restaurantConfig]);
 
 
 
@@ -893,6 +1021,9 @@ export default function CaptainApp({ onLogout }) {
 
   });
 
+  // P1-9: Ref to avoid re-subscribing socket listeners when tableSubCategory changes
+  const tableSubCategoryRef = useRef(tableSubCategory);
+  useEffect(() => { tableSubCategoryRef.current = tableSubCategory; }, [tableSubCategory]);
   const [selectedPDRRoom, setSelectedPDRRoom] = useState(() => {
 
     const saved = localStorage.getItem(getTenantScopedKey('captain_selectedPDRRoom'));
@@ -1434,7 +1565,7 @@ export default function CaptainApp({ onLogout }) {
 
     if (isFreshSession) {
 
-      return calculateOrderTotal(currentSessionItems);
+      return calculateOrderTotal(currentSessionItems, 0, restaurantConfig);
 
     }
 
@@ -1462,9 +1593,9 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-    return calculateOrderTotal([...itemsForTotal, ...currentSessionItems]);
+    return calculateOrderTotal([...itemsForTotal, ...currentSessionItems], 0, restaurantConfig);
 
-  }, [activeTable, currentSessionItems]);
+  }, [activeTable, currentSessionItems, restaurantConfig]);
 
 
 
@@ -2076,7 +2207,7 @@ export default function CaptainApp({ onLogout }) {
       socket.emit('leave', activeRestaurantId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRestaurantId, tableSubCategory]);
+  }, [activeRestaurantId]);
 
 
 
@@ -2740,6 +2871,20 @@ export default function CaptainApp({ onLogout }) {
 
   };
 
+  const handleItemClickRef = useRef(handleItemClick);
+  handleItemClickRef.current = handleItemClick;
+  const updateDraftQtyRef = useRef(updateDraftQty);
+  updateDraftQtyRef.current = updateDraftQty;
+
+  const stableUpdateDraftQty = useCallback((name, delta) => {
+    updateDraftQtyRef.current(name, delta);
+  }, []);
+
+  const stableCardOnAdd = useCallback((e, item) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    handleItemClickRef.current(e || { stopPropagation: () => {} }, item);
+  }, []);
+
 
 
   const undoRemove = () => {
@@ -2920,7 +3065,7 @@ export default function CaptainApp({ onLogout }) {
 
       const itemsForPrint = [...currentSessionItems];
 
-      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems).grandTotal;
+      const newTotalBill = calculateSessionBill(activeTable, currentSessionItems, restaurantConfig).grandTotal;
 
 
 
@@ -3191,15 +3336,21 @@ export default function CaptainApp({ onLogout }) {
           console.warn('[KOT] Edge local print fallback failed:', edgePrintErr.message);
         }
 
+        // Send succeeded kotEventIds even on partial print failure so the edge
+        // server can skip already-printed groups and only reprint failed ones.
+        const edgeHasPrintedIds = edgeKotEventIds.length > 0;
+        const edgeKotIdsToSend = edgeHasPrintedIds ? edgeKotEventIds : null;
+        const edgeKotNumToSend = edgeHasPrintedIds ? edgePreReservedKotNumber : null;
+
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeLocalPrinted ? edgePreReservedKotNumber : null, edgeLocalPrinted ? edgeKotEventIds : null, activeTableId);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeKotNumToSend, edgeKotIdsToSend, activeTableId);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
             ? _kotHistory[_kotHistory.length - 1].id
-            : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeLocalPrinted && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
+            : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeHasPrintedIds && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
         } else {
           try {
             savedOrder = await createOrder({
@@ -3211,8 +3362,8 @@ export default function CaptainApp({ onLogout }) {
               captainName: currentCaptain?.name || undefined,
               sectionTag: activeTable?.sectionTag || undefined,
               localPrinted: edgeLocalPrinted,
-              preReservedKotNumber: edgeLocalPrinted ? edgePreReservedKotNumber : null,
-              kotEventIds: edgeLocalPrinted ? edgeKotEventIds : null,
+              preReservedKotNumber: edgeKotNumToSend,
+              kotEventIds: edgeKotIdsToSend,
             });
           } catch (createErr) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -3220,12 +3371,12 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeLocalPrinted ? edgePreReservedKotNumber : null, edgeLocalPrinted ? edgeKotEventIds : null, activeTableId);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeKotNumToSend, edgeKotIdsToSend, activeTableId);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
                 ? _kotHistory[_kotHistory.length - 1].id
-                : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeLocalPrinted && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
+                : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeHasPrintedIds && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
             } else {
               throw createErr;
             }
@@ -3234,7 +3385,7 @@ export default function CaptainApp({ onLogout }) {
           const _savedKotHistory = savedOrder?.kotHistory;
           realKotId = Array.isArray(_savedKotHistory) && _savedKotHistory.length > 0
             ? _savedKotHistory[_savedKotHistory.length - 1].id
-            : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeLocalPrinted && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
+            : (savedOrder?.kotNumber ? String(savedOrder.kotNumber) : (savedOrder?.kotId ? String(savedOrder.kotId) : (edgeHasPrintedIds && edgePreReservedKotNumber != null ? String(edgePreReservedKotNumber) : null)));
         }
       }
 
@@ -4156,19 +4307,21 @@ export default function CaptainApp({ onLogout }) {
         }}
         className="fixed top-2 right-24 z-[60] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md border transition-colors"
         style={{
-          background: edgeStatus.available ? '#dcfce7' : '#fef3c7',
-          color: edgeStatus.available ? '#166534' : '#92400e',
-          borderColor: edgeStatus.available ? '#86efac' : '#fcd34d',
+          background: edgeStatus.available ? '#dcfce7' : edgeStatus.connState === 'cloud_reachable' ? '#dbeafe' : '#fee2e2',
+          color: edgeStatus.available ? '#166534' : edgeStatus.connState === 'cloud_reachable' ? '#1e40af' : '#991b1b',
+          borderColor: edgeStatus.available ? '#86efac' : edgeStatus.connState === 'cloud_reachable' ? '#93c5fd' : '#fca5a5',
         }}
       >
         {edgeStatus.checking ? (
           <Loader2 size={14} className="animate-spin" />
         ) : edgeStatus.available ? (
           <Wifi size={14} />
+        ) : edgeStatus.connState === 'cloud_reachable' ? (
+          <Cloud size={14} />
         ) : (
           <WifiOff size={14} />
         )}
-        Edge
+        {edgeStatus.available ? 'Edge' : edgeStatus.connState === 'cloud_reachable' ? 'Cloud' : 'Offline'}
       </button>
 
       {/* EDGE SETTINGS MODAL */}
@@ -4189,11 +4342,21 @@ export default function CaptainApp({ onLogout }) {
                   <Loader2 size={16} className="animate-spin text-blue-500" />
                 ) : edgeStatus.available ? (
                   <Wifi size={16} className="text-green-600" />
+                ) : edgeStatus.connState === 'cloud_reachable' ? (
+                  <Cloud size={16} className="text-blue-600" />
                 ) : (
-                  <WifiOff size={16} className="text-amber-600" />
+                  <WifiOff size={16} className="text-red-600" />
                 )}
                 <span className="text-sm font-bold">
-                  {edgeStatus.checking ? 'Checking…' : edgeStatus.available ? 'Connected' : 'Not connected'}
+                  {edgeStatus.checking
+                    ? 'Checking…'
+                    : edgeStatus.available
+                    ? 'Edge Connected'
+                    : edgeStatus.connState === 'cloud_reachable'
+                    ? 'Cloud Only (Edge Offline)'
+                    : edgeStatus.connState === 'edge_not_ready'
+                    ? 'Edge Not Ready'
+                    : 'Fully Offline'}
                 </span>
               </div>
               {edgeStatus.url && (
@@ -5359,263 +5522,23 @@ export default function CaptainApp({ onLogout }) {
 
                         const totalQty = currentSessionItems.filter(i => i.n === item.n).reduce((acc, i) => acc + i.q, 0);
 
-                        const isVeg = item.t === 'veg';
-
-
-
                         return (
 
-                          <ItemCard key={idx} item={item} onAdd={(item) => handleItemClick({ stopPropagation: () => {} }, item)} className={`cursor-pointer rounded-2xl p-3.5 flex gap-4 items-center group transition-all duration-300 active:scale-[0.98] relative overflow-hidden ${
-                            item.isSpecial
-                              ? 'bg-gradient-to-br from-amber-50 to-white border border-amber-300 hover:border-amber-500 hover:shadow-[0_12px_30px_rgba(245,158,11,0.12)] shadow-[0_4px_20px_rgba(245,158,11,0.05)]'
-                              : 'bg-white border border-gray-100 hover:border-[#E53935]/40 hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] shadow-[0_4px_20px_rgba(0,0,0,0.015)]'
-                          }`}>
+                          <MemoMenuCard
 
-                            {/* Chef Special Badge */}
+                            key={item.id || idx}
 
-                            {item.isSpecial && (
+                            item={item}
 
-                              <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
+                            totalQty={totalQty}
 
-                                <Flame size={7} className="fill-white" /> Special
+                            activeOutlet={activeOutlet}
 
-                              </div>
+                            onAdd={stableCardOnAdd}
 
-                            )}
+                            onMinus={stableUpdateDraftQty}
 
-
-
-                            {/* Veg/Non-veg indicator — no image */}
-
-                            <div className="w-8 h-8 shrink-0 flex items-center justify-center">
-
-                              <div className={`w-5 h-5 rounded-[4px] border-2 flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
-
-                                <div className={`w-2.5 h-2.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
-
-                              </div>
-
-                            </div>
-
-
-
-                            {/* Content section */}
-
-                            <div className="flex-grow min-w-0 py-0.5 flex flex-col justify-between h-full">
-
-                              <div>
-
-                                {/* Category Tag & Spice Level */}
-
-                                <div className="flex items-center gap-2 mb-1">
-
-                                  <span className="text-[9px] font-black text-red-500/80 uppercase tracking-widest truncate">
-
-                                    {item.c || 'Dish'}
-
-                                  </span>
-
-                                  {item.spice > 0 && (
-
-                                    <span className="flex items-center gap-0.5 text-[8px] font-bold text-orange-600 bg-orange-50 border border-orange-100 px-1 py-0.2 rounded shrink-0">
-
-                                      <Flame size={8} className="fill-orange-600" /> Lvl {item.spice}
-
-                                    </span>
-
-                                  )}
-
-                                  {item.menuType === 'LIQUOR' && (
-
-                                    <span className="text-[7px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
-
-                                      🥃 Liquor
-
-                                    </span>
-
-                                  )}
-
-                                  {(activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType === 'FOOD' && (
-
-                                    <span className="text-[7px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/50 px-1 py-0.2 rounded uppercase tracking-wider shrink-0">
-
-                                      🍽️ Food
-
-                                    </span>
-
-                                  )}
-
-                                </div>
-
-
-
-                                {/* Item Name (Swiggy/Zomato style bold typography) */}
-
-                                <h3 className="captain-item-title font-extrabold text-[11px] sm:text-[12px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 transition-colors group-hover:text-red-600">
-
-                                  {item.n}
-
-                                </h3>
-
-
-
-
-
-                                {/* Item Short Description */}
-
-                                {item.desc && (
-
-                                  <p className="text-[10px] text-gray-400 font-medium line-clamp-1 leading-normal">
-
-                                    {item.desc}
-
-                                  </p>
-
-                                )}
-
-                              </div>
-
-
-
-                              {/* Price & Action button */}
-
-                              <div className="flex items-center justify-between mt-2.5">
-
-                                <div className="flex items-baseline">
-
-                                  <span className="text-[11px] font-bold text-[#E53935] mr-0.5">₹</span>
-
-                                  <span className="text-sm sm:text-base font-black text-gray-900 tracking-tight">
-
-                                    {item.p}
-
-                                  </span>
-
-                                  {item.variants && item.variants.length > 0 && (
-
-                                    <span className="text-[8px] font-bold text-gray-400 ml-1.5 shrink-0">
-
-                                      ({item.variants.length} Opt)
-
-                                    </span>
-
-                                  )}
-
-                                </div>
-
-
-
-                                {/* Add/Quantity control buttons */}
-
-                                <div onClick={(e) => e.stopPropagation()}>
-
-                                  {totalQty > 0 ? (
-
-                                    <div className="flex items-center gap-1 bg-red-50/80 rounded-full p-0.5 border border-red-100 shadow-sm">
-
-                                      {/* If the item has variants, let them select via preview/variant picker, else use quick minus/plus */}
-
-                                      {item.variants && item.variants.length > 0 ? (
-
-                                        <button
-
-                                          onClick={(e) => {
-
-                                            e.stopPropagation();
-
-                                            handleItemClick(e, item);
-
-                                          }}
-
-                                          className="px-3 py-1 text-[9px] font-black text-[#E53935] uppercase tracking-wider"
-
-                                        >
-
-                                          {totalQty} Added
-
-                                        </button>
-
-                                      ) : (
-
-                                        <>
-
-                                          <button
-
-                                            onClick={(e) => {
-
-                                              e.stopPropagation();
-
-                                              updateDraftQty(item.n, -1);
-
-                                            }}
-
-                                            className="w-6.5 h-6.5 rounded-full bg-white text-[#E53935] flex items-center justify-center hover:bg-gray-50 active:scale-90 transition-all shadow-sm border border-red-100"
-
-                                          >
-
-                                            <Minus size={10} strokeWidth={3.5} />
-
-                                          </button>
-
-                                          <span className="text-xs font-black w-4 text-center text-gray-900">
-
-                                            {totalQty}
-
-                                          </span>
-
-                                          <button
-
-                                            onClick={(e) => {
-
-                                              e.stopPropagation();
-
-                                              handleItemClick(e, item);
-
-                                            }}
-
-                                            className="w-6.5 h-6.5 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"
-
-                                          >
-
-                                            <Plus size={10} strokeWidth={3.5} />
-
-                                          </button>
-
-                                        </>
-
-                                      )}
-
-                                    </div>
-
-                                  ) : (
-
-                                    <button
-
-                                      onClick={(e) => {
-
-                                        e.stopPropagation();
-
-                                        handleItemClick(e, item);
-
-                                      }}
-
-                                      className="px-4 py-1.5 rounded-full bg-white border border-red-100 text-[9px] font-black uppercase tracking-widest text-[#E53935] hover:bg-[#E53935] hover:text-white hover:border-[#E53935] transition-all shadow-sm active:scale-95 duration-200"
-
-                                    >
-
-                                      Add
-
-                                    </button>
-
-                                  )}
-
-                                </div>
-
-                              </div>
-
-                            </div>
-
-                          </ItemCard>
+                          />
 
                         );
 
@@ -6082,7 +6005,7 @@ export default function CaptainApp({ onLogout }) {
 
                       <span className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em]">New Items</span>
 
-                      <span className="text-lg font-black text-gray-400">₹{calculateOrderTotal(currentSessionItems).subtotal}</span>
+                      <span className="text-lg font-black text-gray-400">₹{calculateOrderTotal(currentSessionItems, 0, restaurantConfig).subtotal}</span>
 
                     </div>
 
@@ -6640,7 +6563,7 @@ export default function CaptainApp({ onLogout }) {
         isOpen={showKotConfirm}
         itemCount={currentSessionItems.length}
         totalQty={currentSessionItems.reduce((s, i) => s + (i.q ?? 1), 0)}
-        amount={calculateOrderTotal(currentSessionItems).subtotal}
+        amount={calculateOrderTotal(currentSessionItems, 0, restaurantConfig).subtotal}
         label="Send KOT"
         onConfirm={() => { setShowKotConfirm(false); sendIncrementalKOT(); }}
         onCancel={() => setShowKotConfirm(false)}

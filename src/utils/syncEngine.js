@@ -40,7 +40,7 @@ import {
   pruneConflictAuditLog,
 } from './offlineDB';
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
-import { isEdgeLocalAuth } from '../services/edgeHealth';
+import { isEdgeLocalAuth, isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
 import { httpFetch } from './httpClient';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
 import { finalizeSettlementAudit } from './settlementAuditLog';
@@ -337,11 +337,177 @@ async function syncSingleAction(action) {
   return { requestId: action.requestId, status: 'error', statusCode: res.status, error: errBody.error || `Server returned ${res.status}` };
 }
 
+// ── Edge replay: send queued actions to edge server for local printing ───────
+// When the edge server is available, replay create-order and update-items
+// actions to the edge server instead of (or before) the cloud backend.
+// The edge server will write to local SQLite, create durable print jobs,
+// and enqueue cloud sync via its own sync worker — so the captain's queued
+// orders get printed immediately and synced to cloud eventually.
+
+async function replayActionsToEdge(actions) {
+  const edgeReplayable = actions.filter(a =>
+    (a.actionType === 'create-order' || a.actionType === 'update-items') &&
+    !(a.edgeSynced && !a.edgeSyncFailed)
+  );
+
+  if (edgeReplayable.length === 0) return { replayed: 0, remainingIds: new Set() };
+
+  const replayedIds = new Set();
+  const remainingIds = new Set();
+
+  for (const action of edgeReplayable) {
+    try {
+      const body = action.body || {};
+      const edgeBody = {
+        tableId: body.tableId,
+        items: body.items || [],
+        captainName: body.captainName || null,
+        requestId: action.requestId,
+        platform: body.platform || 'DINE_IN',
+        orderByRole: body.orderByRole || undefined,
+        localPrinted: body.localPrinted ?? false,
+        preReservedKotNumber: body.preReservedKotNumber ?? null,
+        kotEventIds: body.kotEventIds || null,
+      };
+
+      // For update-items, include orderId (resolve from offline mapping if needed)
+      let orderId = action.entityId;
+      if (action.dependsOnOrderId && String(action.dependsOnOrderId).startsWith('offline-')) {
+        const realId = await getRealOrderId(action.dependsOnOrderId);
+        if (realId) orderId = realId;
+      }
+      if (String(orderId).startsWith('offline-')) {
+        // Parent order hasn't synced yet — can't replay to edge
+        remainingIds.add(action.id);
+        continue;
+      }
+
+      const endpoint = action.actionType === 'create-order'
+        ? '/api/edge/order'
+        : '/api/edge/order/update';
+
+      if (action.actionType === 'update-items') {
+        edgeBody.orderId = orderId;
+        edgeBody.tableId = body.tableId || action.entityId;
+      }
+
+      const result = await edgeFetch(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(edgeBody),
+      });
+
+      if (result.success !== false) {
+        // Edge accepted the order — mark as edgeSynced but keep in queue
+        // until cloud sync is confirmed. This prevents data loss if the
+        // edge server's sync worker dead-letters the record.
+        let edgeOrderId = result.orderId || null;
+        if (action.actionType === 'update-items') {
+          edgeOrderId = orderId;
+        }
+
+        await updatePendingAction(action.id, {
+          edgeSynced: true,
+          edgeOrderId,
+          edgeSyncedAt: Date.now(),
+        });
+        clearConflict(action.id);
+
+        // Store offline→real ID mapping for create-order
+        if (action.actionType === 'create-order' && action.offlineOrderId && result.orderId) {
+          await setOrderIdMapping(action.offlineOrderId, result.orderId);
+          await updatePendingActionEntityIds(action.offlineOrderId, result.orderId);
+        }
+
+        // Mark kitchen items as synced
+        if (body.tableId) {
+          markKitchenItemsSynced(body.tableId, action.requestId).catch(() => {});
+        }
+
+        replayedIds.add(action.id);
+        console.log(`[SyncEngine] Edge replay: ${action.actionType} ${action.requestId} → edge ✓ (awaiting cloud sync)`);
+      } else {
+        remainingIds.add(action.id);
+      }
+    } catch (err) {
+      // Edge replay failed — leave in queue for cloud sync or next edge retry
+      if (err?.statusCode) {
+        // Business logic error (409, 404) — don't retry via edge, let cloud sync handle
+        remainingIds.add(action.id);
+      } else {
+        // Network error — edge may have gone down mid-replay
+        remainingIds.add(action.id);
+      }
+    }
+  }
+
+  return { replayed: replayedIds.size, remainingIds };
+}
+
+// ── Edge sync verification: check if edge-synced actions have been pushed to cloud ──
+// Actions marked as edgeSynced are kept in the queue until the edge server
+// confirms cloud sync. This prevents data loss if the edge sync worker
+// dead-letters the record.
+async function verifyEdgeSyncedActions(actions) {
+  const edgeSynced = actions.filter(a => a.edgeSynced && a.edgeOrderId);
+  if (edgeSynced.length === 0) return { verified: 0, failed: 0 };
+
+  let verified = 0;
+  let failed = 0;
+
+  for (const action of edgeSynced) {
+    try {
+      const result = await edgeFetch(`/api/edge/order/${action.edgeOrderId}/sync-status`, {
+        method: 'GET',
+      });
+      if (result.synced) {
+        // Cloud sync confirmed — safe to remove from pending queue
+        await removePendingAction(action.id);
+        verified++;
+        console.log(`[SyncEngine] Edge sync verified: ${action.actionType} ${action.requestId} → cloud ✓`);
+      } else if (result.deadLettered > 0) {
+        // Edge sync dead-lettered — fall back to cloud sync
+        await updatePendingAction(action.id, { edgeSynced: false, edgeSyncFailed: true });
+        failed++;
+        console.warn(`[SyncEngine] Edge sync dead-lettered: ${action.actionType} ${action.requestId} — falling back to cloud`);
+      }
+      // If pending > 0, leave as edgeSynced and check again next cycle
+    } catch (err) {
+      // Edge server unreachable — leave as edgeSynced, check again next cycle
+      console.warn(`[SyncEngine] Edge sync verify failed: ${err.message || err}`);
+    }
+  }
+
+  return { verified, failed };
+}
+
 // ── Main sync function ───────────────────────────────────────────────────────
 
 export async function syncPendingActions() {
   if (syncing) return;
-  if (!isBackendReachable()) return;
+  if (!isBackendReachable()) {
+    // Even if cloud is unreachable, try edge replay if the edge server is up.
+    // This handles the case where the captain's device can reach the edge server
+    // on the LAN but not the cloud backend (e.g. internet is down but LAN is fine).
+    if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+      const allActions = await getPendingActions();
+      if (allActions.length > 0) {
+        allActions.sort((a, b) => a.createdAt - b.createdAt);
+
+        // Verify previously edge-synced actions before replaying new ones
+        const verifyResult = await verifyEdgeSyncedActions(allActions);
+        if (verifyResult.verified > 0) {
+          console.log(`[SyncEngine] Edge sync verified: ${verifyResult.verified} actions confirmed in cloud`);
+        }
+
+        const edgeResult = await replayActionsToEdge(allActions);
+        if (edgeResult.replayed > 0) {
+          console.log(`[SyncEngine] Edge replay (cloud unreachable): ${edgeResult.replayed} actions replayed to edge`);
+          await refreshPendingCount();
+        }
+      }
+    }
+    return;
+  }
 
   const quota = await checkStorageQuota();
   if (!quota.ok) {
@@ -370,6 +536,50 @@ export async function syncPendingActions() {
     // Sort by createdAt to preserve global ordering
     allActions.sort((a, b) => a.createdAt - b.createdAt);
 
+    // ── Edge sync verification: check if previously edge-synced actions ──────
+    // have been pushed to cloud by the edge server's sync worker. Remove them
+    // from the pending queue once confirmed. Fall back to cloud sync if dead-lettered.
+    if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+      const verifyResult = await verifyEdgeSyncedActions(allActions);
+      if (verifyResult.verified > 0 || verifyResult.failed > 0) {
+        console.log(`[SyncEngine] Edge sync verify: ${verifyResult.verified} confirmed, ${verifyResult.failed} dead-lettered`);
+        // Reload actions after verification changes
+        const refreshedActions = await getPendingActions();
+        if (refreshedActions.length === 0) {
+          setSyncStatus('idle');
+          lastSyncAt = Date.now();
+          await refreshPendingCount();
+          return;
+        }
+        allActions.length = 0;
+        allActions.push(...refreshedActions);
+        allActions.sort((a, b) => a.createdAt - b.createdAt);
+      }
+    }
+
+    // ── Edge replay: send create-order and update-items to edge server first ──
+    // If the edge server is available, replay these actions to the edge server
+    // for immediate KOT printing. The edge server's own sync worker will handle
+    // cloud sync, so we remove them from the pending queue.
+    if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+      const edgeResult = await replayActionsToEdge(allActions);
+      if (edgeResult.replayed > 0) {
+        console.log(`[SyncEngine] Edge replay: ${edgeResult.replayed} actions replayed to edge`);
+        // Reload remaining actions after edge replay
+        const remainingActions = await getPendingActions();
+        if (remainingActions.length === 0) {
+          setSyncStatus('idle');
+          lastSyncAt = Date.now();
+          await refreshPendingCount();
+          return;
+        }
+        // Replace allActions with remaining for cloud sync
+        allActions.length = 0;
+        allActions.push(...remainingActions);
+        allActions.sort((a, b) => a.createdAt - b.createdAt);
+      }
+    }
+
     // Fix A: Dependency-aware batching — partition actions into ready and blocked.
     // Actions with dependsOnOrderId referencing an unresolved offline- ID are held
     // back until their parent create-order action has synced and the real ID is
@@ -381,6 +591,12 @@ export async function syncPendingActions() {
     const blockedActions = [];
 
     for (const action of allActions) {
+      // Skip actions being handled by the edge server's sync worker.
+      // They'll be removed once the edge server confirms cloud sync.
+      // Fall back to cloud sync only if the edge sync dead-lettered.
+      if (action.edgeSynced && !action.edgeSyncFailed) {
+        continue;
+      }
       if (action.dependsOnOrderId && String(action.dependsOnOrderId).startsWith('offline-')) {
         if (resolvedOfflineIds.has(action.dependsOnOrderId)) {
           // Parent has synced — update this action's entityId to the real ID
@@ -855,7 +1071,9 @@ async function syncIndividually(actions) {
 
 let initialized = false;
 let syncIntervalId = null;
+let edgeReplayIntervalId = null;
 const SYNC_INTERVAL_MS = 30000; // 30 seconds
+const EDGE_REPLAY_INTERVAL_MS = 15000; // 15 seconds
 
 export function initSyncEngine() {
   if (initialized) return;
@@ -886,6 +1104,29 @@ export function initSyncEngine() {
     }
   }, SYNC_INTERVAL_MS);
 
+  // ── Edge replay interval ──────────────────────────────────────────────────
+  // Every 15 seconds, check if the edge server is available. If so, replay
+  // queued create-order and update-items actions to the edge server for
+  // immediate KOT printing. This runs independently of the cloud sync loop
+  // so orders get printed even when the cloud backend is unreachable.
+  edgeReplayIntervalId = setInterval(async () => {
+    if (syncing) return;
+    try {
+      const edgeAvailable = isEdgeLocalAuth() || await isEdgeAvailable();
+      if (!edgeAvailable) return;
+      const allActions = await getPendingActions();
+      if (allActions.length === 0) return;
+      allActions.sort((a, b) => a.createdAt - b.createdAt);
+      const edgeResult = await replayActionsToEdge(allActions);
+      if (edgeResult.replayed > 0) {
+        console.log(`[SyncEngine] Periodic edge replay: ${edgeResult.replayed} actions replayed to edge`);
+        await refreshPendingCount();
+      }
+    } catch (err) {
+      console.warn('[SyncEngine] Periodic edge replay failed:', err?.message || err);
+    }
+  }, EDGE_REPLAY_INTERVAL_MS);
+
   // Initial sync if backend is reachable
   if (isBackendReachable()) {
     setTimeout(() => syncPendingActions(), 1000);
@@ -899,6 +1140,10 @@ export function stopSyncEngine() {
   if (syncIntervalId) {
     clearInterval(syncIntervalId);
     syncIntervalId = null;
+  }
+  if (edgeReplayIntervalId) {
+    clearInterval(edgeReplayIntervalId);
+    edgeReplayIntervalId = null;
   }
   initialized = false;
 }

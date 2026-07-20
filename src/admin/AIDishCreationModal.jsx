@@ -14,7 +14,7 @@
 // Real integration would use OpenAI Vision / DALL-E or similar services.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Sparkles, Bot, X, RotateCcw, Check, Zap, Megaphone, UtensilsCrossed, ArrowRight, ShieldCheck, Share2 } from "lucide-react";
 import { generateDishCreative, detectDish } from "../services/menuAiService";
 import { generateRandomConfig } from "../services/creativeEngine";
@@ -36,14 +36,16 @@ export default function AIDishCreationModal({ open, onClose, onSave }) {
   const card = "rounded-[24px] border border-[#FFCDD2] bg-white shadow-sm transition-all";
   const btn = "rounded-xl px-6 py-3 font-black text-sm transition-all active:scale-95 flex items-center justify-center gap-2";
 
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) {
+    if (prevOpenRef.current && !open) {
       setStep(1);
       setImage(null);
       setDishName("");
       setResult(null);
       setSyncStatus(null);
     }
+    prevOpenRef.current = open;
   }, [open]);
 
   if (!open) return null;

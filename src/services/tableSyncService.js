@@ -98,6 +98,17 @@ function writeCache(tables) {
   }
 }
 
+let _cacheWriteTimer = null;
+let _pendingCacheTables = null;
+function writeCacheDebounced(tables) {
+  _pendingCacheTables = tables;
+  if (_cacheWriteTimer) clearTimeout(_cacheWriteTimer);
+  _cacheWriteTimer = setTimeout(() => {
+    _cacheWriteTimer = null;
+    if (_pendingCacheTables) writeCache(_pendingCacheTables);
+  }, 1000);
+}
+
 export function getTableCacheAgeMs() {
   try {
     const ts = localStorage.getItem(`${getTablesCacheKey()}:ts`);
@@ -658,7 +669,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             validateTableIntegrity('tableSync', before, after);
             return after;
           });
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -672,7 +683,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
           const next = [...prev, mapBackendTable(newTable)];
           // Deduplicate by backendId to prevent duplicate cards
           const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
-          writeCache(deduped);
+          writeCacheDebounced(deduped);
           return deduped;
         });
       },
@@ -680,7 +691,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
         if (restaurantId && restaurantId !== getCurrentRestaurantId()) return;
         setTablesState((prev) => {
           const next = prev.filter((t) => t.backendId !== id);
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -706,7 +717,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
               currentBill: Math.max(Number(t.currentBill ?? 0), Number(order.totalAmount ?? 0)),
             };
           });
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -732,7 +743,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
               currentBill: Number(order.totalAmount ?? t.currentBill ?? 0),
             };
           });
-          writeCache(next);
+          writeCacheDebounced(next);
           return next;
         });
       },
@@ -754,11 +765,34 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
       }, 300);
     });
 
+    // On edge reconnect, do an immediate full refresh (non-debounced) to
+    // catch up on any order/table events missed during the disconnect.
+    const handleEdgeReconnect = () => {
+      if (mountedRef.current && !cancelledRef.current) {
+        loadTables();
+      }
+    };
+    window.addEventListener('edge:reconnect', handleEdgeReconnect);
+
+    // Periodic edge refresh: every 60 seconds, trigger a loadTables() call
+    // to catch any missed edge events (WebSocket dropped, event lost, etc).
+    // This is a safety net — the real-time WebSocket + reconnect refresh
+    // handle the common cases, but periodic polling ensures correctness
+    // even if an event is silently dropped.
+    const EDGE_POLL_INTERVAL_MS = 60_000;
+    const edgePollTimer = setInterval(() => {
+      if (mountedRef.current && !cancelledRef.current) {
+        loadTables();
+      }
+    }, EDGE_POLL_INTERVAL_MS);
+
     return () => {
       mountedRef.current = false;
       cancelledRef.current = true;
       abortControllerRef.current?.abort();
       releaseSocket();
+      clearInterval(edgePollTimer);
+      window.removeEventListener('edge:reconnect', handleEdgeReconnect);
       // Disconnect edge socket when no more table sync instances are active
       disconnectEdgeSocket();
       if (edgeUnsub) edgeUnsub();
@@ -772,7 +806,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
     // Deduplicate by backendId to prevent duplicate cards
     const deduped = Array.from(new Map(next.map(t => [t.backendId, t])).values());
 
-    writeCache(deduped);
+    writeCacheDebounced(deduped);
     tablesRef.current = deduped;
     setTablesState(deduped);
 
@@ -811,7 +845,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
           }
           // Deduplicate after persisting changes
           const finalDeduped = Array.from(new Map(updated.map(t => [t.backendId, t])).values());
-          writeCache(finalDeduped);
+          writeCacheDebounced(finalDeduped);
           // Keep the synchronously-read ref in sync with committed state so that
           // subsequent socket-event guards (e.g. stale AVAILABLE check) read fresh data.
           tablesRef.current = finalDeduped;
