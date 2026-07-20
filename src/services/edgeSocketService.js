@@ -29,6 +29,79 @@ let listeners = new Set();
 const RECONNECT_INTERVAL_MS = 5000;
 const PING_INTERVAL_MS = 30000;
 
+// ── Tauri invoke helper ──────────────────────────────────────────────────────
+// Available only inside the Tauri webview (cashier desktop). Captain web/APK
+// won't have this, so print_job events are silently ignored there — the cashier
+// desktop is the only device that should physically print.
+function getTauriInvoke() {
+  const t = window.__TAURI__;
+  if (!t) return null;
+  if (t.core && typeof t.core.invoke === 'function') return t.core.invoke.bind(t.core);
+  if (typeof t.invoke === 'function') return t.invoke.bind(t);
+  if (t.tauri && typeof t.tauri.invoke === 'function') return t.tauri.invoke.bind(t.tauri);
+  return null;
+}
+
+// ── Print job handler ────────────────────────────────────────────────────────
+// When the edge server broadcasts a print_job via WebSocket, the Tauri frontend
+// (cashier desktop) receives it and sends the ESC/POS bytes to the physical
+// printer via Tauri's print_raw / print_network commands. After printing (or
+// on error), it sends a print_ack back to the edge server so it can resolve the
+// HTTP response to the captain.
+async function handlePrintJob(msgData) {
+  const eventId = msgData?.eventId;
+  const printData = msgData?.data || {};
+  const { printerName, escposData } = printData;
+  if (!eventId || !escposData) return;
+
+  const invoke = getTauriInvoke();
+  if (!invoke) return; // Not running in Tauri — ignore (captain web/APK)
+
+  // Convert escposData [{ type, format, data }] → byte array
+  const rawString = escposData.map(d => d.data || '').join('');
+  const bytes = Array.from(new TextEncoder().encode(rawString));
+  if (bytes.length === 0) {
+    sendPrintAck(eventId, false, 'Empty print data');
+    return;
+  }
+
+  let ok = false;
+  let error = null;
+  try {
+    // Network printer (IP:port) vs USB/local printer
+    const netMatch = printerName && printerName.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/);
+    if (netMatch) {
+      await invoke('print_network', {
+        ip: netMatch[1],
+        port: parseInt(netMatch[2], 10),
+        bytes,
+      });
+    } else {
+      await invoke('print_raw', {
+        printerName: printerName || '',
+        bytes,
+      });
+    }
+    ok = true;
+    console.log(`[EdgeSocket] Print job ${eventId} → ${printerName} ✓ (${bytes.length} bytes)`);
+  } catch (err) {
+    error = err?.message || String(err);
+    console.error(`[EdgeSocket] Print job ${eventId} → ${printerName} ✗ ${error}`);
+  }
+
+  sendPrintAck(eventId, ok, error);
+}
+
+function sendPrintAck(eventId, ok, error) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify({ type: 'print_ack', eventId, ok, error: error || undefined }));
+    } catch (err) {
+      console.warn('[EdgeSocket] Failed to send print_ack:', err.message);
+    }
+  }
+}
+
 export function isEdgeSocketConnected() {
   return connected;
 }
@@ -74,6 +147,15 @@ export function connectEdgeSocket() {
     try {
       const msg = JSON.parse(event.data);
       if (msg.type === 'pong') return; // keepalive response
+
+      // ── print_job: send to physical printer via Tauri and send print_ack back ──
+      // This is the critical path: edge server broadcasts print_job → Tauri frontend
+      // prints via Rust print bridge → sends print_ack → edge server resolves HTTP
+      // response to the captain. Without this, all edge-server printing times out.
+      if (msg.type === 'print_job') {
+        handlePrintJob(msg.data);
+        return;
+      }
 
       // Re-dispatch as DOM event for tableSyncService and other listeners
       const eventType = `edge:${msg.type}`;
