@@ -14,8 +14,9 @@ use std::os::windows::process::CommandExt;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -55,6 +56,24 @@ static EDGE_RESPAWN_COUNT: Mutex<u32> = Mutex::new(0);
 const EDGE_WATCHDOG_INTERVAL_SECS: u64 = 10;
 const EDGE_RESPAWN_CRASH_LIMIT: u32 = 5;
 const EDGE_RESPAWN_WINDOW_SECS: u64 = 30;
+
+// ── Tray connection status ───────────────────────────────────────────────────
+// Updated by the frontend via the `update_connection_status` Tauri command.
+// The tray tooltip reads this to show "Connected" / "Disconnected" so a cashier
+// can tell at a glance if something's wrong without opening the window.
+static TRAY_CONNECTION_STATUS: Mutex<String> = Mutex::new(String::new());
+
+fn update_tray_tooltip(app: &tauri::AppHandle) {
+    let status = TRAY_CONNECTION_STATUS.lock().map(|g| g.clone()).unwrap_or_default();
+    let tooltip = if status.is_empty() {
+        "SoftShape Cashier".to_string()
+    } else {
+        format!("SoftShape Cashier — {}", status)
+    };
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(&tooltip));
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct EdgeServerStatus {
@@ -981,9 +1000,116 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
     }
 }
 
+/// Enable autostart on Windows boot (Run registry key).
+#[tauri::command]
+fn enable_autostart(app: tauri::AppHandle) -> Result<(), String> {
+    app.autolaunch()
+        .enable()
+        .map_err(|e| format!("Failed to enable autostart: {}", e))
+}
+
+/// Disable autostart.
+#[tauri::command]
+fn disable_autostart(app: tauri::AppHandle) -> Result<(), String> {
+    app.autolaunch()
+        .disable()
+        .map_err(|e| format!("Failed to disable autostart: {}", e))
+}
+
+/// Check if autostart is currently enabled.
+#[tauri::command]
+fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
+    Ok(app.autolaunch().is_enabled().unwrap_or(false))
+}
+
+/// Update the tray tooltip connection status from the frontend.
+/// Called by the frontend's socket connection status handler.
+#[tauri::command]
+fn update_connection_status(app: tauri::AppHandle, status: String) -> Result<(), String> {
+    if let Ok(mut guard) = TRAY_CONNECTION_STATUS.lock() {
+        *guard = status;
+    }
+    update_tray_tooltip(&app);
+    Ok(())
+}
+
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // Focus existing window when a second instance is launched
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["ai.softshape.cashier"]),
+        ))
+        .setup(|app| {
+            // Enable autostart by default on first run
+            let autostart = app.autolaunch();
+            if !autostart.is_enabled().unwrap_or(false) {
+                let _ = autostart.enable();
+                eprintln!("[Autostart] Enabled on first run");
+            }
+
+            // Build system tray with Show/Quit menu
+            use tauri::menu::{Menu, MenuItem};
+            use tauri::tray::TrayIconBuilder;
+
+            let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("SoftShape Cashier")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        // This is the ONLY way to actually exit — triggers
+                        // RunEvent::Exit which cleans up the edge server.
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Close-to-tray: intercept close request, hide window instead
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             list_printers,
             print_raw,
@@ -992,7 +1118,11 @@ fn main() {
             check_for_updates,
             get_edge_server_status,
             restart_edge_server,
-            test_print
+            test_print,
+            enable_autostart,
+            disable_autostart,
+            is_autostart_enabled,
+            update_connection_status
         ])
         .build(tauri::generate_context!())
         .expect("error while building SoftShape Cashier");

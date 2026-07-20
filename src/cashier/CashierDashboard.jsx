@@ -1608,6 +1608,10 @@ const CashierDashboard = ({ onLogout }) => {
     // useSocket(activeRestaurantId) handles room joins; we only need to refetch on reconnect
     const onConnect = () => {
       setSocketConnected(true);
+      // Update tray tooltip so cashier can see connection status without opening the window
+      if (window.__TAURI_INTERNALS__) {
+        window.__TAURI_INTERNALS__.invoke('update_connection_status', { status: 'Connected' }).catch(() => {});
+      }
       const now = Date.now();
       if (now - lastReconnectRefetchRef.current < 10_000) return; // skip if refetched <10s ago
       lastReconnectRefetchRef.current = now;
@@ -1621,6 +1625,9 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onDisconnect = () => {
       setSocketConnected(false);
+      if (window.__TAURI_INTERNALS__) {
+        window.__TAURI_INTERNALS__.invoke('update_connection_status', { status: 'Disconnected' }).catch(() => {});
+      }
     };
 
     // If socket is already connected when the component mounts, refetch immediately

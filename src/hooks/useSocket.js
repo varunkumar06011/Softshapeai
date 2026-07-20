@@ -107,6 +107,33 @@ export function getSocket() {
     socketInstance.io.on("ping", () => {
       console.debug("[Socket] Ping sent to server");
     });
+
+    // ── OS resume/wake reconnect ───────────────────────────────────────────
+    // After a Windows sleep/wake cycle, the socket may appear "connected" but
+    // the underlying TCP connection is dead. These listeners force an immediate
+    // reconnect attempt on wake/resume rather than waiting for the reconnection timer.
+    let lastVisibilityHidden = false;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        lastVisibilityHidden = true;
+      } else if (document.visibilityState === "visible" && lastVisibilityHidden) {
+        lastVisibilityHidden = false;
+        if (socketInstance) {
+          console.log("[Socket] OS resume/wake detected — forcing reconnect");
+          if (socketInstance.connected) socketInstance.disconnect();
+          socketInstance.connect();
+        }
+      }
+    };
+    const onOnline = () => {
+      if (socketInstance) {
+        console.log("[Socket] Network online — forcing reconnect");
+        if (socketInstance.connected) socketInstance.disconnect();
+        socketInstance.connect();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", onOnline);
   }
 
   return socketInstance;
