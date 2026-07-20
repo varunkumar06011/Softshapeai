@@ -38,6 +38,7 @@ softshape-release.keystore
 # Rust/Tauri build artifacts
 apps/cashier-desktop/src-tauri/target/
 apps/cashier-desktop/src-tauri/gen/
+apps/cashier-desktop/src-tauri/edge-server.exe
 apps/admin-desktop/src-tauri/target/
 apps/admin-desktop/src-tauri/gen/
 apps/captain-android/src-tauri/target/

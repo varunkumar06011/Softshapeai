@@ -1,6 +1,6 @@
 {
   "name": "softshape-cashier-desktop",
-  "version": "20.3.0",
+  "version": "20.4.0",
   "description": "SoftShape Cashier Desktop App (Tauri)",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "dev": "cd ../.. && npx vite",
     "build": "cd ../.. && npx vite build",
     "build:edge": "node -e \"const fs=require('fs'),p=require('path');const candidates=[p.resolve(__dirname,'../../../softshape-print-agent/softshape-print-agent/edge-server'),p.resolve(__dirname,'../../softshape-print-agent/softshape-print-agent/edge-server')];const dir=candidates.find(d=>fs.existsSync(d));if(!dir){console.log('edge-server dir not found — skipping build (may already be built)');process.exit(0);}process.chdir(dir);require('child_process').execSync('bun install && bun build --compile server.ts --outfile edge-server.exe',{stdio:'inherit'})\"",
-    "build:edge:check": "node -e \"const fs=require('fs'),p=require('path');const candidates=[p.resolve(__dirname,'../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe'),p.resolve(__dirname,'../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe')];const found=candidates.find(f=>fs.existsSync(f));if(!found){console.error('ERROR: edge-server.exe not found. Run npm run build:edge first.');process.exit(1);}else{console.log('OK: edge-server.exe found ('+fs.statSync(found).size+' bytes)');}\"",
+    "build:edge:check": "node -e \"const fs=require('fs'),p=require('path');const candidates=[p.resolve(__dirname,'../../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe'),p.resolve(__dirname,'../../softshape-print-agent/softshape-print-agent/edge-server/edge-server.exe')];const found=candidates.find(f=>fs.existsSync(f));if(!found){console.error('ERROR: edge-server.exe not found. Run npm run build:edge first.');process.exit(1);}else{fs.copyFileSync(found,p.resolve(__dirname,'src-tauri/edge-server.exe'));console.log('OK: edge-server.exe copied to src-tauri/ ('+fs.statSync(found).size+' bytes)');}\"",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run build:edge && npm run build:edge:check && tauri build"
