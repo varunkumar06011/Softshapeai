@@ -3012,12 +3012,29 @@ export default function CaptainApp({ onLogout }) {
         }
 
         const printResults = await Promise.allSettled(localPrintPromises);
-        localPrinted = printResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+        // Fix: localPrinted must be true only if ALL prints succeeded.
+        // Using .some() caused partial success (food OK, liquor failed) to
+        // set localPrinted=true, which made the backend skip the print_job
+        // socket emit — the failed print was silently lost.
+        localPrinted = printResults.length > 0 && printResults.every(r => r.status === 'fulfilled' && r.value?.printed);
         if (localPrinted) {
           markKotNumberPrinted(preReservedKotNumber);
           console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber}`);
         } else {
-          console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
+          // Filter kotEventIds to only those that actually printed, so the
+          // backend's eventId dedup doesn't suppress re-emission of failed ones.
+          const succeededEventIds = [];
+          if (foodEscpos.length > 0 && printResults[0]?.status === 'fulfilled' && printResults[0]?.value?.printed) {
+            succeededEventIds.push(foodEventId);
+          }
+          if (liquorEscpos.length > 0) {
+            const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
+            if (printResults[liquorIdx]?.status === 'fulfilled' && printResults[liquorIdx]?.value?.printed) {
+              succeededEventIds.push(liquorEventId);
+            }
+          }
+          kotEventIds = succeededEventIds;
+          console.log(`[KOT] Local print failed (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
         }
 
         // Now call the API with the correct localPrinted flag.
@@ -3087,16 +3104,25 @@ export default function CaptainApp({ onLogout }) {
         }
 
       } else {
-        // Edge or cloud-only flow (edge returned null kotNumber, or reserve failed)
-        // Try local print with offline counter as fallback — edge server may not have a printer.
-        // For edge-local (PIN) auth, skip local print: the edge server has the printer
-        // and will use its own KOT counter. Printing locally with getNextOfflineKotNumber()
-        // would produce a mismatched KOT number on the printout vs the saved order.
+        // Edge server is primary for ALL captains (PIN auth + JWT auth).
+        // The edge server assigns KOT numbers, builds ESC/POS, and prints via
+        // LAN WebSocket to the Tauri frontend. No local print needed — this
+        // is the Petpooja Bridge Server pattern: one local path, ~15-40ms.
+        //
+        // Local print fallback only runs when:
+        //   1. Edge server is unreachable (isEdgeAvailable() returned false)
+        //   2. AND a local printer mapping exists (Print Agent on LAN)
+        // This handles the rare case where the edge server is down but a
+        // Print Agent is still reachable on the LAN.
         let edgeLocalPrinted = false;
         let edgeKotEventIds = [];
         let edgePreReservedKotNumber = null;
+        const edgeAvailable = isEdgeLocalAuth() || await isEdgeAvailable();
         try {
-          const mapping = isEdgeLocalAuth() ? {} : await getLocalPrinterMapping().catch(() => ({}));
+          // Skip local print entirely when edge server is available — it handles printing.
+          // Only attempt local print when edge is NOT available (fallback for cloud-only captains).
+          if (!edgeAvailable) {
+            const mapping = await getLocalPrinterMapping().catch(() => ({}));
           if (mapping && Object.keys(mapping).length > 0) {
             edgePreReservedKotNumber = await getNextOfflineKotNumber().catch(() => null);
             if (edgePreReservedKotNumber != null) {
@@ -3138,13 +3164,27 @@ export default function CaptainApp({ onLogout }) {
               }
               if (edgePrintPromises.length > 0) {
                 const edgePrintResults = await Promise.allSettled(edgePrintPromises);
-                edgeLocalPrinted = edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+                edgeLocalPrinted = edgePrintResults.length > 0 && edgePrintResults.every(r => r.status === 'fulfilled' && r.value?.printed);
                 localPrinted = edgeLocalPrinted;
                 if (edgeLocalPrinted) {
                   markKotNumberPrinted(edgePreReservedKotNumber);
                   console.log(`[KOT] Edge fallback local print succeeded for KOT #${edgePreReservedKotNumber}`);
+                } else {
+                  // Filter edgeKotEventIds to only successful prints
+                  const edgeSucceededEventIds = [];
+                  if (edgeFoodEscpos.length > 0 && edgePrintResults[0]?.status === 'fulfilled' && edgePrintResults[0]?.value?.printed) {
+                    edgeSucceededEventIds.push(edgeFoodEventId);
+                  }
+                  if (edgeLiquorEscpos.length > 0) {
+                    const liquorIdx = edgeFoodEscpos.length > 0 ? 1 : 0;
+                    if (edgePrintResults[liquorIdx]?.status === 'fulfilled' && edgePrintResults[liquorIdx]?.value?.printed) {
+                      edgeSucceededEventIds.push(edgeLiquorEventId);
+                    }
+                  }
+                  edgeKotEventIds = edgeSucceededEventIds;
                 }
               }
+            }
             }
           }
         } catch (edgePrintErr) {
@@ -3320,35 +3360,30 @@ export default function CaptainApp({ onLogout }) {
       // Background listener for print confirmation (non-blocking)
       // When the edge server handled printing AND all prints succeeded, it returns
       // printResults with ok:true and we skip the cloud socket listener.
-      // If some prints failed, fall through to the cloud socket listener so the
-      // cloud backend can emit print_job as a fallback.
+      // If some prints failed, show the failure immediately — the cloud backend
+      // was never called for edge orders, so waiting for kot:printed would always
+      // timeout after 30s with a false "print failed" notification.
+      let _edgePrintHandled = false;
       if (savedOrder?.edge && savedOrder?.printResults) {
         const printResults = savedOrder.printResults;
         const hasFailures = printResults.length > 0 &&
           printResults.some(r => !r.ok);
-        if (hasFailures && !localPrinted) {
-          // Edge print failed — fall through to cloud socket fallback below
-          console.warn('[KOT] Edge print had failures, falling back to cloud socket:', printResults.filter(r => !r.ok));
-        } else {
-          if (hasFailures) {
-            const failed = printResults.filter(r => !r.ok);
-            addNotification(
-              `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
-              failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
-              'warning'
-            );
-          }
-          // All edge prints succeeded or local print handled it — skip cloud socket
-          if (!localPrinted) {
-            // edge prints succeeded — no need to wait for kot:printed
-          }
-          // Use a flag to skip the else block below
-          var _edgePrintHandled = true;
+        if (hasFailures) {
+          const failed = printResults.filter(r => !r.ok);
+          addNotification(
+            `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
+            failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+            'warning'
+          );
         }
+        // Edge handled printing (success or failure) — no cloud socket fallback
+        // needed. The cloud backend was never called for edge orders, so
+        // kot:printed will never fire.
+        _edgePrintHandled = true;
       } else if (localPrinted) {
         // Captain already printed locally — cloud backend skips print_job emit,
         // so kot:printed will never fire. No need to wait for socket confirmation.
-        var _edgePrintHandled = true;
+        _edgePrintHandled = true;
       }
       if (!_edgePrintHandled) {
       const socket = getSocket();

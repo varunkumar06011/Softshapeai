@@ -261,7 +261,7 @@ async function tryPrintAgentUrls(body, jobType) {
 
   const tryUrl = async (url) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const res = await fetch(`${url}/print`, {
         method: 'POST',
@@ -464,20 +464,28 @@ export async function printLocal(job) {
       const { registerPlugin } = await import('@capacitor/core');
       const EscposPrint = registerPlugin('EscposPrint');
 
+      // Extract ESC/POS bytes: prefer escposData (proper ESC/POS commands),
+      // fall back to plain text encoding for legacy jobs.
+      let printBytes;
+      if (escposData && escposData.length > 0) {
+        const escposStr = escposData.map(d => d.data || '').join('');
+        printBytes = Array.from(new TextEncoder().encode(escposStr));
+      } else {
+        printBytes = Array.from(textToEscpos(text));
+      }
+
       // Try network printer first if configured
       const networkPrinterIp = localStorage.getItem('offline_network_printer_ip');
       if (networkPrinterIp) {
         const networkPort = parseInt(localStorage.getItem('offline_network_printer_port') || '9100', 10);
-        const bytes = Array.from(textToEscpos(text));
-        await EscposPrint.printNetwork({ ip: networkPrinterIp, port: networkPort, bytes });
+        await EscposPrint.printNetwork({ ip: networkPrinterIp, port: networkPort, bytes: printBytes });
         logOfflinePrint({ status: 'success', message: 'Capacitor network print succeeded', detail: `${networkPrinterIp}:${networkPort}` });
         return { printed: true, queued: false };
       }
 
       // Try Bluetooth/raw print
       if (printerName) {
-        const bytes = Array.from(textToEscpos(text));
-        await EscposPrint.printRaw({ printerName, bytes });
+        await EscposPrint.printRaw({ printerName, bytes: printBytes });
         logOfflinePrint({ status: 'success', message: 'Capacitor raw print succeeded', detail: printerName });
         return { printed: true, queued: false };
       }

@@ -427,6 +427,12 @@ jobs:
         working-directory: apps/${{ matrix.app }}
         run: npx cap sync android
 
+      - name: Inject native plugins (captain-android)
+        if: matrix.app == 'captain-android'
+        working-directory: apps/${{ matrix.app }}
+        shell: bash
+        run: bash native/sync-native.sh
+
       - name: Decode keystore
         working-directory: apps/${{ matrix.app }}/android
         shell: bash
