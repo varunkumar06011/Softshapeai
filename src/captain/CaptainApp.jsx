@@ -1212,6 +1212,7 @@ export default function CaptainApp({ onLogout }) {
   // without re-selecting anything.
 
   const [kotError, setKotError] = useState(null);
+  const retryRequestIdRef = useRef(null);
 
   const [sendingKOT, setSendingKOT] = useState(false);
 
@@ -2978,7 +2979,7 @@ export default function CaptainApp({ onLogout }) {
     }
   }, [view, activeTableId]);
 
-  const sendIncrementalKOT = async () => {
+  const sendIncrementalKOT = async (retryRequestId = null) => {
     // Issue 9: Don't clear previous print timeouts here — each KOT's timeout
     // is self-managed via a local closure variable. Clearing the shared ref
     // would cancel the WRONG timeout if a second KOT was sent before the first
@@ -3018,7 +3019,12 @@ export default function CaptainApp({ onLogout }) {
 
     const existingOrderId = activeOrderIdRef.current;
 
-    const requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    // Reuse the same requestId on retry so the backend's idempotency check
+    // finds the existing committed order and returns it instead of throwing
+    // "Duplicate KOT detected". Generating a new requestId on retry bypasses
+    // the lastRequestId/ProcessedRequest idempotency and hits the Redis
+    // item-signature dedup, which presents a committed order as a failure.
+    const requestId = retryRequestId || (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
@@ -3223,6 +3229,7 @@ export default function CaptainApp({ onLogout }) {
               'warning'
             );
             setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
+            retryRequestIdRef.current = requestId;
             setKotError({
               message: 'KOT printed but server sync failed — tap Retry to confirm.',
               retryItems: retrySnapshot,
@@ -3566,6 +3573,11 @@ export default function CaptainApp({ onLogout }) {
       // Restore the session items so the captain can retry without re-selecting.
 
       setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
+
+      // Store the requestId so retry reuses it — the backend's idempotency
+      // check will return the existing committed order instead of throwing
+      // "Duplicate KOT detected".
+      retryRequestIdRef.current = requestId;
 
       setKotError({
 
@@ -6277,6 +6289,7 @@ export default function CaptainApp({ onLogout }) {
                 // just dismiss the banner and let the captain press Send KOT again.
 
                 setKotError(null);
+                retryRequestIdRef.current = null;
 
               }}
 
@@ -6298,7 +6311,12 @@ export default function CaptainApp({ onLogout }) {
 
                 // calling sendIncrementalKOT now re-submits the same items.
 
-                sendIncrementalKOT();
+                // Reuse the original requestId so the backend's idempotency
+                // check recovers the existing committed order instead of
+                // throwing "Duplicate KOT detected".
+                const retryId = retryRequestIdRef.current;
+                retryRequestIdRef.current = null;
+                sendIncrementalKOT(retryId);
 
               }}
 

@@ -200,6 +200,17 @@ export function connectEdgeSocket() {
     }
     console.log(`[EdgeSocket] Connected to ${wsUrl}${wasReconnect ? ' (reconnect)' : ''}`);
 
+    // Register client capabilities with the edge server.
+    // Only Tauri desktops (cashier) have window.__TAURI__ and can physically print.
+    // Captain web/APK sends canPrint=false so the edge server doesn't count it
+    // as a printing client or waste time broadcasting print_job events to it.
+    const canPrint = !!getTauriInvoke();
+    try {
+      ws.send(JSON.stringify({ type: 'register', canPrint }));
+    } catch {
+      // Best-effort — the server will default to canPrint=false
+    }
+
     // On reconnect, dispatch a full refresh event so listeners can catch up
     // on any order/table events missed during the disconnect period.
     if (wasReconnect) {

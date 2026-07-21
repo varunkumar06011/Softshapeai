@@ -239,6 +239,13 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
+          if (res.status === 409) {
+            const data = await res.json().catch(() => ({}));
+            const err = new Error(data.error || "Table already has an active order");
+            err.status = 409;
+            if (data.orderId) err.existingOrderId = data.orderId;
+            throw err;
+          }
           return parseResponse(res);
         } catch (error) {
           clearTimeout(timeoutId);
@@ -248,7 +255,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
           throw error;
         }
       },
-      RETRY_CONFIG.KOT
+      { ...RETRY_CONFIG.KOT, shouldRetry: (err) => err.status !== 409 }
     );
   } catch (apiErr) {
     // API call failed after retries — fall back to offline queue if backend is unreachable

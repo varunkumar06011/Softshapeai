@@ -109,6 +109,39 @@ export function prewarmEdgeHealth() {
 }
 
 /**
+ * Wait for the edge server to become fully ready (status: "ok").
+ * The edge sidecar returns HTTP 200 with status "initializing" while it
+ * downloads config. This helper polls until the server is ready or the
+ * timeout expires, so callers don't read an empty menu from a half-synced DB.
+ *
+ * @param {number} timeoutMs — max time to wait (default 15s)
+ * @param {number} intervalMs — poll interval (default 1s)
+ * @returns {Promise<boolean>} true if edge is ready, false on timeout
+ */
+export async function waitForEdgeReady(timeoutMs = 15_000, intervalMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const edgeUrl = getEdgeUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
+      const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const health = await res.json().catch(() => ({}));
+        if (health.status === "ok") {
+          _edgeAvailable = true;
+          _edgeLastCheck = Date.now();
+          return true;
+        }
+      }
+    } catch { /* not ready yet */ }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
+/**
  * Discover the edge server URL from the cloud backend.
  * The backend stores the print agent's LAN IP when it registers.
  * The edge server runs on port 3101 on the same machine as the print agent.
@@ -281,7 +314,15 @@ export async function isEdgeAvailable() {
     const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
     const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
-    _edgeAvailable = res.ok;
+    if (res.ok) {
+      // The edge server returns 200 even while initializing. Check the body
+      // status field — "initializing" or "error" means the server is not yet
+      // ready to serve data, so callers should fall through to cloud.
+      const health = await res.json().catch(() => ({}));
+      _edgeAvailable = health.status === "ok";
+    } else {
+      _edgeAvailable = false;
+    }
     if (_edgeAvailable) return true;
   } catch {
     _edgeAvailable = false;
@@ -313,8 +354,11 @@ export async function isEdgeAvailable() {
           const res = await fetch(`${backendDiscovered}/health`, { signal: controller.signal });
           clearTimeout(timeoutId);
           if (res.ok) {
-            _edgeAvailable = true;
-            return true;
+            const health = await res.json().catch(() => ({}));
+            if (health.status === "ok") {
+              _edgeAvailable = true;
+              return true;
+            }
           }
         } catch { /* fall through to LAN scan */ }
       }
@@ -324,10 +368,22 @@ export async function isEdgeAvailable() {
     try {
       const discovered = await discoverEdgeOnLAN();
       if (discovered) {
-        _edgeAvailable = true;
-        return true;
+        // Verify the discovered server is actually ready (not just initializing)
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
+          const res = await fetch(`${discovered}/health`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const health = await res.json().catch(() => ({}));
+            _edgeAvailable = health.status === "ok";
+            if (_edgeAvailable) return true;
+          }
+        } catch { /* discovered server not reachable */ }
+        _discoveryLastFailed = Date.now();
+      } else {
+        _discoveryLastFailed = Date.now();
       }
-      _discoveryLastFailed = Date.now();
     } catch {
       _discoveryLastFailed = Date.now();
     }
@@ -362,7 +418,7 @@ export async function getEdgeConnectivityState() {
     clearTimeout(timeoutId);
     if (res.ok) {
       const health = await res.json().catch(() => ({}));
-      if (health.sessionValid || health.status === 'ok') {
+      if (health.status === 'ok' && health.sessionValid) {
         _connectivityState = 'edge_reachable';
       } else {
         _connectivityState = 'edge_not_ready';

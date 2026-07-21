@@ -35,6 +35,11 @@ function isTauriOrigin(origin) {
   return /^tauri:\/\//i.test(origin) || /^https?:\/\/tauri\.localhost/i.test(origin);
 }
 
+// Production backend URL — used when the Tauri desktop app is built without
+// a VITE_API_URL env var (the default localhost:3000 only works in dev).
+// This must match the updater endpoint in tauri.conf.json.
+const PRODUCTION_API_BASE = "https://softshape-backend-production.up.railway.app";
+
 function resolveApiBase(raw) {
   const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(raw);
   if (
@@ -46,6 +51,13 @@ function resolveApiBase(raw) {
     !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(window.location.origin)
   ) {
     return window.location.origin;
+  }
+  // Tauri production: the baked-in localhost:3000 dev default is invalid.
+  // There's no reverse proxy in the Tauri webview, so we must point directly
+  // to the production backend. In Tauri dev, the origin is http://localhost:5173
+  // (not a Tauri origin), so this branch doesn't trigger.
+  if (isLocalhost && typeof window !== "undefined" && isTauriOrigin(window.location.origin)) {
+    return PRODUCTION_API_BASE;
   }
   return raw;
 }

@@ -16,7 +16,7 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
-import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS } from "./edgeHealth.js";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, waitForEdgeReady } from "./edgeHealth.js";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 async function edgeFetchMenuItems() {
@@ -126,6 +126,7 @@ export function mapFlatMenuItems(items) {
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       printerName: item.printerName || null,
       venuePrices: item.venuePrices || {},
+      venueAvailabilities: item.venueAvailabilities || {},
       // Liquor/bar items never carry GST; food uses stored flag (default true when unset)
       gstEnabled: isLiquor ? false : (item.gstEnabled === undefined || item.gstEnabled === null ? true : toBool(item.gstEnabled)),
       isSpecial: toBool(item.isSpecial),
@@ -221,6 +222,14 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
   // ── Path 1: Edge server (local SQLite) — primary path ──────────────────────
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
+    // When using edge-local auth (offline PIN login), cloud fallback is
+    // impossible. If the edge server is still initializing (config sync
+    // in progress), wait for it to become ready before reading the menu.
+    // Without this, the menu fetch hits a half-synced SQLite DB and returns
+    // an empty array, rendering a blank menu.
+    if (useEdgeDirect) {
+      await waitForEdgeReady(15_000);
+    }
     try {
       const edgeItems = await edgeFetchMenuItems();
       if (edgeItems.length > 0) {

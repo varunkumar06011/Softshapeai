@@ -3974,12 +3974,14 @@ const CashierDashboard = ({ onLogout }) => {
         // NO PRINTING - that already happened in handleFinalBill
         if (orderId) {
           const settleRequestId = generateRequestId();
+          const localTxnId = `edge-txn-${orderId}-${Date.now()}`;
           const settleData = await settleOrder(
             orderId,
             [],
             'Cashier',
             settleRequestId,
             {
+              localTxnId,
               paymentMethod: method,
               tipAmount: Number(tipAmount) || 0,
               cashTipAmount: method === 'CASH' ? (Number(tipAmount) || 0) : (method === 'MIXED' ? 0 : 0),
@@ -4074,7 +4076,7 @@ const CashierDashboard = ({ onLogout }) => {
           // Edge server settleOrderEdge returns { success, order, table } — no transaction field.
           // Build a synthetic transaction from the client's data so it appears in Past Transactions instantly.
           const settleTxn = settleData?.transaction || (settleData?.success ? {
-            id: `edge-txn-${orderId}-${Date.now()}`,
+            id: localTxnId,
             orderId,
             txnNumber: null,
             billNumber: selectedTable?.billNumber || null,
