@@ -191,7 +191,7 @@ export default function EdgeSetupScreen() {
     setConfigError(null);
 
     try {
-      const result = await edgeFetch('/api/edge/config/sync', { method: 'POST' });
+      const result = await edgeFetch('/api/edge/config/sync', { method: 'POST', timeoutMs: 90_000 });
       if (result.success) {
         setConfigRowsLoaded(result.tablesLoaded || 0);
         // Start polling for final stats
