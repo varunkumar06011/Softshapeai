@@ -357,6 +357,15 @@ export async function isEdgeAvailable() {
             const health = await res.json().catch(() => ({}));
             if (health.status === "ok") {
               _edgeAvailable = true;
+              // Sync connectivity state so the UI immediately reflects the
+              // discovered edge server, instead of waiting for the next
+              // getEdgeConnectivityState() poll cycle.
+              if (health.sessionValid) {
+                _connectivityState = 'edge_reachable';
+              } else {
+                _connectivityState = 'edge_not_ready';
+              }
+              _connectivityLastCheck = Date.now();
               return true;
             }
           }
@@ -377,7 +386,16 @@ export async function isEdgeAvailable() {
           if (res.ok) {
             const health = await res.json().catch(() => ({}));
             _edgeAvailable = health.status === "ok";
-            if (_edgeAvailable) return true;
+            if (_edgeAvailable) {
+              // Sync connectivity state for the UI
+              if (health.sessionValid) {
+                _connectivityState = 'edge_reachable';
+              } else {
+                _connectivityState = 'edge_not_ready';
+              }
+              _connectivityLastCheck = Date.now();
+              return true;
+            }
           }
         } catch { /* discovered server not reachable */ }
         _discoveryLastFailed = Date.now();
@@ -420,8 +438,14 @@ export async function getEdgeConnectivityState() {
       const health = await res.json().catch(() => ({}));
       if (health.status === 'ok' && health.sessionValid) {
         _connectivityState = 'edge_reachable';
+        // Sync isEdgeAvailable cache so print routing (orderApi.js) sees the
+        // same result as the UI. Without this, isEdgeAvailable() could return
+        // a stale false for up to 30s while the UI already shows Edge Connected.
+        _edgeAvailable = true;
+        _edgeLastCheck = now;
       } else {
         _connectivityState = 'edge_not_ready';
+        _edgeAvailable = false;
       }
       return _connectivityState;
     }

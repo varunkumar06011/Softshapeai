@@ -1838,6 +1838,7 @@ const CashierDashboard = ({ onLogout }) => {
           status: protectedStatus,
           workflowStatus: protectedStatus,
           billNumber: incomingBillNumber,
+          items: incomingIsAvailable ? [] : t.items,
           activeOrder: isFrozenGrid ? t.activeOrder : (incomingIsAvailable ? null : (incomingOrder ? incomingOrder : t.activeOrder)),
         };
       });
@@ -2931,10 +2932,6 @@ const CashierDashboard = ({ onLogout }) => {
       addNotification('Error', 'Invalid table selected.', 'error');
       return;
     }
-    if (isModalDataLoading) {
-      addNotification('Loading', 'Table data is refreshing — please wait a moment.', 'warning');
-      return;
-    }
 
     // Ref guard - synchronous check to prevent race condition
     if (isPrintingBillRef.current) return;
@@ -3046,11 +3043,13 @@ const CashierDashboard = ({ onLogout }) => {
         : Math.random().toString(36).slice(2) + Date.now().toString(36));
       const billEventId = `${billRequestId}-bill`;
 
-      // Edge-local (PIN) auth: skip local print agent — the edge server prints
-      // directly via Tauri with a real bill number. Calling printLocal() here
-      // would waste up to 10s waiting for the print agent (which may not be
-      // running) and produce a 'PENDING' bill number on the printout.
-      if (!isEdgeLocalAuth()) {
+      // Edge server (including PIN auth): skip local print agent — the edge server
+      // prints directly via Tauri with a real bill number. Calling printLocal() here
+      // would waste up to 10s waiting for the print agent and produce a 'PENDING'
+      // bill number on the printout. Only fall back to local print when edge is
+      // genuinely unavailable.
+      const edgeReachable = isEdgeLocalAuth() || await isEdgeAvailable();
+      if (!edgeReachable) {
       try {
         const { printLocal } = await import('../utils/printOffline');
         const billItems = getBillableItems(selectedTable);
@@ -3115,7 +3114,7 @@ const CashierDashboard = ({ onLogout }) => {
       } catch (printErr) {
         console.warn('[handleFinalBill] Local print failed:', printErr.message);
       }
-      } // end if (!isEdgeLocalAuth)
+      } // end if (!edgeReachable)
 
       // Call backend print-bill endpoint with localPrinted flag and shared billEventId
       const orderId = selectedTable?.activeOrder?.id;
@@ -3130,75 +3129,14 @@ const CashierDashboard = ({ onLogout }) => {
           .filter(Boolean)
           .join(',');
 
-        if (localPrinted) {
-          // Bill already printed locally — fire-and-forget backend call for bill number assignment.
-          // Spinner clears immediately; bill number updates table card when backend responds.
-          const printBillArgs = selectedTable.isExtra
-            ? { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId }
-            : { restaurantId: printBillRestaurantId, localPrinted, billEventId };
-
-          printBill(orderId, printBillArgs)
-            .then(resp => {
-              if (resp?.success && resp?.billNumber) {
-                setSelectedTable(prev => prev ? { ...prev, billNumber: resp.billNumber } : prev);
-                if (selectedTable.isExtra) {
-                  setExtraTables(prev => prev.map(et =>
-                    et.id === selectedTable.id ? { ...et, billNumber: resp.billNumber } : et
-                  ));
-                } else {
-                  setActiveTables(prev => prev.map(t =>
-                    t.backendId === selectedTable.backendId ? { ...t, billNumber: resp.billNumber } : t
-                  ), { skipPersist: true });
-                }
-              }
-              if (resp && !resp.success) {
-                addNotification('Sync Pending', 'Bill printed locally. Bill number will be assigned when edge server reconnects.', 'warning');
-              }
-              window.dispatchEvent(new Event('softshape_order_updated'));
-            })
-            .catch(err => {
-              console.warn('[handleFinalBill] Background printBill failed:', err.message);
-              addNotification('Sync Pending', 'Bill printed locally. Bill number will be assigned when edge server reconnects.', 'warning');
-            })
-            .finally(() => {
-              isPrintingBillRef.current = false;
-            });
-
-          // Clear spinner immediately — bill is already printed
-          setIsPrintingBill(false);
-
-          // Per-table cooldown
-          const printedTableKey = selectedTable.isExtra ? selectedTable.id : selectedTable?.backendId;
-          if (printedTableKey) {
-            billPrintCooldownRef.current.set(printedTableKey, Date.now() + 2000);
-            setTimeout(() => billPrintCooldownRef.current.delete(printedTableKey), 2000);
-          }
-
-          addNotification('Success', 'Bill printed successfully.', 'success');
-
-          // Update localStorage cache for the table status
-          const tableIdForCache = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
-          if (!selectedTable.isExtra && tableIdForCache) {
-            try {
-              const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
-              const cached = safeGetJSON(cacheKey, []);
-              const updatedCache = cached.map(t =>
-                t.backendId === tableIdForCache ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
-              );
-              localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
-            } catch {}
-          }
-
-          return;
-        }
-
-        // localPrinted=false — MUST await edge (edge path prints the bill)
+        // Always await printBill — no fire-and-forget. The edge server now waits
+        // for the actual print ack before returning, so the response reflects the
+        // real print status. This removes the false optimistic success path.
         response = selectedTable.isExtra
           ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
           : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
         if (response && !response.success) {
-          // Edge server unavailable and local print failed — bill was NOT printed.
-          // Do NOT queue; show error and let user retry.
+          // Edge server unavailable or print failed — bill was NOT printed.
           isPrintingBillRef.current = false;
           setIsPrintingBill(false);
           // Roll back the bill-printed flag since nothing was printed
@@ -3220,7 +3158,6 @@ const CashierDashboard = ({ onLogout }) => {
             ));
           } else {
             // skipPersist: true — rolling back to 'Occupied' is purely a local UI correction.
-            // The backend still has the real state; avoid a partial persist that could wipe items.
             setActiveTables(prev => prev.map(t =>
               t.backendId === rollbackTableId ? { ...t, status: 'Occupied', workflowStatus: 'Occupied' } : t
             ), { skipPersist: true });
@@ -3263,7 +3200,24 @@ const CashierDashboard = ({ onLogout }) => {
         } catch {}
       }
 
-      addNotification('Success', 'Bill printed successfully.', 'success');
+      // Check actual print results from the edge server response
+      const printResults = response?.printResults || [];
+      const hasPrintFailures = printResults.some(r => r.ok === false);
+      const allPrinted = printResults.length > 0 && printResults.every(r => r.ok === true);
+      const printPending = response?.printPending || printResults.some(r => r.ok === null);
+
+      if (allPrinted) {
+        addNotification('Success', 'Bill printed successfully.', 'success');
+      } else if (printPending && !hasPrintFailures) {
+        addNotification('Print Pending', 'Bill number assigned — print in progress via cloud relay.', 'info');
+      } else if (hasPrintFailures && localPrinted) {
+        // Local print succeeded but edge print also attempted and failed — local copy exists
+        addNotification('Success', 'Bill printed successfully.', 'success');
+      } else if (hasPrintFailures) {
+        addNotification('Print Failed', `Bill number ${printedBillNumber || ''} assigned but print failed. Use reprint to retry.`, 'warning');
+      } else {
+        addNotification('Success', 'Bill printed successfully.', 'success');
+      }
 
       window.dispatchEvent(new Event('softshape_order_updated'));
 
@@ -4422,11 +4376,10 @@ const CashierDashboard = ({ onLogout }) => {
           return next;
         });
         billPrintCooldownRef.current.delete(terminatedKey);
-        setSettledTableIds(prev => {
-          const next = new Set(prev);
-          next.delete(terminatedKey);
-          return next;
-        });
+        // Add to settledTableIds for long-term protection — terminatedTableIdsRef
+        // expires after 6s, but settledTableIds persists until pending actions sync,
+        // blocking stale non-Free socket events that could revive old items.
+        setSettledTableIds(prev => new Set([...prev, terminatedKey]));
       }
 
       // Clean up persisted discount on terminate

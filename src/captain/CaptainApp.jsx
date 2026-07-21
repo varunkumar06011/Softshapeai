@@ -603,10 +603,19 @@ export default function CaptainApp({ onLogout }) {
 
   const checkEdgeStatus = useCallback(async () => {
     setEdgeStatus(prev => ({ ...prev, checking: true }));
+    // Discover edge URL from backend first (if no manual URL configured) so
+    // isEdgeAvailable uses the cashier's LAN IP, not localhost.
+    if (!localStorage.getItem('softshape_edge_url')) {
+      await discoverEdgeUrlFromBackend().catch(() => {});
+    }
     const url = getEdgeUrl();
     const available = await isEdgeAvailable();
     const connState = await getEdgeConnectivityState();
-    setEdgeStatus({ checking: false, available, url, connState });
+    // Use connState as the primary signal — it's more granular and more
+    // accurate than the boolean isEdgeAvailable (which has a longer cache
+    // interval and may return stale false while connState is edge_reachable).
+    const edgeReachable = connState === 'edge_reachable' || (available && connState !== 'edge_not_ready');
+    setEdgeStatus({ checking: false, available: edgeReachable, url, connState });
   }, []);
 
   // Fallback: refresh restaurantType/enabledModules for existing sessions
@@ -4319,21 +4328,23 @@ export default function CaptainApp({ onLogout }) {
         }}
         className="fixed top-2 right-24 z-[60] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md border transition-colors"
         style={{
-          background: edgeStatus.available ? '#dcfce7' : edgeStatus.connState === 'cloud_reachable' ? '#dbeafe' : '#fee2e2',
-          color: edgeStatus.available ? '#166534' : edgeStatus.connState === 'cloud_reachable' ? '#1e40af' : '#991b1b',
-          borderColor: edgeStatus.available ? '#86efac' : edgeStatus.connState === 'cloud_reachable' ? '#93c5fd' : '#fca5a5',
+          background: edgeStatus.available ? '#dcfce7' : edgeStatus.connState === 'edge_not_ready' ? '#fef3c7' : edgeStatus.connState === 'cloud_reachable' ? '#dbeafe' : '#fee2e2',
+          color: edgeStatus.available ? '#166534' : edgeStatus.connState === 'edge_not_ready' ? '#92400e' : edgeStatus.connState === 'cloud_reachable' ? '#1e40af' : '#991b1b',
+          borderColor: edgeStatus.available ? '#86efac' : edgeStatus.connState === 'edge_not_ready' ? '#fcd34d' : edgeStatus.connState === 'cloud_reachable' ? '#93c5fd' : '#fca5a5',
         }}
       >
         {edgeStatus.checking ? (
           <Loader2 size={14} className="animate-spin" />
         ) : edgeStatus.available ? (
           <Wifi size={14} />
+        ) : edgeStatus.connState === 'edge_not_ready' ? (
+          <AlertTriangle size={14} />
         ) : edgeStatus.connState === 'cloud_reachable' ? (
           <Cloud size={14} />
         ) : (
           <WifiOff size={14} />
         )}
-        {edgeStatus.available ? 'Edge' : edgeStatus.connState === 'cloud_reachable' ? 'Cloud' : 'Offline'}
+        {edgeStatus.available ? 'Edge' : edgeStatus.connState === 'edge_not_ready' ? 'Edge Setup' : edgeStatus.connState === 'cloud_reachable' ? 'Cloud' : 'Offline'}
       </button>
 
       {/* EDGE SETTINGS MODAL */}
@@ -4354,6 +4365,8 @@ export default function CaptainApp({ onLogout }) {
                   <Loader2 size={16} className="animate-spin text-blue-500" />
                 ) : edgeStatus.available ? (
                   <Wifi size={16} className="text-green-600" />
+                ) : edgeStatus.connState === 'edge_not_ready' ? (
+                  <AlertTriangle size={16} className="text-amber-600" />
                 ) : edgeStatus.connState === 'cloud_reachable' ? (
                   <Cloud size={16} className="text-blue-600" />
                 ) : (
@@ -4367,7 +4380,7 @@ export default function CaptainApp({ onLogout }) {
                     : edgeStatus.connState === 'cloud_reachable'
                     ? 'Cloud Only (Edge Offline)'
                     : edgeStatus.connState === 'edge_not_ready'
-                    ? 'Edge Not Ready'
+                    ? 'Edge Not Ready (Session Invalid)'
                     : 'Fully Offline'}
                 </span>
               </div>
