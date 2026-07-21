@@ -19,7 +19,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { isEdgeAvailable, edgeFetch, resetEdgeCache } from '../services/edgeHealth.js';
+import { isEdgeAvailable, edgeFetch, resetEdgeCache, setStoredEdgeApiKey } from '../services/edgeHealth.js';
 import { API_BASE } from '../services/apiConfig.js';
 import {
   CheckCircle2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
@@ -200,7 +200,14 @@ export default function EdgeSetupScreen() {
         setConfigError(result.error || 'Config sync failed');
       }
     } catch (err) {
-      setConfigError(err.message || 'Failed to download config');
+      if (err.status === 401) {
+        setConfigError(
+          'Edge API key missing or rejected. The edge server requires a valid API key ' +
+          'to download config. Please go back and re-link your restaurant to get a fresh key.'
+        );
+      } else {
+        setConfigError(err.message || 'Failed to download config from cloud');
+      }
     } finally {
       setConfigSyncing(false);
     }
@@ -228,6 +235,7 @@ export default function EdgeSetupScreen() {
     try {
       const result = await edgeFetch('/api/edge/register', {
         method: 'POST',
+        timeoutMs: 90_000,
         body: JSON.stringify({
           setupToken: setupToken.trim(),
           restaurantCode: restaurantCode.trim(),
@@ -236,6 +244,12 @@ export default function EdgeSetupScreen() {
       });
 
       if (result.success) {
+        // Save the edge API key immediately so that subsequent edgeFetch()
+        // calls (including config sync) include the X-Edge-Key header.
+        // Without this, the edge server rejects config sync with 401.
+        if (result.edgeApiKey) {
+          setStoredEdgeApiKey(result.edgeApiKey);
+        }
         // Registration succeeded — trigger config download
         setRestaurantName(result.restaurantName || '');
         setPhase('config-sync');

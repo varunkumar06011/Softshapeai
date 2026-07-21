@@ -523,14 +523,15 @@ export async function edgeFetch(path, options = {}) {
     try {
       let res = await _edgeFetchWithKey(path, fetchOptions, headers, timeoutMs);
 
-      // If the edge server rejected our API key, the stored key is stale.
-      // Refresh the key from the cloud and retry once. The edge server now
-      // requires the key for all POS routes, so retrying without it would fail.
-      if (res.status === 401 && edgeApiKey) {
+      // If the edge server rejected our API key (or we never had one), try to
+      // fetch a fresh key from the cloud and retry once. The edge server
+      // requires the key for all POS routes, so without it every call fails.
+      if (res.status === 401) {
         let body = null;
         try { body = await res.json(); } catch { /* ignore */ }
-        if (body?.error && /edge api key/i.test(body.error)) {
-          console.warn('[edgeFetch] Stored edge API key was rejected — refreshing from cloud');
+        const isKeyError = body?.error && /edge api key/i.test(body.error);
+        if (isKeyError || !edgeApiKey) {
+          console.warn('[edgeFetch] Edge API key missing or rejected — refreshing from cloud');
           try { localStorage.removeItem(EDGE_API_KEY_STORAGE_KEY); } catch { /* ignore */ }
           const freshKey = await ensureEdgeApiKey().catch(() => null);
           if (freshKey && freshKey !== edgeApiKey) {
