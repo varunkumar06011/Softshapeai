@@ -55,7 +55,16 @@ async function loadBarMenu({ skipRepair = false } = {}) {
     _loadError = null;
     notifySubscribers();
     try {
-      barGlobalMenu = await fetchBarMenuFromBackend();
+      const fetched = await fetchBarMenuFromBackend();
+      // ── Empty-response protection: never replace a valid cached bar menu
+      // with an empty response. Prevents blank bar menu when bridge is half-synced.
+      if (fetched.length === 0 && barGlobalMenu && barGlobalMenu.length > 0) {
+        console.warn('[BarMenuSync] Backend returned empty menu — keeping cached menu');
+        _isLoading = false;
+        notifySubscribers();
+        return;
+      }
+      barGlobalMenu = fetched;
       writeBarMenuCache(barGlobalMenu);
       console.log(`[BarMenuSync] Loaded ${barGlobalMenu.length} items`);
 

@@ -24,6 +24,12 @@ vi.mock('../printOffline', () => ({
   flushQueuedPrintJobs: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../services/edgeHealth', () => ({
+  isEdgeLocalAuth: () => false,
+  isEdgeAvailable: async () => false,
+  edgeFetch: vi.fn(),
+}));
+
 import { addPendingAction, getPendingActions, removePendingAction } from '../offlineDB';
 import { syncPendingActions } from '../syncEngine';
 

@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, Cloud, CheckCircle2 } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw, AlertTriangle, Cloud, CheckCircle2, Printer, AlertCircle } from 'lucide-react';
 import { isEdgeAvailable, edgeFetch } from '../../services/edgeHealth';
 
 export default function SyncStatusIndicator() {
@@ -20,6 +20,9 @@ export default function SyncStatusIndicator() {
   const [lastSync, setLastSync] = useState(null);
   const [recoveryMessage, setRecoveryMessage] = useState(null);
   const [showRecoveryBanner, setShowRecoveryBanner] = useState(false);
+  const [printPending, setPrintPending] = useState(0);
+  const [printDeadLetter, setPrintDeadLetter] = useState(0);
+  const [syncFailures, setSyncFailures] = useState(0);
 
   const checkStatus = useCallback(async () => {
     try {
@@ -38,6 +41,7 @@ export default function SyncStatusIndicator() {
         const status = await edgeFetch('/api/edge/sync/status');
         setPendingCount(status.pendingCount || 0);
         setLastSync(status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleTimeString() : null);
+        setSyncFailures(status.consecutiveFailures || 0);
 
         if (status.pendingCount > 0) {
           setState('syncing');
@@ -49,6 +53,16 @@ export default function SyncStatusIndicator() {
       } catch {
         // Sync status endpoint failed — edge is up but session may be invalid
         setState('offline');
+      }
+
+      // Fetch print job queue summary for print-pending indicator
+      try {
+        const printStatus = await edgeFetch('/api/edge/print-jobs?limit=1');
+        const summary = printStatus?.summary || {};
+        setPrintPending((summary.accepted || 0) + (summary.needs_retry || 0));
+        setPrintDeadLetter(summary.dead_letter || 0);
+      } catch {
+        // Print-jobs endpoint not available — skip
       }
     } catch {
       // Edge server not reachable
@@ -120,6 +134,24 @@ export default function SyncStatusIndicator() {
         <span>{c.text}</span>
         {lastSync && state === 'online' && (
           <span className="text-gray-400 font-normal hidden sm:inline">· {lastSync}</span>
+        )}
+        {printPending > 0 && (
+          <span className="flex items-center gap-0.5 text-orange-600" title={`${printPending} print job(s) pending in bridge queue`}>
+            <Printer size={12} />
+            {printPending}
+          </span>
+        )}
+        {printDeadLetter > 0 && (
+          <span className="flex items-center gap-0.5 text-red-700" title={`${printDeadLetter} print job(s) in dead letter — manual retry needed`}>
+            <AlertCircle size={12} />
+            {printDeadLetter}
+          </span>
+        )}
+        {syncFailures > 0 && state !== 'online' && (
+          <span className="flex items-center gap-0.5 text-red-600" title={`${syncFailures} consecutive sync failure(s)`}>
+            <AlertTriangle size={12} />
+            {syncFailures}
+          </span>
         )}
       </div>
     </>

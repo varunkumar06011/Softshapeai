@@ -500,19 +500,19 @@ export async function edgeFetch(path, options = {}) {
       let res = await _edgeFetchWithKey(path, fetchOptions, headers, timeoutMs);
 
       // If the edge server rejected our API key, the stored key is stale.
-      // Clear it and retry once without the key — the edge server only rejects
-      // a wrong key, not a missing one (unless EDGE_REQUIRE_KEY=true, which is
-      // not the default). This fixes tables not loading when localStorage has
-      // an outdated key from a prior registration or outlet switch.
+      // Refresh the key from the cloud and retry once. The edge server now
+      // requires the key for all POS routes, so retrying without it would fail.
       if (res.status === 401 && edgeApiKey) {
         let body = null;
         try { body = await res.json(); } catch { /* ignore */ }
         if (body?.error && /edge api key/i.test(body.error)) {
-          console.warn('[edgeFetch] Stored edge API key was rejected — clearing and retrying without key');
+          console.warn('[edgeFetch] Stored edge API key was rejected — refreshing from cloud');
           try { localStorage.removeItem(EDGE_API_KEY_STORAGE_KEY); } catch { /* ignore */ }
-          const retryHeaders = { ...headers };
-          delete retryHeaders['X-Edge-Key'];
-          res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
+          const freshKey = await ensureEdgeApiKey().catch(() => null);
+          if (freshKey && freshKey !== edgeApiKey) {
+            const retryHeaders = { ...headers, 'X-Edge-Key': freshKey };
+            res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
+          }
         }
       }
 

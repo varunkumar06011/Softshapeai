@@ -231,9 +231,27 @@ const QuickOnboarding = () => {
         }
       }
 
+      // Fetch setup nonce from /health (required for onboarding protection)
+      let setupNonce = null;
+      try {
+        const healthRes = await fetch(`${getEdgeUrl()}/health`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (healthRes.ok) {
+          const health = await healthRes.json();
+          setupNonce = health.setupNonce || null;
+          if (health.onboarded) {
+            throw new Error('This device has already been set up. Onboarding is not available.');
+          }
+        }
+      } catch (nonceErr) {
+        if (nonceErr.message?.includes('already been set up')) throw nonceErr;
+        // Non-fatal — older edge servers don't require nonce
+      }
+
       const result = await edgeFetch('/api/edge/onboard', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, setupNonce }),
       });
       if (result.success !== false) {
         navigate('/cashier');

@@ -13,10 +13,32 @@
 // This is the regular restaurant equivalent of barMenuSyncService.js (for bar menus).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { fetchMenuFromBackend } from "./menuService";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { isEdgeLocalAuth, isEdgeAvailable } from "./edgeHealth";
+
+// ── MenuSnapshot state machine ───────────────────────────────────────────────
+// States: loading, ready, stale, empty, unavailable
+// Each state includes a reason and lastUpdatedAt timestamp for UI display.
+
+export const MENU_SNAPSHOT_STATES = {
+  LOADING: 'loading',
+  READY: 'ready',
+  STALE: 'stale',
+  EMPTY: 'empty',
+  UNAVAILABLE: 'unavailable',
+};
+
+function createSnapshot(state, reason = null, menu = null, lastUpdatedAt = null) {
+  return {
+    state,
+    reason,
+    menu: menu ?? [],
+    lastUpdatedAt: lastUpdatedAt ?? Date.now(),
+  };
+}
 
 // Base localStorage key for the unified menu cache
 const BASE_STORAGE_KEY = "softshape_unified_menu";
@@ -100,6 +122,16 @@ async function loadInitialMenu() {
     try {
       const apiItems = await fetchMenuFromBackend();
 
+      // ── Empty-response protection: never replace a valid cached menu with
+      // an empty response from the bridge. This prevents a blank menu when
+      // the bridge is temporarily unavailable or half-synced.
+      if (apiItems.length === 0 && globalMenu && globalMenu.length > 0) {
+        console.warn('[MenuSync] Bridge returned empty menu — keeping cached menu');
+        _isLoading = false;
+        notifySubscribers();
+        return;
+      }
+
       globalMenu = apiItems;
       console.log(`[MenuSync] Loaded ${globalMenu.length} items from backend`);
     } catch (err) {
@@ -116,6 +148,7 @@ async function loadInitialMenu() {
       _isLoading = false;
       if (globalMenu?.length) {
         localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+        recordMenuCacheTimestamp();
       }
       notifySubscribers();
       dispatchMenuEvent(globalMenu ?? []);
@@ -202,6 +235,14 @@ export function useGlobalMenuSync() {
 
     try {
       const apiItems = await fetchMenuFromBackend();
+
+      // ── Empty-response protection on refresh too
+      if (apiItems.length === 0 && globalMenu && globalMenu.length > 0) {
+        console.warn('[MenuSync] Refresh returned empty menu — keeping cached menu');
+        _isLoading = false;
+        notifySubscribers();
+        return globalMenu;
+      }
 
       globalMenu = apiItems;
       _loadError = null;
@@ -321,12 +362,37 @@ export function useGlobalMenuSync() {
     };
   }, [refreshMenu]);
 
+  // ── Compute MenuSnapshot state for UI display ─────────────────────────────
+  const snapshot = useMemo(() => {
+    const hasMenu = menu && menu.length > 0;
+    const cacheAge = getMenuCacheAgeMs();
+    const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+    if (loading && !hasMenu) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.LOADING, 'Loading menu from bridge...');
+    }
+    if (error && !hasMenu) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.UNAVAILABLE, error);
+    }
+    if (error && hasMenu) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.STALE, `Using cached menu (${error})`, menu, Date.now() - cacheAge);
+    }
+    if (!hasMenu && !loading) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.EMPTY, 'No menu items synced to this bridge');
+    }
+    if (hasMenu && cacheAge > STALE_THRESHOLD_MS) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.STALE, 'Menu cache is older than 30 minutes', menu, Date.now() - cacheAge);
+    }
+    return createSnapshot(MENU_SNAPSHOT_STATES.READY, null, menu, Date.now() - cacheAge);
+  }, [menu, loading, error]);
+
   return {
     globalMenu: menu || [],
     isLoadingMenu: loading,
     loadError: error,
     setGlobalMenu,
     refreshMenu,
+    snapshot,
   };
 }
 
