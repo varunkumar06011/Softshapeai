@@ -238,11 +238,40 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
         cacheMenu(restaurantId, edgeItems).catch(err => console.warn("[MenuService] Failed to cache menu:", err.message));
         return edgeItems;
       }
-      // For edge-local auth, return the empty array — don't fall through to
-      // cloud with a fake token that will always be rejected.
-      if (useEdgeDirect) return edgeItems;
+      // Edge returned empty menu. When using edge-local auth, cloud fallback
+      // is impossible (fake token). Trigger a config re-sync from the edge
+      // server (which has a valid cloud session token) and retry once.
+      if (useEdgeDirect) {
+        console.warn('[MenuService] Edge returned empty menu — triggering config re-sync');
+        try {
+          await edgeFetch('/api/edge/config/sync', { method: 'POST', timeoutMs: 60_000 });
+          const retryItems = await edgeFetchMenuItems();
+          if (retryItems.length > 0) {
+            console.log(`[MenuService] Loaded ${retryItems.length} items after re-sync`);
+            cacheMenu(restaurantId, retryItems).catch(() => {});
+            return retryItems;
+          }
+        } catch (syncErr) {
+          console.warn('[MenuService] Config re-sync failed:', syncErr.message);
+        }
+        // Return localStorage cache as last resort
+        const cached = readStoredMenu(restaurantId);
+        if (cached.length > 0) {
+          console.warn('[MenuService] Using localStorage cache after empty edge menu');
+          return cached;
+        }
+        return [];
+      }
     } catch (err) {
-      if (useEdgeDirect) throw err;
+      if (useEdgeDirect) {
+        // Edge fetch failed entirely. Try localStorage cache before throwing.
+        const cached = readStoredMenu(restaurantId);
+        if (cached.length > 0) {
+          console.warn('[MenuService] Edge fetch failed — using localStorage cache:', err.message);
+          return cached;
+        }
+        throw err;
+      }
       console.warn("[MenuService] Edge server menu fetch failed:", err.message);
     }
   }
