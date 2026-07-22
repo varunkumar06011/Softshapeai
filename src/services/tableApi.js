@@ -16,7 +16,7 @@
 
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, EDGE_READ_TIMEOUT_MS } from "./edgeHealth.js";
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, EDGE_READ_TIMEOUT_MS, triggerEdgeConfigResync } from "./edgeHealth.js";
 import { generateRequestId } from "../utils/requestId.js";
 
 // Helper: parse fetch response, throw on non-OK status with error message
@@ -81,9 +81,14 @@ export async function fetchTables(restaurantId = getCurrentRestaurantId(), signa
       if (edgeData && edgeData.length > 0) {
         return edgeData;
       }
-      // For edge-local auth, return the empty array — don't fall through to
-      // cloud with a fake token that will always be rejected.
-      if (useEdgeDirect) return edgeData || [];
+      if (useEdgeDirect) {
+        const synced = await triggerEdgeConfigResync();
+        if (synced) {
+          const retryData = await edgeFetch('/api/edge/tables', { timeoutMs: EDGE_READ_TIMEOUT_MS });
+          if (retryData && retryData.length > 0) return retryData;
+        }
+        return edgeData || [];
+      }
       console.debug('[tableApi] edge returned empty tables, falling through to cloud');
     } catch (e) {
       if (useEdgeDirect) throw e;
@@ -112,7 +117,14 @@ export async function fetchSections(restaurantId = getCurrentRestaurantId()) {
       if (edgeData && edgeData.length > 0) {
         return edgeData;
       }
-      if (useEdgeDirect) return edgeData || [];
+      if (useEdgeDirect) {
+        const synced = await triggerEdgeConfigResync();
+        if (synced) {
+          const retryData = await edgeFetch('/api/edge/sections', { timeoutMs: EDGE_READ_TIMEOUT_MS });
+          if (retryData && retryData.length > 0) return retryData;
+        }
+        return edgeData || [];
+      }
       console.debug('[tableApi] edge returned empty sections, falling through to cloud');
     } catch (e) {
       if (useEdgeDirect) throw e;
@@ -134,7 +146,14 @@ export async function fetchVenues(restaurantId = getCurrentRestaurantId()) {
       if (edgeData && edgeData.length > 0) {
         return edgeData;
       }
-      if (useEdgeDirect) return edgeData || [];
+      if (useEdgeDirect) {
+        const synced = await triggerEdgeConfigResync();
+        if (synced) {
+          const retryData = await edgeFetch('/api/edge/venues', { timeoutMs: EDGE_READ_TIMEOUT_MS });
+          if (retryData && retryData.length > 0) return retryData;
+        }
+        return edgeData || [];
+      }
       console.debug('[tableApi] edge returned empty venues, falling through to cloud');
     } catch (e) {
       if (useEdgeDirect) throw e;

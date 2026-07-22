@@ -14,7 +14,7 @@
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getBarMenuCacheKey } from "../utils/cacheKeys";
 import { getMenuStorageKey } from "./menuService";
-import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS } from "./edgeHealth";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, triggerEdgeConfigResync } from "./edgeHealth";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 // Default placeholder images for items without uploaded images
@@ -380,8 +380,22 @@ export async function fetchBarMenuFromBackend() {
         return mapBarMenuItems(allItems, restaurantItems);
       }
       if (useEdgeDirect && allItems && allItems.length === 0) {
-        // Edge-local auth but no items — return empty, don't hit cloud with fake token
-        return [];
+        // Edge-local auth but no items — trigger config re-sync and retry
+        console.warn('[BarMenu] Edge returned empty — triggering config re-sync');
+        const synced = await triggerEdgeConfigResync();
+        if (synced) {
+          const retryItems = await edgeFetch('/api/edge/menu/items', { timeoutMs: EDGE_READ_TIMEOUT_MS });
+          if (retryItems && retryItems.length > 0) {
+            cacheMenu(restaurantId, retryItems).catch(() => {});
+            let restaurantItems = [];
+            try {
+              const savedMenu = localStorage.getItem(getMenuStorageKey());
+              if (savedMenu) restaurantItems = JSON.parse(savedMenu);
+            } catch { /* ignore */ }
+            return mapBarMenuItems(retryItems, restaurantItems);
+          }
+        }
+        return readBarMenuCache();
       }
     } catch (err) {
       if (useEdgeDirect) {

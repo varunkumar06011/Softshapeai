@@ -16,7 +16,7 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
-import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, waitForEdgeReady } from "./edgeHealth.js";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, waitForEdgeReady, triggerEdgeConfigResync } from "./edgeHealth.js";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 async function edgeFetchMenuItems() {
@@ -243,16 +243,14 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
       // server (which has a valid cloud session token) and retry once.
       if (useEdgeDirect) {
         console.warn('[MenuService] Edge returned empty menu — triggering config re-sync');
-        try {
-          await edgeFetch('/api/edge/config/sync', { method: 'POST', timeoutMs: 60_000 });
+        const synced = await triggerEdgeConfigResync();
+        if (synced) {
           const retryItems = await edgeFetchMenuItems();
           if (retryItems.length > 0) {
             console.log(`[MenuService] Loaded ${retryItems.length} items after re-sync`);
             cacheMenu(restaurantId, retryItems).catch(() => {});
             return retryItems;
           }
-        } catch (syncErr) {
-          console.warn('[MenuService] Config re-sync failed:', syncErr.message);
         }
         // Return localStorage cache as last resort
         const cached = readStoredMenu(restaurantId);

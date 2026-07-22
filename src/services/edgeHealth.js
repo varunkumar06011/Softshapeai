@@ -627,3 +627,31 @@ export function startEdgeAutoRecovery() {
     }
   }, AUTO_RECOVERY_INTERVAL_MS);
 }
+
+let _configResyncInProgress = null;
+
+/**
+ * Triggers a config re-sync on the edge server and waits for it to complete.
+ * Deduplicates concurrent calls — if a re-sync is already in progress, waits
+ * for that one instead of starting another.
+ * @returns {Promise<boolean>} true if re-sync succeeded, false otherwise
+ */
+export async function triggerEdgeConfigResync() {
+  if (_configResyncInProgress) return _configResyncInProgress;
+  _configResyncInProgress = (async () => {
+    try {
+      console.warn('[edgeHealth] Triggering edge config re-sync');
+      const result = await edgeFetch('/api/edge/config/sync', {
+        method: 'POST',
+        timeoutMs: 60_000,
+      });
+      return result?.success === true;
+    } catch (err) {
+      console.warn('[edgeHealth] Config re-sync failed:', err?.message || err);
+      return false;
+    } finally {
+      _configResyncInProgress = null;
+    }
+  })();
+  return _configResyncInProgress;
+}

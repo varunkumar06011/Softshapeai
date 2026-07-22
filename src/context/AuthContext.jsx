@@ -17,6 +17,8 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 import { isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
+import { resetMenuState } from '../services/menuSyncService';
+import { resetBarMenuState } from '../services/barMenuSyncService';
 
 // React Context for auth state — null until AuthProvider wraps the app
 const AuthContext = createContext(null);
@@ -91,12 +93,17 @@ export const AuthProvider = ({ children }) => {
   }, [token, user]);
 
   const setAuth = ({ token: newToken, user: newUser, restaurant: newRestaurant }) => {
+    const prevToken = token;
     setToken(newToken);
     setUser(newUser);
     setRestaurantState(newRestaurant);
     if (newToken) localStorage.setItem('ss_token', newToken);
     if (newUser) localStorage.setItem('ss_user', JSON.stringify(newUser));
     if (newRestaurant) localStorage.setItem('ss_restaurant', JSON.stringify(newRestaurant));
+    if (newToken && newToken !== prevToken) {
+      resetMenuState();
+      resetBarMenuState();
+    }
   };
 
   const setRestaurant = (updatedRestaurant) => {

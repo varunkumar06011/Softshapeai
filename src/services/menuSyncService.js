@@ -92,6 +92,20 @@ let _loadError = null;
 const subscribers = new Set();
 let loadPromise = null;
 
+/**
+ * Reset the menu state so the next loadInitialMenu() call re-fetches from
+ * the backend. Called after login when the restaurantId becomes available
+ * for the first time (e.g. edge-local PIN login).
+ */
+export function resetMenuState() {
+  loadPromise = null;
+  globalMenu = null;
+  _isLoading = true;
+  _loadError = null;
+  notifySubscribers();
+  loadInitialMenu();
+}
+
 function dispatchMenuEvent(menu) {
   try {
     window.dispatchEvent(

@@ -32,6 +32,19 @@ let loadPromise = null;
 // The repair sends batch PATCH requests which can trigger 429s if run repeatedly.
 let _repairDoneThisSession = false;
 
+/**
+ * Reset the bar menu state so the next loadBarMenu() call re-fetches from
+ * the backend. Called after login when the restaurantId becomes available.
+ */
+export function resetBarMenuState() {
+  loadPromise = null;
+  barGlobalMenu = null;
+  _isLoading = true;
+  _loadError = null;
+  notifySubscribers();
+  loadBarMenu({ skipRepair: true });
+}
+
 function notifySubscribers() {
   subscribers.forEach((cb) => cb({ menu: barGlobalMenu ?? [], loading: _isLoading, error: _loadError }));
 }
