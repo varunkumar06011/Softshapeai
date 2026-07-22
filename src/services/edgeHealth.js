@@ -532,11 +532,19 @@ export async function edgeFetch(path, options = {}) {
         const isKeyError = body?.error && /edge api key/i.test(body.error);
         if (isKeyError || !edgeApiKey) {
           console.warn('[edgeFetch] Edge API key missing or rejected — refreshing from cloud');
-          try { localStorage.removeItem(EDGE_API_KEY_STORAGE_KEY); } catch { /* ignore */ }
+          // Don't remove the existing key until we have a fresh one.
+          // If ensureEdgeApiKey() fails (cloud unreachable, no auth token),
+          // wiping the key would permanently break all edge access.
           const freshKey = await ensureEdgeApiKey().catch(() => null);
           if (freshKey && freshKey !== edgeApiKey) {
+            setStoredEdgeApiKey(freshKey);
             const retryHeaders = { ...headers, 'X-Edge-Key': freshKey };
             res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
+          } else if (!freshKey && edgeApiKey) {
+            // Refresh failed but we still have the old key — it might be
+            // stale on the edge server side. Surface the original 401 error
+            // instead of silently wiping the key.
+            console.warn('[edgeFetch] Could not refresh edge API key — keeping existing key');
           }
         }
       }

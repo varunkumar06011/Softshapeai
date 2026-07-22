@@ -201,10 +201,18 @@ export default function EdgeSetupScreen() {
       }
     } catch (err) {
       if (err.status === 401) {
-        setConfigError(
-          'Edge API key missing or rejected. The edge server requires a valid API key ' +
-          'to download config. Please go back and re-link your restaurant to get a fresh key.'
-        );
+        const msg = (err.message || '').toLowerCase();
+        if (msg.includes('session') || msg.includes('register')) {
+          setConfigError(
+            'Edge server session is invalid or expired. Please go back and re-link your restaurant ' +
+            'with a fresh setup token to establish a new session.'
+          );
+        } else {
+          setConfigError(
+            'Edge API key missing or rejected. The edge server requires a valid API key ' +
+            'to download config. Please go back and re-link your restaurant to get a fresh key.'
+          );
+        }
       } else {
         setConfigError(err.message || 'Failed to download config from cloud');
       }
