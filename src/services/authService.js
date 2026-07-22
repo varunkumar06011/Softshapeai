@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey } from './edgeHealth.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
 
@@ -123,22 +123,32 @@ export const authService = {
   },
 
   async _tryEdgePinLogin(userId, pin) {
-    const EDGE_URL = import.meta.env.VITE_EDGE_URL || 'http://127.0.0.1:3101';
+    const EDGE_URL = getEdgeUrl();
     try {
+      const edgeApiKey = getStoredEdgeApiKey();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
       const res = await fetch(`${EDGE_URL}/api/edge/auth/pin`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}),
+        },
         body: JSON.stringify({ userId, pin }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
 
-      // 401 = wrong PIN / invalid credentials — terminal, do not fall through.
-      // Throw with status so captainLogin can distinguish from edge errors.
+      // 401 could be wrong PIN OR missing/invalid edge API key.
+      // Distinguish: if the error mentions "edge api key", it's a key
+      // issue — fall through to cloud instead of treating as wrong PIN.
       if (res.status === 401) {
         const body = await res.json().catch(() => ({}));
+        const errMsg = (body.error || '').toLowerCase();
+        if (errMsg.includes('edge api key')) {
+          console.warn('[AuthService] Edge API key rejected during PIN login — falling through to cloud');
+          return null;
+        }
         const err = new Error(body.error || 'Invalid credentials');
         err.status = 401;
         err.edgeInvalidCredentials = true;
