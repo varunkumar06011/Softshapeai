@@ -35,11 +35,11 @@ import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { bulkImportSpecials } from '../services/menuService';
 import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, releaseKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { setLocalPrinterMapping } from '../utils/offlineDB';
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from '../services/edgeHealth';
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey } from '../services/edgeHealth';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
@@ -468,10 +468,10 @@ const CashierDashboard = ({ onLogout }) => {
         try {
           const cached = await getCachedSections(getCurrentRestaurantId());
           if (cached && cached.length > 0) {
-            console.log('[fetchedSections] Using IndexedDB section cache as fallback');
+            if (import.meta.env.DEV) console.log('[fetchedSections] Using IndexedDB section cache as fallback');
             setFetchedSections(cached);
           }
-        } catch {}
+        } catch { /* storage error — non-fatal */ }
       } finally {
         setSectionsLoading(false);
       }
@@ -522,7 +522,7 @@ const CashierDashboard = ({ onLogout }) => {
     if (fetchedSections.length > 0) {
       const barTypes = fetchedSections.filter(s => isBarLikeVenue(s.venue?.venueType)).map(s => ({ name: s.name, venueType: s.venue?.venueType }));
       const restTypes = fetchedSections.filter(s => !isBarLikeVenue(s.venue?.venueType)).map(s => ({ name: s.name, venueType: s.venue?.venueType }));
-      console.log('[OutletToggle] fetchedSections:', fetchedSections.length, 'bar:', barTypes, 'restaurant:', restTypes, 'hasMultipleOutlets:', hasMultipleOutlets);
+      if (import.meta.env.DEV) console.log('[OutletToggle] fetchedSections:', fetchedSections.length, 'bar:', barTypes, 'restaurant:', restTypes, 'hasMultipleOutlets:', hasMultipleOutlets);
     }
   }, [fetchedSections, hasMultipleOutlets]);
 
@@ -779,7 +779,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Persist extraTables to localStorage so they survive page refresh
   useEffect(() => {
-    try { localStorage.setItem(getTenantScopedKey('cashier_extra_tables'), JSON.stringify(extraTables)); } catch {}
+    try { localStorage.setItem(getTenantScopedKey('cashier_extra_tables'), JSON.stringify(extraTables)); } catch { /* storage error — non-fatal */ }
   }, [extraTables]);
 
   // On mount: purge any extra tables that were recently terminated but survived in localStorage
@@ -799,7 +799,7 @@ const CashierDashboard = ({ onLogout }) => {
       let changed = false;
       Object.keys(map).forEach(k => { if (now - map[k] > 30000) { delete map[k]; changed = true; } });
       if (changed) localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(map));
-    } catch {}
+    } catch { /* storage error — non-fatal */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1268,10 +1268,10 @@ const CashierDashboard = ({ onLogout }) => {
 
       // ONLY apply result if this is still the latest call
       if (myGeneration !== loadTxnsGenerationRef.current) {
-        console.log(`[Transactions] Discarding stale gen=${myGeneration}, current=${loadTxnsGenerationRef.current}`);
+        if (import.meta.env.DEV) console.log(`[Transactions] Discarding stale gen=${myGeneration}, current=${loadTxnsGenerationRef.current}`);
         return;
       }
-      console.log(`[Transactions] Applying gen=${myGeneration}, total=${merged.length} (${offlineTxns.length} offline)`);
+      if (import.meta.env.DEV) console.log(`[Transactions] Applying gen=${myGeneration}, total=${merged.length} (${offlineTxns.length} offline)`);
       // Replace entirely — only preserve optimistic (socket-added / offline, not yet server-confirmed) txns
       setPastTransactions(prev => {
         const newIds = new Set(merged.map(t => t.id));
@@ -1682,7 +1682,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (!order?.tableId) return;
       // Dedup: skip if this is our own KOT submission echo
       if (payload?.requestId && processedSocketRequestIds.current.has(payload.requestId)) return;
-      console.log('[CashierDashboard] Received order:created for table:', order.tableId, 'isExtra:', payload?.isExtraTable);
+      if (import.meta.env.DEV) console.log('[CashierDashboard] Received order:created for table:', order.tableId, 'isExtra:', payload?.isExtraTable);
       // NOTE: no shouldBlockTableUpdate here — item additions must never be suppressed by the bill-print cooldown
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTs1 = recentlyTerminatedRef.current[order.tableId];
@@ -1904,7 +1904,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const onOrderPaid = (payload) => {
       const { tableId, isExtraTable, orderId: paidOrderId, transaction: socketTxn } = payload;
-      console.log(`[Socket] order:paid received tableId=${tableId} orderId=${paidOrderId}`);
+      if (import.meta.env.DEV) console.log(`[Socket] order:paid received tableId=${tableId} orderId=${paidOrderId}`);
       // Terminal event — must always clear table, never blocked by cooldown.
 
       // Merge transaction from socket into pastTransactions if present (fixes fast-settlement disappearing bills)
@@ -1955,7 +1955,7 @@ const CashierDashboard = ({ onLogout }) => {
         recentlyTerminatedRef.current[tableId] = Date.now();
         try {
           localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
-        } catch {}
+        } catch { /* storage error — non-fatal */ }
         setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 5000);
       }
 
@@ -2019,7 +2019,7 @@ const CashierDashboard = ({ onLogout }) => {
         recentlyTerminatedRef.current[sourceTableId] = Date.now();
         try {
           localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
-        } catch {}
+        } catch { /* storage error — non-fatal */ }
         setTimeout(() => {
           delete recentlyTerminatedRef.current[sourceTableId];
         }, 3000);
@@ -2096,7 +2096,7 @@ const CashierDashboard = ({ onLogout }) => {
     const onPrinterConfigUpdated = (payload) => {
       if (payload?.printerMapping && Object.keys(payload.printerMapping).length > 0) {
         setLocalPrinterMapping(payload.printerMapping).catch(() => {});
-        console.log('[CashierDashboard] Printer mapping updated from admin');
+        if (import.meta.env.DEV) console.log('[CashierDashboard] Printer mapping updated from admin');
       }
     };
     socket.on('printer:config-updated', onPrinterConfigUpdated);
@@ -2125,7 +2125,7 @@ const CashierDashboard = ({ onLogout }) => {
       try {
         const result = await drainSettlementQueue();
         if (result.drained > 0) {
-          console.log(`[SettlementQueue] Drained ${result.drained} queued settlement(s)`);
+          if (import.meta.env.DEV) console.log(`[SettlementQueue] Drained ${result.drained} queued settlement(s)`);
           addNotification('Settlement Synced', `${result.drained} pending settlement(s) completed.`, 'success');
           loadTransactions('today', null, { silent: true, force: true });
         }
@@ -2288,7 +2288,7 @@ const CashierDashboard = ({ onLogout }) => {
           try {
             const stored = safeGetJSON(getTenantScopedKey('cashier_bill_printed_tables'), []);
             localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify(stored.filter(id => id !== selectedTable.backendId)));
-          } catch {}
+          } catch { /* storage error — non-fatal */ }
           setSelectedTable(null); setSelectedOrder(null); setCart([]);
           lastConfirmedItemsRef.current = [];
           clearCashierTableCache(selectedTable);
@@ -2744,19 +2744,26 @@ const CashierDashboard = ({ onLogout }) => {
     }
     setIsVerifyingReprintPin(true);
     try {
-      // For edge-local (PIN) auth, cloud will reject the fake token.
-      // The user already authenticated via edge PIN login — skip cloud verification.
-      if (isEdgeLocalAuth()) {
-        setShowReprintPinModal(false);
-        setReprintPinError('');
-        doReprintFoundBill(reprintPinTarget);
+      // Edge-only: verify reprint PIN against the edge server's local user DB.
+      // No cloud fallback — the edge server is the single source of truth for PINs.
+      const edgeUrl = getEdgeUrl();
+      if (!edgeUrl) {
+        setReprintPinError('Edge server not configured.');
         return;
       }
-      const res = await httpFetch(`${API_BASE}/api/auth/verify-pin`, {
+      const edgeApiKey = getStoredEdgeApiKey();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`${edgeUrl}/api/edge/auth/pin`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ pin: reprintPinInput }),
-      }, { retries: 0 });
+        headers: {
+          'Content-Type': 'application/json',
+          ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}),
+        },
+        body: JSON.stringify({ userId: user?.userId || user?.id, pin: reprintPinInput }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
       if (res.ok) {
         setShowReprintPinModal(false);
         setReprintPinError('');
@@ -2765,7 +2772,7 @@ const CashierDashboard = ({ onLogout }) => {
         setReprintPinError('Incorrect PIN. Please try again.');
       }
     } catch (error) {
-      setReprintPinError('Failed to verify PIN. Please try again.');
+      setReprintPinError('Edge server unreachable — cannot verify PIN.');
     } finally {
       setIsVerifyingReprintPin(false);
     }
@@ -2775,106 +2782,22 @@ const CashierDashboard = ({ onLogout }) => {
     if (!txn) return;
     setIsReprintingFoundBill(true);
     try {
-      // For edge-local (PIN) auth, use edge server — cloud will reject the fake token
-      if (isEdgeLocalAuth()) {
-        try {
-          const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: txn.orderId }),
-          });
-          if (edgeResult && edgeResult.success) {
-            addNotification('Re-print Sent', `Bill #${txn.billNumber || txn.displayId} sent to printer.`, 'success');
-            return;
-          }
-        } catch (edgeErr) {
-          throw new Error(edgeErr.message || 'Edge reprint failed');
-        }
-        return;
-      }
-
-      // Step 1: Try local print first using the transaction data we already have.
-      // This avoids the round-trip to the backend and prevents auth-expiry stalls.
-      let localPrinted = false;
-      const reprintEventId = `reprint-${txn.orderId || txn.id}-${Date.now()}`;
+      // Edge-only reprint: the edge server has the order in SQLite and rebuilds
+      // ESC/POS from the stored record. No cloud path needed.
       try {
-        const { printLocal } = await import('../utils/printOffline');
-        const billItems = (txn.itemsList || []).map(i => ({
-          name: i.name || i.n || '',
-          quantity: i.quantity || i.q || 1,
-          price: i.price || i.p || 0,
-          amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
-          menuType: i.menuType || i.type || 'FOOD',
-          notes: i.notes || null,
-        }));
-        const reprintEscpos = buildBillEscpos({
-          billNumber: txn.billNumber || 'REPRINT',
-          tableNumber: txn.tableDisplayName || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
-          sectionTag: txn.sectionTag || null,
-          items: billItems,
-          subtotal: Number(txn.subtotal ?? 0),
-          discount: (txn.discountPercent > 0 || txn.discountAmount > 0)
-            ? { percent: Number(txn.discountPercent ?? 0), amount: Number(txn.discountAmount ?? 0) }
-            : null,
-          tax: (txn.cgst || txn.sgst) ? { cgst: Number(txn.cgst ?? 0), sgst: Number(txn.sgst ?? 0), total: (Number(txn.cgst ?? 0) + Number(txn.sgst ?? 0)) } : null,
-          roundOff: Number(txn.roundOff ?? 0),
-          grandTotal: Number(txn.grandTotal ?? txn.amount ?? 0),
-          itemCount: billItems.length,
-          qtyCount: billItems.reduce((s, i) => s + i.quantity, 0),
-          isReprint: true,
-          section: txn.source || undefined,
-          restaurant: {
-            name: restaurant?.name || undefined,
-            receiptHeader: restaurant?.receiptHeader || undefined,
-            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-            address: restaurant?.address || undefined,
-            phone: restaurant?.phone || undefined,
-          },
+        const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: txn.orderId }),
         });
-        const result = await printLocal({
-          type: 'FINAL_BILL',
-          escposData: reprintEscpos,
-          eventId: reprintEventId,
-          data: {
-            tableNumber: txn.tableDisplayName || (txn.tableNumber ? `T${txn.tableNumber}` : '—'),
-            items: billItems,
-            subtotal: Number(txn.subtotal ?? 0),
-            discount: (txn.discountPercent > 0 || txn.discountAmount > 0)
-              ? { percent: Number(txn.discountPercent ?? 0), amount: Number(txn.discountAmount ?? 0) }
-              : null,
-            cgst: Number(txn.cgst ?? 0),
-            sgst: Number(txn.sgst ?? 0),
-            grandTotal: Number(txn.grandTotal ?? txn.amount ?? 0),
-            roundOff: Number(txn.roundOff ?? 0),
-            billNumber: txn.billNumber || 'REPRINT',
-            isReprint: true,
-            restaurant: {
-              name: restaurant?.name || undefined,
-              receiptHeader: restaurant?.receiptHeader || undefined,
-              receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-              address: restaurant?.address || undefined,
-              phone: restaurant?.phone || undefined,
-            },
-          },
-        });
-        localPrinted = result?.printed || false;
-      } catch (printErr) {
-        console.warn('[doReprintFoundBill] Local print failed:', printErr.message);
+        if (edgeResult && edgeResult.success) {
+          addNotification('Re-print Sent', `Bill #${txn.billNumber || txn.displayId} sent to printer.`, 'success');
+          return;
+        }
+        throw new Error(edgeResult?.error || 'Edge reprint failed');
+      } catch (edgeErr) {
+        throw new Error(edgeErr.message || 'Edge server unreachable — cannot reprint.');
       }
-
-      // Step 2: Call backend with localPrinted flag (for bill number assignment / dedup)
-      const response = await httpFetch(`${API_BASE}/api/print/reprint-by-transaction`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({
-          orderId: txn.orderId,
-          restaurantId: txn._sourceRestaurantId || txn.restaurantId || activeRestaurantId,
-          localPrinted,
-          billEventId: reprintEventId,
-        }),
-      }, { retries: 1 });
-      if (!response.ok) throw new Error('Print request failed');
-      addNotification('Re-print Sent', `Bill #${txn.billNumber || txn.displayId} sent to printer.`, 'success');
     } catch (error) {
       console.error('[Bill Finder] Re-print error:', error);
       addNotification('Re-print Failed', error.message || 'Failed to re-print bill', 'error');
@@ -2892,7 +2815,7 @@ const CashierDashboard = ({ onLogout }) => {
       removedItemIds.includes(i.id) ? { ...i, removedFromBill: true } : i
     );
     return calculateOrderTotal([...items, ...cart], discountPercent, restaurantConfig);
-  }, [selectedTable, cart, discountPercent, removedItemIds]);
+  }, [selectedTable, cart, discountPercent, removedItemIds, restaurantConfig]);
   const activeSubtotal = activeOrderCalc.rawSubtotal ?? activeOrderCalc.subtotal;
   const activeTaxes = activeOrderCalc.taxes;
   const activeTotal = activeOrderCalc.total;
@@ -2975,7 +2898,7 @@ const CashierDashboard = ({ onLogout }) => {
         next.add(tableId);
         try {
           localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
-        } catch {}
+        } catch { /* storage error — non-fatal */ }
         return next;
       });
       // Immediately update status to 'Waiting Bill' so button changes instantly
@@ -3107,9 +3030,9 @@ const CashierDashboard = ({ onLogout }) => {
         });
         localPrinted = result?.printed || false;
         if (localPrinted) {
-          console.log('[handleFinalBill] Local print succeeded — backend will skip socket emission');
+          if (import.meta.env.DEV) console.log('[handleFinalBill] Local print succeeded — backend will skip socket emission');
         } else {
-          console.log('[handleFinalBill] Local print failed — backend will emit via socket');
+          if (import.meta.env.DEV) console.log('[handleFinalBill] Local print failed — backend will emit via socket');
         }
       } catch (printErr) {
         console.warn('[handleFinalBill] Local print failed:', printErr.message);
@@ -3146,7 +3069,7 @@ const CashierDashboard = ({ onLogout }) => {
             next.delete(rollbackTableId);
             try {
               localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next]));
-            } catch {}
+            } catch { /* storage error — non-fatal */ }
             return next;
           });
           addNotification('Error', `${response.error || 'Edge server unavailable'} — could not print bill.`, 'error');
@@ -3197,7 +3120,7 @@ const CashierDashboard = ({ onLogout }) => {
             t.backendId === tableIdForCache ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
           );
           localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
-        } catch {}
+        } catch { /* storage error — non-fatal */ }
       }
 
       // Check actual print results from the edge server response
@@ -3244,7 +3167,7 @@ const CashierDashboard = ({ onLogout }) => {
           setBillPrintedTableIds(prev => {
             const next = new Set(prev);
             next.delete(tableId);
-            try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
+            try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch { /* storage error — non-fatal */ }
             return next;
           });
           billPrintCooldownRef.current.delete(tableId);
@@ -3832,7 +3755,7 @@ const CashierDashboard = ({ onLogout }) => {
         setBillPrintedTableIds(prev => {
           const next = new Set(prev);
           next.delete(settledId);
-          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
+          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch { /* storage error — non-fatal */ }
           return next;
         });
         billPrintCooldownRef.current.delete(settledId);
@@ -3859,7 +3782,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       // Clear stale transaction cache immediately so History tab never shows old data
       // commitFn.loadTransactions will write the fresh list once the API call completes
-      try { localStorage.removeItem(TX_CACHE_KEY); } catch {}
+      try { localStorage.removeItem(TX_CACHE_KEY); } catch { /* storage error — non-fatal */ }
 
       // Show success notification
       addNotification('Payment Success', `${method} • ₹${txnAmount.toFixed(2)} collected`, 'success');
@@ -3881,7 +3804,7 @@ const CashierDashboard = ({ onLogout }) => {
         recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
         try {
           localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
-        } catch {}
+        } catch { /* storage error — non-fatal */ }
         setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
         const cacheKey = activeOutlet === 'bar' ? getBarTablesCacheKey() : getTablesCacheKey();
         try {
@@ -3892,7 +3815,7 @@ const CashierDashboard = ({ onLogout }) => {
               : t
           );
           localStorage.setItem(cacheKey, JSON.stringify(updated));
-        } catch {}
+        } catch { /* storage error — non-fatal */ }
       }
       // Extra tables are already removed in optimisticFn above
 
@@ -3970,7 +3893,7 @@ const CashierDashboard = ({ onLogout }) => {
             if (settleData.queued) {
               // Settlement was queued — edge is temporarily down but will recover.
               // Show an info notification and keep the table marked as settled.
-              console.log(`[Settlement] orderId=${orderId} queued for retry`);
+              if (import.meta.env.DEV) console.log(`[Settlement] orderId=${orderId} queued for retry`);
               recordSettlementAudit({
                 requestId: settleRequestId,
                 orderId,
@@ -4013,7 +3936,7 @@ const CashierDashboard = ({ onLogout }) => {
             return;
           }
 
-          console.log(`[Settlement] orderId=${orderId} settled on edge server`);
+          if (import.meta.env.DEV) console.log(`[Settlement] orderId=${orderId} settled on edge server`);
 
           recordSettlementAudit({
             requestId: settleRequestId,
@@ -4134,7 +4057,7 @@ const CashierDashboard = ({ onLogout }) => {
             recentlyTerminatedRef.current[selectedTable.backendId] = Date.now();
             try {
               localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
-            } catch {}
+            } catch { /* storage error — non-fatal */ }
             setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
           }
         } else if (isWalkinMode) {
@@ -4235,7 +4158,7 @@ const CashierDashboard = ({ onLogout }) => {
         loadTransactions(txnDateFilterRef.current, null, { silent: true });
         // Secondary refresh at 3s — silent (no loading overlay flicker)
         setTimeout(() => {
-          console.log(`[Settlement] Secondary loadTransactions for orderId=${orderId}`);
+          if (import.meta.env.DEV) console.log(`[Settlement] Secondary loadTransactions for orderId=${orderId}`);
           loadTransactions(txnDateFilterRef.current, null, { silent: true });
         }, 3000);
       });
@@ -4269,14 +4192,14 @@ const CashierDashboard = ({ onLogout }) => {
       recentlyTerminatedRef.current[tableSnap.id] = Date.now();
       try {
         localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
-      } catch {}
+      } catch { /* storage error — non-fatal */ }
       setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.id), 6000);
     } else if (tableSnap.backendId) {
       terminatedTableIdsRef.current.add(tableSnap.backendId);
       recentlyTerminatedRef.current[tableSnap.backendId] = Date.now();
       try {
         localStorage.setItem(getTenantScopedKey('cashier_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
-      } catch {}
+      } catch { /* storage error — non-fatal */ }
       setTimeout(() => terminatedTableIdsRef.current.delete(tableSnap.backendId), 6000);
     }
     setIsTerminating(true);
@@ -4294,7 +4217,7 @@ const CashierDashboard = ({ onLogout }) => {
             });
             if (edgeResult?.success) {
               edgeSucceeded = true;
-              console.log('[Terminate] Edge terminate success:', tableSnap.backendId);
+              if (import.meta.env.DEV) console.log('[Terminate] Edge terminate success:', tableSnap.backendId);
             }
           } catch (edgeErr) {
             if (edgeErr?.status) {
@@ -4372,7 +4295,7 @@ const CashierDashboard = ({ onLogout }) => {
         setBillPrintedTableIds(prev => {
           const next = new Set(prev);
           next.delete(terminatedKey);
-          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch {}
+          try { localStorage.setItem(getTenantScopedKey('cashier_bill_printed_tables'), JSON.stringify([...next])); } catch { /* storage error — non-fatal */ }
           return next;
         });
         billPrintCooldownRef.current.delete(terminatedKey);
@@ -4649,7 +4572,7 @@ const CashierDashboard = ({ onLogout }) => {
       // Always use the fresh version from extraTables state — the grid snapshot may be stale
       // (e.g. activeOrder.id not yet set before createOrder resolved)
       const freshExtra = extraTables.find(et => et.id === table.id) || table;
-      console.log('[ExtraTable] handleTableSelect:', freshExtra.id, {
+      if (import.meta.env.DEV) console.log('[ExtraTable] handleTableSelect:', freshExtra.id, {
         hasActiveOrder: !!freshExtra.activeOrder,
         itemCount: freshExtra.activeOrder?.items?.length ?? 0,
         kotHistoryCount: freshExtra.kotHistory?.length ?? 0,
@@ -4993,13 +4916,30 @@ const CashierDashboard = ({ onLogout }) => {
         // Await local print results BEFORE sending the API call.
         // This ensures the backend gets the correct localPrinted flag.
         const localPrintResults = await Promise.allSettled(localPrintPromises);
-        localPrinted = localPrintResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+        // localPrinted must be true only if ALL prints succeeded.
+        // Using .some() caused partial success (food OK, liquor failed) to
+        // set localPrinted=true, which made the backend skip the print_job
+        // socket emit — the failed print was silently lost.
+        localPrinted = localPrintResults.length > 0 && localPrintResults.every(r => r.status === 'fulfilled' && r.value?.printed);
 
         if (localPrinted) {
           markKotNumberPrinted(preReservedKotNumber);
-          console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber} — backend will skip socket emission`);
+          if (import.meta.env.DEV) console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber} — backend will skip socket emission`);
         } else {
-          console.log(`[KOT] Local print failed for KOT #${preReservedKotNumber} — backend will emit via socket`);
+          // Filter kotEventIds to only those that actually printed, so the
+          // backend's eventId dedup doesn't suppress re-emission of failed ones.
+          const succeededEventIds = [];
+          if (foodEscpos.length > 0 && localPrintResults[0]?.status === 'fulfilled' && localPrintResults[0]?.value?.printed) {
+            succeededEventIds.push(foodEventId);
+          }
+          if (liquorEscpos.length > 0) {
+            const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
+            if (localPrintResults[liquorIdx]?.status === 'fulfilled' && localPrintResults[liquorIdx]?.value?.printed) {
+              succeededEventIds.push(liquorEventId);
+            }
+          }
+          kotEventIds = succeededEventIds;
+          if (import.meta.env.DEV) console.log(`[KOT] Local print failed (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
         }
         } // end else (not already printed)
 
@@ -5079,11 +5019,10 @@ const CashierDashboard = ({ onLogout }) => {
             );
             return;
           }
-          // API failed and local print did not succeed — release the reserved KOT
-          // number so it doesn't create a gap in the sequence.
-          if (preReservedKotNumber != null && requestId) {
-            releaseKotNumber(requestId);
-          }
+          // API failed and local print did not succeed — throw so user can retry.
+          // Note: In edge-first architecture, preReservedKotNumber is always null
+          // (edge server assigns KOT numbers atomically during order creation),
+          // so there's no reserved number to release.
           throw apiErr;
         }
 
@@ -5093,7 +5032,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (selectedTable.isExtra) {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
-              console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
+              if (import.meta.env.DEV) console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
               orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, selectedTable.id);
             } else {
               orderResponse = await createOrder({

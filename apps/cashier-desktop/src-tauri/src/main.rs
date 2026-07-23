@@ -4,22 +4,13 @@
 )]
 
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::net::TcpStream;
+use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(windows)]
 mod windows_printing;
@@ -31,31 +22,11 @@ struct PrinterInfo {
     is_default: bool,
 }
 
-// ── Edge server sidecar management ───────────────────────────────────────────
-// The edge-server is a compiled Bun binary that runs as a subprocess on port 3101.
-// It provides local SQLite, offline order creation, KOT printing, and LAN API.
-// We spawn it on app startup and kill it on app shutdown.
-
-static EDGE_SERVER_CHILD: Mutex<Option<Child>> = Mutex::new(None);
-#[cfg(windows)]
-struct JobHandle(isize);
-#[cfg(windows)]
-unsafe impl Send for JobHandle {}
-#[cfg(windows)]
-static EDGE_SERVER_JOB: Mutex<Option<JobHandle>> = Mutex::new(None);
-static EDGE_SERVER_DIAGNOSTICS: Mutex<Option<String>> = Mutex::new(None);
-static EDGE_SERVER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
-static EDGE_SERVER_STATE: Mutex<String> = Mutex::new(String::new());
-static EDGE_SERVER_READY: AtomicBool = AtomicBool::new(false);
-static EDGE_SERVER_EXE: Mutex<Option<PathBuf>> = Mutex::new(None);
-static EDGE_SERVER_PORT: Mutex<String> = Mutex::new(String::new());
-static EDGE_PRINT_BRIDGE_URL: Mutex<String> = Mutex::new(String::new());
-static EDGE_WATCHDOG_STOP: AtomicBool = AtomicBool::new(false);
-static EDGE_LAST_RESPAWN: Mutex<Option<Instant>> = Mutex::new(None);
-static EDGE_RESPAWN_COUNT: Mutex<u32> = Mutex::new(0);
-const EDGE_WATCHDOG_INTERVAL_SECS: u64 = 10;
-const EDGE_RESPAWN_CRASH_LIMIT: u32 = 5;
-const EDGE_RESPAWN_WINDOW_SECS: u64 = 30;
+// ── Edge server client (Phase 1.2: Cashier is now a client, not a supervisor) ──
+// The edge-server (Runtime) is now a long-lived process started by the
+// Softshape Runtime Host (Phase 3) or Windows autostart. The Cashier app
+// connects to it as a client via HTTP on port 3101. It does not spawn,
+// supervise, or kill the Runtime.
 
 // ── Tray connection status ───────────────────────────────────────────────────
 // Updated by the frontend via the `update_connection_status` Tauri command.
@@ -85,22 +56,7 @@ struct EdgeServerStatus {
     app_version: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct PrintBridgeRequest {
-    #[serde(rename = "printerName")]
-    printer_name: String,
-    bytes: Vec<u8>,
-}
-
-fn bridge_json_response(status: &str, body: serde_json::Value) -> Vec<u8> {
-    let payload = body.to_string();
-    format!(
-        "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        status,
-        payload.len(),
-        payload,
-    ).into_bytes()
-}
+// ── Print helpers (used by Tauri commands for test prints from the UI) ───────
 
 fn parse_network_printer(printer_name: &str) -> Option<(String, u16)> {
     let (ip, port) = printer_name.rsplit_once(':')?;
@@ -110,808 +66,101 @@ fn parse_network_printer(printer_name: &str) -> Option<(String, u16)> {
     Some((ip.to_string(), port.parse().ok()?))
 }
 
-fn handle_print_bridge_connection(mut stream: TcpStream) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(15)));
-    let mut request = Vec::with_capacity(8192);
-    let mut buffer = [0u8; 8192];
-    let header_end;
-    let content_length;
+// ── Edge server health check (client mode) ───────────────────────────────────
+// The Cashier app polls the Runtime's /health endpoint to determine if it's
+// running and ready. It does not spawn or kill the Runtime.
 
-    loop {
-        let bytes_read = match stream.read(&mut buffer) {
-            Ok(0) => return,
-            Ok(n) => n,
-            Err(_) => return,
-        };
-        request.extend_from_slice(&buffer[..bytes_read]);
-        if request.len() > 10 * 1024 * 1024 {
-            let _ = stream.write_all(&bridge_json_response("413 Payload Too Large", serde_json::json!({"ok": false, "error": "Print payload too large"})));
-            return;
-        }
-        if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n") {
-            header_end = position + 4;
-            let headers = String::from_utf8_lossy(&request[..position]);
-            content_length = headers.lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    if name.eq_ignore_ascii_case("Content-Length") { value.trim().parse::<usize>().ok() } else { None }
-                })
-                .unwrap_or(0);
-            break;
-        }
-    }
-
-    while request.len() < header_end + content_length {
-        let bytes_read = match stream.read(&mut buffer) {
-            Ok(0) => return,
-            Ok(n) => n,
-            Err(_) => return,
-        };
-        request.extend_from_slice(&buffer[..bytes_read]);
-    }
-
-    let headers = String::from_utf8_lossy(&request[..header_end]);
-    let request_line = headers.lines().next().unwrap_or_default();
-    if !request_line.starts_with("POST /print ") {
-        let _ = stream.write_all(&bridge_json_response("404 Not Found", serde_json::json!({"ok": false, "error": "Not found"})));
-        return;
-    }
-
-    let body = &request[header_end..header_end + content_length];
-    let print_request: PrintBridgeRequest = match serde_json::from_slice(body) {
-        Ok(value) => value,
-        Err(_) => {
-            let _ = stream.write_all(&bridge_json_response("400 Bad Request", serde_json::json!({"ok": false, "error": "Invalid print request"})));
-            return;
-        }
-    };
-
-    let correlation_id = format!("pb-{}-{}", std::process::id(), std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
-    let byte_count = print_request.bytes.len();
-    let printer_name = &print_request.printer_name;
-    eprintln!("[PrintBridge] {} → printer={} bytes={}", correlation_id, printer_name, byte_count);
-
-    let result = if let Some((ip, port)) = parse_network_printer(&print_request.printer_name) {
-        print_network(ip, port, print_request.bytes)
-    } else {
-        print_raw(print_request.printer_name.clone(), print_request.bytes)
-    };
-
-    let response = match result {
-        Ok(()) => {
-            eprintln!("[PrintBridge] {} ✓ printed {} bytes to {}", correlation_id, byte_count, printer_name);
-            bridge_json_response("200 OK", serde_json::json!({"ok": true, "message": "Printed", "correlation_id": correlation_id}))
-        }
-        Err(error) => {
-            eprintln!("[PrintBridge] {} ✗ failed: {}", correlation_id, error);
-            bridge_json_response("500 Internal Server Error", serde_json::json!({"ok": false, "error": error, "correlation_id": correlation_id}))
-        }
-    };
-    let _ = stream.write_all(&response);
+fn get_edge_port() -> String {
+    std::env::var("EDGE_PORT").unwrap_or_else(|_| "3101".to_string())
 }
 
-fn start_print_bridge() -> (Arc<AtomicBool>, String) {
-    let port = std::env::var("PRINT_BRIDGE_PORT").unwrap_or_else(|_| "3102".to_string());
-    let url = format!("http://127.0.0.1:{}", port);
-    let stop = Arc::new(AtomicBool::new(false));
-    let stop_for_thread = Arc::clone(&stop);
-
-    let listener = match TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3102))) {
-        Ok(listener) => listener,
-        Err(error) => {
-            eprintln!("[PrintBridge] Failed to bind {}: {}", url, error);
-            return (stop, url);
-        }
-    };
-
-    let _ = listener.set_nonblocking(true);
-    let url_clone = url.clone();
-    thread::spawn(move || {
-        eprintln!("[PrintBridge] Listening on {}", url_clone);
-        while !stop_for_thread.load(Ordering::Relaxed) {
-            match listener.accept() {
-                Ok((stream, _)) => {
-                    thread::spawn(|| handle_print_bridge_connection(stream));
+fn check_edge_server_health() -> (bool, String) {
+    let port = get_edge_port();
+    let addr = format!("127.0.0.1:{}", port);
+    match TcpStream::connect_timeout(
+        &addr.parse().unwrap_or_else(|_| "127.0.0.1:3101".parse().unwrap()),
+        Duration::from_secs(2),
+    ) {
+        Ok(mut stream) => {
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+            let request = "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+            if stream.write_all(request.as_bytes()).is_err() {
+                return (false, "Failed to send health request".to_string());
+            }
+            let mut response = String::new();
+            if stream.read_to_string(&mut response).is_err() {
+                return (false, "Failed to read health response".to_string());
+            }
+            if response.starts_with("HTTP/1.1 200") {
+                let body = response.split("\r\n\r\n").nth(1).unwrap_or("");
+                if body.contains("\"status\"") {
+                    return (true, body.to_string());
                 }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(50));
-                }
-                Err(error) => {
-                    eprintln!("[PrintBridge] Listener error: {}", error);
-                    break;
-                }
+                return (true, "Health endpoint responded".to_string());
             }
-        }
-    });
-
-    (stop, url)
-}
-
-fn set_edge_server_error(message: String) {
-    let _ = EDGE_SERVER_LAST_ERROR.lock().map(|mut guard| *guard = Some(message));
-}
-
-fn set_edge_server_diagnostics(message: String) {
-    let _ = EDGE_SERVER_DIAGNOSTICS.lock().map(|mut guard| *guard = Some(message));
-}
-
-fn set_edge_server_state(state: &str) {
-    if let Ok(mut guard) = EDGE_SERVER_STATE.lock() {
-        *guard = state.to_string();
-    }
-}
-
-fn set_edge_server_ready(ready: bool) {
-    EDGE_SERVER_READY.store(ready, Ordering::Relaxed);
-}
-
-fn start_edge_health_probe(port: String) {
-    set_edge_server_ready(false);
-    set_edge_server_state("starting");
-    thread::spawn(move || {
-        let started = Instant::now();
-        let deadline = Duration::from_secs(35);
-        let mut attempts = 0u32;
-        while started.elapsed() < deadline {
-            attempts += 1;
-            if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port.parse::<u16>().unwrap_or(3101))) {
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-                let request = "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
-                if stream.write_all(request.as_bytes()).is_ok() {
-                    let mut response = String::new();
-                    if stream.read_to_string(&mut response).is_ok() && response.starts_with("HTTP/1.1 200") {
-                        let body = response.split("\r\n\r\n").nth(1).unwrap_or("");
-                        if body.contains("\"status\":\"ok\"") {
-                            set_edge_server_ready(true);
-                            set_edge_server_state("ready");
-                            set_edge_server_diagnostics(format!("health=ready\nhealth_attempts={}\nhealth_elapsed_ms={}", attempts, started.elapsed().as_millis()));
-                            return;
-                        }
-                        if body.contains("\"status\":\"error\"") {
-                            set_edge_server_state("database_error");
-                            set_edge_server_error(format!("Edge server /health reported error state: {}", body));
-                            set_edge_server_diagnostics(format!("health=error\nhealth_attempts={}\nhealth_elapsed_ms={}\nbody={}", attempts, started.elapsed().as_millis(), body));
-                            return;
-                        }
-                    }
-                }
-            }
-            thread::sleep(Duration::from_millis(500));
-        }
-        set_edge_server_state("health_timeout");
-        set_edge_server_error(format!("Edge server process is alive but /health did not respond within {} seconds", deadline.as_secs()));
-        set_edge_server_diagnostics(format!("health=timeout\nhealth_attempts={}\nhealth_elapsed_ms={}", attempts, started.elapsed().as_millis()));
-    });
-}
-
-/// Bounded recursive search for a file named `edge-server.exe` under `root`.
-/// Caps depth and file visits so a packaging regression never freezes startup.
-fn find_edge_server_recursive(root: &Path, max_depth: usize, max_files: usize) -> (Option<PathBuf>, usize, Duration) {
-    let started = Instant::now();
-    let mut files_walked = 0usize;
-    let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
-
-    while let Some((dir, depth)) = stack.pop() {
-        if depth > max_depth {
-            continue;
-        }
-        let entries = match fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten() {
-            files_walked += 1;
-            if files_walked > max_files {
-                return (None, files_walked, started.elapsed());
-            }
-            let path = entry.path();
-            if path.is_dir() {
-                if depth < max_depth {
-                    stack.push((path, depth + 1));
-                }
-            } else if path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.eq_ignore_ascii_case("edge-server.exe"))
-                .unwrap_or(false)
-            {
-                return (Some(path), files_walked, started.elapsed());
-            }
-        }
-    }
-
-    (None, files_walked, started.elapsed())
-}
-
-#[cfg(windows)]
-fn diagnose_process_on_port(port: &str) -> String {
-    let mut cmd = Command::new("cmd");
-    cmd.args(["/C", &format!("netstat -ano | findstr LISTENING | findstr :{}", port)]);
-    cmd.creation_flags(0x08000000);
-    let output = cmd.output();
-    let Ok(output) = output else {
-        return format!("port={}; owner_lookup=failed", port);
-    };
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut owners = Vec::new();
-    for line in stdout.lines() {
-        if let Some(pid) = line.split_whitespace().last() {
-            if pid.chars().all(|c| c.is_ascii_digit()) {
-                let mut task_cmd = Command::new("tasklist");
-                task_cmd.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
-                task_cmd.creation_flags(0x08000000);
-                let task = task_cmd.output()
-                    .ok()
-                    .map(|value| String::from_utf8_lossy(&value.stdout).trim().to_string())
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or_else(|| "process_lookup=failed".to_string());
-                owners.push(format!("pid={};task={}", pid, task));
-            }
-        }
-    }
-    if owners.is_empty() {
-        format!("port={};owner=none", port)
-    } else {
-        format!("port={};{}", port, owners.join(";"))
-    }
-}
-
-#[cfg(not(windows))]
-fn diagnose_process_on_port(port: &str) -> String {
-    format!("port={};owner_lookup=unsupported", port)
-}
-
-/// Check if a TCP port is free (nothing listening on it).
-fn is_port_free(port: &str) -> bool {
-    TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(3101))).is_ok()
-}
-
-/// Kill any process currently listening on `port` (Windows). Best-effort; never panics.
-#[cfg(windows)]
-fn kill_process_on_port(port: &str) {
-    let netstat = Command::new("cmd")
-        .args(["/C", &format!("netstat -ano | findstr :{}", port)])
-        .output();
-    let Ok(output) = netstat else {
-        return;
-    };
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut pids = std::collections::HashSet::new();
-    for line in stdout.lines() {
-        if !line.contains("LISTENING") {
-            continue;
-        }
-        if let Some(pid) = line.split_whitespace().last() {
-            if pid.chars().all(|c| c.is_ascii_digit()) {
-                pids.insert(pid.to_string());
-            }
-        }
-    }
-    let our_pid = std::process::id().to_string();
-    for pid in pids {
-        if pid == our_pid {
-            eprintln!("[EdgeServer] Refusing to taskkill our own PID ({}) — logic bug guard", pid);
-            continue;
-        }
-        eprintln!("[EdgeServer] Killing stale process on port {} (PID {})", port, pid);
-        let _ = Command::new("taskkill")
-            .args(["/F", "/PID", &pid])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-}
-
-#[cfg(not(windows))]
-fn kill_process_on_port(_port: &str) {}
-
-/// Kill any process on the port, then wait until the port is actually free.
-/// Windows keeps ports in TIME_WAIT for a while after a process is killed,
-/// so we poll for up to `timeout_secs` before giving up.
-fn free_port_blocking(port: &str, timeout_secs: u64) {
-    kill_process_on_port(port);
-    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-    while Instant::now() < deadline {
-        if is_port_free(port) {
-            return;
-        }
-        thread::sleep(Duration::from_millis(250));
-    }
-    eprintln!("[EdgeServer] Port {} still not free after {}s — spawning anyway", port, timeout_secs);
-}
-
-fn attach_edge_server_logs(child: &mut Child) {
-    if let Some(stdout) = child.stdout.take() {
-        std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
-            for line in BufReader::new(stdout).lines().flatten() {
-                eprintln!("[EdgeServer] {}", line);
-            }
-        });
-    }
-    if let Some(stderr) = child.stderr.take() {
-        std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
-            for line in BufReader::new(stderr).lines().flatten() {
-                eprintln!("[EdgeServer] {}", line);
-            }
-        });
-    }
-}
-
-fn spawn_edge_server_process(exe: &Path, port: &str, print_bridge_url: &str) -> Result<Child, std::io::Error> {
-    let mut cmd = Command::new(exe);
-    cmd.env("EDGE_PORT", port)
-        .env("PRINT_BRIDGE_URL", print_bridge_url)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    cmd.spawn()
-}
-
-#[cfg(windows)]
-fn assign_child_to_job(child: &Child) -> std::io::Result<JobHandle> {
-    use windows::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JobObjectExtendedLimitInformation,
-    };
-    use windows::Win32::Foundation::HANDLE;
-    use std::os::windows::io::AsRawHandle;
-
-    unsafe {
-        let job = CreateJobObjectW(None, None)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("CreateJobObjectW failed: {}", e)))?;
-        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        SetInformationJobObject(
-            job,
-            JobObjectExtendedLimitInformation,
-            &info as *const _ as *const std::ffi::c_void,
-            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-        )
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("SetInformationJobObject failed: {}", e)))?;
-        let child_handle = HANDLE(child.as_raw_handle() as isize);
-        AssignProcessToJobObject(job, child_handle)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("AssignProcessToJobObject failed: {}", e)))?;
-        Ok(JobHandle(job.0 as isize))
-    }
-}
-
-#[cfg(windows)]
-fn close_job_handle(handle: windows::Win32::Foundation::HANDLE) {
-    use windows::Win32::Foundation::CloseHandle;
-    unsafe {
-        let _ = CloseHandle(handle);
-    }
-}
-
-/// Detect if a legacy standalone edge-server.exe is already listening on the port.
-/// This is diagnostic-only: we never kill the foreign process.
-#[cfg(windows)]
-fn detect_legacy_edge_server(port: &str) -> Option<String> {
-    let mut cmd = Command::new("cmd");
-    cmd.args(["/C", &format!("netstat -ano | findstr LISTENING | findstr :{}", port)]);
-    cmd.creation_flags(0x08000000);
-    let output = cmd.output().ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let our_pid = std::process::id();
-    let child_pid = EDGE_SERVER_CHILD.lock().ok()
-        .and_then(|guard| guard.as_ref().map(|c| c.id()));
-    for line in stdout.lines() {
-        if let Some(pid_str) = line.split_whitespace().last() {
-            if pid_str.chars().all(|c| c.is_ascii_digit()) {
-                let pid: u32 = pid_str.parse().ok()?;
-                if pid == our_pid {
-                    continue;
-                }
-                if child_pid == Some(pid) {
-                    continue;
-                }
-                let mut task_cmd = Command::new("tasklist");
-                task_cmd.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
-                task_cmd.creation_flags(0x08000000);
-                let task = task_cmd.output()
-                    .ok()
-                    .map(|v| String::from_utf8_lossy(&v.stdout).trim().to_string())
-                    .unwrap_or_default();
-                let is_edge = task.to_lowercase().contains("edge-server");
-                return Some(format!(
-                    "legacy_standalone_detected: pid={} task={} is_edge_server={}",
-                    pid, task, is_edge
-                ));
-            }
-        }
-    }
-    None
-}
-
-#[cfg(not(windows))]
-fn detect_legacy_edge_server(_port: &str) -> Option<String> {
-    None
-}
-
-// ── Edge server watchdog ─────────────────────────────────────────────────────
-// Monitors the edge server child process every 10 seconds. If the process has
-// exited unexpectedly (crash, OOM, segfault), respawns it automatically so the
-// cashier doesn't lose edge-local functionality during service.
-//
-// Crash-loop guard: if the process dies 5+ times within 30 seconds, stops
-// respawning and surfaces an error to the UI — this prevents an infinite
-// respawn loop from a broken binary or unrecoverable DB corruption.
-
-fn start_edge_server_watchdog(app: tauri::AppHandle) {
-    EDGE_WATCHDOG_STOP.store(false, Ordering::Relaxed);
-    thread::spawn(move || {
-        eprintln!("[EdgeServer] Watchdog started — checking every {}s", EDGE_WATCHDOG_INTERVAL_SECS);
-        loop {
-            thread::sleep(Duration::from_secs(EDGE_WATCHDOG_INTERVAL_SECS));
-
-            if EDGE_WATCHDOG_STOP.load(Ordering::Relaxed) {
-                eprintln!("[EdgeServer] Watchdog stopped (app shutting down)");
-                return;
-            }
-
-            let needs_restart = {
-                let mut guard = EDGE_SERVER_CHILD.lock().unwrap();
-                if let Some(child) = guard.as_mut() {
-                    match child.try_wait() {
-                        Ok(Some(_status)) => {
-                            eprintln!("[EdgeServer] Watchdog: process exited, will respawn");
-                            guard.take();
-                            true
-                        }
-                        Err(_e) => {
-                            eprintln!("[EdgeServer] Watchdog: process inspect failed, will respawn");
-                            guard.take();
-                            true
-                        }
-                        Ok(None) => false, // still running
-                    }
-                } else {
-                    // No child handle at all — needs spawn
-                    true
-                }
-            };
-
-            if !needs_restart {
-                continue;
-            }
-
-            // ── Crash-loop guard ───────────────────────────────────────────────
-            let now = Instant::now();
-            let mut count = EDGE_RESPAWN_COUNT.lock().unwrap();
-            let mut last = EDGE_LAST_RESPAWN.lock().unwrap();
-
-            if let Some(t) = *last {
-                if now.duration_since(t) < Duration::from_secs(EDGE_RESPAWN_WINDOW_SECS) {
-                    *count += 1;
-                } else {
-                    *count = 1;
-                }
-            } else {
-                *count = 1;
-            }
-
-            if *count >= EDGE_RESPAWN_CRASH_LIMIT {
-                eprintln!(
-                    "[EdgeServer] Watchdog: crash-loop detected ({} crashes in {}s) — stopping respawn",
-                    *count, EDGE_RESPAWN_WINDOW_SECS
-                );
-                set_edge_server_state("crash_loop");
-                set_edge_server_error(format!(
-                    "Edge server is crash-looping ({} times in {}s). Reinstall the app or contact support.",
-                    *count, EDGE_RESPAWN_WINDOW_SECS
-                ));
-                // Keep the watchdog alive so it can resume if the binary is
-                // replaced (e.g. via an app update) — reset the counter after
-                // a cooldown so a future respawn attempt is allowed.
-                *count = 0;
-                *last = None;
-                continue;
-            }
-
-            *last = Some(now);
-            drop(count);
-            drop(last);
-
-            // ── Respawn ────────────────────────────────────────────────────────
-            set_edge_server_state("respawning");
-            eprintln!("[EdgeServer] Watchdog: respawning edge server (attempt #{})", {
-                let c = EDGE_RESPAWN_COUNT.lock().unwrap();
-                *c
-            });
-            let print_bridge_url = EDGE_PRINT_BRIDGE_URL.lock()
-                .map(|g| g.clone())
-                .unwrap_or_else(|_| "http://127.0.0.1:3102".to_string());
-            spawn_edge_server(&app, &print_bridge_url);
-        }
-    });
-}
-
-fn spawn_edge_server(app: &tauri::AppHandle, print_bridge_url: &str) {
-    let _ = EDGE_SERVER_LAST_ERROR.lock().map(|mut guard| *guard = None);
-    let _ = EDGE_SERVER_DIAGNOSTICS.lock().map(|mut guard| *guard = None);
-
-    // Resolve the edge-server binary path from bundled resources
-    let resource_path = app
-        .path()
-        .resource_dir()
-        .expect("Failed to get resource dir");
-
-    let mut candidates = vec![resource_path.join("edge-server.exe")];
-    // Legacy fallback: Tauri array-form resources rewrote ".." to "_up_" folders.
-    // Keep this so already-built / future-regressed installers still resolve.
-    candidates.push(
-        resource_path
-            .join("_up_")
-            .join("_up_")
-            .join("_up_")
-            .join("softshape-print-agent")
-            .join("softshape-print-agent")
-            .join("edge-server")
-            .join("edge-server.exe"),
-    );
-    if cfg!(debug_assertions) {
-        candidates.push(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("..")
-                .join("..")
-                .join("..")
-                .join("softshape-print-agent")
-                .join("softshape-print-agent")
-                .join("edge-server")
-                .join("edge-server.exe"),
-        );
-        // Sibling checkout used during local monorepo development.
-        candidates.push(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("..")
-                .join("..")
-                .join("..")
-                .join("..")
-                .join("softshape-print-agent")
-                .join("softshape-print-agent")
-                .join("edge-server")
-                .join("edge-server.exe"),
-        );
-    }
-
-    let checked: Vec<String> = candidates
-        .iter()
-        .map(|p| format!("{} (exists={})", p.display(), p.exists()))
-        .collect();
-
-    let mut edge_server_exe = candidates.iter().find(|path| path.is_file()).cloned();
-    let mut scan_files = 0usize;
-    let mut scan_elapsed = Duration::from_millis(0);
-    let mut found_via_scan = false;
-
-    if edge_server_exe.is_none() {
-        let (found, walked, elapsed) = find_edge_server_recursive(&resource_path, 3, 500);
-        scan_files = walked;
-        scan_elapsed = elapsed;
-        if let Some(path) = found {
-            eprintln!(
-                "[EdgeServer] Found via fallback scan at {} — resources config is misconfigured, fix tauri.conf.json",
-                path.display()
-            );
-            found_via_scan = true;
-            edge_server_exe = Some(path);
-        }
-    }
-
-    let diagnostics = format!(
-        "app_version={}\nresource_dir={}\ncandidates=[{}]\nscan_files_walked={}\nscan_elapsed_ms={}\nfound_via_scan={}",
-        env!("CARGO_PKG_VERSION"),
-        resource_path.display(),
-        checked.join("; "),
-        scan_files,
-        scan_elapsed.as_millis(),
-        found_via_scan
-    );
-    set_edge_server_diagnostics(diagnostics.clone());
-
-    let Some(edge_server_exe) = edge_server_exe else {
-        let err = format!(
-            "Bundled edge-server.exe was not found. {}. This usually means the desktop app was not built with the edge server binary. Please reinstall SoftShape Cashier.",
-            diagnostics.replace('\n', " ")
-        );
-        eprintln!("[EdgeServer] {}", err);
-        set_edge_server_error(err);
-        set_edge_server_state("binary_missing");
-        return;
-    };
-
-    // Pass through environment variables for edge-server configuration
-    let port = std::env::var("EDGE_PORT").unwrap_or_else(|_| "3101".to_string());
-    if let Ok(mut guard) = EDGE_SERVER_EXE.lock() {
-        *guard = Some(edge_server_exe.clone());
-    }
-    if let Ok(mut guard) = EDGE_SERVER_PORT.lock() {
-        *guard = port.clone();
-    }
-    if let Ok(mut guard) = EDGE_PRINT_BRIDGE_URL.lock() {
-        *guard = print_bridge_url.to_string();
-    }
-    set_edge_server_ready(false);
-    set_edge_server_state("starting");
-
-    // Detect legacy standalone edge-server that may already own the port.
-    // Diagnostic-only: we never kill it, just warn the user.
-    if let Some(legacy_info) = detect_legacy_edge_server(&port) {
-        eprintln!("[EdgeServer] WARNING: {}", legacy_info);
-        let existing = EDGE_SERVER_DIAGNOSTICS.lock().map(|g| g.clone()).unwrap_or(None);
-        let combined = match existing {
-            Some(d) => format!("{}\n{}", d, legacy_info),
-            None => legacy_info.clone(),
-        };
-        set_edge_server_diagnostics(combined);
-    }
-
-    // Preemptive cleanup: if a previous Cashier instance left an orphaned edge-server
-    // on this port (e.g. crash, force-quit), kill it and wait for the port to be free.
-    // Windows keeps killed ports in TIME_WAIT for up to 4 minutes, so we poll.
-    if !is_port_free(&port) {
-        eprintln!("[EdgeServer] Port {} occupied — killing stale process before spawn", port);
-        free_port_blocking(&port, 5);
-    }
-
-    // First attempt. If spawn fails, or the child dies immediately (stale port bind),
-    // free EDGE_PORT once and retry — never loop forever.
-    let first = spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url);
-    let need_retry = match first {
-        Ok(mut child) => {
-            thread::sleep(Duration::from_millis(300));
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let port_diagnostic = diagnose_process_on_port(&port);
-                    let message = format!("Edge server exited immediately with {}. {}", status, port_diagnostic);
-                    eprintln!("[EdgeServer] {}", message);
-                    set_edge_server_error(message);
-                    set_edge_server_diagnostics(port_diagnostic);
-                    set_edge_server_state("port_conflict");
-                    true
-                }
-                Ok(None) => {
-                    let pid = child.id();
-                    #[cfg(windows)]
-                    if let Ok(job) = assign_child_to_job(&child) {
-                        *EDGE_SERVER_JOB.lock().unwrap() = Some(job);
-                    } else {
-                        eprintln!("[EdgeServer] Warning: failed to assign child to Job Object; sidecar may orphan on hard kill");
-                    }
-                    attach_edge_server_logs(&mut child);
-                    eprintln!("[EdgeServer] Started edge-server (PID: {}) on port {}", pid, port);
-                    *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
-                    start_edge_health_probe(port.clone());
-                    false
-                }
-                Err(e) => {
-                    let err = format!("Unable to inspect edge-server process: {}", e);
-                    eprintln!("[EdgeServer] {}", err);
-                    set_edge_server_error(err);
-                    false
-                }
-            }
+            (false, format!("Health endpoint returned non-200: {}", response.lines().next().unwrap_or("empty")))
         }
         Err(e) => {
-            let port_diagnostic = diagnose_process_on_port(&port);
-            let message = format!("First edge-server spawn failed at {:?}: {}. {}", edge_server_exe, e, port_diagnostic);
-            eprintln!("[EdgeServer] {}", message);
-            set_edge_server_error(message);
-            set_edge_server_diagnostics(port_diagnostic);
-            set_edge_server_state("port_conflict");
-            true
-        }
-    };
-
-    if need_retry {
-        free_port_blocking(&port, 10);
-        match spawn_edge_server_process(&edge_server_exe, &port, print_bridge_url) {
-            Ok(mut child) => {
-                let pid = child.id();
-                #[cfg(windows)]
-                if let Ok(job) = assign_child_to_job(&child) {
-                    *EDGE_SERVER_JOB.lock().unwrap() = Some(job);
-                } else {
-                    eprintln!("[EdgeServer] Warning: failed to assign retry child to Job Object; sidecar may orphan on hard kill");
-                }
-                attach_edge_server_logs(&mut child);
-                eprintln!(
-                    "[EdgeServer] Started edge-server after retry (PID: {}) on port {}",
-                    pid, port
-                );
-                *EDGE_SERVER_CHILD.lock().unwrap() = Some(child);
-                start_edge_health_probe(port.clone());
-            }
-            Err(e2) => {
-                let err = format!(
-                    "Failed to start edge-server at {:?} after port-cleanup retry: {}",
-                    edge_server_exe, e2
-                );
-                eprintln!("[EdgeServer] {}", err);
-                set_edge_server_error(err);
-                set_edge_server_state("exited");
-            }
+            (false, format!("Cannot connect to edge-server on port {}: {}", port, e))
         }
     }
 }
 
-#[tauri::command]
-fn restart_edge_server(app: tauri::AppHandle) -> Result<(), String> {
-    kill_edge_server();
-    // Reset crash-loop counters so the watchdog doesn't carry over stale state
-    *EDGE_RESPAWN_COUNT.lock().unwrap() = 0;
-    *EDGE_LAST_RESPAWN.lock().unwrap() = None;
-    let print_bridge_url = EDGE_PRINT_BRIDGE_URL.lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_else(|_| "http://127.0.0.1:3102".to_string());
-    spawn_edge_server(&app, &print_bridge_url);
-    // Restart the watchdog for the new process
-    start_edge_server_watchdog(app);
-    Ok(())
-}
-
-fn kill_edge_server() {
-    EDGE_WATCHDOG_STOP.store(true, Ordering::Relaxed);
-    set_edge_server_ready(false);
-    set_edge_server_state("stopping");
-    if let Some(mut child) = EDGE_SERVER_CHILD.lock().unwrap().take() {
-        let _ = child.kill();
-        let _ = child.wait();
-        eprintln!("[EdgeServer] Stopped edge-server");
-    }
-    #[cfg(windows)]
-    if let Some(job) = EDGE_SERVER_JOB.lock().unwrap().take() {
-        use windows::Win32::Foundation::HANDLE;
-        close_job_handle(HANDLE(job.0));
-    }
-    set_edge_server_state("stopped");
-}
-
-/// Check if the edge server is running and report any spawn errors.
+/// Check if the edge server is running and report its status.
+/// Phase 1.2: The Cashier is now a client — it polls the Runtime's /health
+/// endpoint instead of inspecting a child process handle.
 #[tauri::command]
 fn get_edge_server_status() -> EdgeServerStatus {
-    let mut child_guard = EDGE_SERVER_CHILD.lock().unwrap();
-    let mut running = false;
-
-    if let Some(child) = child_guard.as_mut() {
-        match child.try_wait() {
-            Ok(None) => running = true,
-            Ok(Some(status)) => {
-                let message = format!("edge-server exited unexpectedly with status {}", status);
-                eprintln!("[EdgeServer] {}", message);
-                set_edge_server_error(message);
-                child_guard.take();
-            }
-            Err(error) => {
-                let message = format!("Unable to inspect edge-server process: {}", error);
-                eprintln!("[EdgeServer] {}", message);
-                set_edge_server_error(message);
-                child_guard.take();
-            }
-        }
-    }
-
-    let error = EDGE_SERVER_LAST_ERROR.lock().unwrap().clone();
-    let diagnostics = EDGE_SERVER_DIAGNOSTICS.lock().unwrap().clone();
-    let state = EDGE_SERVER_STATE.lock().map(|guard| guard.clone()).unwrap_or_else(|_| "unknown".to_string());
+    let (healthy, detail) = check_edge_server_health();
     EdgeServerStatus {
-        running,
-        ready: EDGE_SERVER_READY.load(Ordering::Relaxed),
-        state,
-        error,
-        diagnostics,
+        running: healthy,
+        ready: healthy,
+        state: if healthy { "ready".to_string() } else { "offline".to_string() },
+        error: if healthy { None } else { Some(detail.clone()) },
+        diagnostics: if healthy { Some(detail) } else { None },
         app_version: env!("CARGO_PKG_VERSION").to_string(),
     }
 }
+
+/// Request the Runtime to restart itself.
+/// Phase 1.2: This calls POST :3101/runtime/restart on the Runtime.
+#[tauri::command]
+fn restart_edge_server() -> Result<(), String> {
+    let port = get_edge_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut stream = TcpStream::connect_timeout(
+        &addr.parse().map_err(|e| format!("Invalid address: {}", e))?,
+        Duration::from_secs(2),
+    )
+    .map_err(|e| format!("Cannot connect to edge-server on port {}: {}. Is the Softshape Runtime running?", port, e))?;
+
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let request = "POST /runtime/restart HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+    stream.write_all(request.as_bytes())
+        .map_err(|e| format!("Failed to send restart request: {}", e))?;
+
+    let mut response = String::new();
+    let _ = stream.read_to_string(&mut response);
+
+    if response.starts_with("HTTP/1.1 200") {
+        Ok(())
+    } else {
+        let status_line = response.lines().next().unwrap_or("no response");
+        Err(format!("Runtime restart failed: {}. The Runtime may need to be restarted via the Softshape Runtime Host.", status_line))
+    }
+}
+
+// ── REMOVED: Supervision functions (Phase 1.2) ───────────────────────────────
+// The following functions were removed because the Cashier no longer supervises
+// the edge-server. Supervision logic has been ported to the Runtime's
+// supervisor.ts module in the edge-server project.
+//   - start_edge_health_probe (replaced by check_edge_server_health above)
+//   - find_edge_server_recursive, diagnose_process_on_port, is_port_free,
+//     kill_process_on_port, free_port_blocking, attach_edge_server_logs,
+//     spawn_edge_server_process, assign_child_to_job, close_job_handle,
+//     detect_legacy_edge_server, start_edge_server_watchdog, spawn_edge_server,
+//     kill_edge_server (all no longer needed)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// List all installed Windows printers.
 /// Returns an error if enumeration fails (e.g. spooler service down),
@@ -1078,8 +327,6 @@ fn main() {
                         }
                     }
                     "quit" => {
-                        // This is the ONLY way to actually exit — triggers
-                        // RunEvent::Exit which cleans up the edge server.
                         app.exit(0);
                     }
                     _ => {}
@@ -1127,14 +374,22 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building SoftShape Cashier");
 
-    let (print_bridge_stop, print_bridge_url) = start_print_bridge();
-    spawn_edge_server(&app.handle(), &print_bridge_url);
-    start_edge_server_watchdog(app.handle().clone());
+    // Phase 2: The print bridge TCP server has been removed. The Runtime now
+    // uses the isolated Rust print service on :3103 for all physical printing.
+    // The Cashier retains print_raw/print_network/list_printers Tauri commands
+    // for the settings page test-print button only.
+
+    // Phase 1.2: The Cashier no longer spawns or supervises the edge-server.
+    // The Runtime (edge-server.exe) is started by the Softshape Runtime Host
+    // (Phase 3) or Windows autostart. The Cashier connects to it as a client.
+    // If the Runtime is not running, the UI shows a "Runtime offline" banner.
+
+    eprintln!("[Cashier] Started in client mode — edge-server supervision moved to Runtime Host");
 
     app.run(move |_app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
-            print_bridge_stop.store(true, Ordering::Relaxed);
-            kill_edge_server();
+            // Nothing to clean up — no print bridge, no edge-server child.
+            // The Runtime survives Cashier closure.
         }
     });
 }

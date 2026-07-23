@@ -112,6 +112,7 @@ export default function PrinterSettingsPage() {
         body: JSON.stringify({
           setupToken: setupToken.token,
           backendUrl: API_BASE,
+          deviceId: getDeviceId(),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -568,4 +569,5 @@ export default function PrinterSettingsPage() {
       </div>
     </div>
   );
+}
 }

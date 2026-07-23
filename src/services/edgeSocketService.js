@@ -87,6 +87,25 @@ function getTauriInvoke() {
   return null;
 }
 
+// ── Capacitor platform check ─────────────────────────────────────────────────
+// Captain APK runs on Capacitor (Android). If a network printer (IP:port) is
+// configured, the captain can print directly to it over the restaurant LAN —
+// no Tauri desktop or Print Agent required.
+function isCapacitor() {
+  return !!(window.Capacitor?.isNativePlatform?.());
+}
+
+// Check if this device can print: Tauri desktop with printers, or Capacitor
+// Android with a network printer IP configured in localStorage or printer mapping.
+function canPrintToDevice() {
+  if (getTauriInvoke()) return true;
+  if (isCapacitor()) {
+    const netIp = localStorage.getItem('offline_network_printer_ip');
+    if (netIp) return true;
+  }
+  return false;
+}
+
 // ── Print job handler ────────────────────────────────────────────────────────
 // When the edge server broadcasts a print_job via WebSocket, the Tauri frontend
 // (cashier desktop) receives it and sends the ESC/POS bytes to the physical
@@ -108,11 +127,12 @@ async function handlePrintJob(msgData) {
   }
 
   const invoke = getTauriInvoke();
-  if (!invoke) return; // Not running in Tauri — ignore (captain web/APK)
+  const capacitor = isCapacitor();
+  if (!invoke && !capacitor) return; // Not Tauri or Capacitor — ignore (web browser)
 
   // Resolve printer name from local mapping when edge server sends null.
   // The edge server sends printerName: null when no printer is configured
-  // for that item type — the Tauri frontend resolves from its local mapping.
+  // for that item type — the frontend resolves from its local mapping.
   if (!printerName) {
     try {
       const mapping = await getLocalPrinterMapping();
@@ -133,25 +153,53 @@ async function handlePrintJob(msgData) {
   let ok = false;
   let error = null;
   try {
-    // Network printer (IP:port) vs USB/local printer
-    const netMatch = printerName && printerName.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/);
-    if (netMatch) {
-      await invoke('print_network', {
-        ip: netMatch[1],
-        port: parseInt(netMatch[2], 10),
-        bytes,
-      });
-    } else {
-      await invoke('print_raw', {
-        printerName: printerName || '',
-        bytes,
-      });
+    if (invoke) {
+      // ── Tauri desktop path (cashier) ──
+      // Network printer (IP:port) vs USB/local printer
+      const netMatch = printerName && printerName.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/);
+      if (netMatch) {
+        await invoke('print_network', {
+          ip: netMatch[1],
+          port: parseInt(netMatch[2], 10),
+          bytes,
+        });
+      } else {
+        await invoke('print_raw', {
+          printerName: printerName || '',
+          bytes,
+        });
+      }
+    } else if (capacitor) {
+      // ── Capacitor Android path (captain) ──
+      // Network printer (IP:port) takes priority — captain prints over LAN WiFi.
+      const netMatch = printerName && printerName.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/);
+      if (netMatch) {
+        const { registerPlugin } = await import('@capacitor/core');
+        const EscposPrint = registerPlugin('EscposPrint');
+        await EscposPrint.printNetwork({ ip: netMatch[1], port: parseInt(netMatch[2], 10), bytes });
+      } else {
+        // Fall back to localStorage network printer IP if no IP:port in printerName
+        const netIp = localStorage.getItem('offline_network_printer_ip');
+        if (netIp) {
+          const netPort = parseInt(localStorage.getItem('offline_network_printer_port') || '9100', 10);
+          const { registerPlugin } = await import('@capacitor/core');
+          const EscposPrint = registerPlugin('EscposPrint');
+          await EscposPrint.printNetwork({ ip: netIp, port: netPort, bytes });
+        } else if (printerName) {
+          // Bluetooth/USB printer via Capacitor plugin
+          const { registerPlugin } = await import('@capacitor/core');
+          const EscposPrint = registerPlugin('EscposPrint');
+          await EscposPrint.printRaw({ printerName, bytes });
+        } else {
+          throw new Error('No printer configured on this device');
+        }
+      }
     }
     ok = true;
-    console.log(`[EdgeSocket] Print job ${eventId} → ${printerName} ✓ (${bytes.length} bytes)`);
+    console.log(`[EdgeSocket] Print job ${eventId} → ${printerName || '(network)'} ✓ (${bytes.length} bytes)`);
   } catch (err) {
     error = err?.message || String(err);
-    console.error(`[EdgeSocket] Print job ${eventId} → ${printerName} ✗ ${error}`);
+    console.error(`[EdgeSocket] Print job ${eventId} → ${printerName || '(network)'} ✗ ${error}`);
   }
 
   sendPrintAck(eventId, ok, error);
@@ -201,10 +249,9 @@ export function connectEdgeSocket() {
     console.log(`[EdgeSocket] Connected to ${wsUrl}${wasReconnect ? ' (reconnect)' : ''}`);
 
     // Register client capabilities with the edge server.
-    // Only Tauri desktops (cashier) have window.__TAURI__ and can physically print.
-    // Captain web/APK sends canPrint=false so the edge server doesn't count it
-    // as a printing client or waste time broadcasting print_job events to it.
-    const canPrint = !!getTauriInvoke();
+    // Tauri desktops (cashier) and Capacitor Android (captain) with a network
+    // printer configured can physically print. Captain web sends canPrint=false.
+    const canPrint = canPrintToDevice();
     try {
       ws.send(JSON.stringify({ type: 'register', canPrint }));
     } catch {

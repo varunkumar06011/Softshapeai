@@ -238,7 +238,12 @@ export async function updateTableSession(tableId, session) {
         body: JSON.stringify(sessionWithId),
       });
     } catch (e) {
-      if (useEdgeDirect) throw e;
+      // A definitive 4xx rejection (e.g. 409 "Cannot free table with active
+      // orders") is an authoritative edge decision — do NOT fall through to the
+      // cloud PATCH, which would bypass edge authority and could re-introduce
+      // the KOT data-loss vector. Only fall through on transient/availability
+      // failures (network errors, 5xx).
+      if (useEdgeDirect || (e?.status >= 400 && e?.status < 500)) throw e;
       console.debug('[tableApi] edge session update failed, falling through to cloud:', e);
     }
   }

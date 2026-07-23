@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isEdgeAvailable, edgeFetch, resetEdgeCache, setStoredEdgeApiKey } from '../services/edgeHealth.js';
 import { API_BASE } from '../services/apiConfig.js';
+import { getDeviceId } from '../utils/deviceId.js';
 import {
   CheckCircle2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   Cloud, Database, Link2, Server, Utensils, LayoutGrid, Users,
@@ -247,6 +248,7 @@ export default function EdgeSetupScreen() {
         body: JSON.stringify({
           setupToken: setupToken.trim(),
           restaurantCode: restaurantCode.trim(),
+          deviceId: getDeviceId(),
           backendUrl: backendUrl.trim(),
         }),
       });

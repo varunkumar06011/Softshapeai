@@ -108,15 +108,6 @@ export async function reserveKotNumber(requestId = null) {
   }
 }
 
-export async function releaseKotNumber(requestId) {
-  if (!requestId) return;
-  try {
-    await apiFetch('/api/orders/release-kot-number', { method: 'POST', timeout: 3000, body: JSON.stringify({ requestId }) });
-  } catch {
-    // Best-effort — ignore errors
-  }
-}
-
 export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, localPrinted = false, preReservedKotNumber = null, kotEventIds = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
@@ -1004,6 +995,7 @@ export async function fetchTransactions(restaurantId, limit = 2000, date = null,
   const res = await fetch(apiUrl(`/api/transactions?${qs}`), {
     cache: 'no-store',
     headers: { ...authService.getAuthHeader() },
+    signal: AbortSignal.timeout(10000),
   });
   return parseResponse(res);
 }
@@ -1497,7 +1489,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   }
 
   console.warn('[Edge] Edge server unreachable for print-bill — returning error (no queue)');
-  return { success: false, error: 'Edge server unreachable', offline: false, localPrinted, order: { id: orderId } };
+  return { success: false, error: 'Edge server unreachable — check the restaurant server machine. Call support if it won\'t restart.', offline: false, localPrinted, order: { id: orderId } };
 }
 
 export { generateRequestId };

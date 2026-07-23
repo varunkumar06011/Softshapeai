@@ -1,6 +1,6 @@
 [package]
 name = "softshape-cashier-desktop"
-version = "22.7.0"
+version = "22.8.0"
 description = "SoftShape Cashier Desktop App"
 authors = ["SoftShape"]
 license = "MIT"
@@ -19,7 +19,6 @@ tauri-plugin-updater = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 
 # Windows printing (same as print-agent)
 [target.'cfg(windows)'.dependencies]
@@ -28,7 +27,5 @@ windows = { version = "0.54", features = [
     "Win32_Graphics_Gdi",
     "Win32_Foundation",
     "Win32_System_IO",
-    "Win32_System_JobObjects",
-    "Win32_System_Threading",
     "Win32_Security",
 ] }

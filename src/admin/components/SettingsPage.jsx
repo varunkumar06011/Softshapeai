@@ -934,9 +934,31 @@ function SettingsPage({ onNavigate }) {
       {tab === 'manager' && (
         <div className="space-y-6">
           <SectionCard title="Manager Access" icon={Briefcase}>
-            <p className="text-sm text-gray-500 mb-4">
-              Toggle which tabs are visible to Manager users. Only enabled tabs will appear in the Manager dashboard sidebar.
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-gray-500">
+                Toggle which tabs are visible to Manager users. Only enabled tabs will appear in the Manager dashboard sidebar.
+              </p>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allTabs = {};
+                    adminRoutes.forEach(r => { if (r.key !== 'settings') allTabs[r.key] = true; });
+                    setManagerTabs(allTabs);
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-[#E53935] text-white hover:bg-[#D32F2F] transition-colors"
+                >
+                  Enable All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManagerTabs({})}
+                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+                >
+                  Disable All
+                </button>
+              </div>
+            </div>
             <div className="space-y-1">
               {adminRoutes
                 .filter(r => r.key !== 'settings')

@@ -69,57 +69,24 @@ export const authService = {
   },
 
   async captainLogin(restaurantId, userId, pin, restaurantCode, role) {
-    // ── Edge-first: if the local edge server is available, try PIN login there ──
-    // The local SQLite user DB is authoritative once the device is linked.
-    // A wrong PIN must NOT silently retry against cloud — that would make
-    // offline and online login behave differently for the same credentials.
+    // ── Edge-only PIN login ─────────────────────────────────────────────────────
+    // The edge server's local SQLite user DB is the single source of truth for
+    // staff PIN verification. No cloud fallback — if the edge server is down,
+    // login fails. This ensures consistent behavior online and offline.
     if (await isEdgeAvailable()) {
       const edgeResult = await this._tryEdgePinLogin(userId, pin);
       if (edgeResult) return edgeResult;
       // _tryEdgePinLogin returns null for both "wrong PIN" (terminal) and
       // "edge reachable but errored unexpectedly" (fall through). Distinguish
       // them: a 401 from the edge server is a definitive "invalid credentials"
-      // and must not fall through to cloud. Other failures (5xx, timeout,
+      // and must not fall through. Other failures (5xx, timeout,
       // network) fall through.
       // The distinction is handled inside _tryEdgePinLogin via a thrown error
       // with `status` set — see below.
     }
 
-    // ── Cloud fallback (edge not available, or edge errored unexpectedly) ──────
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), CLOUD_LOGIN_TIMEOUT_MS);
-      const res = await fetch(`${API_BASE}/api/auth/captain-login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restaurantId, userId, pin, restaurantCode, role }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid credentials');
-      }
-      localStorage.setItem('ss_token', data.token);
-      localStorage.setItem('ss_user', JSON.stringify(data.user));
-      // Pre-fetch the LAN edge API key while we have cloud access.
-      ensureEdgeApiKey().catch(() => {});
-      // Discover edge server LAN URL so captain on WiFi can find the cashier PC.
-      discoverEdgeUrlFromBackend().catch(() => {});
-      if (data.restaurant) {
-        localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
-      }
-      if (import.meta.env.DEV) console.log('[AuthService] captainLogin stored token, user:', data.user?.role, 'restaurant:', data.restaurant?.id);
-      purgeLegacyCaches();
-      return data;
-    } catch (err) {
-      // If the edge server was available but returned an unexpected error,
-      // and the cloud fetch also fails, surface the cloud error.
-      if (err.name === 'AbortError') {
-        throw new Error('Login timed out — check your internet connection and try again.', { cause: err });
-      }
-      throw err;
-    }
+    // Edge server unreachable — no cloud fallback.
+    throw new Error('Edge server unreachable — check the restaurant server machine. PIN login requires the edge server to be running.');
   },
 
   async _tryEdgePinLogin(userId, pin) {
@@ -155,7 +122,8 @@ export const authService = {
         throw err;
       }
 
-      // 5xx / other server errors — edge is reachable but broken; fall through.
+      // 5xx / other server errors — edge is reachable but broken; return null
+      // so captainLogin can surface the "edge unreachable" error.
       if (!res.ok) return null;
 
       const data = await res.json();
@@ -166,18 +134,57 @@ export const authService = {
       localStorage.setItem('ss_token', localToken);
       localStorage.setItem('ss_local_token', localToken);
       localStorage.setItem('ss_user', JSON.stringify(data.user));
+
+      // Fetch outlet config from edge server immediately so billing.js
+      // has correct GST rates, restaurant details, etc. from the start.
+      // Without this, ss_restaurant is null and GST defaults to 5% NON_AC
+      // until refreshOutletConfigFromEdge runs (up to 60s later).
+      let restaurantConfig = null;
+      try {
+        const outletRes = await fetch(`${EDGE_URL}/api/edge/outlet`, {
+          headers: { ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}) },
+        });
+        if (outletRes.ok) {
+          const outlet = await outletRes.json();
+          if (outlet && outlet.id) {
+            restaurantConfig = {
+              id: outlet.id,
+              name: outlet.name,
+              slug: outlet.slug,
+              restaurantCode: outlet.restaurant_code || outlet.restaurantCode,
+              gstCategory: outlet.gst_category || outlet.gstCategory || 'NON_AC',
+              gstRate: outlet.gst_rate ?? outlet.gstRate ?? null,
+              gstRegistered: outlet.gst_registered ?? outlet.gstRegistered ?? true,
+              pricesIncludeGst: outlet.prices_include_gst ?? outlet.pricesIncludeGst ?? false,
+              serviceChargePercent: outlet.service_charge_percent ?? outlet.serviceChargePercent ?? 0,
+              receiptHeader: outlet.receipt_header || outlet.receiptHeader,
+              receiptSubHeader: outlet.receipt_sub_header || outlet.receiptSubHeader,
+              gstin: outlet.gstin,
+              address: outlet.address,
+              phone: outlet.phone,
+              email: outlet.email,
+              fssai: outlet.fssai,
+              logoUrl: outlet.logo_url || outlet.logoUrl,
+            };
+            localStorage.setItem('ss_restaurant', JSON.stringify(restaurantConfig));
+          }
+        }
+      } catch (outletErr) {
+        console.warn('[AuthService] Failed to fetch outlet config during PIN login:', outletErr.message);
+      }
+
       console.log('[AuthService] Offline PIN login via edge server — user:', data.user?.role);
       return {
         token: localToken,
         user: data.user,
-        restaurant: null,
+        restaurant: restaurantConfig,
         offline: true,
       };
     } catch (err) {
       // Wrong PIN (401) is terminal — re-throw so captainLogin surfaces it.
       if (err?.edgeInvalidCredentials) throw err;
-      // Timeout / network error — edge unreachable or broken; return null to
-      // signal captainLogin to fall through to cloud.
+      // Timeout / network error — edge unreachable; return null so
+      // captainLogin surfaces the "edge unreachable" error.
       return null;
     }
   },
