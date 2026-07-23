@@ -19,7 +19,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getEdgeUrl, isEdgeAvailable } from './edgeHealth';
-import { getLocalPrinterMapping } from '../utils/offlineDB';
 
 let ws = null;
 let reconnectTimer = null;
@@ -30,139 +29,7 @@ let listeners = new Set();
 const RECONNECT_INTERVAL_MS = 5000;
 const PING_INTERVAL_MS = 30000;
 
-// ── Tauri invoke helper ──────────────────────────────────────────────────────
-// Available only inside the Tauri webview (cashier desktop). Captain web/APK
-// won't have this, so print_job events are silently ignored there — the cashier
-// desktop is the only device that should physically print.
-function getTauriInvoke() {
-  const t = window.__TAURI__;
-  if (!t) return null;
-  if (t.core && typeof t.core.invoke === 'function') return t.core.invoke.bind(t.core);
-  if (typeof t.invoke === 'function') return t.invoke.bind(t);
-  if (t.tauri && typeof t.tauri.invoke === 'function') return t.tauri.invoke.bind(t.tauri);
-  return null;
-}
-
-// ── Capacitor platform check ─────────────────────────────────────────────────
-// Captain APK runs on Capacitor (Android). If a network printer (IP:port) is
-// configured, the captain can print directly to it over the restaurant LAN —
-// no Tauri desktop or Print Agent required.
-function isCapacitor() {
-  return !!(window.Capacitor?.isNativePlatform?.());
-}
-
-// Check if this device can print: Tauri desktop with printers, or Capacitor
-// Android with a network printer IP configured in localStorage or printer mapping.
-function canPrintToDevice() {
-  if (getTauriInvoke()) return true;
-  if (isCapacitor()) {
-    const netIp = localStorage.getItem('offline_network_printer_ip');
-    if (netIp) return true;
-  }
-  return false;
-}
-
-// ── Print job handler ────────────────────────────────────────────────────────
-// When the edge server broadcasts a print_job via WebSocket, the Tauri frontend
-// (cashier desktop) receives it and sends the ESC/POS bytes to the physical
-// printer via Tauri's print_raw / print_network commands. After printing (or
-// on error), it sends a print_ack back to the edge server so it can resolve the
-// HTTP response to the captain.
-async function handlePrintJob(msgData) {
-  const eventId = msgData?.eventId;
-  const printData = msgData?.data || {};
-  let { printerName, escposData } = printData;
-  const jobType = msgData?.type || printData.type;
-  if (!eventId || !escposData) return;
-
-  const invoke = getTauriInvoke();
-  const capacitor = isCapacitor();
-  if (!invoke && !capacitor) return; // Not Tauri or Capacitor — ignore (web browser)
-
-  // Resolve printer name from local mapping when edge server sends null.
-  // The edge server sends printerName: null when no printer is configured
-  // for that item type — the frontend resolves from its local mapping.
-  if (!printerName) {
-    try {
-      const mapping = await getLocalPrinterMapping();
-      if (jobType === 'KOT' || jobType === 'CANCEL_KOT') printerName = mapping.kitchen;
-      else if (jobType === 'BAR_KOT') printerName = mapping.bar;
-      else if (jobType === 'FINAL_BILL' || jobType === 'BILL') printerName = mapping.bill;
-    } catch { /* ignore — will fail with empty printer name */ }
-  }
-
-  // Convert escposData [{ type, format, data }] → byte array
-  const rawString = escposData.map(d => d.data || '').join('');
-  const bytes = Array.from(new TextEncoder().encode(rawString));
-  if (bytes.length === 0) {
-    sendPrintAck(eventId, false, 'Empty print data');
-    return;
-  }
-
-  let ok = false;
-  let error = null;
-  try {
-    if (invoke) {
-      // ── Tauri desktop path (cashier) ──
-      // Network printer (IP:port) vs USB/local printer
-      const netMatch = printerName && printerName.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/);
-      if (netMatch) {
-        await invoke('print_network', {
-          ip: netMatch[1],
-          port: parseInt(netMatch[2], 10),
-          bytes,
-        });
-      } else {
-        await invoke('print_raw', {
-          printerName: printerName || '',
-          bytes,
-        });
-      }
-    } else if (capacitor) {
-      // ── Capacitor Android path (captain) ──
-      // Network printer (IP:port) takes priority — captain prints over LAN WiFi.
-      const netMatch = printerName && printerName.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/);
-      if (netMatch) {
-        const { registerPlugin } = await import('@capacitor/core');
-        const EscposPrint = registerPlugin('EscposPrint');
-        await EscposPrint.printNetwork({ ip: netMatch[1], port: parseInt(netMatch[2], 10), bytes });
-      } else {
-        // Fall back to localStorage network printer IP if no IP:port in printerName
-        const netIp = localStorage.getItem('offline_network_printer_ip');
-        if (netIp) {
-          const netPort = parseInt(localStorage.getItem('offline_network_printer_port') || '9100', 10);
-          const { registerPlugin } = await import('@capacitor/core');
-          const EscposPrint = registerPlugin('EscposPrint');
-          await EscposPrint.printNetwork({ ip: netIp, port: netPort, bytes });
-        } else if (printerName) {
-          // Bluetooth/USB printer via Capacitor plugin
-          const { registerPlugin } = await import('@capacitor/core');
-          const EscposPrint = registerPlugin('EscposPrint');
-          await EscposPrint.printRaw({ printerName, bytes });
-        } else {
-          throw new Error('No printer configured on this device');
-        }
-      }
-    }
-    ok = true;
-    console.log(`[EdgeSocket] Print job ${eventId} → ${printerName || '(network)'} ✓ (${bytes.length} bytes)`);
-  } catch (err) {
-    error = err?.message || String(err);
-    console.error(`[EdgeSocket] Print job ${eventId} → ${printerName || '(network)'} ✗ ${error}`);
-  }
-
-  sendPrintAck(eventId, ok, error);
-}
-
-function sendPrintAck(eventId, ok, error) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    try {
-      ws.send(JSON.stringify({ type: 'print_ack', eventId, ok, error: error || undefined }));
-    } catch (err) {
-      console.warn('[EdgeSocket] Failed to send print_ack:', err.message);
-    }
-  }
-}
+// R5: Tauri/Capacitor print helpers removed — edge server print service is sole transport.
 
 export function isEdgeSocketConnected() {
   return connected;
@@ -197,12 +64,9 @@ export function connectEdgeSocket() {
     }
     console.log(`[EdgeSocket] Connected to ${wsUrl}${wasReconnect ? ' (reconnect)' : ''}`);
 
-    // Register client capabilities with the edge server.
-    // Tauri desktops (cashier) and Capacitor Android (captain) with a network
-    // printer configured can physically print. Captain web sends canPrint=false.
-    const canPrint = canPrintToDevice();
+    // R5: Frontend no longer handles print jobs — edge server print service is sole transport.
     try {
-      ws.send(JSON.stringify({ type: 'register', canPrint }));
+      ws.send(JSON.stringify({ type: 'register', canPrint: false }));
     } catch {
       // Best-effort — the server will default to canPrint=false
     }
@@ -233,14 +97,7 @@ export function connectEdgeSocket() {
       const msg = JSON.parse(event.data);
       if (msg.type === 'pong') return; // keepalive response
 
-      // ── print_job: send to physical printer via Tauri and send print_ack back ──
-      // This is the critical path: edge server broadcasts print_job → Tauri frontend
-      // prints via Rust print bridge → sends print_ack → edge server resolves HTTP
-      // response to the captain. Without this, all edge-server printing times out.
-      if (msg.type === 'print_job') {
-        handlePrintJob(msg.data);
-        return;
-      }
+      // R5: print_job handling removed — edge server print service is the sole transport.
 
       // Re-dispatch as DOM event for tableSyncService and other listeners
       const eventType = `edge:${msg.type}`;
