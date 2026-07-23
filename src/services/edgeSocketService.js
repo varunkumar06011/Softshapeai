@@ -66,9 +66,9 @@ export function connectEdgeSocket() {
 
     // R5: Frontend no longer handles print jobs — edge server print service is sole transport.
     try {
-      ws.send(JSON.stringify({ type: 'register', canPrint: false }));
+      ws.send(JSON.stringify({ type: 'register' }));
     } catch {
-      // Best-effort — the server will default to canPrint=false
+      // Best-effort registration
     }
 
     // On reconnect, dispatch a full refresh event so listeners can catch up
