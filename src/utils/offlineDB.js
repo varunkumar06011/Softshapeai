@@ -161,7 +161,6 @@ export async function addPendingAction(action) {
       deviceId: action.deviceId || getDeviceId(),
       status: action.status || 'pending',
       createdAt: action.createdAt || Date.now(),
-      localPrintedAt: action.body?.localPrinted ? Date.now() : null,
       attempts: 0,
       lastError: null,
     });

@@ -365,7 +365,6 @@ async function replayActionsToEdge(actions) {
         requestId: action.requestId,
         platform: body.platform || 'DINE_IN',
         orderByRole: body.orderByRole || undefined,
-        localPrinted: body.localPrinted ?? false,
         preReservedKotNumber: body.preReservedKotNumber ?? null,
         kotEventIds: body.kotEventIds || null,
       };
