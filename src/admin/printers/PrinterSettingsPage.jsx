@@ -570,4 +570,3 @@ export default function PrinterSettingsPage() {
     </div>
   );
 }
-}
