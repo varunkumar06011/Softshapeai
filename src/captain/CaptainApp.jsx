@@ -3258,7 +3258,7 @@ export default function CaptainApp({ onLogout }) {
 
         try {
           if (existingOrderId) {
-            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, localPrinted, preReservedKotNumber, kotEventIds, activeTableId);
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId);
             savedOrder = response;
           } else {
             try {
@@ -3271,14 +3271,12 @@ export default function CaptainApp({ onLogout }) {
                 captainName: currentCaptain?.name || undefined,
                 sectionTag: activeTable?.sectionTag || undefined,
                 preReservedKotNumber,
-                localPrinted,
-                kotEventIds,
               });
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
                 activeOrderIdRef.current = createErr.existingOrderId;
-                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, localPrinted, preReservedKotNumber, kotEventIds, activeTableId);
+                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId);
               } else {
                 throw createErr;
               }
@@ -3416,7 +3414,7 @@ export default function CaptainApp({ onLogout }) {
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeKotNumToSend, edgeKotIdsToSend, activeTableId);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3432,9 +3430,7 @@ export default function CaptainApp({ onLogout }) {
               requestId,
               captainName: currentCaptain?.name || undefined,
               sectionTag: activeTable?.sectionTag || undefined,
-              localPrinted: edgeLocalPrinted,
               preReservedKotNumber: edgeKotNumToSend,
-              kotEventIds: edgeKotIdsToSend,
             });
           } catch (createErr) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -3442,7 +3438,7 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeKotNumToSend, edgeKotIdsToSend, activeTableId);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0

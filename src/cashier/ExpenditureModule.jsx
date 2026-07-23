@@ -13,6 +13,7 @@ import {
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { printLocal } from '../utils/printOffline';
+import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 
 export default function ExpenditureModule() {
@@ -206,6 +207,23 @@ export default function ExpenditureModule() {
   const dispatchExpenditurePrint = async (expenditureId) => {
     const result = await apiFetch(`/api/expenditures/${expenditureId}/print`, { method: 'POST' });
     if (result?.escposData && result?.eventId) {
+      // ── R3: Try Output Intent API first ──────────────────────────────
+      try {
+        const intentResult = await sendOutputIntent({
+          type: 'OUTPUT',
+          intentId: generateIntentId(),
+          intent: 'PRINT_EXPENDITURE',
+          payload: { escposData: result.escposData, expenditureId },
+          priority: 'NORMAL',
+        });
+        if (intentResult?.ok) {
+          console.log('[ExpenditureModule] Output intent succeeded — runtime handled printing');
+          return result;
+        }
+      } catch (intentErr) {
+        console.warn('[ExpenditureModule] Output intent failed, falling back to local print:', intentErr.message);
+      }
+      // ── Fallback: local print ──────────────────────────────────────────
       printLocal({ type: 'EXPENDITURE', escposData: result.escposData, eventId: result.eventId, data: {} })
         .catch((err) => console.warn('[ExpenditureModule] Local print attempt failed:', err?.message || err));
     }

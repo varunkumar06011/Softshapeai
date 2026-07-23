@@ -3,6 +3,7 @@ import { Printer, Save, Calendar, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { printLocal } from '../utils/printOffline';
 import { buildXReportEscpos } from '../utils/escposFrontend';
+import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 
@@ -294,6 +295,51 @@ export default function XReportSection() {
     }
 
     try {
+      // ── R3: Try Output Intent API first ────────────────────────────────
+      try {
+        const xReportPayload = {
+          restaurantName: restaurant?.name || '',
+          cashierName: user?.name || '',
+          reportDate,
+          totalSales: round2(Number(report.totalSales)),
+          cardAmount: round2(Number(report.cardAmount || 0)),
+          cashAmount: 0,
+          upiAmount: 0,
+          otherAmount: 0,
+          tipsAmount: 0,
+          expenditureAmount: round2(expenditureTotal),
+          finalAmount,
+          expenditures: expenditures.map((v) => ({
+            paidToName: v.paidToName,
+            paidToType: v.paidToType,
+            category: v.category,
+            narration: v.narration,
+            approvedByName: v.approvedByName || v.approvedBy?.name || null,
+            amount: Number(v.amount),
+          })),
+          denominations: DENOMINATIONS.map(d => ({
+            label: `Rs.${d.value}`,
+            value: d.value,
+            count: report[d.key] || 0,
+          })),
+          cashFromNotes: round2(cashFromNotes),
+        };
+        const intentResult = await sendOutputIntent({
+          type: 'OUTPUT',
+          intentId: generateIntentId(),
+          intent: 'PRINT_X_REPORT',
+          payload: xReportPayload,
+          priority: 'NORMAL',
+        });
+        if (intentResult?.ok) {
+          setSavedMsg('X Report printed via runtime');
+          return;
+        }
+      } catch (intentErr) {
+        console.warn('[XReport] Output intent failed, falling back to local print:', intentErr.message);
+      }
+
+      // ── Fallback: local print path ──────────────────────────────────────
       const result = await printLocal({
         type: 'FINAL_BILL',
         escposData: escposData || buildXReportEscposData(),

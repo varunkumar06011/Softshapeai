@@ -14,6 +14,7 @@ import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { withRetry } from '../utils/resilience';
 import { printLocal } from '../utils/printOffline';
+import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 
 export default function VoucherModule() {
@@ -211,6 +212,23 @@ export default function VoucherModule() {
   const dispatchVoucherPrint = async (voucherId) => {
     const result = await apiFetch(`/api/vouchers/${voucherId}/print`, { method: 'POST' });
     if (result?.escposData && result?.eventId) {
+      // ── R3: Try Output Intent API first ──────────────────────────────
+      try {
+        const intentResult = await sendOutputIntent({
+          type: 'OUTPUT',
+          intentId: generateIntentId(),
+          intent: 'PRINT_VOUCHER',
+          payload: { escposData: result.escposData, voucherId },
+          priority: 'NORMAL',
+        });
+        if (intentResult?.ok) {
+          console.log('[VoucherModule] Output intent succeeded — runtime handled printing');
+          return result;
+        }
+      } catch (intentErr) {
+        console.warn('[VoucherModule] Output intent failed, falling back to local print:', intentErr.message);
+      }
+      // ── Fallback: local print ──────────────────────────────────────────
       printLocal({ type: 'VOUCHER', escposData: result.escposData, eventId: result.eventId, data: {} })
         .catch((err) => console.warn('[VoucherModule] Local print attempt failed:', err?.message || err));
     }

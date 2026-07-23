@@ -30,50 +30,6 @@ let listeners = new Set();
 const RECONNECT_INTERVAL_MS = 5000;
 const PING_INTERVAL_MS = 30000;
 
-// ── EventId dedup ────────────────────────────────────────────────────────────
-// Prevents double-printing when the same job arrives via both the edge WebSocket
-// and the cloud Socket.IO path. Persisted to localStorage so it survives page
-// refreshes — critical because the edge server may re-dispatch on reconnect.
-const SEEN_EVENT_IDS_KEY = 'edge_seen_print_event_ids';
-const SEEN_EVENT_IDS_MAX = 500;
-const seenEventIds = new Set();
-let _seenEventIdsLoaded = false;
-
-function loadSeenEventIds() {
-  if (_seenEventIdsLoaded) return;
-  _seenEventIdsLoaded = true;
-  try {
-    const arr = JSON.parse(localStorage.getItem(SEEN_EVENT_IDS_KEY) || '[]');
-    for (const id of arr) {
-      if (typeof id === 'string') seenEventIds.add(id);
-    }
-  } catch { /* ignore */ }
-}
-
-function saveSeenEventIds() {
-  try {
-    localStorage.setItem(SEEN_EVENT_IDS_KEY, JSON.stringify(Array.from(seenEventIds).slice(-SEEN_EVENT_IDS_MAX)));
-  } catch { /* ignore quota errors */ }
-}
-
-function isEventIdSeen(eventId) {
-  loadSeenEventIds();
-  return seenEventIds.has(eventId);
-}
-
-function markEventIdSeen(eventId) {
-  loadSeenEventIds();
-  if (seenEventIds.has(eventId)) return false;
-  seenEventIds.add(eventId);
-  if (seenEventIds.size > SEEN_EVENT_IDS_MAX) {
-    const arr = Array.from(seenEventIds);
-    seenEventIds.clear();
-    arr.slice(-SEEN_EVENT_IDS_MAX).forEach(id => seenEventIds.add(id));
-  }
-  saveSeenEventIds();
-  return true;
-}
-
 // ── Tauri invoke helper ──────────────────────────────────────────────────────
 // Available only inside the Tauri webview (cashier desktop). Captain web/APK
 // won't have this, so print_job events are silently ignored there — the cashier
@@ -118,13 +74,6 @@ async function handlePrintJob(msgData) {
   let { printerName, escposData } = printData;
   const jobType = msgData?.type || printData.type;
   if (!eventId || !escposData) return;
-
-  // Dedup: skip if we've already seen this eventId (cloud relay + edge WS overlap)
-  if (!markEventIdSeen(eventId)) {
-    console.log(`[EdgeSocket] Duplicate print_job skipped (dedup): ${eventId}`);
-    sendPrintAck(eventId, true);
-    return;
-  }
 
   const invoke = getTauriInvoke();
   const capacitor = isCapacitor();

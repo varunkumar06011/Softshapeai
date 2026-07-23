@@ -40,6 +40,7 @@ import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFr
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { setLocalPrinterMapping } from '../utils/offlineDB';
 import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey } from '../services/edgeHealth';
+import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
@@ -2974,10 +2975,10 @@ const CashierDashboard = ({ onLogout }) => {
       const edgeReachable = isEdgeLocalAuth() || await isEdgeAvailable();
       if (!edgeReachable) {
       try {
-        const { printLocal } = await import('../utils/printOffline');
+        // ── R3: Try Output Intent API for bill printing ──────────────────────
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
-        const billEscpos = buildBillEscpos({
+        const billPayload = {
           billNumber: 'PENDING',
           tableNumber: selectedTable.number,
           sectionTag: selectedTable.sectionTag || null,
@@ -3004,7 +3005,28 @@ const CashierDashboard = ({ onLogout }) => {
             address: restaurant?.address || undefined,
             phone: restaurant?.phone || undefined,
           },
-        });
+          requestId: billRequestId,
+        };
+
+        try {
+          const billIntentResult = await sendOutputIntent({
+            type: 'OUTPUT',
+            intentId: generateIntentId(),
+            intent: 'PRINT_BILL',
+            payload: billPayload,
+            priority: 'HIGH',
+          });
+          if (billIntentResult?.ok) {
+            console.log('[BILL] Output intent succeeded — runtime handled printing');
+            return;
+          }
+        } catch (intentErr) {
+          console.warn('[BILL] Output intent failed, falling back to local print:', intentErr.message);
+        }
+
+        // ── Fallback: local print path ────────────────────────────────────────
+        const { printLocal } = await import('../utils/printOffline');
+        const billEscpos = buildBillEscpos(billPayload);
         const result = await printLocal({
           type: 'FINAL_BILL',
           escposData: billEscpos,
@@ -3056,8 +3078,8 @@ const CashierDashboard = ({ onLogout }) => {
         // for the actual print ack before returning, so the response reflects the
         // real print status. This removes the false optimistic success path.
         response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId });
         if (response && !response.success) {
           // Edge server unavailable or print failed — bill was NOT printed.
           isPrintingBillRef.current = false;
@@ -3489,7 +3511,6 @@ const CashierDashboard = ({ onLogout }) => {
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           restaurantId: activeRestaurantId,
-          localPrinted,
           billEventId: walkinBillEventId,
           billData: {
             tableNumber: tableLabel,
@@ -3590,10 +3611,10 @@ const CashierDashboard = ({ onLogout }) => {
         let localPrinted = false;
         const reprintBillEventId = `reprint-${orderId}-${Date.now()}`;
         try {
-          const { printLocal } = await import('../utils/printOffline');
+          // ── R3: Try Output Intent API for reprint ────────────────────────
           const reprintItems = getBillableItems(selectedTable);
           const reprintCalc = calculateOrderTotal(reprintItems, discountPercent, restaurantConfig);
-          const reprintEscpos = buildBillEscpos({
+          const reprintPayload = {
             billNumber: selectedTable.billNumber || 'REPRINT',
             tableNumber: selectedTable.number,
             sectionTag: selectedTable.sectionTag || null,
@@ -3621,7 +3642,26 @@ const CashierDashboard = ({ onLogout }) => {
               address: restaurant?.address || undefined,
               phone: restaurant?.phone || undefined,
             },
-          });
+          };
+          try {
+            const reprintIntentResult = await sendOutputIntent({
+              type: 'OUTPUT',
+              intentId: generateIntentId(),
+              intent: 'PRINT_BILL',
+              payload: reprintPayload,
+              priority: 'HIGH',
+            });
+            if (reprintIntentResult?.ok) {
+              console.log('[REPRINT] Output intent succeeded — runtime handled printing');
+              localPrinted = true;
+            }
+          } catch (intentErr) {
+            console.warn('[REPRINT] Output intent failed, falling back to local print:', intentErr.message);
+          }
+
+          if (!localPrinted) {
+          const { printLocal } = await import('../utils/printOffline');
+          const reprintEscpos = buildBillEscpos(reprintPayload);
           const result = await printLocal({
             type: 'FINAL_BILL',
             escposData: reprintEscpos,
@@ -3647,13 +3687,14 @@ const CashierDashboard = ({ onLogout }) => {
             },
           });
           localPrinted = result?.printed || false;
+          } // end if (!localPrinted) fallback
         } catch (printErr) {
           console.warn('[handleReprintBill] Local print failed:', printErr.message);
         }
 
         const response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, localPrinted, billEventId: reprintBillEventId })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, localPrinted, billEventId: reprintBillEventId });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId: reprintBillEventId })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId: reprintBillEventId });
 
         // Backend returns 409 if PAID — handle gracefully
         if (response && response.error && !response.offline) {
@@ -4881,6 +4922,55 @@ const CashierDashboard = ({ onLogout }) => {
           restaurantName: restaurant?.name || undefined,
         };
 
+        // ── R3: Try Output Intent API first (runtime handles printing) ──────────
+        const hasFoodItems = cart.some(i => (i.menuType || 'FOOD').toUpperCase() !== 'LIQUOR');
+        const hasLiquorItems = cart.some(i => (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR');
+        let intentSucceeded = false;
+        try {
+          const intentPromises = [];
+          if (hasFoodItems) {
+            const foodIntentId = generateIntentId();
+            intentPromises.push(
+              sendOutputIntent({
+                type: 'OUTPUT',
+                intentId: foodIntentId,
+                intent: 'PRINT_KOT',
+                payload: { ...kotOrderData, requestId },
+                priority: 'CRITICAL',
+              }).then(() => ({ intentId: foodIntentId, ok: true }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false }; })
+            );
+          }
+          if (hasLiquorItems) {
+            const liquorIntentId = generateIntentId();
+            intentPromises.push(
+              sendOutputIntent({
+                type: 'OUTPUT',
+                intentId: liquorIntentId,
+                intent: 'PRINT_LIQUOR_KOT',
+                payload: { ...kotOrderData, requestId },
+                priority: 'CRITICAL',
+              }).then(() => ({ intentId: liquorIntentId, ok: true }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false }; })
+            );
+          }
+          if (intentPromises.length > 0) {
+            const intentResults = await Promise.allSettled(intentPromises);
+            const allOk = intentResults.every(r => r.status === 'fulfilled' && r.value?.ok);
+            if (allOk) {
+              intentSucceeded = true;
+              localPrinted = true;
+              kotEventIds = intentResults.map(r => r.value?.intentId).filter(Boolean);
+              markKotNumberPrinted(preReservedKotNumber);
+              console.log(`[KOT] Output intent succeeded for KOT #${preReservedKotNumber} — runtime handled printing`);
+            }
+          }
+        } catch (intentErr) {
+          console.warn('[KOT] Output intent path failed, falling back to local print:', intentErr.message);
+        }
+
+        // ── Fallback: local print path (existing flow) ──────────────────────────
+        if (!intentSucceeded) {
         const foodEscpos = buildFoodKOT(kotOrderData);
         const liquorEscpos = buildLiquorKOT(kotOrderData);
 
@@ -4941,6 +5031,7 @@ const CashierDashboard = ({ onLogout }) => {
           kotEventIds = succeededEventIds;
           if (import.meta.env.DEV) console.log(`[KOT] Local print failed (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
         }
+        } // end fallback local print
         } // end else (not already printed)
 
         // 3. Send API call with correct localPrinted flag and shared kotEventIds.
@@ -4948,7 +5039,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (selectedTable.isExtra) {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
-              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds, selectedTable.id);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id);
             } else {
               orderResponse = await createOrder({
                 tableId: selectedTable.backendId,
@@ -4962,12 +5053,10 @@ const CashierDashboard = ({ onLogout }) => {
                 platform: selectedOrderPlatform,
                 timeoutMs: 45000,
                 preReservedKotNumber,
-                localPrinted,
-                kotEventIds,
               });
             }
           } else if (selectedTable.activeOrder?.id) {
-            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, localPrinted, preReservedKotNumber, kotEventIds, selectedTable.id);
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id);
           } else {
             try {
               orderResponse = await createOrder({
@@ -4981,8 +5070,6 @@ const CashierDashboard = ({ onLogout }) => {
                 platform: selectedOrderPlatform,
                 timeoutMs: 45000,
                 preReservedKotNumber,
-                localPrinted,
-                kotEventIds,
               });
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -5002,7 +5089,7 @@ const CashierDashboard = ({ onLogout }) => {
                   console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
                 }
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
-                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, localPrinted, preReservedKotNumber, kotEventIds, selectedTable.id);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, preReservedKotNumber, selectedTable.id);
               } else {
                 throw createErr;
               }
