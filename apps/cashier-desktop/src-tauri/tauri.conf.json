@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoftShape Cashier",
-  "version": "22.8.0",
+  "version": "22.9.0",
   "identifier": "ai.softshape.cashier",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -45,7 +45,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
