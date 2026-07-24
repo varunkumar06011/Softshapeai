@@ -24,6 +24,12 @@ let _discoveryInProgress = null;
 let _discoveryLastFailed = 0;
 const DISCOVERY_FAILURE_COOLDOWN_MS = 30_000;
 
+// Diagnostic reason for the last failed LAN discovery. Survives cache
+// invalidation (invalidateEdgeHealthCache does NOT clear this) because it's
+// a user-facing diagnostic, not a cached health result. Only cleared on a
+// successful discovery or at the start of a new attempt.
+let _discoveryFailReason = null;
+
 /**
  * Returns the current edge URL.
  * Priority: localStorage (user configured) > LAN discovery > default localhost.
@@ -99,6 +105,17 @@ export function invalidateEdgeHealthCache() {
   _edgeAvailable = false;
   _discoveredEdgeUrl = null;
   _discoveryLastFailed = 0;
+  // Intentionally does NOT clear _discoveryFailReason — it's a diagnostic,
+  // not a health cache. See comment at the variable declaration.
+}
+
+/**
+ * Returns the diagnostic reason for the last failed LAN discovery, or null
+ * if the last discovery succeeded or hasn't been attempted yet. Used by the
+ * captain UI to show an actionable error instead of a blank "Edge Offline".
+ */
+export function getEdgeDiscoveryFailReason() {
+  return _discoveryFailReason;
 }
 
 /**
@@ -110,14 +127,15 @@ export function prewarmEdgeHealth() {
 }
 
 /**
- * Wait for the edge server to become fully ready (status: "ok").
- * The edge sidecar returns HTTP 200 with status "initializing" while it
- * downloads config. This helper polls until the server is ready or the
- * timeout expires, so callers don't read an empty menu from a half-synced DB.
+ * Wait for the edge server to become fully operational (isOperational: true).
+ * The Runtime returns isOperational=false while BOOTING/STARTING (downloading
+ * config, warming cache). This helper polls until the runtime is READY
+ * or the timeout expires, so callers don't read an empty menu from a
+ * half-synced DB.
  *
  * @param {number} timeoutMs — max time to wait (default 15s)
  * @param {number} intervalMs — poll interval (default 1s)
- * @returns {Promise<boolean>} true if edge is ready, false on timeout
+ * @returns {Promise<boolean>} true if edge is operational, false on timeout
  */
 export async function waitForEdgeReady(timeoutMs = 15_000, intervalMs = 1_000) {
   const deadline = Date.now() + timeoutMs;
@@ -130,7 +148,12 @@ export async function waitForEdgeReady(timeoutMs = 15_000, intervalMs = 1_000) {
       clearTimeout(timeoutId);
       if (res.ok) {
         const health = await res.json().catch(() => ({}));
-        if (health.status === "ok") {
+        // isOperational is the single source of truth from RuntimeManager.
+        // It's true only when runtimeState === READY — the HTTP server is
+        // listening AND config sync has completed AND local data is available.
+        // The old status === "ok" fallback is removed because it was true
+        // during STARTING, causing the UI to read empty/half-synced data.
+        if (health.isOperational === true) {
           _edgeAvailable = true;
           _edgeLastCheck = Date.now();
           return true;
@@ -198,11 +221,21 @@ export function isEdgeLocalAuth() {
 
 /**
  * LAN discovery: probe common LAN IPs to find the edge server.
- * Tries the local network gateway + likely host IPs (192.168.x.x, 10.0.x.x).
+ * Tries the local network gateway + likely host IPs across all RFC 1918
+ * ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x).
+ *
+ * @param {{ force?: boolean }} [opts] — force: true bypasses the failure
+ *   cooldown (used by the Auto-Discover button so a manual retry always
+ *   runs a fresh scan instead of being throttled).
  * Returns the discovered edge URL or null.
  */
-export async function discoverEdgeOnLAN() {
-  if (_discoveryInProgress) return _discoveryInProgress;
+export async function discoverEdgeOnLAN({ force = false } = {}) {
+  if (_discoveryInProgress) {
+    if (!force) return _discoveryInProgress;
+    // Forced (Auto-Discover button): wait for in-flight passive scan to
+    // drain, then re-scan fresh. Avoids concurrent probes on the same IPs.
+    await _discoveryInProgress.catch(() => {});
+  }
 
   _discoveryInProgress = (async () => {
     // Skip discovery if user has manually configured a URL
@@ -211,6 +244,16 @@ export async function discoverEdgeOnLAN() {
         return null;
       }
     } catch { /* ignore */ }
+
+    // Cooldown: recent discovery failed. Fast-fail without re-scanning.
+    // _discoveryFailReason persists so the UI can still show why.
+    // Bypassed by force: true (Auto-Discover button).
+    if (!force && Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
+      return null;
+    }
+
+    // Clear fail reason at the start of a fresh attempt
+    _discoveryFailReason = null;
 
     // If we already have a working edge URL, don't rediscover
     const currentUrl = getEdgeUrl();
@@ -250,17 +293,68 @@ export async function discoverEdgeOnLAN() {
       } catch { /* WebRTC not available */ }
     }
 
-    // Fallback: try common router IPs
+    // ── Capacitor native plugin: read local IP via ConnectivityManager ──
+    // On Android, WebRTC is often disabled in the WebView. This native
+    // plugin reads the actual local IP via ConnectivityManager/LinkProperties
+    // (API 21+, only ACCESS_NETWORK_STATE — no location permission needed).
+    // Falls back to NetworkInterface enumeration (preferring wlan interfaces)
+    // if ConnectivityManager returns null.
+    if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
+      try {
+        const { registerPlugin } = await import('@capacitor/core');
+        const LocalNetwork = registerPlugin('LocalNetwork');
+        const result = await LocalNetwork.getLocalIp();
+        if (result?.ip) {
+          const parts = result.ip.split('.');
+          if (parts.length === 4 && !parts[0].startsWith('0') && !parts[0].startsWith('127')) {
+            candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.1:3101`);
+            candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.100:3101`);
+            for (let i = 2; i <= 254; i++) {
+              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.${i}:3101`);
+            }
+          }
+        }
+      } catch { /* plugin not available or failed */ }
+    }
+
+    // Fallback: try common router/host IPs across all RFC 1918 ranges.
+    // This is a guess-list, not real discovery — it covers SOHO defaults
+    // and common POS-vendor/mesh router IPs. For arbitrary 10.x/172.x
+    // subnets, the user must enter the Edge URL manually in Settings.
     const commonGateways = [
-      'http://192.168.1.1:3101',
+      // 192.168.x.x — home/SOHO routers
       'http://192.168.0.1:3101',
-      'http://192.168.1.100:3101',
-      'http://192.168.0.100:3101',
-      'http://192.168.1.2:3101',
       'http://192.168.0.2:3101',
+      'http://192.168.0.100:3101',
+      'http://192.168.1.1:3101',
+      'http://192.168.1.2:3101',
+      'http://192.168.1.100:3101',
+      'http://192.168.2.1:3101',
+      'http://192.168.2.100:3101',
+      'http://192.168.10.1:3101',
+      'http://192.168.10.100:3101',
+      'http://192.168.100.1:3101',
+      'http://192.168.100.100:3101',
+      'http://192.168.254.1:3101',
+      // 10.x.x.x — enterprise/POS-vendor/mesh defaults
       'http://10.0.0.1:3101',
       'http://10.0.0.2:3101',
+      'http://10.0.0.100:3101',
       'http://10.0.1.1:3101',
+      'http://10.0.10.1:3101',
+      'http://10.0.90.1:3101',
+      'http://10.1.1.1:3101',
+      'http://10.10.10.10:3101',
+      'http://10.90.0.1:3101',
+      'http://10.255.255.1:3101',
+      // 172.16-31.x.x — Docker/corporate/POS defaults
+      'http://172.16.0.1:3101',
+      'http://172.16.0.2:3101',
+      'http://172.16.0.100:3101',
+      'http://172.17.0.1:3101',
+      'http://172.20.0.1:3101',
+      'http://172.30.0.1:3101',
+      'http://172.31.0.1:3101',
     ];
     for (const c of commonGateways) {
       if (!candidates.includes(c)) candidates.push(c);
@@ -286,12 +380,20 @@ export async function discoverEdgeOnLAN() {
       for (const r of results) {
         if (r.status === 'fulfilled' && r.value) {
           _discoveredEdgeUrl = r.value;
+          _discoveryFailReason = null;
           console.log('[Edge] Discovered edge server on LAN:', r.value);
           return r.value;
         }
       }
     }
 
+    // All candidates exhausted — arm cooldown and set diagnostic reason.
+    // This covers every failure exit: WebRTC unavailable + fallback list
+    // exhausted, or WebRTC succeeded but no edge server on the probed /24.
+    _discoveryLastFailed = Date.now();
+    _discoveryFailReason =
+      'Could not find the cashier PC on this LAN. If your network uses ' +
+      '10.x.x.x or 172.16-31.x.x, enter the Edge URL manually in Settings.';
     return null;
   })();
 
@@ -316,11 +418,12 @@ export async function isEdgeAvailable() {
     const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (res.ok) {
-      // The edge server returns 200 even while initializing. Check the body
-      // status field — "initializing" or "error" means the server is not yet
-      // ready to serve data, so callers should fall through to cloud.
+      // The Runtime returns isOperational=true when runtimeState === READY.
+      // This is the single source of truth — status "ok" alone may be sent
+      // during STARTING if the HTTP server is listening but config sync
+      // hasn't completed yet. Only isOperational guarantees local data is ready.
       const health = await res.json().catch(() => ({}));
-      _edgeAvailable = health.status === "ok";
+      _edgeAvailable = health.isOperational === true;
     } else {
       _edgeAvailable = false;
     }
@@ -356,7 +459,7 @@ export async function isEdgeAvailable() {
           clearTimeout(timeoutId);
           if (res.ok) {
             const health = await res.json().catch(() => ({}));
-            if (health.status === "ok") {
+            if (health.isOperational === true) {
               _edgeAvailable = true;
               // Sync connectivity state so the UI immediately reflects the
               // discovered edge server, instead of waiting for the next
@@ -386,7 +489,7 @@ export async function isEdgeAvailable() {
           clearTimeout(timeoutId);
           if (res.ok) {
             const health = await res.json().catch(() => ({}));
-            _edgeAvailable = health.status === "ok";
+            _edgeAvailable = health.isOperational === true;
             if (_edgeAvailable) {
               // Sync connectivity state for the UI
               if (health.sessionValid) {
@@ -437,7 +540,7 @@ export async function getEdgeConnectivityState() {
     clearTimeout(timeoutId);
     if (res.ok) {
       const health = await res.json().catch(() => ({}));
-      if (health.status === 'ok' && health.sessionValid) {
+      if (health.isOperational === true && health.sessionValid) {
         _connectivityState = 'edge_reachable';
         // Sync isEdgeAvailable cache so print routing (orderApi.js) sees the
         // same result as the UI. Without this, isEdgeAvailable() could return
@@ -655,4 +758,143 @@ export async function triggerEdgeConfigResync() {
     }
   })();
   return _configResyncInProgress;
+}
+
+// ── Runtime event bus listener (replaces polling for state changes) ──────────
+// Connects to the Runtime's WebSocket /events endpoint and listens for
+// runtime.state_changed, config_sync.state_changed, and connection.state_changed
+// events. When a state change arrives, it updates the cached connectivity state
+// immediately — no need to wait for the next poll cycle.
+
+let _runtimeWs = null;
+let _runtimeWsStarted = false;
+let _runtimeWsReconnectDelay = 1_000; // starts at 1s, grows to 30s max
+const WS_RECONNECT_MAX_MS = 30_000;
+const _runtimeEventListeners = new Set();
+
+export function onRuntimeStateChange(callback) {
+  _runtimeEventListeners.add(callback);
+  return () => _runtimeEventListeners.delete(callback);
+}
+
+export function startRuntimeEventBus() {
+  if (_runtimeWsStarted) return;
+  _runtimeWsStarted = true;
+
+  const connect = () => {
+    const edgeUrl = getEdgeUrl();
+    const wsUrl = edgeUrl.replace(/^http/, 'ws') + '/events';
+
+    try {
+      _runtimeWs = new WebSocket(wsUrl);
+    } catch {
+      setTimeout(connect, _runtimeWsReconnectDelay);
+      _runtimeWsReconnectDelay = Math.min(_runtimeWsReconnectDelay * 2, WS_RECONNECT_MAX_MS);
+      return;
+    }
+
+    _runtimeWs.onopen = () => {
+      // Reset reconnect backoff on successful connection
+      _runtimeWsReconnectDelay = 1_000;
+      // Authenticate with the runtime token (stored as edge API key)
+      const token = getStoredEdgeApiKey();
+      if (token) {
+        _runtimeWs.send(JSON.stringify({ type: 'auth', token }));
+      }
+    };
+
+    _runtimeWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'auth' && msg.ok === false) return;
+
+        // Handle runtime events
+        if (msg.event) {
+          switch (msg.event) {
+            case 'runtime.state_changed':
+              handleRuntimeStateChanged(msg.data);
+              break;
+            case 'config_sync.state_changed':
+              handleConfigSyncStateChanged(msg.data);
+              break;
+            case 'connection.state_changed':
+              handleConnectionStateChanged(msg.data);
+              break;
+            case 'config_sync.progress':
+              // Notify listeners of progress
+              for (const cb of _runtimeEventListeners) {
+                try { cb({ type: 'config_sync.progress', data: msg.data }); } catch { /* ignore */ }
+              }
+              break;
+          }
+        }
+      } catch { /* ignore malformed messages */ }
+    };
+
+    _runtimeWs.onclose = () => {
+      _runtimeWs = null;
+      // Reconnect with exponential backoff if the app is still running.
+      // 1s → 2s → 4s → 8s → 15s → 30s, capped at 30s. Resets to 1s on
+      // successful connect (onopen). Prevents noisy reconnect storms when
+      // the edge server is down for an extended period.
+      if (_runtimeWsStarted) {
+        setTimeout(connect, _runtimeWsReconnectDelay);
+        _runtimeWsReconnectDelay = Math.min(_runtimeWsReconnectDelay * 2, WS_RECONNECT_MAX_MS);
+      }
+    };
+
+    _runtimeWs.onerror = () => {
+      try { _runtimeWs?.close(); } catch { /* ignore */ }
+    };
+  };
+
+  connect();
+}
+
+export function stopRuntimeEventBus() {
+  _runtimeWsStarted = false;
+  if (_runtimeWs) {
+    try { _runtimeWs.close(); } catch { /* ignore */ }
+    _runtimeWs = null;
+  }
+}
+
+function handleRuntimeStateChanged(data) {
+  if (!data) return;
+  const { newState, isOperational } = data;
+
+  // Update cached availability immediately
+  if (isOperational) {
+    _edgeAvailable = true;
+    _edgeLastCheck = Date.now();
+  } else {
+    _edgeAvailable = false;
+  }
+
+  // Update connectivity state
+  if (isOperational) {
+    _connectivityState = 'edge_reachable';
+  } else {
+    _connectivityState = 'edge_not_ready';
+  }
+  _connectivityLastCheck = Date.now();
+
+  // Notify listeners
+  for (const cb of _runtimeEventListeners) {
+    try { cb({ type: 'runtime.state_changed', data }); } catch { /* ignore */ }
+  }
+}
+
+function handleConfigSyncStateChanged(data) {
+  if (!data) return;
+  for (const cb of _runtimeEventListeners) {
+    try { cb({ type: 'config_sync.state_changed', data }); } catch { /* ignore */ }
+  }
+}
+
+function handleConnectionStateChanged(data) {
+  if (!data) return;
+  for (const cb of _runtimeEventListeners) {
+    try { cb({ type: 'connection.state_changed', data }); } catch { /* ignore */ }
+  }
 }

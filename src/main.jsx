@@ -21,7 +21,7 @@ import App from './App.jsx'
 import { MenuProvider } from './context/MenuContext'
 import { registerSW } from './utils/registerSW'
 import { checkAndApplyOtaOnStartup, checkAndDownloadOta } from './services/otaService'
-import { prewarmEdgeHealth, startEdgeAutoRecovery } from './services/edgeHealth'
+import { prewarmEdgeHealth, startEdgeAutoRecovery, startRuntimeEventBus } from './services/edgeHealth'
 import secureStorage from './utils/secureStorage'
 import * as Sentry from '@sentry/react'
 
@@ -43,6 +43,11 @@ import * as Sentry from '@sentry/react'
 
   // Start edge server auto-recovery (Tauri desktop only — no-op in browser)
   startEdgeAutoRecovery();
+
+  // Connect to the Runtime WebSocket event bus for real-time state updates
+  // (runtime.state_changed, config_sync.state_changed, connection.state_changed).
+  // Replaces polling for runtime readiness — the UI gets push notifications.
+  startRuntimeEventBus();
 
   Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,

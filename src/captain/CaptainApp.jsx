@@ -64,7 +64,7 @@ import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 
 
@@ -650,7 +650,8 @@ export default function CaptainApp({ onLogout }) {
         setDiscoveryStatus(`Found edge server: ${discovered}`);
         checkEdgeStatus();
       } else {
-        setDiscoveryStatus('');
+        const reason = getEdgeDiscoveryFailReason();
+        setDiscoveryStatus(reason || 'Edge server not found on LAN');
       }
     }).catch(() => setDiscoveryStatus(''));
   }, []);
@@ -4472,13 +4473,14 @@ export default function CaptainApp({ onLogout }) {
                 onClick={async () => {
                   setDiscoveryStatus('Searching for edge server on LAN…');
                   setEdgeUrl(null);
-                  const discovered = await discoverEdgeOnLAN();
+                  const discovered = await discoverEdgeOnLAN({ force: true });
                   if (discovered) {
                     setEdgeUrlInput(discovered);
                     setDiscoveryStatus(`Found: ${discovered}`);
                     await checkEdgeStatus();
                   } else {
-                    setDiscoveryStatus('No edge server found on LAN');
+                    const reason = getEdgeDiscoveryFailReason();
+                    setDiscoveryStatus(reason || 'No edge server found on LAN');
                   }
                 }}
                 className="flex-1 px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200 transition-colors"

@@ -24,6 +24,17 @@ async function edgeFetchMenuItems() {
   return mapFlatMenuItems(items);
 }
 
+async function edgeFetchHealth() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${getEdgeUrl()}/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) return await res.json();
+  } catch { /* edge unreachable */ }
+  return null;
+}
+
 // localStorage key prefix for menu cache
 export const MENU_STORAGE_KEY = "softshape_menu";
 // React Query key for menu queries
@@ -239,9 +250,19 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
         return edgeItems;
       }
       // Edge returned empty menu. When using edge-local auth, cloud fallback
-      // is impossible (fake token). Trigger a config re-sync from the edge
-      // server (which has a valid cloud session token) and retry once.
+      // is impossible (fake token). Check verification status from /health
+      // to surface a specific error, then trigger a config re-sync and retry.
       if (useEdgeDirect) {
+        const health = await edgeFetchHealth();
+        if (health && health.configSyncVerified === false) {
+          const mismatches = health.configCountMismatches;
+          if (mismatches && mismatches.length > 0) {
+            console.warn('[MenuService] Edge sync verification failed — count mismatch:', mismatches);
+          } else {
+            console.warn('[MenuService] Edge sync verification failed — checksum/integrity mismatch');
+          }
+        }
+
         console.warn('[MenuService] Edge returned empty menu — triggering config re-sync');
         const synced = await triggerEdgeConfigResync();
         if (synced) {

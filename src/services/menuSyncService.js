@@ -17,7 +17,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { fetchMenuFromBackend } from "./menuService";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
-import { isEdgeLocalAuth, isEdgeAvailable } from "./edgeHealth";
+import { isEdgeLocalAuth, isEdgeAvailable, onRuntimeStateChange } from "./edgeHealth";
 
 // ── MenuSnapshot state machine ───────────────────────────────────────────────
 // States: loading, ready, stale, empty, unavailable
@@ -89,8 +89,27 @@ try {
 // If we already have a menu, we don't need to block UI with a loading screen
 let _isLoading = !globalMenu || globalMenu.length === 0;
 let _loadError = null;
+let _syncProgress = null; // { stage, entity, percent } when edge sync is in progress
 const subscribers = new Set();
 let loadPromise = null;
+
+// ── Subscribe to edge runtime sync progress events ───────────────────────────
+// When the edge server emits config_sync.progress, update _syncProgress so
+// the UI can show "Syncing menu items… 45%" instead of a blank screen.
+// When config_sync.state_changed arrives with newState=READY, clear progress.
+if (typeof window !== "undefined") {
+  onRuntimeStateChange((event) => {
+    if (event.type === "config_sync.progress") {
+      _syncProgress = event.data;
+      notifySubscribers();
+    } else if (event.type === "config_sync.state_changed") {
+      if (event.data?.newState === "READY" || event.data?.newState === "FAILED") {
+        _syncProgress = null;
+        notifySubscribers();
+      }
+    }
+  });
+}
 
 /**
  * Reset the menu state so the next loadInitialMenu() call re-fetches from
@@ -120,6 +139,7 @@ function notifySubscribers() {
       menu: globalMenu ?? [],
       loading: _isLoading,
       error: _loadError,
+      syncProgress: _syncProgress,
     })
   );
 }
@@ -202,12 +222,14 @@ export function useGlobalMenuSync() {
     return _isLoading;
   });
   const [error, setError] = useState(_loadError);
+  const [syncProgress, setSyncProgress] = useState(_syncProgress);
 
   useEffect(() => {
-    const handleUpdate = ({ menu: newMenu, loading: isLoading, error: err }) => {
+    const handleUpdate = ({ menu: newMenu, loading: isLoading, error: err, syncProgress: progress }) => {
       setMenu(newMenu ?? []);
       setLoading(isLoading);
       setError(err);
+      setSyncProgress(progress ?? null);
     };
 
     subscribers.add(handleUpdate);
@@ -216,6 +238,7 @@ export function useGlobalMenuSync() {
       menu: globalMenu,
       loading: _isLoading,
       error: _loadError,
+      syncProgress: _syncProgress,
     });
 
     loadInitialMenu();
@@ -382,6 +405,12 @@ export function useGlobalMenuSync() {
     const cacheAge = getMenuCacheAgeMs();
     const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
+    // If sync is in progress, show a syncing state with progress percentage
+    if (syncProgress && !hasMenu) {
+      const pct = syncProgress.percent ?? 0;
+      const entity = syncProgress.entity || 'config';
+      return createSnapshot(MENU_SNAPSHOT_STATES.LOADING, `Syncing ${entity}… ${pct}%`);
+    }
     if (loading && !hasMenu) {
       return createSnapshot(MENU_SNAPSHOT_STATES.LOADING, 'Loading menu from bridge...');
     }
@@ -398,7 +427,7 @@ export function useGlobalMenuSync() {
       return createSnapshot(MENU_SNAPSHOT_STATES.STALE, 'Menu cache is older than 30 minutes', menu, Date.now() - cacheAge);
     }
     return createSnapshot(MENU_SNAPSHOT_STATES.READY, null, menu, Date.now() - cacheAge);
-  }, [menu, loading, error]);
+  }, [menu, loading, error, syncProgress]);
 
   return {
     globalMenu: menu || [],
@@ -407,6 +436,7 @@ export function useGlobalMenuSync() {
     setGlobalMenu,
     refreshMenu,
     snapshot,
+    syncProgress,
   };
 }
 

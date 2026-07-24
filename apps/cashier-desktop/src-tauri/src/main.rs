@@ -282,36 +282,99 @@ fn update_connection_status(app: tauri::AppHandle, status: String) -> Result<(),
     Ok(())
 }
 
-// ── Edge server spawn (fallback for missing Runtime Host) ────────────────────
-// Phase 1.2 removed spawn logic expecting an external "Softshape Runtime Host"
-// (Phase 3) to launch edge-server.exe. That host was never built, so the
-// bundled edge-server.exe never starts and port 3101 has nothing listening.
-// This restores a minimal spawn-on-startup fallback: if the health check fails,
-// launch the bundled edge-server.exe as a detached child. The Cashier remains
-// a client — it does not supervise or kill the process.
-fn spawn_edge_server_if_needed(app: &tauri::AppHandle) {
+// ── Runtime Host fallback spawn ──────────────────────────────────────────────
+// The Cashier never spawns edge-server.exe directly. Instead, if the Runtime
+// is not reachable on port 3101, it spawns the Runtime Host (softshape-host.exe),
+// which in turn supervises edge-server.exe and print-service.exe with crash-loop
+// guards, health probes, and automatic restart.
+//
+// This fallback handles deployment edge cases:
+//   - Runtime Host failed to install
+//   - Windows Startup disabled
+//   - Print Agent not installed correctly
+//   - Antivirus quarantined Runtime Host
+//
+// The Cashier remains a client — it does not supervise or kill the Runtime.
+// CREATE_NO_WINDOW (0x08000000) ensures no visible console window.
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn spawn_runtime_host_if_needed(app: &tauri::AppHandle) {
     if check_edge_server_health().0 {
-        return; // already running
+        return; // Runtime already running
     }
+
+    // Look for softshape-host.exe in resources, then in common install locations
     let exe = match app.path().resource_dir() {
-        Ok(dir) if dir.join("edge-server.exe").exists() => dir.join("edge-server.exe"),
+        Ok(dir) if dir.join("softshape-host.exe").exists() => dir.join("softshape-host.exe"),
         _ => {
-            eprintln!("[Edge] edge-server.exe not found in resources; cannot spawn");
-            return;
+            // Check alongside the Cashier executable
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            match exe_dir {
+                Some(dir) if dir.join("softshape-host.exe").exists() => dir.join("softshape-host.exe"),
+                _ => {
+                    eprintln!("[Runtime] softshape-host.exe not found — cannot start Runtime. \
+                              The Cashier will run in offline mode. Reinstall Softshape to fix this.");
+                    return;
+                }
+            }
         }
     };
-    match std::process::Command::new(&exe)
-        .stdin(std::process::Stdio::null())
+
+    eprintln!("[Runtime] Spawning Runtime Host: {}", exe.display());
+
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
+        .stderr(std::process::Stdio::null());
+
+    #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    match cmd.spawn() {
         Ok(child) => {
-            eprintln!("[Edge] Spawned edge-server.exe pid={}", child.id());
+            eprintln!("[Runtime] Spawned softshape-host.exe pid={}", child.id());
             // Detach: forget the handle so dropping it does not kill the child.
             std::mem::forget(child);
         }
-        Err(e) => eprintln!("[Edge] Failed to spawn edge-server.exe: {}", e),
+        Err(e) => {
+            eprintln!("[Runtime] Failed to spawn softshape-host.exe: {}. \
+                       The Cashier will run in offline mode.", e);
+        }
+    }
+}
+
+/// Shutdown the Runtime via POST /runtime/shutdown.
+/// Called by the tray "Shutdown Runtime" action.
+#[tauri::command]
+fn shutdown_runtime() -> Result<(), String> {
+    let port = get_edge_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut stream = TcpStream::connect_timeout(
+        &addr.parse().map_err(|e| format!("Invalid address: {}", e))?,
+        Duration::from_secs(2),
+    )
+    .map_err(|e| format!("Cannot connect to Runtime on port {}: {}. Is the Softshape Runtime running?", port, e))?;
+
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let request = "POST /runtime/shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+    stream.write_all(request.as_bytes())
+        .map_err(|e| format!("Failed to send shutdown request: {}", e))?;
+
+    let mut response = String::new();
+    let _ = stream.read_to_string(&mut response);
+
+    if response.starts_with("HTTP/1.1 200") {
+        Ok(())
+    } else {
+        let status_line = response.lines().next().unwrap_or("no response");
+        Err(format!("Runtime shutdown failed: {}", status_line))
     }
 }
 
@@ -338,18 +401,19 @@ fn main() {
                 eprintln!("[Autostart] Enabled on first run");
             }
 
-            // Launch the bundled edge-server.exe if it isn't already running.
-            // The Runtime Host (Phase 3) was never built, so the Cashier must
-            // spawn the edge-server itself as a fallback.
-            spawn_edge_server_if_needed(&app.handle());
+            // Launch the Runtime Host if the Runtime isn't already running.
+            // The Cashier never spawns edge-server.exe directly — it spawns the
+            // Runtime Host, which supervises edge-server + print service.
+            spawn_runtime_host_if_needed(&app.handle());
 
-            // Build system tray with Show/Quit menu
+            // Build system tray with Show / Restart Runtime / Shutdown Runtime
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::TrayIconBuilder;
 
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            let restart_item = MenuItem::with_id(app, "restart_runtime", "Restart Runtime", true, None::<&str>)?;
+            let shutdown_item = MenuItem::with_id(app, "shutdown_runtime", "Shutdown Runtime", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &restart_item, &shutdown_item])?;
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
@@ -364,7 +428,30 @@ fn main() {
                             let _ = window.set_focus();
                         }
                     }
-                    "quit" => {
+                    "restart_runtime" => {
+                        // Restart the Runtime via POST /runtime/restart.
+                        // If edge is dead, re-spawn the Runtime Host.
+                        let port = get_edge_port();
+                        let addr = format!("127.0.0.1:{}", port);
+                        let restart_ok = TcpStream::connect_timeout(
+                            &addr.parse().unwrap_or_else(|_| "127.0.0.1:3101".parse().unwrap()),
+                            Duration::from_secs(2),
+                        ).and_then(|mut stream| {
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                            let req = "POST /runtime/restart HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+                            stream.write_all(req.as_bytes())?;
+                            let mut resp = String::new();
+                            let _ = stream.read_to_string(&mut resp);
+                            if resp.starts_with("HTTP/1.1 200") { Ok(()) } else { Err(std::io::Error::new(std::io::ErrorKind::Other, "non-200")) }
+                        });
+                        if restart_ok.is_err() {
+                            eprintln!("[Tray] Runtime restart failed — re-spawning Runtime Host");
+                            spawn_runtime_host_if_needed(app);
+                        }
+                    }
+                    "shutdown_runtime" => {
+                        // Shutdown the Runtime via POST /runtime/shutdown, then exit Cashier.
+                        let _ = shutdown_runtime();
                         app.exit(0);
                     }
                     _ => {}
@@ -403,6 +490,7 @@ fn main() {
             check_for_updates,
             get_edge_server_status,
             restart_edge_server,
+            shutdown_runtime,
             test_print,
             enable_autostart,
             disable_autostart,

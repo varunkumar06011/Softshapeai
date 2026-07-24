@@ -19,10 +19,16 @@ import { useGlobalMenuSync } from "../services/menuSyncService";
 
 export function useMenuSync() {
   // isLoadingMenu replaces the old broken `globalMenu.length === 0` check
-  const { globalMenu, isLoadingMenu, loadError, setGlobalMenu, refreshMenu } =
+  const { globalMenu, isLoadingMenu, loadError, setGlobalMenu, refreshMenu, snapshot, syncProgress } =
     useGlobalMenuSync();
 
   const menuItems = useMemo(() => {
+    // While loading and no menu data, return [] for backward compatibility
+    // (many consumers call .map()/.filter() on this). Consumers that want
+    // to distinguish "loading" from "empty" should check `loading` or `isSyncing`.
+    if (isLoadingMenu && (!globalMenu || globalMenu.length === 0)) {
+      return [];
+    }
     const now = Date.now();
     // Filter out inactive or expired specials for standard menus (Cashier / Captain / Admin POS)
     return globalMenu.filter((item) => {
@@ -31,9 +37,12 @@ export function useMenuSync() {
       if (item.expiresAt && now >= item.expiresAt) return false;
       return true;
     });
-  }, [globalMenu]);
+  }, [globalMenu, isLoadingMenu]);
+
+  const isSyncing = isLoadingMenu && (!globalMenu || globalMenu.length === 0) && !!syncProgress;
 
   const categories = useMemo(() => {
+    if (!globalMenu || globalMenu.length === 0) return ["All"];
     const ordered = [];
     const seen = new Set();
     for (const item of globalMenu) {
@@ -47,14 +56,17 @@ export function useMenuSync() {
   }, [globalMenu]);
 
   return {
-    menuItems,           // Filtered list for Cashier, Captain, Admin POS
+    menuItems,           // Filtered list for Cashier, Captain, Admin POS ([] while loading)
     allMenuItems: globalMenu, // Full list from backend (expired specials now filtered server-side)
     updateMenu: setGlobalMenu,
     setMenuItems: setGlobalMenu,
     setGlobalMenu,
     loading: isLoadingMenu,  // Fixed: true only while genuinely loading, not when empty
+    isSyncing,               // true when edge sync is actively in progress (shows progress UI)
     error: loadError,
     refreshMenu,
     categories,
+    snapshot,           // MenuSnapshot state machine for UI display
+    syncProgress,       // { stage, entity, percent } when edge sync is in progress
   };
 }
