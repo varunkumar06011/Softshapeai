@@ -5041,7 +5041,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (selectedTable.isExtra) {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
-              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id, localPrinted, kotEventIds);
             } else {
               orderResponse = await createOrder({
                 tableId: selectedTable.backendId,
@@ -5055,10 +5055,12 @@ const CashierDashboard = ({ onLogout }) => {
                 platform: selectedOrderPlatform,
                 timeoutMs: 45000,
                 preReservedKotNumber,
+                localPrinted,
+                kotEventIds,
               });
             }
           } else if (selectedTable.activeOrder?.id) {
-            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id);
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id, localPrinted, kotEventIds);
           } else {
             try {
               orderResponse = await createOrder({
@@ -5072,6 +5074,8 @@ const CashierDashboard = ({ onLogout }) => {
                 platform: selectedOrderPlatform,
                 timeoutMs: 45000,
                 preReservedKotNumber,
+                localPrinted,
+                kotEventIds,
               });
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -5091,7 +5095,7 @@ const CashierDashboard = ({ onLogout }) => {
                   console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
                 }
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
-                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, preReservedKotNumber, selectedTable.id);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, preReservedKotNumber, selectedTable.id, localPrinted, kotEventIds);
               } else {
                 throw createErr;
               }

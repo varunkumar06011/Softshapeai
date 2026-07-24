@@ -9,12 +9,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Minus } from 'lucide-react';
 
 export default function QuantityPicker({ isOpen, itemName, onSelect, onClose }) {
-  const [quantity, setQuantity] = useState('');
+  const [quantity, setQuantity] = useState('1');
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
-      setQuantity('');
+      setQuantity('1');
       // Focus the input after the modal animates in so the user can type immediately
       const timer = setTimeout(() => inputRef.current?.focus(), 50);
       return () => clearTimeout(timer);
@@ -34,7 +34,11 @@ export default function QuantityPicker({ isOpen, itemName, onSelect, onClose }) 
   };
 
   const adjust = (delta) => {
-    setQuantity((prev) => Math.max(1, Math.floor(Number(prev) || 1) + delta));
+    setQuantity((prev) => {
+      const n = Number(prev) || 0;
+      const next = n + delta;
+      return next > 0 ? String(next) : '';
+    });
   };
 
   return (

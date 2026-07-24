@@ -52,23 +52,15 @@ export function clearTerminatedTable(tableId) {
 export const TABLE_STATUS = {
   FREE: "Free",
   OCCUPIED: "Occupied",
-  PREPARING: "Preparing",
-  READY: "Ready",
-  BILLING: "Waiting Bill",
+  PREPARING: "Occupied",
+  READY: "Occupied",
+  BILLING: "Occupied",
 };
 
 function toFrontendStatus(backendStatus) {
-  const map = {
-    AVAILABLE: "Free",
-    OCCUPIED: "Occupied",
-    PREPARING: "Preparing",
-    READY: "Ready",
-    BILLING_REQUESTED: "Waiting Bill",
-    BILLING: "Waiting Bill",
-    RESERVED: "Reserved",
-    CLEANING: "Cleaning",
-  };
-  return map[backendStatus] || "Free";
+  if (!backendStatus) return "Free";
+  if (backendStatus === "AVAILABLE" || backendStatus === "Free" || backendStatus === "TERMINATED") return "Free";
+  return "Occupied";
 }
 
 let _legacyCleanupDone = false;
@@ -162,20 +154,23 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   const isStale = incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated;
 
   const dbStatus = isStale && existing ? existing.dbStatus : row.status;
-  let persistedStatus = isStale && existing ? existing.status : (row.workflowStatus || toFrontendStatus(dbStatus));
 
-  // Protect "Waiting Bill" status from being downgraded by stale API data.
-  // If the existing table is "Waiting Bill" and the incoming status is not Free/AVAILABLE
-  // (which would indicate settlement), keep "Waiting Bill" so the table doesn't
-  // revert to "Occupied" and lose its billing state.
-  if (existing && (existing.status === 'Waiting Bill' || existing.workflowStatus === 'Waiting Bill')) {
-    const incomingIsFree = row.status === 'AVAILABLE' || row.status === 'Free' || row.workflowStatus === 'Free';
-    if (!incomingIsFree) {
-      persistedStatus = 'Waiting Bill';
-    }
+  const incomingOrders = Array.isArray(row.orders) && row.orders.length > 0 ? row.orders : (row.activeOrder ? [row.activeOrder] : []);
+  const rawIncomingOrder = incomingOrders[0] || null;
+  const incomingItemCount = incomingOrders.reduce((sum, o) => {
+    if (!Array.isArray(o?.items)) return sum;
+    return sum + o.items.filter(i => !i.removedFromBill && (i.quantity ?? i.q ?? 0) > 0).length;
+  }, 0);
+  const hasNoSession = incomingItemCount === 0 && (row.currentBill ?? 0) === 0 && (row.guests ?? 0) === 0;
+  const claimsNonFree = row.workflowStatus !== 'Free' && row.status !== 'Free' && dbStatus !== 'AVAILABLE';
+  const isGhost = Array.isArray(row.orders) && claimsNonFree && hasNoSession;
+  if (isGhost) {
+    console.warn('[TableSync] Normalizing ghost table to Free (no session data) for table', row.number, row.workflowStatus || row.status);
   }
-
-  const rawIncomingOrder = row.orders?.[0] || row.activeOrder || null;
+  const isFreeWorkflow = row.status === 'Free' || dbStatus === 'AVAILABLE' || (row.workflowStatus === 'Free' && hasNoSession) || isGhost;
+  const persistedStatus = isStale && existing
+    ? (existing.status === 'Free' ? 'Free' : 'Occupied')
+    : (isFreeWorkflow ? 'Free' : 'Occupied');
   // Defensive: an order can only belong to this table if its tableId matches the row id.
   const incomingOrder = rawIncomingOrder && rawIncomingOrder.tableId === row.id ? rawIncomingOrder : null;
   const existingOrder = existing?.activeOrder;
@@ -222,22 +217,6 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
   // or explicit fetch will populate it. Preserving stale activeOrder risks showing items
   // from a settled order.
 
-  // Ghost detection: if backend claims non-Free but has no billable items, no bill, and no guests,
-  // the table is in a corrupt state (active order with zero items after settle/terminate).
-  // Force it to Free to prevent stable incorrect display.
-  const incomingOrders = Array.isArray(row.orders) ? row.orders : [];
-  const incomingItemCount = incomingOrders.reduce((sum, o) => {
-    if (!Array.isArray(o?.items)) return sum;
-    return sum + o.items.filter(i => !i.removedFromBill && i.quantity > 0).length;
-  }, 0);
-  const hasNoSession = incomingItemCount === 0 && (row.currentBill ?? 0) === 0 && (row.guests ?? 0) === 0;
-  const claimsNonFree = row.workflowStatus !== 'Free' && row.status !== 'Free' && dbStatus !== 'AVAILABLE';
-  const isGhost = Array.isArray(row.orders) && claimsNonFree && hasNoSession;
-  if (isGhost) {
-    console.warn('[TableSync] Normalizing ghost table to Free (no session data) for table', row.number, row.workflowStatus || row.status);
-  }
-
-  const isFreeWorkflow = isGhost || row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
 
   // kotHistory: normalize DB kots relation (authoritative), fall back to legacy kotHistory
   const incomingKot = (Array.isArray(row.kots) && row.kots.length > 0)
@@ -427,7 +406,7 @@ function acquireSocket(handlers) {
 
 async function persistStatusChanges(prevTables, nextTables) {
   const tasks = [];
-  const VALID_STATUSES = new Set(["Free","Occupied","Preparing","Ready","Waiting Bill","Reserved","Cleaning"]);
+  const VALID_STATUSES = new Set(["Free","Occupied"]);
 
   for (const table of nextTables) {
     if (!table.backendId) continue;

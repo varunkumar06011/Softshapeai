@@ -108,7 +108,7 @@ export async function reserveKotNumber(requestId = null) {
   }
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
@@ -116,6 +116,8 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (sectionTag) { orderData.sectionTag = sectionTag; }
   if (platform) { orderData.platform = platform; }
   if (preReservedKotNumber != null) { orderData.preReservedKotNumber = preReservedKotNumber; }
+  if (localPrinted) { orderData.localPrinted = true; }
+  if (kotEventIds) { orderData.kotEventIds = kotEventIds; }
 
   // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
   // Edge server writes to local SQLite, prints KOT, enqueues sync — all local, ~15-40ms.
@@ -131,6 +133,8 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         platform,
         orderByRole: authService.getUserRole?.() || undefined,
         preReservedKotNumber: preReservedKotNumber ?? null,
+        localPrinted,
+        kotEventIds,
       };
       const result = await edgeFetch('/api/edge/order', {
         method: 'POST',
@@ -338,7 +342,7 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null) {
   const body = { items: toOrderItems(items) };
   if (requestId) body.requestId = requestId;
   if (captainName) body.captainName = captainName;
@@ -346,6 +350,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (tableNumber) { body.tableNumber = tableNumber; }
   if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
   if (preReservedKotNumber != null) { body.preReservedKotNumber = preReservedKotNumber; }
+  if (localPrinted) { body.localPrinted = true; }
+  if (kotEventIds) { body.kotEventIds = kotEventIds; }
 
   // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
   // Edge server needs the actual tableId to find/create the order.
@@ -361,6 +367,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         requestId: requestId || generateRequestId(),
         orderByRole: authService.getUserRole?.() || undefined,
         preReservedKotNumber: preReservedKotNumber ?? null,
+        localPrinted,
+        kotEventIds,
       };
       const result = await edgeFetch('/api/edge/order/update', {
         method: 'POST',

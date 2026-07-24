@@ -94,6 +94,12 @@ import { playChimeTone, unlockAudioContext } from '../services/audioService';
 
 import { hapticSuccess } from '../shared/hooks/useHaptics';
 
+import Sidebar from './components/Sidebar';
+import TopNavbar from './components/TopNavbar';
+import MobileBottomNav from './components/MobileBottomNav';
+import ComingSoon from './components/ComingSoon';
+import FloorOverview from './components/FloorOverview';
+
 
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
@@ -108,32 +114,17 @@ function isBarLikeVenue(venueType) {
 
 
 const TABLE_STATUS = {
-
   FREE: 'Free',
-
   OCCUPIED: 'Occupied',
-
-  PREPARING: 'Preparing',
-
-  READY: 'Ready',
-
-  BILLING: 'Waiting Bill'
-
+  PREPARING: 'Occupied',
+  READY: 'Occupied',
+  BILLING: 'Occupied'
 };
 
 const toFrontendTableStatus = (backendStatus) => {
-  const map = {
-    AVAILABLE: 'Free',
-    OCCUPIED: 'Occupied',
-    PREPARING: 'Preparing',
-    READY: 'Ready',
-    BILLING_REQUESTED: 'Waiting Bill',
-    BILLING: 'Waiting Bill',
-    RESERVED: 'Reserved',
-    TERMINATED: 'Free',
-    CLEANING: 'Cleaning',
-  };
-  return map[backendStatus] || backendStatus || 'Free';
+  if (!backendStatus) return 'Free';
+  if (backendStatus === 'AVAILABLE' || backendStatus === 'Free' || backendStatus === 'TERMINATED') return 'Free';
+  return 'Occupied';
 };
 
 const normalizeKotsModule = (kots) => {
@@ -1021,6 +1012,9 @@ export default function CaptainApp({ onLogout }) {
 
   const [activeView, setActiveView] = useState(() => localStorage.getItem(getTenantScopedKey('captain_active_tab')) || 'assignment');
 
+  // 8-section sidebar navigation: floor | orders | menu | transactions | reports | customers | staff | settings
+  const [activeSection, setActiveSection] = useState(() => localStorage.getItem(getTenantScopedKey('captain_active_section')) || 'floor');
+
   const [tableSubCategory, setTableSubCategory] = useState(() => {
 
     const saved = localStorage.getItem(getTenantScopedKey('softshape_selected_subcategory'));
@@ -1298,9 +1292,11 @@ export default function CaptainApp({ onLogout }) {
 
     localStorage.setItem(getTenantScopedKey('captain_active_tab'), activeView);
 
+    localStorage.setItem(getTenantScopedKey('captain_active_section'), activeSection);
+
     localStorage.setItem(getTenantScopedKey('softshape_captain_table_filter'), tableFilter);
 
-  }, [view, activeTableId, searchQuery, activeCategory, activeDiet, isCartMinimized, tableSubCategory, selectedPDRRoom, activeBarMenu, tableCarts, activeView, tableFilter]);
+  }, [view, activeTableId, searchQuery, activeCategory, activeDiet, isCartMinimized, tableSubCategory, selectedPDRRoom, activeBarMenu, tableCarts, activeView, tableFilter, activeSection]);
 
 
 
@@ -1407,7 +1403,19 @@ export default function CaptainApp({ onLogout }) {
   const menuLoading = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenuLoading : restaurantMenuLoading;
 
   // Derived — switch between restaurant and bar floor
-  const activeTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? barTables : tables;
+  const activeTables = useMemo(() => {
+    if (activeOutlet === 'bar') return barTables;
+    if (activeOutlet === 'restaurant') return tables;
+    // 'both' — combine and deduplicate by backendId
+    const combined = [...barTables, ...tables];
+    const seen = new Set();
+    return combined.filter(t => {
+      const key = t.backendId || t.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [activeOutlet, barTables, tables]);
 
   const setActiveTables = (activeOutlet === 'bar' || activeOutlet === 'both') ? setBarTables : setTables;
 
@@ -1608,6 +1616,8 @@ export default function CaptainApp({ onLogout }) {
 
   }, [activeTable, currentSessionItems, restaurantConfig]);
 
+  const billableItems = useMemo(() => getBillableItems(activeTable) || [], [activeTable]);
+
 
 
   // Helper functions for captain colors
@@ -1652,12 +1662,42 @@ export default function CaptainApp({ onLogout }) {
   }, [fetchedSections]);
 
   const displayTables = useMemo(() => {
+    if (!tableSubCategory) return activeTables;
 
-    const isVenueSubcategory = venueSubcategories.has(tableSubCategory);
+    // Find the fetched section that matches tableSubCategory
+    // Try: stripped sectionTag, raw sectionTag, or section name
+    const matchedSection = fetchedSections.find(s => {
+      const rawTag = s.sectionTag;
+      const strippedTag = rawTag?.startsWith('venue-') ? rawTag.slice(6) : rawTag;
+      return strippedTag === tableSubCategory ||
+             rawTag === tableSubCategory ||
+             s.name === tableSubCategory;
+    });
 
-    return activeTables;
+    if (!matchedSection) {
+      console.warn('[displayTables] No section found for tableSubCategory:', tableSubCategory,
+        '| Available sections:', fetchedSections.map(s => ({ name: s.name, tag: s.sectionTag, id: s.id })));
+      return activeTables;
+    }
 
-  }, [activeTables, tableSubCategory, venueSubcategories]);
+    // Filter tables by sectionId (primary) or section name (fallback) — same logic as VenueSectionView
+    const targetId = matchedSection.id;
+    const targetName = (matchedSection.name || '').trim().toLowerCase();
+
+    const filtered = activeTables.filter(t => {
+      // Primary: match by sectionId
+      if (targetId && (t.sectionId === targetId || t.section?.id === targetId)) return true;
+      // Fallback: match by section name
+      const tName = (t.sectionName || t.section?.name || '').trim().toLowerCase();
+      if (tName && tName === targetName) return true;
+      // Loose match for longer names
+      if (tName && targetName.length > 4 && tName.includes(targetName)) return true;
+      if (tName && tName.length > 4 && targetName.includes(tName)) return true;
+      return false;
+    });
+
+    return filtered;
+  }, [activeTables, tableSubCategory, fetchedSections]);
 
 
 
@@ -1878,6 +1918,7 @@ export default function CaptainApp({ onLogout }) {
         setSendingKOT(false);
         isSubmittingKotRef.current = false;
         setView('tables');
+        setActiveSection('floor');
         addNotification('Table settled by cashier', 'success');
       }
     };
@@ -2174,10 +2215,12 @@ export default function CaptainApp({ onLogout }) {
         if (mappedTarget && ((mappedTarget.kotHistory?.length > 0) || mappedTarget.activeOrder || (mappedTarget.currentBill > 0))) {
           setActiveTableId(String(mappedTarget.id));
           setView('session');
+          setActiveSection('menu');
           addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
         } else {
           setActiveTableId(null);
           setView('tables');
+          setActiveSection('floor');
           addNotification('Table Moved', `Session moved to Table ${rawTarget?.number ?? ''}`, 'success');
         }
       }
@@ -2741,6 +2784,8 @@ export default function CaptainApp({ onLogout }) {
     setActiveTableId(table.id);
     lastConfirmedItemsRef.current = getTableItems(table); // seed immediately from live table
     setView('session');
+    setActiveSection('menu');
+    setIsCartMinimized(window.innerWidth < 1024);
   };
 
 
@@ -2838,6 +2883,7 @@ export default function CaptainApp({ onLogout }) {
     }
 
     setView('tables');
+    setActiveSection('floor');
 
   };
 
@@ -2986,6 +3032,7 @@ export default function CaptainApp({ onLogout }) {
     if (view === 'session' && !activeTableId) {
       console.warn('[CaptainApp] Stale session detected: view=session but no activeTableId. Resetting to tables view.');
       setView('tables');
+      setActiveSection('floor');
     }
   }, [view, activeTableId]);
 
@@ -3258,7 +3305,7 @@ export default function CaptainApp({ onLogout }) {
 
         try {
           if (existingOrderId) {
-            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId);
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId, localPrinted, kotEventIds);
             savedOrder = response;
           } else {
             try {
@@ -3271,12 +3318,14 @@ export default function CaptainApp({ onLogout }) {
                 captainName: currentCaptain?.name || undefined,
                 sectionTag: activeTable?.sectionTag || undefined,
                 preReservedKotNumber,
+                localPrinted,
+                kotEventIds,
               });
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
                 activeOrderIdRef.current = createErr.existingOrderId;
-                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId);
+                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId, localPrinted, kotEventIds);
               } else {
                 throw createErr;
               }
@@ -3414,7 +3463,7 @@ export default function CaptainApp({ onLogout }) {
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId, edgeHasPrintedIds, edgeKotIdsToSend);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3431,6 +3480,8 @@ export default function CaptainApp({ onLogout }) {
               captainName: currentCaptain?.name || undefined,
               sectionTag: activeTable?.sectionTag || undefined,
               preReservedKotNumber: edgeKotNumToSend,
+              localPrinted: edgeHasPrintedIds,
+              kotEventIds: edgeKotIdsToSend,
             });
           } catch (createErr) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -3438,7 +3489,7 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId, edgeHasPrintedIds, edgeKotIdsToSend);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -4208,7 +4259,7 @@ export default function CaptainApp({ onLogout }) {
 
   return (
     <div
-      className="flex flex-col bg-white overflow-hidden font-['Inter',sans-serif] text-[#1A1A1A]"
+      className="flex flex-col bg-[#F8FAFC] overflow-hidden font-['Inter',sans-serif] text-[#111827]"
       style={{ height: 'calc(var(--captain-vh, 1dvh) * 100)' }}
     >
 
@@ -4306,99 +4357,47 @@ export default function CaptainApp({ onLogout }) {
 
       )}
 
-
-
-      {/* GLOBAL HEADER */}
-
-      <header className={`bg-white border-b border-gray-100 px-6 flex items-center justify-between shrink-0 z-50 transition-all duration-300 ${isHeaderVisible ? 'opacity-100 h-14' : 'opacity-0 h-0 overflow-hidden'}`}>
-
-        <div className="flex items-center gap-4">
-
-          <div className="flex items-center gap-2">
-
-            <img
-
-              src="/logo softshape.ai.png"
-
-              alt="Softshape"
-
-              className="h-12 sm:h-16 w-auto object-contain shrink-0"
-
-            />
-
-            <div className="hidden sm:flex flex-col border-l-2 border-gray-100 pl-3 justify-center">
-
-              <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{restaurant?.name || 'Softshape'}</span>
-
-              <span className="text-[11px] font-black text-gray-900 tracking-tight leading-none">{currentCaptain?.name}</span>
-
-            </div>
-
-          </div>
-
-        </div>
-
-        <div className="flex items-center gap-3 sm:gap-6 shrink-0">
-
-          <div className={`flex items-center gap-2 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-100'}`}>
-
-            <div className={`w-2 h-2 rounded-full animate-pulse ${isOffline ? 'bg-amber-500' : syncStatus === 'syncing' ? 'bg-blue-500' : syncStatus === 'error' ? 'bg-red-500' : 'bg-green-500'}`} />
-
-            <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-600' : syncStatus === 'error' ? 'text-red-500' : 'text-gray-400'}`}>{isOffline ? 'Offline' : syncStatus === 'syncing' ? 'Syncing' : syncStatus === 'error' ? 'Sync Error' : 'Live'}</span>
-
-            {pendingCount > 0 && <span className="text-[9px] font-bold text-amber-600 bg-amber-100 rounded-full px-1.5">{pendingCount}</span>}
-
-          </div>
-
-        </div>
-
-      </header>
-
-      {/* PERSISTENT LOGOUT BUTTON — always visible regardless of header scroll state */}
-
-      <button onClick={() => {
-
-        localStorage.removeItem(getTenantScopedKey('captain_auth_v2'));
-
-        localStorage.removeItem(getTenantScopedKey('active_captain'));
-
-        setIsLoginView(true);
-
-        if (onLogout) onLogout();
-
-      }} className="fixed top-2 right-2 z-[60] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-red-600 bg-white/90 backdrop-blur-sm shadow-md border border-gray-100 hover:bg-red-50 transition-colors text-xs font-bold">
-
-        <LogOut size={16} /> Logout
-
-      </button>
-
-      {/* EDGE SERVER STATUS INDICATOR + SETTINGS BUTTON */}
-      <button
-        onClick={() => {
+      {/* TOP NAVBAR */}
+      <TopNavbar
+        restaurant={restaurant}
+        captainName={currentCaptain?.name}
+        notificationCount={pendingCalls.length}
+        onLogout={() => {
+          localStorage.removeItem(getTenantScopedKey('captain_auth_v2'));
+          localStorage.removeItem(getTenantScopedKey('active_captain'));
+          setSelectedProfile(null);
+          setCurrentCaptain(null);
+          setPin('');
+          setIsLoginView(true);
+          if (onLogout) onLogout();
+        }}
+        onEdgeSettingsClick={() => {
           setEdgeUrlInput(getEdgeUrl());
           setShowEdgeSettings(true);
           checkEdgeStatus();
         }}
-        className="fixed top-2 right-24 z-[60] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md border transition-colors"
-        style={{
-          background: edgeStatus.available ? '#dcfce7' : edgeStatus.connState === 'edge_not_ready' ? '#fef3c7' : edgeStatus.connState === 'cloud_reachable' ? '#dbeafe' : '#fee2e2',
-          color: edgeStatus.available ? '#166534' : edgeStatus.connState === 'edge_not_ready' ? '#92400e' : edgeStatus.connState === 'cloud_reachable' ? '#1e40af' : '#991b1b',
-          borderColor: edgeStatus.available ? '#86efac' : edgeStatus.connState === 'edge_not_ready' ? '#fcd34d' : edgeStatus.connState === 'cloud_reachable' ? '#93c5fd' : '#fca5a5',
-        }}
-      >
-        {edgeStatus.checking ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : edgeStatus.available ? (
-          <Wifi size={14} />
-        ) : edgeStatus.connState === 'edge_not_ready' ? (
-          <AlertTriangle size={14} />
-        ) : edgeStatus.connState === 'cloud_reachable' ? (
-          <Cloud size={14} />
-        ) : (
-          <WifiOff size={14} />
-        )}
-        {edgeStatus.available ? 'Edge' : edgeStatus.connState === 'edge_not_ready' ? 'Edge Setup' : edgeStatus.connState === 'cloud_reachable' ? 'Cloud' : 'Offline'}
-      </button>
+        edgeStatus={edgeStatus}
+        isOffline={isOffline}
+        syncStatus={syncStatus}
+        pendingCount={pendingCount}
+      />
+
+      {/* MAIN ROW: sidebar + content */}
+      <div className="flex flex-grow overflow-hidden">
+
+      {/* SIDEBAR — desktop navigation */}
+      <Sidebar
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+        freeCount={freeCount}
+        busyCount={busyCount}
+        totalSales={todayRevenue}
+        totalBills={allTablesCount}
+        captainName={currentCaptain?.name}
+      />
+
+      {/* MAIN COLUMN */}
+      <div className="flex flex-col flex-grow overflow-hidden">
 
       {/* EDGE SETTINGS MODAL */}
       {showEdgeSettings && (
@@ -4544,71 +4543,35 @@ export default function CaptainApp({ onLogout }) {
         );
       })()}
 
-      {/* CAPTAIN NAV TABS */}
+      {/* CONTENT AREA — switches based on activeSection */}
+      <div className="flex-grow overflow-hidden flex flex-col relative">
 
-      <div className={`bg-white border-b border-gray-100 px-4 flex shrink-0 transition-all duration-300 ${isHeaderVisible ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>
+        {/* FLOOR SECTION: sub-tabs for Assignment / Tables */}
+        {activeSection === 'floor' && (
+          <div className="bg-white border-b border-gray-200 px-4 flex shrink-0">
+            <button
+              onClick={() => { setActiveView('assignment'); localStorage.setItem(getTenantScopedKey('captain_active_tab'), 'assignment'); }}
+              className={`flex items-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-all ${activeView === 'assignment' ? 'border-[#EF4444] text-[#EF4444]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+            >
+              <Target size={14} />
+              <span className="hidden sm:inline">Today's Target</span>
+              <span className="sm:hidden">Target</span>
+              {assignment && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5 shrink-0" />}
+            </button>
+            <button
+              onClick={() => { setActiveView('tables'); localStorage.setItem(getTenantScopedKey('captain_active_tab'), 'tables'); }}
+              className={`flex items-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition-all ${activeView === 'tables' ? 'border-[#EF4444] text-[#EF4444]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+            >
+              <LayoutDashboard size={14} />
+              Tables
+              {view === 'session' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ml-0.5 shrink-0" />}
+            </button>
+          </div>
+        )}
 
-        <button
+      {/* TODAY ASSIGNMENT VIEW — only in floor section */}
 
-          onClick={() => { setActiveView('assignment'); localStorage.setItem(getTenantScopedKey('captain_active_tab'), 'assignment'); }}
-
-          className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeView === 'assignment'
-
-            ? 'border-[#E53935] text-[#E53935]'
-
-            : 'border-transparent text-gray-400 hover:text-gray-600'
-
-            }`}
-
-        >
-
-          <Target size={13} />
-
-          <span className="hidden xs:inline">ఈరోజు అప్పగింత</span>
-
-          <span className="xs:hidden">Today</span>
-
-          {assignment && (
-
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5 shrink-0" />
-
-          )}
-
-        </button>
-
-        <button
-
-          onClick={() => { setActiveView('tables'); localStorage.setItem(getTenantScopedKey('captain_active_tab'), 'tables'); }}
-
-          className={`flex items-center gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeView === 'tables'
-
-            ? 'border-[#E53935] text-[#E53935]'
-
-            : 'border-transparent text-gray-400 hover:text-gray-600'
-
-            }`}
-
-        >
-
-          <LayoutDashboard size={13} />
-
-          Tables
-
-          {view === 'session' && (
-
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ml-0.5 shrink-0" />
-
-          )}
-
-        </button>
-
-      </div>
-
-
-
-      {/* TODAY ASSIGNMENT VIEW */}
-
-      {activeView === 'assignment' && (
+      {activeSection === 'floor' && activeView === 'assignment' && (
 
         <div className="flex-grow overflow-y-auto bg-gray-50/40">
 
@@ -4864,11 +4827,40 @@ export default function CaptainApp({ onLogout }) {
 
       )}
 
+      {/* FLOOR VIEW (tables grid) — only when floor section + tables sub-tab */}
+      {activeSection === 'floor' && activeView === 'tables' && view === 'tables' && (
+        <FloorOverview
+          tables={displayTables}
+          sections={fetchedSections}
+          tableSubCategory={tableSubCategory}
+          setTableSubCategory={setTableSubCategory}
+          tableFilter={tableFilter}
+          setTableFilter={setTableFilter}
+          freeCount={freeCount}
+          busyCount={busyCount}
+          myTablesCount={myTablesCount}
+          allTablesCount={allTablesCount}
+          onTableSelect={openTableSession}
+          selectedPDRRoom={selectedPDRRoom}
+          setSelectedPDRRoom={setSelectedPDRRoom}
+          captainId={currentCaptain?.id}
+          tablesLoading={tablesLoading}
+          refetchTables={refetchRestaurantTables}
+          enabledModules={enabledModules}
+          assignment={assignment}
+          todayRevenue={todayRevenue}
+          currentCaptain={currentCaptain}
+        />
+      )}
 
+      {/* COMING SOON sections */}
+      {activeSection !== 'floor' && activeSection !== 'menu' && (
+        <ComingSoon sectionName={activeSection.charAt(0).toUpperCase() + activeSection.slice(1)} />
+      )}
 
       {/* MAIN CONTENT AREA — TABLES & SESSION */}
 
-      <main className={`flex-grow flex flex-col overflow-hidden relative ${activeView !== 'tables' ? 'hidden' : ''}`}>
+      <main className={`flex-grow flex flex-col overflow-hidden relative ${(activeSection !== 'menu' || (activeSection === 'floor' && activeView !== 'tables')) ? 'hidden' : ''}`}>
 
         {view === 'tables' ? (
 
@@ -5068,7 +5060,7 @@ export default function CaptainApp({ onLogout }) {
 
               <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
 
-                <button onClick={() => setView('tables')} className="p-2.5 bg-gray-50 text-gray-400 hover:text-gray-900 rounded-xl border border-gray-100 transition-all"><ChevronLeft size={20} /></button>
+                <button onClick={() => { setView('tables'); setActiveSection('floor'); }} className="p-2.5 bg-gray-50 text-gray-400 hover:text-gray-900 rounded-xl border border-gray-100 transition-all"><ChevronLeft size={20} /></button>
 
                 <div className="flex flex-col">
 
@@ -5113,6 +5105,19 @@ export default function CaptainApp({ onLogout }) {
                 </button>
 
                 <button className="p-2.5 bg-red-50 text-[#E53935] rounded-xl border border-red-100 shrink-0"><Bell size={18} /></button>
+
+                <button
+                  onClick={() => setIsCartMinimized(false)}
+                  className="relative p-2.5 bg-green-50 text-green-600 rounded-xl border border-green-100 shrink-0 flex items-center justify-center lg:hidden"
+                  aria-label={`Cart with ${currentSessionItems.reduce((sum, i) => sum + (Number(i.q) || 0), 0)} items`}
+                >
+                  <ShoppingCart size={18} />
+                  {currentSessionItems.reduce((sum, i) => sum + (Number(i.q) || 0), 0) > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-[#EF4444] text-white text-[9px] font-bold flex items-center justify-center">
+                      {currentSessionItems.reduce((sum, i) => sum + (Number(i.q) || 0), 0)}
+                    </span>
+                  )}
+                </button>
 
               </div>
 
@@ -5702,7 +5707,7 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-                <div className="flex-grow overflow-y-auto p-6 space-y-8 custom-scrollbar min-h-0">
+                <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar min-h-0">
 
                   {/* KOT LOGS */}
 
@@ -5714,7 +5719,7 @@ export default function CaptainApp({ onLogout }) {
 
                     return kot.items.length > 0 ? (
 
-                      <div key={kot.id} className="space-y-4">
+                      <div key={kot.id} className="space-y-2">
 
                         <div className="flex items-center justify-between border-b border-gray-100 pb-2">
 
@@ -5818,9 +5823,36 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+                  {billableItems.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
+                      <h4 className="text-[11px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2"><History size={16} /> Ordered Items</h4>
+                      <div className="space-y-1.5">
+                        {billableItems.map((item, idx) => {
+                          const name = item.n || item.name || 'Item';
+                          const qty = item.q ?? item.quantity ?? 1;
+                          const price = item.p ?? item.price ?? 0;
+                          return (
+                            <div key={idx} className="bg-gray-50 p-2 rounded-xl border border-gray-100">
+                              <div className="flex justify-between items-start mb-1">
+                                <p className="text-[11px] font-black text-gray-900 uppercase pr-8 leading-tight">{name}</p>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-gray-500">Qty: {qty}</span>
+                                <div className="text-right">
+                                  <span className="text-[9px] font-bold text-gray-400">₹{price} × {qty}</span>
+                                  <span className="text-sm font-black text-gray-900 block">₹{price * qty}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* ACTIVE DRAFT */}
 
-                  <div className="space-y-5 pt-6 border-t-2 border-dashed border-gray-100">
+                  <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
 
                     <div className="flex items-center justify-between">
 
@@ -5848,13 +5880,13 @@ export default function CaptainApp({ onLogout }) {
 
                     ) : (
 
-                      <div className="space-y-3">
+                      <div className="space-y-1.5">
 
                         {currentSessionItems.map((item, idx) => (
 
-                          <div key={idx} className="bg-red-50/50 p-4 rounded-3xl border border-red-100/30 animate-in slide-in-from-right-4">
+                          <div key={idx} className="bg-red-50/50 p-2 rounded-xl border border-red-100/30 animate-in slide-in-from-right-4">
 
-                            <div className="flex justify-between items-start mb-3">
+                            <div className="flex justify-between items-start mb-1">
 
                               <p className="text-[11px] font-black text-gray-900 uppercase pr-8 leading-tight">{item.n}</p>
 
@@ -5913,7 +5945,7 @@ export default function CaptainApp({ onLogout }) {
 
                             </div>
 
-                            <div className="mt-1 ml-1">
+                            <div className="mt-0 ml-1">
 
                               {expandedNoteItemId === (item.menuItemId || item.id || item.n) ? (
 
@@ -6067,7 +6099,7 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-                <div className="p-8 bg-white border-t border-gray-100 space-y-6 shrink-0 shadow-[0_-20px_50px_rgba(0,0,0,0.03)] relative z-10">
+                <div className="p-8 pb-24 lg:pb-8 bg-white border-t border-gray-100 space-y-6 shrink-0 shadow-[0_-20px_50px_rgba(0,0,0,0.03)] relative z-10">
 
                   <div className="flex justify-between items-center">
 
@@ -6115,7 +6147,7 @@ export default function CaptainApp({ onLogout }) {
 
                     disabled={currentSessionItems.length === 0 || sendingKOT}
 
-                    className="w-full py-5 bg-[#E53935] text-white rounded-2xl font-black text-xs uppercase tracking-[0.25em] shadow-xl shadow-red-100 active:scale-98 transition-all flex items-center justify-center gap-3 disabled:opacity-20 disabled:shadow-none relative group overflow-hidden"
+                    className="w-full py-5 bg-[#E53935] text-white rounded-2xl font-black text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-[0.15em] shadow-xl shadow-red-100 active:scale-98 transition-all flex items-center justify-center gap-2 sm:gap-3 disabled:opacity-20 disabled:shadow-none relative group overflow-hidden whitespace-nowrap"
 
                   >
 
@@ -6166,7 +6198,18 @@ export default function CaptainApp({ onLogout }) {
 
       </main>
 
+      </div>{/* end content area */}
 
+      </div>{/* end main column */}
+
+      </div>{/* end main row */}
+
+      {/* MOBILE BOTTOM NAV */}
+      <MobileBottomNav
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+        onFabClick={() => { setActiveSection('floor'); setActiveView('tables'); setView('tables'); }}
+      />
 
       {/* EDIT ITEM MODAL */}
 
@@ -6577,6 +6620,7 @@ export default function CaptainApp({ onLogout }) {
                             kotRequestIdRef.current = null;
 
                             setView('tables');
+                            setActiveSection('floor');
 
                           } catch (err) {
 
