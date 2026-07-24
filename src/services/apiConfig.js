@@ -4,13 +4,15 @@
 // Central configuration for all backend API calls:
 //   - API_BASE: normalized backend URL (strips trailing slashes to avoid //)
 //   - apiUrl(path): builds full URL from base + path
-//   - getAuthHeaders(): returns { Authorization: 'Bearer <token>' } from localStorage
+//   - getAuthHeaders(): returns { Authorization: 'Bearer <token>' } from secureStorage
 //   - isBackendReachable(): sync check (cached result from last health check)
 //   - checkBackendReachability(): async health check against /api/health
 //
 // The reachability check is used by useOnlineStatus hook and SyncStatusContext
 // to detect when the backend is down (even if the browser has network).
 // ─────────────────────────────────────────────────────────────────────────────
+
+import secureStorage from '../utils/secureStorage.js';
 
 /** Strip trailing slashes — avoids https://host.app//api/... (breaks DNS/fetch) */
 export function normalizeApiBase(url) {
@@ -72,7 +74,7 @@ export function apiUrl(path) {
 
 /** Returns auth headers object with Bearer token if available */
 export function getAuthHeaders() {
-  const token = localStorage.getItem('ss_token');
+  const token = secureStorage.getItem('ss_token');
   const headers = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -82,7 +84,7 @@ export function getAuthHeaders() {
 
 /** Fetch wrapper with Bearer token support */
 export async function apiFetch(path, options = {}) {
-  const token = localStorage.getItem('ss_token');
+  const token = secureStorage.getItem('ss_token');
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
@@ -120,7 +122,7 @@ export async function apiFetch(path, options = {}) {
 
       // If a newer token was stored since this request started (e.g. user
       // just logged in), retry with the new token instead of wiping session.
-      const currentToken = localStorage.getItem('ss_token');
+      const currentToken = secureStorage.getItem('ss_token');
       if (currentToken && currentToken !== token) {
         return apiFetch(path, { ...options, _isRetry: true });
       }
@@ -132,7 +134,7 @@ export async function apiFetch(path, options = {}) {
         });
         if (refreshRes.ok) {
           const { token: newToken } = await refreshRes.json();
-          localStorage.setItem('ss_token', newToken);
+          secureStorage.setItem('ss_token', newToken);
           return apiFetch(path, { ...options, _isRetry: true });
         }
       } catch {
@@ -140,8 +142,8 @@ export async function apiFetch(path, options = {}) {
       }
       // Only clear+redirect if the failed token is still the current one
       // (otherwise a newer login already replaced it — don't wipe that)
-      if (localStorage.getItem('ss_token') === token) {
-        localStorage.removeItem('ss_token');
+      if (secureStorage.getItem('ss_token') === token) {
+        secureStorage.removeItem('ss_token');
         localStorage.removeItem('ss_user');
         localStorage.removeItem('ss_restaurant');
         if (typeof window !== 'undefined') {

@@ -1,4 +1,5 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "../services/apiConfig";
+import secureStorage from "./secureStorage.js";
 
 /**
  * Shared HTTP client for the frontend.
@@ -97,7 +98,7 @@ export async function http(path, options = {}) {
     ...options.headers,
   };
 
-  const token = localStorage.getItem('ss_token');
+  const token = secureStorage.getItem('ss_token');
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -111,7 +112,7 @@ export async function http(path, options = {}) {
     }
 
     // If a newer token was stored since this request started, retry with it
-    const currentToken = localStorage.getItem('ss_token');
+    const currentToken = secureStorage.getItem('ss_token');
     if (currentToken && currentToken !== token) {
       return http(path, { ...options, _isRetry: true });
     }
@@ -125,7 +126,7 @@ export async function http(path, options = {}) {
 
       if (refreshRes.ok) {
         const { token: newToken } = await refreshRes.json();
-        localStorage.setItem('ss_token', newToken);
+        secureStorage.setItem('ss_token', newToken);
         return http(path, { ...options, _isRetry: true });
       }
     } catch {
@@ -133,8 +134,8 @@ export async function http(path, options = {}) {
     }
 
     // Only clear+redirect if the failed token is still the current one
-    if (localStorage.getItem('ss_token') === token) {
-      localStorage.removeItem('ss_token');
+    if (secureStorage.getItem('ss_token') === token) {
+      secureStorage.removeItem('ss_token');
       localStorage.removeItem('ss_user');
       localStorage.removeItem('ss_restaurant');
       if (typeof window !== 'undefined') {

@@ -13,6 +13,7 @@
 
 import { useState, useEffect } from "react";
 import { API_BASE, getAuthHeaders } from "./apiConfig";
+import secureStorage from "../utils/secureStorage";
 import {
   fetchBarMenuFromBackend,
   readBarMenuCache,
@@ -54,7 +55,7 @@ async function loadBarMenu({ skipRepair = false } = {}) {
 
   // Skip authenticated fetch if no token is available (e.g. during onboarding).
   // The service will retry when a component subscribes after login.
-  const token = localStorage.getItem('ss_token') || localStorage.getItem('ss_preauth_token');
+  const token = secureStorage.getItem('ss_token') || secureStorage.getItem('ss_preauth_token');
   if (!token) {
     _isLoading = false;
     _loadError = null;

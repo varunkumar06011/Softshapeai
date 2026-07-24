@@ -21,6 +21,7 @@ import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
 import { safeGetJSON } from "../utils/safeParseJSON";
+import secureStorage from "../utils/secureStorage";
 
 // Singleton socket instance — shared across the entire app
 let socketInstance = null;
@@ -79,7 +80,7 @@ export function getSocket() {
       // Prevent server-side timeout killing idle connections
       pingInterval: 25000,   // slightly under server's 30s
       pingTimeout: 60000,    // well under server's 120s — gives real time to recover
-      auth: { token: localStorage.getItem('ss_token') },
+      auth: { token: secureStorage.getItem('ss_token') },
     });
 
     // Queue pending events during disconnect
@@ -170,7 +171,7 @@ export function safeEmit(event, data) {
 export function useSocket(restaurantId) {
   const socket = getSocket();
   const prevRestaurantIdRef = useRef(null);
-  const prevTokenRef = useRef(localStorage.getItem('ss_token'));
+  const prevTokenRef = useRef(secureStorage.getItem('ss_token'));
 
   useEffect(() => {
     if (!restaurantId) return;
@@ -207,7 +208,7 @@ export function useSocket(restaurantId) {
   // Reconnect socket when auth token changes (e.g. re-login as different user)
   useEffect(() => {
     const checkToken = () => {
-      const currentToken = localStorage.getItem('ss_token');
+      const currentToken = secureStorage.getItem('ss_token');
       if (currentToken !== prevTokenRef.current) {
         prevTokenRef.current = currentToken;
         if (currentToken) {

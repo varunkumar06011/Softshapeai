@@ -19,6 +19,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
 import { resetMenuState } from '../services/menuSyncService';
 import { resetBarMenuState } from '../services/barMenuSyncService';
+import secureStorage from '../utils/secureStorage';
 
 // React Context for auth state — null until AuthProvider wraps the app
 const AuthContext = createContext(null);
@@ -45,12 +46,12 @@ function isTokenValid(token) {
 
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => {
-    const saved = localStorage.getItem('ss_token');
+    const saved = secureStorage.getItem('ss_token');
     if (!isTokenValid(saved)) {
-      localStorage.removeItem('ss_token');
+      secureStorage.removeItem('ss_token');
+      secureStorage.removeItem('ss_preauth_token');
       localStorage.removeItem('ss_user');
       localStorage.removeItem('ss_restaurant');
-      localStorage.removeItem('ss_preauth_token');
       localStorage.removeItem('ss_accessible_outlets');
       return null;
     }
@@ -97,7 +98,7 @@ export const AuthProvider = ({ children }) => {
     setToken(newToken);
     setUser(newUser);
     setRestaurantState(newRestaurant);
-    if (newToken) localStorage.setItem('ss_token', newToken);
+    if (newToken) secureStorage.setItem('ss_token', newToken);
     if (newUser) localStorage.setItem('ss_user', JSON.stringify(newUser));
     if (newRestaurant) localStorage.setItem('ss_restaurant', JSON.stringify(newRestaurant));
     if (newToken && newToken !== prevToken) {
@@ -117,8 +118,8 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setUser(null);
     setRestaurantState(null);
-    localStorage.removeItem('ss_token');
-    localStorage.removeItem('ss_preauth_token');
+    secureStorage.removeItem('ss_token');
+    secureStorage.removeItem('ss_preauth_token');
     localStorage.removeItem('ss_user');
     localStorage.removeItem('ss_restaurant');
     localStorage.removeItem('ss_accessible_outlets');

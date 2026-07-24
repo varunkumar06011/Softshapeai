@@ -20,6 +20,7 @@ import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { validateTableIntegrity } from "../utils/syncInvariant";
 import { connectEdgeSocket, disconnectEdgeSocket, onEdgeEvent } from "./edgeSocketService";
 import { getTablesCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import secureStorage from "../utils/secureStorage";
 
 // ── Cross-device termination grace window (in-memory, not localStorage) ───────
 // When a table is settled/terminated, the server emits "table:terminated" with a
@@ -359,7 +360,7 @@ function attachSocketLogging(socket) {
 
     // Re-fetch on every reconnect to recover orders missed during the gap.
     // Skip if local mutations are in-flight to avoid clobbering unsaved changes.
-    if (_reconnectRefetch && getCurrentRestaurantId() && localStorage.getItem('ss_token')) {
+    if (_reconnectRefetch && getCurrentRestaurantId() && secureStorage.getItem('ss_token')) {
       if (_persistingCount > 0) {
         console.log(`[Socket] Reconnected but ${_persistingCount} local mutation(s) in-flight — deferring refetch`);
         // Retry refetch after a short delay to let in-flight mutations complete
@@ -518,7 +519,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
 
   const loadTables = useCallback(async () => {
     const rid = getCurrentRestaurantId();
-    const token = localStorage.getItem('ss_token');
+    const token = secureStorage.getItem('ss_token');
     if (!rid || !token) {
       setIsSyncing(false);
       return;

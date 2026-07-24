@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { API_BASE, getAuthHeaders } from "./apiConfig";
+import secureStorage from "../utils/secureStorage";
 
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
@@ -188,7 +189,7 @@ export async function discoverEdgeUrlFromBackend() {
  */
 export function isEdgeLocalAuth() {
   try {
-    const token = localStorage.getItem('ss_token');
+    const token = secureStorage.getItem('ss_token');
     return !!token && token.startsWith('edge-local-');
   } catch {
     return false;

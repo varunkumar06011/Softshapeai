@@ -42,6 +42,7 @@ import {
 import { API_BASE, getAuthHeaders, isBackendReachable, checkBackendReachability } from '../services/apiConfig';
 import { isEdgeLocalAuth, isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
 import { httpFetch } from './httpClient';
+import secureStorage from './secureStorage';
 import { resolveConflict, addConflict, clearConflict } from './conflictResolver';
 import { finalizeSettlementAudit } from './settlementAuditLog';
 import { markKitchenItemsSynced } from './kitchenQueue';
@@ -108,7 +109,7 @@ const stuckActionListeners = new Set();
 async function silentTokenRefresh() {
   if (refreshInProgress) return refreshInProgress;
   refreshInProgress = (async () => {
-    const token = localStorage.getItem('ss_token');
+    const token = secureStorage.getItem('ss_token');
     if (!token || token.startsWith('edge-local-')) return false;
     try {
       const refreshRes = await httpFetch(`${API_BASE}/api/auth/refresh`, {
@@ -118,7 +119,7 @@ async function silentTokenRefresh() {
       if (refreshRes.ok) {
         const { token: newToken } = await refreshRes.json();
         if (newToken) {
-          localStorage.setItem('ss_token', newToken);
+          secureStorage.setItem('ss_token', newToken);
           console.log('[SyncEngine] Silent token refresh succeeded');
           return true;
         }

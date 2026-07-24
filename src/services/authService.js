@@ -16,6 +16,7 @@
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
 import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey } from './edgeHealth.js';
+import secureStorage from '../utils/secureStorage.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
 
@@ -39,7 +40,7 @@ export const authService = {
       throw new Error(data.error || 'Invalid credentials');
     }
     if (data.token) {
-      localStorage.setItem('ss_token', data.token);
+      secureStorage.setItem('ss_token', data.token);
       localStorage.setItem('ss_user', JSON.stringify(data.user));
       // Pre-fetch the LAN edge API key while we have cloud access.
       ensureEdgeApiKey().catch(() => {});
@@ -57,10 +58,10 @@ export const authService = {
     if (data.preAuthToken) {
       // Clear stale session from previous login so old tokens don't
       // interfere with the outlet selection flow
-      localStorage.removeItem('ss_token');
+      secureStorage.removeItem('ss_token');
       localStorage.removeItem('ss_user');
       localStorage.removeItem('ss_restaurant');
-      localStorage.setItem('ss_preauth_token', data.preAuthToken);
+      secureStorage.setItem('ss_preauth_token', data.preAuthToken);
       if (data.accessibleOutlets) {
         localStorage.setItem('ss_accessible_outlets', JSON.stringify(data.accessibleOutlets));
       }
@@ -131,8 +132,7 @@ export const authService = {
 
       // Store a local session marker — not a cloud JWT, but enough for LAN API calls
       const localToken = `edge-local-${Date.now()}`;
-      localStorage.setItem('ss_token', localToken);
-      localStorage.setItem('ss_local_token', localToken);
+      secureStorage.setItem('ss_token', localToken);
       localStorage.setItem('ss_user', JSON.stringify(data.user));
 
       // Fetch outlet config from edge server immediately so billing.js
@@ -190,7 +190,7 @@ export const authService = {
   },
 
   async switchOutlet(outletId) {
-    const token = localStorage.getItem('ss_token') || localStorage.getItem('ss_preauth_token');
+    const token = secureStorage.getItem('ss_token') || secureStorage.getItem('ss_preauth_token');
     const res = await fetch(`${API_BASE}/api/auth/switch-outlet`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -200,8 +200,8 @@ export const authService = {
     if (!res.ok) {
       throw new Error(data.error || 'Failed to switch outlet');
     }
-    localStorage.setItem('ss_token', data.token);
-    localStorage.removeItem('ss_preauth_token');
+    secureStorage.setItem('ss_token', data.token);
+    secureStorage.removeItem('ss_preauth_token');
     localStorage.setItem('ss_user', JSON.stringify(data.user));
     // Pre-fetch the LAN edge API key for the new outlet.
     ensureEdgeApiKey().catch(() => {});
@@ -216,7 +216,7 @@ export const authService = {
   },
 
   async logout() {
-    const token = localStorage.getItem('ss_token');
+    const token = secureStorage.getItem('ss_token');
     try {
       if (token) {
         await fetch(`${API_BASE}/api/auth/logout`, {
@@ -228,8 +228,8 @@ export const authService = {
       // ignore network errors on logout
     }
     const restaurantId = this.getRestaurantId();
-    localStorage.removeItem('ss_token');
-    localStorage.removeItem('ss_preauth_token');
+    secureStorage.removeItem('ss_token');
+    secureStorage.removeItem('ss_preauth_token');
     localStorage.removeItem('ss_user');
     localStorage.removeItem('ss_restaurant');
     localStorage.removeItem('ss_accessible_outlets');
@@ -243,11 +243,11 @@ export const authService = {
   },
 
   getToken() {
-    return localStorage.getItem('ss_token');
+    return secureStorage.getItem('ss_token');
   },
 
   setToken(token) {
-    localStorage.setItem('ss_token', token);
+    secureStorage.setItem('ss_token', token);
   },
 
   getUser() {
@@ -278,7 +278,7 @@ export const authService = {
   },
 
   isAuthenticated() {
-    const token = localStorage.getItem('ss_token');
+    const token = secureStorage.getItem('ss_token');
     if (!token) return false;
     // Edge server local tokens (offline PIN login) are not JWTs
     if (token.startsWith('edge-local-')) return true;
@@ -292,7 +292,7 @@ export const authService = {
   },
 
   getAuthHeader() {
-    const token = localStorage.getItem('ss_token');
+    const token = secureStorage.getItem('ss_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
 

@@ -451,6 +451,16 @@ export default function PrinterSettingsPage() {
             </div>
           </div>
         )}
+        {!window.__TAURI__ && (
+          <div>
+            <div className="font-bold text-base mb-1">Step 4 — Register Bundled Edge Server</div>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-700">
+              The bundled edge server is only available in the <strong>SoftShape Cashier Desktop App</strong>.
+              Download and install it on the PC connected to your printers to enable offline mode and automatic
+              KOT/bill printing. The edge server cannot be registered from a web browser.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Printer Config Editor */}
