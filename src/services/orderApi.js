@@ -1000,7 +1000,7 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
   );
 }
 
-export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null) {
+export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null, localPrinted = false, eventId = null) {
   const cancelRequestId = requestId || generateRequestId();
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
@@ -1010,7 +1010,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       const result = await edgeFetch('/api/edge/order/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId }),
+        body: JSON.stringify({ orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted, eventId }),
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
@@ -1024,7 +1024,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
           actionType: 'cancel-item',
           url: `/api/orders/${orderId}/cancel-item`,
           method: 'PATCH',
-          body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
+          body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted, eventId },
           dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
         });
         return { offline: true };
@@ -1043,7 +1043,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       actionType: 'cancel-item',
       url: `/api/orders/${orderId}/cancel-item`,
       method: 'PATCH',
-      body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
+      body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted, eventId },
       dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
     });
     return { offline: true };
@@ -1059,7 +1059,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
           const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel-item`), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId }),
+            body: JSON.stringify({ orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted, eventId }),
             signal: controller.signal,
           });
           return parseResponse(res);
@@ -1077,7 +1077,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
         actionType: 'cancel-item',
         url: `/api/orders/${orderId}/cancel-item`,
         method: 'PATCH',
-        body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId },
+        body: { orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted, eventId },
         dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
       });
       if (import.meta.env.DEV) {
@@ -1446,17 +1446,16 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
   }
 }
 
-export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null, billEventId = null } = {}) {
+export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null, billEventId = null, localPrinted = false } = {}) {
   const printRequestId = requestId || generateRequestId();
   const qs = new URLSearchParams({ restaurantId: restaurantId || '', requestId: printRequestId });
   if (tableNumber) qs.set('tableNumber', tableNumber);
   if (discountPercent) qs.set('discountPercent', String(discountPercent));
   if (kotNumbers) qs.set('kotNumbers', kotNumbers);
   if (billEventId) qs.set('billEventId', billEventId);
+  if (localPrinted) qs.set('localPrinted', 'true');
 
-  // ── Edge server only (local SQLite, assigns real bill number + prints) ──────
-  // Edge-first: print bill must go directly to edge — no queuing, no cloud fallback.
-  // Cloud sync happens later via the edge sync worker, not during print.
+  // ── Edge server first (local SQLite, assigns real bill number + prints) ──────
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
@@ -1464,7 +1463,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, restaurantId, tableNumber, discountPercent, kotNumbers, billEventId }),
+        body: JSON.stringify({ orderId, restaurantId, tableNumber, discountPercent, kotNumbers, billEventId, localPrinted }),
       });
       if (edgeResult && edgeResult.success) {
         return edgeResult;
@@ -1479,8 +1478,25 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
     }
   }
 
-  console.warn('[Edge] Edge server unreachable for print-bill — returning error (no queue)');
-  return { success: false, error: 'Edge server unreachable — check the restaurant server machine. Call support if it won\'t restart.', offline: false, order: { id: orderId } };
+  // ── Cloud fallback: assign bill number + emit print via socket ──────────────
+  if (!isBackendReachable()) {
+    return { success: false, error: 'Edge server and cloud both unreachable — check your network.', offline: false, order: { id: orderId } };
+  }
+  try {
+    const res = await fetch(apiUrl(`/api/orders/${orderId}/print-bill?${qs.toString()}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      return { success: false, error: errBody.error || `Server returned ${res.status}`, offline: false, order: { id: orderId } };
+    }
+    const data = await res.json();
+    return { success: true, ...data };
+  } catch (cloudErr) {
+    console.warn('[printBill] Cloud fallback failed:', cloudErr.message);
+    return { success: false, error: cloudErr.message || 'Print bill failed', offline: false, order: { id: orderId } };
+  }
 }
 
 export { generateRequestId };

@@ -3018,13 +3018,14 @@ const CashierDashboard = ({ onLogout }) => {
           });
           if (billIntentResult?.ok) {
             console.log('[BILL] Output intent succeeded — runtime handled printing');
-            return;
+            localPrinted = true;
           }
         } catch (intentErr) {
           console.warn('[BILL] Output intent failed, falling back to local print:', intentErr.message);
         }
 
-        // ── Fallback: local print path ────────────────────────────────────────
+        // ── Fallback: local print path (only if output intent didn't succeed) ──
+        if (!localPrinted) {
         const { printLocal } = await import('../utils/printOffline');
         const billEscpos = buildBillEscpos(billPayload);
         const result = await printLocal({
@@ -3056,6 +3057,7 @@ const CashierDashboard = ({ onLogout }) => {
         } else {
           if (import.meta.env.DEV) console.log('[handleFinalBill] Local print failed — backend will emit via socket');
         }
+        }
       } catch (printErr) {
         console.warn('[handleFinalBill] Local print failed:', printErr.message);
       }
@@ -3078,8 +3080,8 @@ const CashierDashboard = ({ onLogout }) => {
         // for the actual print ack before returning, so the response reflects the
         // real print status. This removes the false optimistic success path.
         response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId, localPrinted })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId, localPrinted });
         if (response && !response.success) {
           // Edge server unavailable or print failed — bill was NOT printed.
           isPrintingBillRef.current = false;
