@@ -65,6 +65,7 @@ import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offline
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
 import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 
 
 
@@ -3133,6 +3134,59 @@ export default function CaptainApp({ onLogout }) {
           restaurantName: restaurant?.name || undefined,
         };
 
+        // ── R2: Try Output Intent API first (runtime handles printing) ──────────
+        // Send PRINT_KOT and PRINT_LIQUOR_KOT intents to the runtime. If both
+        // succeed, the runtime rendered + queued + dispatched the prints — no
+        // need for local print or localPrinted/kotEventIds. If either fails,
+        // fall back to the existing local print flow.
+        const hasFoodItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() !== 'LIQUOR');
+        const hasLiquorItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR');
+        let intentSucceeded = false;
+        try {
+          const intentPromises = [];
+          if (hasFoodItems) {
+            const foodIntentId = generateIntentId();
+            intentPromises.push(
+              sendOutputIntent({
+                type: 'OUTPUT',
+                intentId: foodIntentId,
+                intent: 'PRINT_KOT',
+                payload: { ...kotOrderData, requestId },
+                priority: 'CRITICAL',
+              }).then(() => ({ intentId: foodIntentId, ok: true }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false }; })
+            );
+          }
+          if (hasLiquorItems) {
+            const liquorIntentId = generateIntentId();
+            intentPromises.push(
+              sendOutputIntent({
+                type: 'OUTPUT',
+                intentId: liquorIntentId,
+                intent: 'PRINT_LIQUOR_KOT',
+                payload: { ...kotOrderData, requestId },
+                priority: 'CRITICAL',
+              }).then(() => ({ intentId: liquorIntentId, ok: true }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false }; })
+            );
+          }
+          if (intentPromises.length > 0) {
+            const intentResults = await Promise.allSettled(intentPromises);
+            const allOk = intentResults.every(r => r.status === 'fulfilled' && r.value?.ok);
+            if (allOk) {
+              intentSucceeded = true;
+              localPrinted = true;
+              kotEventIds = intentResults.map(r => r.value?.intentId).filter(Boolean);
+              markKotNumberPrinted(preReservedKotNumber);
+              console.log(`[KOT] Output intent succeeded for KOT #${preReservedKotNumber} — runtime handled printing`);
+            }
+          }
+        } catch (intentErr) {
+          console.warn('[KOT] Output intent path failed, falling back to local print:', intentErr.message);
+        }
+
+        // ── Fallback: local print path (existing flow) ──────────────────────────
+        if (!intentSucceeded) {
         const foodEscpos = buildFoodKOT(kotOrderData);
         const liquorEscpos = buildLiquorKOT(kotOrderData);
 
@@ -3196,6 +3250,7 @@ export default function CaptainApp({ onLogout }) {
           kotEventIds = succeededEventIds;
           console.log(`[KOT] Local print failed (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
         }
+        } // end fallback local print
 
         // Now call the API with the correct localPrinted flag.
         const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
@@ -3203,7 +3258,7 @@ export default function CaptainApp({ onLogout }) {
 
         try {
           if (existingOrderId) {
-            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, localPrinted, preReservedKotNumber, kotEventIds, activeTableId);
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId);
             savedOrder = response;
           } else {
             try {
@@ -3216,14 +3271,12 @@ export default function CaptainApp({ onLogout }) {
                 captainName: currentCaptain?.name || undefined,
                 sectionTag: activeTable?.sectionTag || undefined,
                 preReservedKotNumber,
-                localPrinted,
-                kotEventIds,
               });
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
                 activeOrderIdRef.current = createErr.existingOrderId;
-                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, localPrinted, preReservedKotNumber, kotEventIds, activeTableId);
+                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId);
               } else {
                 throw createErr;
               }
@@ -3361,7 +3414,7 @@ export default function CaptainApp({ onLogout }) {
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeKotNumToSend, edgeKotIdsToSend, activeTableId);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3377,9 +3430,7 @@ export default function CaptainApp({ onLogout }) {
               requestId,
               captainName: currentCaptain?.name || undefined,
               sectionTag: activeTable?.sectionTag || undefined,
-              localPrinted: edgeLocalPrinted,
               preReservedKotNumber: edgeKotNumToSend,
-              kotEventIds: edgeKotIdsToSend,
             });
           } catch (createErr) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -3387,7 +3438,7 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeLocalPrinted, edgeKotNumToSend, edgeKotIdsToSend, activeTableId);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
