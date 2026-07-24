@@ -140,9 +140,7 @@ export default function VenueSectionView({
 function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
   const status = table.status || 'Free';
   const isFree = status === 'Free' || status === 'AVAILABLE';
-  const isBilling = status === 'Waiting Bill' || status === 'BILLING_REQUESTED';
-  const isReady = status === 'Ready';
-  const isBusy = !isFree && !isBilling && !isReady;
+  const isOccupied = !isFree;
   const isExtra = table.isExtra;
 
   // Bug 2 fix: Read fresh restaurant config so GST settings changes are reflected
@@ -176,11 +174,7 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
           ? 'bg-blue-50 border-dashed border-blue-300 text-blue-600 hover:border-blue-400 shadow-sm'
           : isFree
             ? 'bg-white border-gray-100 hover:border-gray-300'
-            : isBilling
-              ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100'
-              : isReady
-                ? 'bg-green-50 border-green-200 text-green-700'
-                : 'bg-red-50 border-red-100 text-red-600'
+            : 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100'
       }`}
     >
       {/* Section Badge - Top Left */}
@@ -207,19 +201,10 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
         <div className={`w-full ${compactMode ? 'py-1 rounded-lg text-[7px] sm:text-[8px]' : 'py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px]'} font-black uppercase tracking-widest flex items-center justify-center gap-1 ${
           isFree
             ? 'bg-gray-100 text-gray-400'
-            : isBilling
-              ? 'bg-amber-500 text-white animate-pulse'
-              : isReady
-                ? 'bg-green-600 text-white'
-                : 'bg-red-600 text-white'
+            : 'bg-amber-500 text-white'
         }`}>
           {status}
         </div>
-        {isBilling && table.billNumber && (
-          <span className={`${compactMode ? 'text-[7px]' : 'text-[9px]'} font-black uppercase tracking-wider text-amber-600`}>
-            Bill #{table.billNumber}
-          </span>
-        )}
         {!isFree && (
           <span className={`${compactMode ? 'text-[8px]' : 'text-[10px]'} font-black opacity-60`}>₹{bill?.grandTotal ?? 0}</span>
         )}
