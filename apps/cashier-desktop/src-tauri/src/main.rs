@@ -282,6 +282,39 @@ fn update_connection_status(app: tauri::AppHandle, status: String) -> Result<(),
     Ok(())
 }
 
+// ── Edge server spawn (fallback for missing Runtime Host) ────────────────────
+// Phase 1.2 removed spawn logic expecting an external "Softshape Runtime Host"
+// (Phase 3) to launch edge-server.exe. That host was never built, so the
+// bundled edge-server.exe never starts and port 3101 has nothing listening.
+// This restores a minimal spawn-on-startup fallback: if the health check fails,
+// launch the bundled edge-server.exe as a detached child. The Cashier remains
+// a client — it does not supervise or kill the process.
+fn spawn_edge_server_if_needed(app: &tauri::AppHandle) {
+    if check_edge_server_health().0 {
+        return; // already running
+    }
+    let exe = match app.path().resource_dir() {
+        Ok(dir) if dir.join("edge-server.exe").exists() => dir.join("edge-server.exe"),
+        _ => {
+            eprintln!("[Edge] edge-server.exe not found in resources; cannot spawn");
+            return;
+        }
+    };
+    match std::process::Command::new(&exe)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => {
+            eprintln!("[Edge] Spawned edge-server.exe pid={}", child.id());
+            // Detach: forget the handle so dropping it does not kill the child.
+            std::mem::forget(child);
+        }
+        Err(e) => eprintln!("[Edge] Failed to spawn edge-server.exe: {}", e),
+    }
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -304,6 +337,11 @@ fn main() {
                 let _ = autostart.enable();
                 eprintln!("[Autostart] Enabled on first run");
             }
+
+            // Launch the bundled edge-server.exe if it isn't already running.
+            // The Runtime Host (Phase 3) was never built, so the Cashier must
+            // spawn the edge-server itself as a fallback.
+            spawn_edge_server_if_needed(&app.handle());
 
             // Build system tray with Show/Quit menu
             use tauri::menu::{Menu, MenuItem};
