@@ -218,6 +218,17 @@ export default function EdgeSetupScreen() {
       if (result.success) {
         setConfigRowsLoaded(result.tablesLoaded || 0);
 
+        // Stop polling — the sync POST has returned with the final result.
+        // Don't rely on polling to transition, because polling may have
+        // already timed out (especially on large configs that take >60s).
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+
+        // Clear any stale timeout error from the polling phase.
+        setConfigError(null);
+
         // If verification failed, show a warning but let the user proceed.
         // The data is committed to SQLite — blocking onboarding over a few
         // missing rows is worse than proceeding with slightly incomplete data.
@@ -227,8 +238,8 @@ export default function EdgeSetupScreen() {
           setVerificationWarning(warningText);
         }
 
-        // Polling is already running — it will pick up the final stats
-        // and transition to 'ready' when configSyncCompleted becomes true.
+        // Directly transition to ready — the sync succeeded and data is committed.
+        setPhase('ready');
       } else if (result.error === 'Sync already in progress') {
         // Another sync is already running (e.g. from a retry timer).
         // Polling is already running — it will pick up the result.
