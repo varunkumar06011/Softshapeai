@@ -39,7 +39,7 @@ import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createO
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { setLocalPrinterMapping } from '../utils/offlineDB';
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey } from '../services/edgeHealth';
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
@@ -2753,6 +2753,7 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
       const edgeApiKey = getStoredEdgeApiKey();
+      const runtimeToken = getStoredEdgeRuntimeToken();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(`${edgeUrl}/api/edge/auth/pin`, {
@@ -2760,6 +2761,7 @@ const CashierDashboard = ({ onLogout }) => {
         headers: {
           'Content-Type': 'application/json',
           ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}),
+          ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
         },
         body: JSON.stringify({ userId: user?.userId || user?.id, pin: reprintPinInput }),
         signal: controller.signal,

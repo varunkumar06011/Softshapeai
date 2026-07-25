@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken } from './edgeHealth.js';
 import secureStorage from '../utils/secureStorage.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
@@ -94,6 +94,7 @@ export const authService = {
     const EDGE_URL = getEdgeUrl();
     try {
       const edgeApiKey = getStoredEdgeApiKey();
+      const runtimeToken = getStoredEdgeRuntimeToken();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
       const res = await fetch(`${EDGE_URL}/api/edge/auth/pin`, {
@@ -101,6 +102,7 @@ export const authService = {
         headers: {
           'Content-Type': 'application/json',
           ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}),
+          ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
         },
         body: JSON.stringify({ userId, pin }),
         signal: controller.signal,
@@ -113,8 +115,8 @@ export const authService = {
       if (res.status === 401) {
         const body = await res.json().catch(() => ({}));
         const errMsg = (body.error || '').toLowerCase();
-        if (errMsg.includes('edge api key')) {
-          console.warn('[AuthService] Edge API key rejected during PIN login — falling through to cloud');
+        if (errMsg.includes('edge api key') || errMsg.includes('runtime token')) {
+          console.warn('[AuthService] Edge auth rejected during PIN login — falling through to cloud');
           return null;
         }
         const err = new Error(body.error || 'Invalid credentials');
