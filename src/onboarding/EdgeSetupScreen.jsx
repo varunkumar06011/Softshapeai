@@ -19,7 +19,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { isEdgeAvailable, edgeFetch, resetEdgeCache, setStoredEdgeApiKey } from '../services/edgeHealth.js';
+import { isEdgeAvailable, edgeFetch, resetEdgeCache, setStoredEdgeApiKey, setStoredEdgeRuntimeToken } from '../services/edgeHealth.js';
 import { API_BASE } from '../services/apiConfig.js';
 import { getDeviceId } from '../utils/deviceId.js';
 import {
@@ -305,6 +305,14 @@ export default function EdgeSetupScreen() {
         // Without this, the edge server rejects config sync with 401.
         if (result.edgeApiKey) {
           setStoredEdgeApiKey(result.edgeApiKey);
+        }
+        // Save the runtime token so that edgeFetch() can send it as
+        // Authorization: Bearer header. After config sync completes,
+        // isLocalReady() returns true and the edge server enforces runtime
+        // token auth on all non-public routes. Without this token, every
+        // edge API call (menu, tables, orders, status) gets 401.
+        if (result.runtimeToken) {
+          setStoredEdgeRuntimeToken(result.runtimeToken);
         }
         // Registration succeeded — trigger config download
         setRestaurantName(result.restaurantName || '');

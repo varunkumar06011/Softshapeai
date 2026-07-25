@@ -10,6 +10,7 @@ import { API_BASE, getAuthHeaders } from "./apiConfig";
 import secureStorage from "../utils/secureStorage";
 
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
+const EDGE_RUNTIME_TOKEN_STORAGE_KEY = "softshape_edge_runtime_token";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 
 const DEFAULT_EDGE_URL = 'http://127.0.0.1:3101';
@@ -68,6 +69,22 @@ export function getStoredEdgeApiKey() {
 export function setStoredEdgeApiKey(key) {
   try {
     localStorage.setItem(EDGE_API_KEY_STORAGE_KEY, key);
+  } catch {
+    // Ignore storage errors (e.g., private mode)
+  }
+}
+
+export function getStoredEdgeRuntimeToken() {
+  try {
+    return localStorage.getItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredEdgeRuntimeToken(token) {
+  try {
+    localStorage.setItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY, token);
   } catch {
     // Ignore storage errors (e.g., private mode)
   }
@@ -604,6 +621,7 @@ async function _edgeFetchWithKey(path, options, headers, timeoutMs) {
 
 export async function edgeFetch(path, options = {}) {
   const edgeApiKey = getStoredEdgeApiKey();
+  const runtimeToken = getStoredEdgeRuntimeToken();
   // Allow callers to override timeout — reads use 3s, writes keep 30s.
   const timeoutMs = options.timeoutMs ?? EDGE_FETCH_TIMEOUT_MS;
   const fetchOptions = { ...options };
@@ -614,6 +632,9 @@ export async function edgeFetch(path, options = {}) {
   };
   if (edgeApiKey) {
     headers['X-Edge-Key'] = edgeApiKey;
+  }
+  if (runtimeToken) {
+    headers['Authorization'] = `Bearer ${runtimeToken}`;
   }
 
   // Retry on network errors (not HTTP error statuses). The edge server is a
@@ -796,8 +817,8 @@ export function startRuntimeEventBus() {
     _runtimeWs.onopen = () => {
       // Reset reconnect backoff on successful connection
       _runtimeWsReconnectDelay = 1_000;
-      // Authenticate with the runtime token (stored as edge API key)
-      const token = getStoredEdgeApiKey();
+      // Authenticate with the runtime token (separate from edge API key)
+      const token = getStoredEdgeRuntimeToken() || getStoredEdgeApiKey();
       if (token) {
         _runtimeWs.send(JSON.stringify({ type: 'auth', token }));
       }
