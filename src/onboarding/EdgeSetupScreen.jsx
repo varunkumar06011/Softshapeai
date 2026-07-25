@@ -94,6 +94,8 @@ export default function EdgeSetupScreen() {
   const [configError, setConfigError] = useState(null);
   const [configStats, setConfigStats] = useState({ tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0 });
   const [configRowsLoaded, setConfigRowsLoaded] = useState(0);
+  const [verificationWarning, setVerificationWarning] = useState(null);
+  const verificationWarningRef = useRef(null);
 
   // ── General ─────────────────────────────────────────────────────────────────
   const [error, setError] = useState(() =>
@@ -175,7 +177,15 @@ export default function EdgeSetupScreen() {
         }
 
         // If we have menu items and tables, config is loaded
+        // But don't auto-transition if a verification warning is shown —
+        // let the user review and choose to proceed.
         if (status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0) {
+          if (verificationWarningRef.current) {
+            // Stop polling — the user needs to review the warning and decide
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            return;
+          }
           clearInterval(pollRef.current);
           pollRef.current = null;
           setPhase('ready');
@@ -190,11 +200,22 @@ export default function EdgeSetupScreen() {
   const triggerConfigSync = useCallback(async () => {
     setConfigSyncing(true);
     setConfigError(null);
+    setVerificationWarning(null);
 
     try {
       const result = await edgeFetch('/api/edge/config/sync', { method: 'POST', timeoutMs: 90_000 });
       if (result.success) {
         setConfigRowsLoaded(result.tablesLoaded || 0);
+
+        // If verification failed, show a warning but let the user proceed.
+        // The data is committed to SQLite — blocking onboarding over a few
+        // missing rows is worse than proceeding with slightly incomplete data.
+        if (result.verified === false && result.warnings?.length > 0) {
+          const warningText = result.warnings.join('\n');
+          verificationWarningRef.current = warningText;
+          setVerificationWarning(warningText);
+        }
+
         // Start polling for final stats
         startStatusPolling();
       } else {
@@ -455,10 +476,17 @@ export default function EdgeSetupScreen() {
   // ── Retry config sync ───────────────────────────────────────────────────────
   const handleRetrySync = () => {
     setConfigError(null);
+    verificationWarningRef.current = null;
+    setVerificationWarning(null);
     triggerConfigSync();
   };
 
-  // ── Compute current step index for progress ─────────────────────────────────
+  // ── Proceed with downloaded data despite verification warning ───────────────
+  const handleProceedWithWarning = () => {
+    verificationWarningRef.current = null;
+    setVerificationWarning(null);
+    setPhase('ready');
+  };
   const currentStepIndex = STEPS.findIndex(s => s.id === phase);
 
   // ── Config download checklist items ─────────────────────────────────────────
@@ -806,6 +834,38 @@ export default function EdgeSetupScreen() {
                         <ArrowLeft size={12} /> Change token
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {verificationWarning && !configSyncing && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm text-amber-800">
+                  <div className="flex items-start gap-2 mb-3">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-600" />
+                    <div className="flex-1">
+                      <p className="font-bold mb-1">Some data may be incomplete</p>
+                      <p className="text-xs text-amber-700 mb-2">
+                        Your restaurant data has been downloaded, but a few items didn't sync completely.
+                        You can still start billing — the missing items will sync automatically in the background.
+                      </p>
+                      <div className="text-[11px] font-mono text-amber-600 bg-amber-100 rounded-lg p-2 mb-3 max-h-24 overflow-y-auto">
+                        {verificationWarning}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleProceedWithWarning}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg font-bold text-xs hover:bg-amber-600 transition-all shadow-sm active:scale-95"
+                    >
+                      <CheckCircle2 size={14} /> Proceed with this data
+                    </button>
+                    <button
+                      onClick={handleRetrySync}
+                      className="flex items-center gap-1 text-xs font-bold text-amber-700 hover:text-amber-900"
+                    >
+                      <RefreshCw size={12} /> Retry download
+                    </button>
                   </div>
                 </div>
               )}
