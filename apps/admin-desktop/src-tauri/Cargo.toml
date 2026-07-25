@@ -1,6 +1,6 @@
 [package]
 name = "softshape-admin-desktop"
-version = "23.3.3"
+version = "23.3.4"
 description = "SoftShape Admin Desktop App"
 authors = ["SoftShape"]
 license = "MIT"

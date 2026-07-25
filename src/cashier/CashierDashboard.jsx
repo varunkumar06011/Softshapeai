@@ -4439,15 +4439,22 @@ const CashierDashboard = ({ onLogout }) => {
 
   const activeCategories = useMemo(() => {
     if (activeOutlet === 'restaurant') return categories;
+    if (activeOutlet === 'both') {
+      const items = [...menuItems, ...barMenuItems].filter(i => i.isAvailable !== false);
+      const cats = items.map(i => i.category || i.c).filter(Boolean);
+      return ['All', ...new Set(cats)];
+    }
     const items = barMenuItems.filter(i => i.isAvailable !== false);
     const cats = items.map(i => i.category || i.c).filter(Boolean);
     return ['All', ...new Set(cats)];
-  }, [activeOutlet, categories, barMenuItems]);
+  }, [activeOutlet, categories, menuItems, barMenuItems]);
 
   const menuTypeSubcategories = useMemo(() => {
     const items = activeOutlet === 'restaurant'
       ? menuItems.filter(i => i.isAvailable !== false)
-      : barMenuItems.filter(i => i.isAvailable !== false);
+      : activeOutlet === 'both'
+        ? [...menuItems, ...barMenuItems].filter(i => i.isAvailable !== false)
+        : barMenuItems.filter(i => i.isAvailable !== false);
     const filtered = selectedMenuType === 'ALL'
       ? items
       : selectedMenuType === 'FOOD'
@@ -4459,7 +4466,7 @@ const CashierDashboard = ({ onLogout }) => {
             : items;
     const cats = filtered.map(i => i.category || i.c).filter(Boolean);
     const now = Date.now();
-    const allItemsForSpecials = activeOutlet === 'restaurant' ? menuItems : barMenuItems;
+    const allItemsForSpecials = activeOutlet === 'restaurant' ? menuItems : activeOutlet === 'both' ? [...menuItems, ...barMenuItems] : barMenuItems;
     const hasTodaySpecial = allItemsForSpecials.some(
       item => item.isSpecial && item.active && (!item.expiresAt || now < item.expiresAt) && (item.specialChannel === 'CASHIER' || item.specialChannel === 'BOTH')
     );
@@ -4468,7 +4475,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const todaySpecials = useMemo(() => {
     const now = Date.now();
-    const source = activeOutlet === 'restaurant' ? menuItems : barMenuItems;
+    const source = activeOutlet === 'restaurant' ? menuItems : activeOutlet === 'both' ? [...menuItems, ...barMenuItems] : barMenuItems;
     return (source || []).filter(
       i => i.isSpecial && i.active && (!i.expiresAt || now < i.expiresAt) && (i.specialChannel === 'CASHIER' || i.specialChannel === 'BOTH')
     );
@@ -4480,6 +4487,8 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (activeOutlet === 'restaurant') {
       itemsToFilter = menuItems.filter(item => item.isAvailable !== false);
+    } else if (activeOutlet === 'both') {
+      itemsToFilter = [...menuItems, ...barMenuItems].filter(i => i.isAvailable !== false);
     } else {
       itemsToFilter = barMenuItems.filter(i => i.isAvailable !== false);
     }
