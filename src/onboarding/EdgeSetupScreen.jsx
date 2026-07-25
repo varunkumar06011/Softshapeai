@@ -140,7 +140,7 @@ export default function EdgeSetupScreen() {
     if (pollRef.current) clearInterval(pollRef.current);
 
     let pollCount = 0;
-    const maxPolls = 30; // 60 seconds max
+    const maxPolls = 90; // 180 seconds max — sync can take up to 150s for large configs
     // Track latest stats inside the closure so the timeout branch sees fresh values
     // (configStats from useState would be stale here due to useCallback([]) deps).
     let latestStats = { tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0, configSyncCompleted: false };
