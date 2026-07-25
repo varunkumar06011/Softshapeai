@@ -143,7 +143,7 @@ export default function EdgeSetupScreen() {
     const maxPolls = 30; // 60 seconds max
     // Track latest stats inside the closure so the timeout branch sees fresh values
     // (configStats from useState would be stale here due to useCallback([]) deps).
-    let latestStats = { tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0 };
+    let latestStats = { tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0, configSyncCompleted: false };
 
     pollRef.current = setInterval(async () => {
       pollCount++;
@@ -153,6 +153,9 @@ export default function EdgeSetupScreen() {
         // Polling timed out — only proceed if we actually have data (menu AND tables).
         // Otherwise surface an error instead of silently forcing "ready".
         if (latestStats.menuItems > 0 && latestStats.tables > 0) {
+          setPhase('ready');
+        } else if (latestStats.configSyncCompleted) {
+          // Sync completed but this outlet has no direct data (e.g. new outlet with no menus yet)
           setPhase('ready');
         } else {
           setConfigError(
@@ -172,6 +175,7 @@ export default function EdgeSetupScreen() {
             menuItems: status.localStats.menuItems || 0,
             activeOrders: status.localStats.activeOrders || 0,
             pendingSync: status.localStats.pendingSyncRecords || 0,
+            configSyncCompleted: status.configSyncCompleted === true,
           };
           setConfigStats(latestStats);
         }
@@ -179,7 +183,9 @@ export default function EdgeSetupScreen() {
         // If we have menu items and tables, config is loaded
         // But don't auto-transition if a verification warning is shown —
         // let the user review and choose to proceed.
-        if (status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0) {
+        const hasData = status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0;
+        const syncCompleted = status.configSyncCompleted === true;
+        if (hasData || syncCompleted) {
           if (verificationWarningRef.current) {
             // Stop polling — the user needs to review the warning and decide
             clearInterval(pollRef.current);
@@ -202,8 +208,13 @@ export default function EdgeSetupScreen() {
     setConfigError(null);
     setVerificationWarning(null);
 
+    // Start polling BEFORE the sync request so the UI shows progress
+    // during the download. Without this, the checklist appears frozen
+    // for up to 150 seconds while the sync request is in-flight.
+    startStatusPolling();
+
     try {
-      const result = await edgeFetch('/api/edge/config/sync', { method: 'POST', timeoutMs: 90_000 });
+      const result = await edgeFetch('/api/edge/config/sync', { method: 'POST', timeoutMs: 150_000 });
       if (result.success) {
         setConfigRowsLoaded(result.tablesLoaded || 0);
 
@@ -216,12 +227,11 @@ export default function EdgeSetupScreen() {
           setVerificationWarning(warningText);
         }
 
-        // Start polling for final stats
-        startStatusPolling();
+        // Polling is already running — it will pick up the final stats
+        // and transition to 'ready' when configSyncCompleted becomes true.
       } else if (result.error === 'Sync already in progress') {
         // Another sync is already running (e.g. from a retry timer).
-        // Don't show an error — just poll for status and wait for it.
-        startStatusPolling();
+        // Polling is already running — it will pick up the result.
       } else {
         setConfigError(result.error || 'Config sync failed');
       }
