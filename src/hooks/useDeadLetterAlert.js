@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getEdgeUrl, getStoredEdgeApiKey } from "../services/edgeHealth";
+import { getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken } from "../services/edgeHealth";
 
 // Hook that polls the edge server for dead-lettered sync records and returns
 // the count + records so the UI can show a recovery banner.
@@ -15,11 +15,15 @@ export function useDeadLetterAlert() {
   const fetchDeadLetters = useCallback(async () => {
     const edgeUrl = getEdgeUrl();
     const apiKey = getStoredEdgeApiKey();
+    const runtimeToken = getStoredEdgeRuntimeToken();
     if (!edgeUrl || !apiKey) return;
 
     try {
       const res = await fetch(`${edgeUrl}/api/edge/sync/dead-letter`, {
-        headers: { "x-edge-api-key": apiKey },
+        headers: {
+          "x-edge-api-key": apiKey,
+          ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
+        },
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return;
@@ -40,11 +44,15 @@ export function useDeadLetterAlert() {
   const retryAll = useCallback(async () => {
     const edgeUrl = getEdgeUrl();
     const apiKey = getStoredEdgeApiKey();
+    const runtimeToken = getStoredEdgeRuntimeToken();
     if (!edgeUrl || !apiKey) return;
     try {
       await fetch(`${edgeUrl}/api/edge/sync/retry`, {
         method: "POST",
-        headers: { "x-edge-api-key": apiKey },
+        headers: {
+          "x-edge-api-key": apiKey,
+          ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
+        },
       });
       await fetchDeadLetters();
     } catch (err) {
@@ -55,11 +63,15 @@ export function useDeadLetterAlert() {
   const retryOne = useCallback(async (queueId) => {
     const edgeUrl = getEdgeUrl();
     const apiKey = getStoredEdgeApiKey();
+    const runtimeToken = getStoredEdgeRuntimeToken();
     if (!edgeUrl || !apiKey) return;
     try {
       await fetch(`${edgeUrl}/api/edge/sync/dead-letter/${queueId}/retry`, {
         method: "POST",
-        headers: { "x-edge-api-key": apiKey },
+        headers: {
+          "x-edge-api-key": apiKey,
+          ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
+        },
       });
       await fetchDeadLetters();
     } catch (err) {
@@ -70,11 +82,15 @@ export function useDeadLetterAlert() {
   const discardOne = useCallback(async (queueId) => {
     const edgeUrl = getEdgeUrl();
     const apiKey = getStoredEdgeApiKey();
+    const runtimeToken = getStoredEdgeRuntimeToken();
     if (!edgeUrl || !apiKey) return;
     try {
       await fetch(`${edgeUrl}/api/edge/sync/dead-letter/${queueId}/discard`, {
         method: "POST",
-        headers: { "x-edge-api-key": apiKey },
+        headers: {
+          "x-edge-api-key": apiKey,
+          ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
+        },
       });
       await fetchDeadLetters();
     } catch (err) {

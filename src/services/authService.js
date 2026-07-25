@@ -144,7 +144,10 @@ export const authService = {
       let restaurantConfig = null;
       try {
         const outletRes = await fetch(`${EDGE_URL}/api/edge/outlet`, {
-          headers: { ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}) },
+          headers: {
+            ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}),
+            ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
+          },
         });
         if (outletRes.ok) {
           const outlet = await outletRes.json();
