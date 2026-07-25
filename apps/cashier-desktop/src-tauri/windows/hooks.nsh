@@ -1,8 +1,12 @@
 !macro NSIS_HOOK_PREINSTALL
-  ; Kill the main Cashier app before files are copied.
-  ; edge-server.exe and softshape-host.exe are bundled as resources.
-  ; They are long-lived processes managed by the Runtime Host — don't kill them here.
+  ; Kill all SoftShape processes before files are copied.
+  ; If edge-server.exe or softshape-host.exe are still running from a
+  ; previous install, the installer can't replace them (file locked).
   nsis_tauri_utils::KillProcess "${MAINBINARYNAME}.exe"
+  Pop $R0
+  nsis_tauri_utils::KillProcess "edge-server.exe"
+  Pop $R0
+  nsis_tauri_utils::KillProcess "softshape-host.exe"
   Pop $R0
 
   ; Give the OS and any AV real-time scanner a moment to release handles.

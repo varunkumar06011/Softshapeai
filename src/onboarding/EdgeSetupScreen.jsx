@@ -218,6 +218,10 @@ export default function EdgeSetupScreen() {
 
         // Start polling for final stats
         startStatusPolling();
+      } else if (result.error === 'Sync already in progress') {
+        // Another sync is already running (e.g. from a retry timer).
+        // Don't show an error — just poll for status and wait for it.
+        startStatusPolling();
       } else {
         setConfigError(result.error || 'Config sync failed');
       }
