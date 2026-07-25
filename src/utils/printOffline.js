@@ -254,7 +254,9 @@ async function discoverPrintAgentUrls() {
  * Try all candidate Print Agent URLs in parallel and return the first that succeeds.
  * Each URL gets a 10s timeout — if the Print Agent is unreachable, all URLs fail
  * in parallel so the total wait is ~10s instead of 10s × N (sequential).
- * Returns the working URL or null if all fail.
+ * Returns { url, queued } if a Print Agent accepted the job, or null if all fail.
+ * The queued flag is true when the edge server persisted the job to SQLite but
+ * could not print immediately (print service down) — it will retry every 5s.
  */
 async function tryPrintAgentUrls(body, jobType) {
   const urls = await discoverPrintAgentUrls();
@@ -274,7 +276,15 @@ async function tryPrintAgentUrls(body, jobType) {
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      if (res.ok) return url;
+      if (res.ok) {
+        // Read the body to determine if the job was printed immediately
+        // or durably queued for retry by the edge server's dispatch loop.
+        // In both cases the edge server has taken ownership of the print,
+        // so the caller should treat this as "handled" (printed: true).
+        // The queued flag is propagated for observability/UI differentiation.
+        const data = await res.json().catch(() => ({}));
+        return { url, queued: !!data.queued };
+      }
     } catch (err) {
       clearTimeout(timeout);
       if (err.name !== 'AbortError') {
@@ -287,7 +297,7 @@ async function tryPrintAgentUrls(body, jobType) {
   };
 
   // First-success-wins: resolve as soon as any URL succeeds, don't wait for others to timeout
-  const workingUrl = await new Promise((resolve) => {
+  const workingResult = await new Promise((resolve) => {
     let settled = false;
     let remaining = urls.length;
     urls.forEach(async (url) => {
@@ -304,14 +314,19 @@ async function tryPrintAgentUrls(body, jobType) {
     });
   });
 
-  if (workingUrl) {
-    console.log(`[printOffline] Printed [${jobType}] via Print Agent at ${workingUrl}`);
+  if (workingResult) {
+    const { url: workingUrl, queued } = workingResult;
+    console.log(`[printOffline] ${queued ? 'Queued' : 'Printed'} [${jobType}] via Print Agent at ${workingUrl}`);
     try {
       localStorage.setItem('last_working_print_agent_url', workingUrl);
       if (workingUrl !== 'http://127.0.0.1:3101') {
         await setPrintAgentUrl(workingUrl);
       }
     } catch { /* ignore */ }
+    // printed: true in both cases because the edge server has taken ownership.
+    // queued is propagated so callers can distinguish immediate print from
+    // durable-queued (print service was down, will retry every 5s).
+    return { printed: true, queued };
   } else {
     // All URLs failed — invalidate cache so next call re-discovers fresh URLs
     // (agent may have restarted with a new DHCP lease)
@@ -319,7 +334,7 @@ async function tryPrintAgentUrls(body, jobType) {
     _lastDiscoveryTime = 0;
   }
 
-  return workingUrl;
+  return null;
 }
 
 // ── Debug log (visible in UI) ─────────────────────────────────────────────────
@@ -426,10 +441,16 @@ export async function printLocal(job) {
         data: job.data || {},
       };
 
-  const workingUrl = await tryPrintAgentUrls(body, jobType);
-  if (workingUrl) {
-    logOfflinePrint({ status: 'success', message: 'Print Agent succeeded', detail: workingUrl });
-    return { printed: true, queued: false };
+  const agentResult = await tryPrintAgentUrls(body, jobType);
+  if (agentResult) {
+    // printed: true in both immediate-print and durable-queued cases because
+    // the edge server has taken ownership of the job. DO NOT change printed
+    // to false when queued — the captain uses printed=true to set
+    // localPrinted=true, which prevents the backend from creating a duplicate
+    // print intent with a different eventId. The queued flag is for UI/log
+    // differentiation only.
+    logOfflinePrint({ status: agentResult.queued ? 'queued' : 'success', message: agentResult.queued ? 'Print Agent queued for retry' : 'Print Agent succeeded', detail: '' });
+    return { printed: true, queued: agentResult.queued };
   }
   logOfflinePrint({ status: 'error', message: 'Print Agent unreachable', detail: 'queued' });
 

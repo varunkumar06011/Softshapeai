@@ -3147,6 +3147,7 @@ export default function CaptainApp({ onLogout }) {
       const orderRestaurantId = activeRestaurantId;
       let preReservedKotNumber = null;
       let localPrinted = false;
+      let anyQueued = false;
       try {
         const reserved = await reserveKotNumber(requestId);
         preReservedKotNumber = reserved?.kotNumber ?? null;
@@ -3279,6 +3280,11 @@ export default function CaptainApp({ onLogout }) {
         // set localPrinted=true, which made the backend skip the print_job
         // socket emit — the failed print was silently lost.
         localPrinted = printResults.length > 0 && printResults.every(r => r.status === 'fulfilled' && r.value?.printed);
+        // Track if any print was durably queued (edge server accepted but
+        // print service was down — will retry every 5s). Used for the
+        // post-submit notification so the captain knows the KOT hasn't
+        // physically printed yet.
+        anyQueued = localPrinted && printResults.some(r => r.status === 'fulfilled' && r.value?.queued);
         if (localPrinted) {
           markKotNumberPrinted(preReservedKotNumber);
           console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber}`);
@@ -3430,6 +3436,7 @@ export default function CaptainApp({ onLogout }) {
                 const edgePrintResults = await Promise.allSettled(edgePrintPromises);
                 edgeLocalPrinted = edgePrintResults.length > 0 && edgePrintResults.every(r => r.status === 'fulfilled' && r.value?.printed);
                 localPrinted = edgeLocalPrinted;
+                anyQueued = edgeLocalPrinted && edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.queued);
                 if (edgeLocalPrinted) {
                   markKotNumberPrinted(edgePreReservedKotNumber);
                   console.log(`[KOT] Edge fallback local print succeeded for KOT #${edgePreReservedKotNumber}`);
@@ -3623,6 +3630,8 @@ export default function CaptainApp({ onLogout }) {
       lastAnyItemAddedRef.current = 0;
       if (savedOrder?.offline) {
         addNotification(`KOT #${preReservedKotNumber != null ? preReservedKotNumber : newKOT.id} Queued (Offline)`, 'KOT saved locally — will sync when back online.', 'warning');
+      } else if (anyQueued) {
+        addNotification(`KOT #${realKotId || newKOT.id} Sent — printing shortly`, 'Edge server accepted KOT but printer is warming up — will print automatically.', 'warning');
       } else {
         addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
       }
