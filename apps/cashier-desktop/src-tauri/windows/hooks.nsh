@@ -1,7 +1,7 @@
 !macro NSIS_HOOK_PREINSTALL
   ; Kill the main Cashier app before files are copied.
-  ; Phase 1.2: edge-server.exe is no longer bundled or killed — the Runtime
-  ; is a separate long-lived process managed by the Softshape Runtime Host.
+  ; edge-server.exe and softshape-host.exe are bundled as resources.
+  ; They are long-lived processes managed by the Runtime Host — don't kill them here.
   nsis_tauri_utils::KillProcess "${MAINBINARYNAME}.exe"
   Pop $R0
 
