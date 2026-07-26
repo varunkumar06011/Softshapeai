@@ -2974,7 +2974,10 @@ const CashierDashboard = ({ onLogout }) => {
       // would waste up to 10s waiting for the print agent and produce a 'PENDING'
       // bill number on the printout. Only fall back to local print when edge is
       // genuinely unavailable.
-      const edgeReachable = isEdgeLocalAuth() || await isEdgeAvailable();
+      let edgeReachable = isEdgeLocalAuth();
+      if (!edgeReachable) {
+        try { edgeReachable = await isEdgeAvailable(); } catch { edgeReachable = false; }
+      }
       if (!edgeReachable) {
       try {
         // ── R3: Try Output Intent API for bill printing ──────────────────────
@@ -3612,8 +3615,15 @@ const CashierDashboard = ({ onLogout }) => {
           .join(',');
 
         // Try local print first (same pattern as handleFinalBill)
+        // Fix NEW-1: Gate on edge availability — when edge is reachable, skip
+        // Output Intent + local print and let printBillEdge handle it.
         let localPrinted = false;
         const reprintBillEventId = `reprint-${orderId}-${Date.now()}`;
+        let edgeReachableForReprint = isEdgeLocalAuth();
+        if (!edgeReachableForReprint) {
+          try { edgeReachableForReprint = await isEdgeAvailable(); } catch { edgeReachableForReprint = false; }
+        }
+        if (!edgeReachableForReprint) {
         try {
           // ── R3: Try Output Intent API for reprint ────────────────────────
           const reprintItems = getBillableItems(selectedTable);
@@ -3695,10 +3705,11 @@ const CashierDashboard = ({ onLogout }) => {
         } catch (printErr) {
           console.warn('[handleReprintBill] Local print failed:', printErr.message);
         }
+        } // end if (!edgeReachableForReprint)
 
         const response = selectedTable.isExtra
-          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId: reprintBillEventId })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId: reprintBillEventId });
+          ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId: reprintBillEventId, localPrinted })
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId: reprintBillEventId, localPrinted });
 
         // Backend returns 409 if PAID — handle gracefully
         if (response && response.error && !response.offline) {
@@ -4898,10 +4909,12 @@ const CashierDashboard = ({ onLogout }) => {
 
       // 1. Reserve KOT number first (for local printing with real number)
       let preReservedKotNumber = null;
+      let edgeHandledKot = false;
       let localPrinted = false;
       try {
         const reserved = await reserveKotNumber(requestId);
         preReservedKotNumber = reserved?.kotNumber ?? null;
+        edgeHandledKot = reserved?.edge === true;
       } catch (reserveErr) {
         console.warn('[KOT] Reserve KOT number failed, falling back to cloud-only:', reserveErr.message);
       }
@@ -4910,8 +4923,12 @@ const CashierDashboard = ({ onLogout }) => {
       //    This ensures localPrinted is known before the API call, so the backend
       //    gets the correct flag and can skip socket emission when local print succeeded.
       //    Shared eventIds ensure the Print Agent deduplicates even if the response is lost.
+      //
+      //    Fix 8: When edge is available, reserveKotNumber() returns { kotNumber: null, edge: true }
+      //    and preReservedKotNumber is null — so this block is already skipped in edge-connected mode.
+      //    The edgeHandledKot flag makes this explicit for clarity and defensive coding.
       let kotEventIds = [];
-      if (preReservedKotNumber != null && (selectedTable?.backendId || selectedTable?.isExtra)) {
+      if (!edgeHandledKot && preReservedKotNumber != null && (selectedTable?.backendId || selectedTable?.isExtra)) {
         // Guard: prevent double-printing the same KOT number in this session
         const alreadyPrinted = _printedKotNumbers.has(preReservedKotNumber);
         if (alreadyPrinted) {
