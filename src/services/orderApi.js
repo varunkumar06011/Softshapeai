@@ -1458,7 +1458,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   const printRequestId = requestId || generateRequestId();
   const qs = new URLSearchParams({ restaurantId: restaurantId || '', requestId: printRequestId });
   if (tableNumber) qs.set('tableNumber', tableNumber);
-  if (discountPercent) qs.set('discountPercent', String(discountPercent));
+  if (discountPercent != null) qs.set('discountPercent', String(discountPercent));
   if (kotNumbers) qs.set('kotNumbers', kotNumbers);
   if (billEventId) qs.set('billEventId', billEventId);
   if (localPrinted) qs.set('localPrinted', 'true');
@@ -1471,7 +1471,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, restaurantId, tableNumber, discountPercent, kotNumbers, billEventId, localPrinted }),
+        body: JSON.stringify({ orderId, restaurantId, tableNumber, discountPercent, kotNumbers, billEventId, localPrinted, requestId: printRequestId }),
       });
       if (edgeResult && edgeResult.success) {
         return edgeResult;

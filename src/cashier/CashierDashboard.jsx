@@ -3098,7 +3098,7 @@ const CashierDashboard = ({ onLogout }) => {
         // real print status. This removes the false optimistic success path.
         response = selectedTable.isExtra
           ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId, localPrinted })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId, localPrinted });
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, discountPercent, billEventId, localPrinted });
         if (response && !response.success) {
           // Edge server unavailable or print failed — bill was NOT printed.
           isPrintingBillRef.current = false;
@@ -3721,7 +3721,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         const response = selectedTable.isExtra
           ? await printBill(orderId, { restaurantId: printBillRestaurantId, tableNumber: selectedTable.number, discountPercent: extraDiscountPercent, kotNumbers: extraKotIds, billEventId: reprintBillEventId, localPrinted })
-          : await printBill(orderId, { restaurantId: printBillRestaurantId, billEventId: reprintBillEventId, localPrinted });
+          : await printBill(orderId, { restaurantId: printBillRestaurantId, discountPercent, billEventId: reprintBillEventId, localPrinted });
 
         // Backend returns 409 if PAID — handle gracefully
         if (response && response.error && !response.offline) {
