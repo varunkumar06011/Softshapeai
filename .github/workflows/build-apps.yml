@@ -149,6 +149,27 @@ jobs:
           echo "Found edge-server.exe at: $found"
           ls -la "$found"
 
+      - name: Verify print-service.exe bundled into resources
+        shell: bash
+        run: |
+          found=""
+          for candidate in \
+            "apps/cashier-desktop/src-tauri/target/release/resources/print-service.exe" \
+            "apps/cashier-desktop/src-tauri/target/release/print-service.exe"; do
+            if [ -f "$candidate" ]; then
+              found="$candidate"
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "::error::print-service.exe not found in Tauri build output"
+            find apps/cashier-desktop/src-tauri/target/release -name 'print-service.exe' 2>/dev/null || true
+            ls -laR apps/cashier-desktop/src-tauri/target/release/resources 2>/dev/null || true
+            exit 1
+          fi
+          echo "Found print-service.exe at: $found"
+          ls -la "$found"
+
       - name: Rename installer
         shell: bash
         run: |
