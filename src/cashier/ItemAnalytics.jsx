@@ -20,9 +20,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filter, Download, Search } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getKolkataDateString, shiftKolkataDate, getKolkataMonthString } from '../shared/utils/dateFormat';
-import { isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
 
 // Standard bar unit sizes in milliliters
 const BAR_UNIT_ML = 30;
@@ -122,8 +122,13 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
   }, [timeFilter, customDate, effectiveSource, outletSections]);
 
   // Re-fetch analytics when a settlement occurs (custom event dispatched from CashierDashboard)
+  // Include delayed refetches to catch async edge→cloud sync (2-10s typical)
   useEffect(() => {
-    const handler = () => fetchAnalytics();
+    const handler = () => {
+      fetchAnalytics();
+      setTimeout(() => fetchAnalytics(), 5000);
+      setTimeout(() => fetchAnalytics(), 10000);
+    };
     window.addEventListener('softshape_order_updated', handler);
     return () => window.removeEventListener('softshape_order_updated', handler);
   }, [timeFilter, customDate, effectiveSource, outletSections]);
@@ -153,13 +158,16 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
     try {
       const { startDate, endDate } = getDateRange();
       const outletType = outlet === 'bar' ? 'bar' : outlet === 'restaurant' ? 'restaurant' : null;
-
+      const edgeLocal = isEdgeLocalAuth();
       const outletParam = outletType ? `&outletType=${outletType}` : '';
-      const fetchOpts = { headers: getAuthHeaders(), cache: 'no-store' };
+
+      const fetchOpts = edgeLocal
+        ? { headers: { 'Content-Type': 'application/json' }, cache: 'no-store' }
+        : { headers: getAuthHeaders(), cache: 'no-store' };
 
       // In edge-local (PIN) auth mode, fetch from the edge server's local SQLite
       // so items appear instantly after settlement — no waiting for cloud sync.
-      const useEdge = isEdgeLocalAuth();
+      const useEdge = edgeLocal;
       const fetchItemsSold = async (extraParams = '') => {
         if (useEdge) {
           const qs = new URLSearchParams();

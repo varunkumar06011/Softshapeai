@@ -122,6 +122,8 @@ export function invalidateEdgeHealthCache() {
   _edgeAvailable = false;
   _discoveredEdgeUrl = null;
   _discoveryLastFailed = 0;
+  _connectivityState = 'checking';
+  _connectivityLastCheck = 0;
   // Intentionally does NOT clear _discoveryFailReason — it's a diagnostic,
   // not a health cache. See comment at the variable declaration.
 }

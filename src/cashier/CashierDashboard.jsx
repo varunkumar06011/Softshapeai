@@ -1061,9 +1061,13 @@ const CashierDashboard = ({ onLogout }) => {
       setExpenditureSummary({ totalAmount: 0, count: 0 });
       return;
     }
-    // Expenditures are cloud-only — skip for edge-local (PIN) users
     if (isEdgeLocalAuth()) {
-      setExpenditureSummary({ totalAmount: 0, count: 0 });
+      try {
+        const summary = await edgeFetch(`/api/edge/expenditures/today-summary?date=${dateParam}`);
+        setExpenditureSummary(summary || { totalAmount: 0, count: 0 });
+      } catch {
+        setExpenditureSummary({ totalAmount: 0, count: 0 });
+      }
       return;
     }
     try {
@@ -5545,7 +5549,6 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'xreport', label: 'X Report', icon: FileText },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
           ].filter(item => {
-            if (isEdgeLocal && (item.id === 'vouchers' || item.id === 'xreport')) return false;
             return true;
           }).map((item) => (
             <button
@@ -6400,27 +6403,11 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'vouchers' && (
-                      isEdgeLocal ? (
-                        <div className="p-12 text-center flex flex-col items-center">
-                          <Receipt size={32} className="text-gray-300 mb-2" />
-                          <p className="text-sm font-black text-gray-500 uppercase tracking-wider">Requires Cloud Connectivity</p>
-                          <p className="text-xs text-gray-400 mt-1">Expenditures are not available in offline (PIN) mode.</p>
-                        </div>
-                      ) : (
-                        <ExpenditureModule />
-                      )
+                      <ExpenditureModule />
                     )}
 
                     {activeTab === 'xreport' && (
-                      isEdgeLocal ? (
-                        <div className="p-12 text-center flex flex-col items-center">
-                          <FileText size={32} className="text-gray-300 mb-2" />
-                          <p className="text-sm font-black text-gray-500 uppercase tracking-wider">Requires Cloud Connectivity</p>
-                          <p className="text-xs text-gray-400 mt-1">X Reports are not available in offline (PIN) mode.</p>
-                        </div>
-                      ) : (
-                        <XReportSection />
-                      )
+                      <XReportSection />
                     )}
 
                     {activeTab === 'billfinder' && (

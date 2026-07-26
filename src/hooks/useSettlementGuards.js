@@ -51,16 +51,22 @@ export function useSettlementGuards(hasPending, lastSyncAt) {
     });
   }, []);
 
-  // Once all pending actions have synced, settlement guards are no longer needed.
-  // Clear them so future sessions can settle the same table/order again if needed.
+  // Once all pending actions have synced, wait 5 minutes before clearing guards.
+  // The TTL prevents double-settlement from a second click that generates a new
+  // requestId (which would bypass both edge command_log and cloud ProcessedRequest
+  // idempotency checks, both keyed on requestId). The edge server's status check
+  // (order.status === 'SETTLED') is the primary guard; this TTL is the secondary.
   useEffect(() => {
     if (!hasPending && lastSyncAt && (settledOrderIds.size > 0 || settledTableIds.size > 0)) {
-      clearSettlementGuards()
-        .then(() => {
-          setSettledOrderIdsState(new Set());
-          setSettledTableIdsState(new Set());
-        })
-        .catch(err => console.error('[SettlementGuard] Failed to clear guards:', err));
+      const timer = setTimeout(() => {
+        clearSettlementGuards()
+          .then(() => {
+            setSettledOrderIdsState(new Set());
+            setSettledTableIdsState(new Set());
+          })
+          .catch(err => console.error('[SettlementGuard] Failed to clear guards:', err));
+      }, 5 * 60 * 1000);
+      return () => clearTimeout(timer);
     }
   }, [hasPending, lastSyncAt, settledOrderIds.size, settledTableIds.size]);
 

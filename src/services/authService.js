@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, getEdgeConnectivityState, invalidateEdgeHealthCache } from './edgeHealth.js';
 import secureStorage from '../utils/secureStorage.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
@@ -74,19 +74,39 @@ export const authService = {
     // The edge server's local SQLite user DB is the single source of truth for
     // staff PIN verification. No cloud fallback — if the edge server is down,
     // login fails. This ensures consistent behavior online and offline.
-    if (await isEdgeAvailable()) {
+    //
+    // Gate on getEdgeConnectivityState() instead of isEdgeAvailable() boolean.
+    // isEdgeAvailable() returns true when isOperational is true, but the edge
+    // server sets isOperational=true even when never onboarded (runtimeState=READY
+    // with !isSessionValid). This caused PIN login to proceed against a
+    // never-onboarded edge server, hit 401 "Restaurant is not linked locally",
+    // and surface as "Invalid credentials" to the user.
+    // getEdgeConnectivityState() checks isOperational && sessionValid together,
+    // correctly classifying never-onboarded as 'edge_not_ready'.
+    const connState = await getEdgeConnectivityState();
+
+    if (connState === 'edge_reachable') {
       const edgeResult = await this._tryEdgePinLogin(userId, pin);
       if (edgeResult) return edgeResult;
-      // _tryEdgePinLogin returns null for both "wrong PIN" (terminal) and
-      // "edge reachable but errored unexpectedly" (fall through). Distinguish
-      // them: a 401 from the edge server is a definitive "invalid credentials"
-      // and must not fall through. Other failures (5xx, timeout,
-      // network) fall through.
-      // The distinction is handled inside _tryEdgePinLogin via a thrown error
-      // with `status` set — see below.
+      throw new Error('Edge server unreachable — check the restaurant server machine. PIN login requires the edge server to be running.');
     }
 
-    // Edge server unreachable — no cloud fallback.
+    if (connState === 'edge_not_ready') {
+      // Edge running but not onboarded or still syncing — retry up to 3×5s
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const retryState = await getEdgeConnectivityState();
+        if (retryState === 'edge_reachable') {
+          const edgeResult = await this._tryEdgePinLogin(userId, pin);
+          if (edgeResult) return edgeResult;
+          throw new Error('Edge server unreachable — check the restaurant server machine.');
+        }
+        if (retryState !== 'edge_not_ready') break;
+      }
+      throw new Error('Edge server is starting up — please wait a moment and try again.');
+    }
+
+    // cloud_reachable or fully_offline — fail fast
     throw new Error('Edge server unreachable — check the restaurant server machine. PIN login requires the edge server to be running.');
   },
 
@@ -115,7 +135,7 @@ export const authService = {
       if (res.status === 401) {
         const body = await res.json().catch(() => ({}));
         const errMsg = (body.error || '').toLowerCase();
-        if (errMsg.includes('edge api key') || errMsg.includes('runtime token')) {
+        if (errMsg.includes('edge api key') || errMsg.includes('runtime token') || errMsg.includes('not linked locally')) {
           console.warn('[AuthService] Edge auth rejected during PIN login — falling through to cloud');
           return null;
         }
@@ -217,6 +237,7 @@ export const authService = {
     }
     if (import.meta.env.DEV) console.log('[AuthService] switchOutlet stored token, outlet:', data.restaurant?.id);
     purgeLegacyCaches();
+    invalidateEdgeHealthCache();
     return data;
   },
 

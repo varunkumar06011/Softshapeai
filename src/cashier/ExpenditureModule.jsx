@@ -11,6 +11,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import { isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
@@ -53,10 +54,11 @@ export default function ExpenditureModule() {
   const loadData = useCallback(async (date = summaryDate) => {
     setError('');
     const errors = [];
+    const edgeLocal = isEdgeLocalAuth();
 
     const load = async (label, url, setter) => {
       try {
-        const data = await apiFetch(url, { timeout: 60000 });
+        const data = edgeLocal ? await edgeFetch(url) : await apiFetch(url, { timeout: 60000 });
         setter(data);
       } catch (err) {
         console.error(`[ExpenditureModule] ${label} failed:`, err);
@@ -64,12 +66,21 @@ export default function ExpenditureModule() {
       }
     };
 
-    await Promise.all([
-      load('paid-to-options', '/api/expenditures/paid-to-options', (d) => setPaidToOptions(d || { staff: [] })),
-      load('narration-suggestions', '/api/expenditures/narration-suggestions', (d) => setNarrationSuggestions(d || [])),
-      load('today-summary', `/api/expenditures/today-summary?date=${date}`, (d) => setTodaySummary(d || null)),
-      load('recent-expenditures', `/api/expenditures?date=${date}&limit=10`, (d) => setRecentExpenditures(d || [])),
-    ]);
+    if (edgeLocal) {
+      await Promise.all([
+        load('paid-to-options', `/api/edge/expenditures/paid-to-options`, (d) => setPaidToOptions(d || { staff: [] })),
+        load('today-summary', `/api/edge/expenditures/today-summary?date=${date}`, (d) => setTodaySummary(d || null)),
+        load('recent-expenditures', `/api/edge/expenditures?date=${date}&limit=10`, (d) => setRecentExpenditures(d || [])),
+      ]);
+      setNarrationSuggestions([]);
+    } else {
+      await Promise.all([
+        load('paid-to-options', '/api/expenditures/paid-to-options', (d) => setPaidToOptions(d || { staff: [] })),
+        load('narration-suggestions', '/api/expenditures/narration-suggestions', (d) => setNarrationSuggestions(d || [])),
+        load('today-summary', `/api/expenditures/today-summary?date=${date}`, (d) => setTodaySummary(d || null)),
+        load('recent-expenditures', `/api/expenditures?date=${date}&limit=10`, (d) => setRecentExpenditures(d || [])),
+      ]);
+    }
 
     setApproverOptions(CROSS_OUTLET_APPROVERS);
 
@@ -175,15 +186,29 @@ export default function ExpenditureModule() {
         category: paidToType === 'STAFF' ? undefined : (selectedCategory?.name || undefined),
         ledgerCategoryId: paidToType === 'STAFF' ? undefined : (selectedCategory?.id || undefined),
         entryType: paidToType === 'STAFF' ? undefined : 'EXPENSE',
+        approver: selectedApprover || approverSearch.trim() || undefined,
         approvedByName: selectedApprover || approverSearch.trim() || undefined,
+        createdBy: undefined,
         idempotencyKey,
+        date: summaryDate,
         expenditureDate: summaryDate,
       };
 
-      const result = await apiFetch('/api/expenditures', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      const edgeLocal = isEdgeLocalAuth();
+      let result;
+      if (edgeLocal) {
+        result = await edgeFetch(`/api/edge/expenditures`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        // Edge server already prints on save — no separate print call needed
+      } else {
+        result = await apiFetch('/api/expenditures', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      }
 
       setSavedExpenditure(result);
       setAmount('');
@@ -205,6 +230,16 @@ export default function ExpenditureModule() {
   };
 
   const dispatchExpenditurePrint = async (expenditureId) => {
+    const edgeLocal = isEdgeLocalAuth();
+    if (edgeLocal) {
+      // Edge server builds ESC/POS and creates print job through durable queue
+      const result = await edgeFetch(`/api/edge/expenditures/print`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expenditureId }),
+      });
+      return result;
+    }
     const result = await apiFetch(`/api/expenditures/${expenditureId}/print`, { method: 'POST' });
     if (result?.escposData && result?.eventId) {
       // ── R3: Try Output Intent API first ──────────────────────────────
@@ -234,6 +269,12 @@ export default function ExpenditureModule() {
     setError('');
     const expenditure = await handleSave();
     if (!expenditure) return;
+
+    // Edge server already prints on save — skip separate print dispatch
+    if (isEdgeLocalAuth()) {
+      setSavedExpenditure(null);
+      return;
+    }
 
     setPrinting(true);
     try {

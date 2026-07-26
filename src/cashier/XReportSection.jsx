@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Printer, Save, Calendar, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import { isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
 import { printLocal } from '../utils/printOffline';
 import { buildXReportEscpos } from '../utils/escposFrontend';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
@@ -71,10 +72,23 @@ export default function XReportSection() {
     setLoading(true);
     setError(null);
     try {
-      const [data, expenditures] = await Promise.all([
-        apiFetch(`/api/xreports/${date}`, { timeout: 60000 }),
-        apiFetch(`/api/expenditures?date=${date}&outletId=${restaurantId}`, { timeout: 60000 }),
-      ]);
+      const edgeLocal = isEdgeLocalAuth();
+      let data, exps;
+      if (edgeLocal) {
+        const [reportData, expData] = await Promise.all([
+          edgeFetch(`/api/edge/x-report?date=${date}`),
+          edgeFetch(`/api/edge/expenditures?date=${date}`),
+        ]);
+        data = reportData;
+        exps = expData;
+      } else {
+        const [reportData, expData] = await Promise.all([
+          apiFetch(`/api/xreports/${date}`, { timeout: 60000 }),
+          apiFetch(`/api/expenditures?date=${date}&outletId=${restaurantId}`, { timeout: 60000 }),
+        ]);
+        data = reportData;
+        exps = expData;
+      }
       setReport({
         totalSales: Number(data.totalSales) || 0,
         expenditureAmount: Number(data.expenditureAmount) || 0,
@@ -90,8 +104,8 @@ export default function XReportSection() {
         notes20: data.notes20 || 0,
         notes10: data.notes10 || 0,
       });
-      setExpenditures((expenditures || []).filter((v) => v.status !== 'VOIDED'));
-      setManuallyEditedFields(new Set()); // Reset manual edits on load
+      setExpenditures((exps || []).filter((v) => v.status !== 'VOIDED' && !v.voided));
+      setManuallyEditedFields(new Set());
     } catch (err) {
       setError(err.message || 'Failed to load X Report');
     } finally {
@@ -105,7 +119,13 @@ export default function XReportSection() {
 
   const handleRefreshTotalSales = useCallback(async () => {
     try {
-      const data = await apiFetch(`/api/xreports/${reportDate}/refresh-sales`);
+      const edgeLocal = isEdgeLocalAuth();
+      let data;
+      if (edgeLocal) {
+        data = await edgeFetch(`/api/edge/x-report?date=${reportDate}`);
+      } else {
+        data = await apiFetch(`/api/xreports/${reportDate}/refresh-sales`);
+      }
       const freshCardAmount = Number(data.cardAmount) || 0;
 
       setReport(prev => ({
@@ -183,10 +203,14 @@ export default function XReportSection() {
         payload.cardAmount = Number(report.cardAmount || 0);
       }
 
-      await apiFetch('/api/xreports', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      // Edge-local users: no cloud save endpoint — X Report is computed on-the-fly.
+      // Denominations are UI-only for PIN users. Skip the cloud POST.
+      if (!isEdgeLocalAuth()) {
+        await apiFetch('/api/xreports', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
       setSavedMsg('X Report saved successfully');
       return true;
     } catch (err) {
@@ -278,12 +302,45 @@ export default function XReportSection() {
     const ok = await handleSave();
     if (!ok) return;
 
-    // The backend's socket emission to the print room is fire-and-forget — it
-    // can't confirm the PrintStation/Agent actually received the job (e.g.
-    // mid-reconnect on a WiFi blip), so a successful response here doesn't
-    // guarantee the report actually printed. Always also attempt a direct
-    // local print via the Print Agent's HTTP endpoint using the SAME eventId
-    // as the backend (when available) so the Agent dedupes if both arrive.
+    const edgeLocal = isEdgeLocalAuth();
+
+    // For edge-local (PIN) users, route print through edge server's durable print queue.
+    // The edge server builds ESC/POS via buildXReport() and creates a print job that
+    // gets dispatched through the same pipeline as KOTs and bills — instant, with retry.
+    if (edgeLocal) {
+      try {
+        await edgeFetch(`/api/edge/x-report/print`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reportDate,
+            cashierName: user?.name || '',
+            totalSales: round2(Number(report.totalSales)),
+            cardAmount: round2(Number(report.cardAmount || 0)),
+            cashAmount: round2(Number(report.cashAmount || 0)),
+            upiAmount: round2(Number(report.upiAmount || 0)),
+            otherAmount: round2(Number(report.otherAmount || 0)),
+            tipsAmount: round2(Number(report.tipsAmount || 0)),
+            expenditureAmount: round2(expenditureTotal),
+            expenditures: expenditures.map(v => ({
+              paidToName: v.paidToName,
+              paidToType: v.paidToType,
+              category: v.category,
+              amount: Number(v.amount),
+            })),
+            denominations: DENOMINATIONS.map(d => ({ label: `Rs.${d.value}`, value: d.value, count: report[d.key] || 0 })),
+            cashFromNotes: round2(cashFromNotes),
+          }),
+        });
+        setSavedMsg('X Report printed');
+        return;
+      } catch (err) {
+        setError('Print failed: ' + err.message);
+        return;
+      }
+    }
+
+    // Cloud-auth users: existing print path (backend socket + output intent + local fallback)
     let escposData = null;
     let eventId = null;
     try {
@@ -346,7 +403,6 @@ export default function XReportSection() {
         eventId: eventId || undefined,
       });
       if (!result.printed) {
-        // Local direct print also failed — fall back to browser print dialog
         console.warn('[XReport] Direct print failed:', result.error);
         openBrowserPrint(buildXReportText());
         setSavedMsg('No direct printer found — opened browser print dialog. Configure Print Agent/QZ Tray for auto-print.');

@@ -18,6 +18,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recha
 import { Users, TrendingUp, Calendar, Award } from "lucide-react";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { apiFetch } from "../services/apiConfig";
+import { isEdgeLocalAuth, edgeFetch } from "../services/edgeHealth";
 
 // Convert Date to ISO date string (YYYY-MM-DD)
 function toISODate(d) {
@@ -60,7 +61,12 @@ export default function CaptainPerformanceDashboard() {
     const restaurantId = getCurrentRestaurantId();
     if (!restaurantId) return;
     setLoading(true);
-    apiFetch(`/api/reports/captain-performance?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`)
+    const edgeLocal = isEdgeLocalAuth();
+    const url = edgeLocal
+      ? `/api/edge/analytics/captain-performance?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`
+      : `/api/reports/captain-performance?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}`;
+    const fetchFn = edgeLocal ? edgeFetch : apiFetch;
+    fetchFn(url)
       .then(data => setReport(data || null))
       .catch(() => setReport(null))
       .finally(() => setLoading(false));
