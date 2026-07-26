@@ -3207,7 +3207,7 @@ export default function CaptainApp({ onLogout }) {
                 intent: 'PRINT_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: foodIntentId, ok: true, printType: 'KOT' }))
+              }).then(res => ({ intentId: foodIntentId, ok: !!res?.ok, printType: 'KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false, printType: 'KOT' }; })
             );
           }
@@ -3220,7 +3220,7 @@ export default function CaptainApp({ onLogout }) {
                 intent: 'PRINT_LIQUOR_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: liquorIntentId, ok: true, printType: 'BAR_KOT' }))
+              }).then(res => ({ intentId: liquorIntentId, ok: !!res?.ok, printType: 'BAR_KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false, printType: 'BAR_KOT' }; })
             );
           }
@@ -3284,7 +3284,7 @@ export default function CaptainApp({ onLogout }) {
         // Using .some() caused partial success (food OK, liquor failed) to
         // set localPrinted=true, which made the backend skip the print_job
         // socket emit — the failed print was silently lost.
-        localPrinted = printResults.length > 0 && printResults.every(r => r.status === 'fulfilled' && r.value?.printed);
+        localPrinted = printResults.length > 0 && printResults.every(r => r.status === 'fulfilled' && r.value?.printed && !r.value?.queued);
         // Track if any print was durably queued (edge server accepted but
         // print service was down — will retry every 5s). Used for the
         // post-submit notification so the captain knows the KOT hasn't
@@ -3444,7 +3444,7 @@ export default function CaptainApp({ onLogout }) {
               }
               if (edgePrintPromises.length > 0) {
                 const edgePrintResults = await Promise.allSettled(edgePrintPromises);
-                edgeLocalPrinted = edgePrintResults.length > 0 && edgePrintResults.every(r => r.status === 'fulfilled' && r.value?.printed);
+                edgeLocalPrinted = edgePrintResults.length > 0 && edgePrintResults.every(r => r.status === 'fulfilled' && r.value?.printed && !r.value?.queued);
                 localPrinted = edgeLocalPrinted;
                 anyQueued = edgeLocalPrinted && edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.queued);
                 if (edgeLocalPrinted) {

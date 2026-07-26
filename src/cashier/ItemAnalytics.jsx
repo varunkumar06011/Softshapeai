@@ -22,6 +22,7 @@ import { Calendar, TrendingUp, Package, DollarSign, ChevronDown, ChevronUp, Filt
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { getKolkataDateString, shiftKolkataDate, getKolkataMonthString } from '../shared/utils/dateFormat';
+import { isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
 
 // Standard bar unit sizes in milliliters
 const BAR_UNIT_ML = 30;
@@ -156,22 +157,35 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
       const outletParam = outletType ? `&outletType=${outletType}` : '';
       const fetchOpts = { headers: getAuthHeaders(), cache: 'no-store' };
 
+      // In edge-local (PIN) auth mode, fetch from the edge server's local SQLite
+      // so items appear instantly after settlement — no waiting for cloud sync.
+      const useEdge = isEdgeLocalAuth();
+      const fetchItemsSold = async (extraParams = '') => {
+        if (useEdge) {
+          const qs = new URLSearchParams();
+          qs.set('startDate', startDate);
+          qs.set('endDate', endDate);
+          if (outletType) qs.set('outletType', outletType);
+          if (extraParams) qs.set('sectionName', extraParams);
+          return await edgeFetch(`/api/edge/analytics/items-sold?${qs}`);
+        }
+        const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}${outletParam}${extraParams ? `&sectionName=${encodeURIComponent(extraParams)}` : ''}`;
+        const response = await fetch(url, fetchOpts);
+        return await response.json();
+      };
+
       if (effectiveSource === 'all') {
         if (outletSections.length === 0) {
-          const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
-          const response = await fetch(url, fetchOpts);
-          const data = await response.json();
+          const data = await fetchItemsSold();
           if (myGeneration !== fetchGenerationRef.current) return;
           if (data.items) { setItemsData(data.items); setSummary(data.summary); }
           return;
         }
 
         const results = await Promise.all(
-          outletSections.map(section => {
-            let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
-            url += `&sectionName=${encodeURIComponent(section.name)}`;
-            return fetch(url, fetchOpts).then(r => r.json()).catch(() => ({ items: [], summary: null }));
-          })
+          outletSections.map(section =>
+            fetchItemsSold(section.name).catch(() => ({ items: [], summary: null }))
+          )
         );
         if (myGeneration !== fetchGenerationRef.current) return;
 
@@ -203,15 +217,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
       }
 
       const sectionName = sectionSourceMap.get(effectiveSource);
-      let url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}`;
-      if (sectionName) {
-        url += `&sectionName=${encodeURIComponent(sectionName)}`;
-      }
-      if (outletType) {
-        url += `&outletType=${outletType}`;
-      }
-      const response = await fetch(url, fetchOpts);
-      const data = await response.json();
+      const data = await fetchItemsSold(sectionName || '');
       if (myGeneration !== fetchGenerationRef.current) return;
       if (data.items) {
         setItemsData(data.items);

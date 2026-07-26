@@ -1276,7 +1276,12 @@ const CashierDashboard = ({ onLogout }) => {
       // Replace entirely — only preserve optimistic (socket-added / offline, not yet server-confirmed) txns
       setPastTransactions(prev => {
         const newIds = new Set(merged.map(t => t.id));
-        const preserved = prev.filter(t => !newIds.has(t.id) && t._optimistic === true);
+        const newOrderIds = new Set(merged.map(t => t.orderId).filter(Boolean));
+        const preserved = prev.filter(t =>
+          !newIds.has(t.id) &&
+          t._optimistic === true &&
+          !(t.orderId && newOrderIds.has(t.orderId))
+        );
         return [...merged, ...preserved];
       });
       if (!txnInitialLoaded) setTxnInitialLoaded(true);
@@ -1801,7 +1806,11 @@ const CashierDashboard = ({ onLogout }) => {
           // Distinguish legitimate auto-free (all items cancelled) from stale/race event
           const incomingHasLiveData = Array.isArray(table.orders) && table.orders.length > 0 && table.orders[0]?.items?.length > 0;
           const incomingHasBill = (table.currentBill ?? 0) > 0;
-          if (incomingHasLiveData || incomingHasBill) {
+          // Also check LOCAL state — a partial update (no orders array) can still
+          // wrongly free a table that has items/KOTs/bill locally.
+          const localHasItems = (t.activeOrder?.items?.length || 0) > 0 || (t.kotHistory?.length || 0) > 0;
+          const localHasBill = Number(t.currentBill || 0) > 0;
+          if (incomingHasLiveData || incomingHasBill || localHasItems || localHasBill) {
             console.warn('[CashierDashboard] Skipping stale AVAILABLE event — table still has data', t.number);
             return t;
           }
@@ -1840,7 +1849,7 @@ const CashierDashboard = ({ onLogout }) => {
           workflowStatus: protectedStatus,
           billNumber: incomingBillNumber,
           items: incomingIsAvailable ? [] : t.items,
-          activeOrder: isFrozenGrid ? t.activeOrder : (incomingIsAvailable ? null : (incomingOrder ? incomingOrder : t.activeOrder)),
+          activeOrder: isFrozenGrid ? t.activeOrder : (incomingIsAvailable ? null : (incomingOrder ? incomingOrder : ((t.activeOrder?.items?.length || 0) > 0 ? t.activeOrder : null))),
         };
       });
       setActiveTables(applyTableUpdate, { skipPersist: true });
@@ -1855,7 +1864,9 @@ const CashierDashboard = ({ onLogout }) => {
           if (incomingIsAvailableSel && prev.activeOrder) {
             const incomingHasLiveDataSel = Array.isArray(table.orders) && table.orders.length > 0 && table.orders[0]?.items?.length > 0;
             const incomingHasBillSel = (table.currentBill ?? 0) > 0;
-            if (incomingHasLiveDataSel || incomingHasBillSel) {
+            const localHasItemsSel = (prev.activeOrder?.items?.length || 0) > 0 || (prev.kotHistory?.length || 0) > 0;
+            const localHasBillSel = Number(prev.currentBill || 0) > 0;
+            if (incomingHasLiveDataSel || incomingHasBillSel || localHasItemsSel || localHasBillSel) {
               console.warn('[CashierDashboard] Skipping stale AVAILABLE event for selected occupied table', prev.number);
               return prev;
             }
@@ -1915,7 +1926,7 @@ const CashierDashboard = ({ onLogout }) => {
           orderId: socketTxn.orderId || null,
           txnNumber: socketTxn.txnNumber || null,
           billNumber: socketTxn.billNumber || null,
-          displayId: socketTxn.billNumber ? `B${socketTxn.billNumber}` : (socketTxn.txnNumber ? `T${socketTxn.txnNumber}` : '—'),
+          displayId: socketTxn.billNumber ? String(socketTxn.billNumber) : (socketTxn.txnNumber ? `T${socketTxn.txnNumber}` : '—'),
           kot: socketTxn.orderId ? `ORD-${socketTxn.orderId.slice(-6).toUpperCase()}` : '—',
           amount: socketTxn.grandTotal != null ? Number(socketTxn.grandTotal) : Number(socketTxn.amount ?? 0),
           grandTotal: socketTxn.grandTotal != null ? Number(socketTxn.grandTotal) : Number(socketTxn.amount ?? 0),
@@ -2788,7 +2799,7 @@ const CashierDashboard = ({ onLogout }) => {
         const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: txn.orderId }),
+          body: JSON.stringify({ orderId: txn.orderId, discountPercent: txn.discountPercent || 0 }),
         });
         if (edgeResult && edgeResult.success) {
           addNotification('Re-print Sent', `Bill #${txn.billNumber || txn.displayId} sent to printer.`, 'success');
@@ -3570,7 +3581,7 @@ const CashierDashboard = ({ onLogout }) => {
       return;
     }
 
-    addNotification('Re-print Sent', 'Bill sent to printer again.', 'success');
+    setIsReprintingBill(true);
 
     // Run reprint in background without blocking UI
     (async () => {
@@ -3712,6 +3723,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (response && response.error && !response.offline) {
           throw new Error(response.error);
         }
+        addNotification('Re-print Sent', 'Bill sent to printer again.', 'success');
       } catch (error) {
         console.error('[Reprint] Failed:', error.message);
         addNotification('Re-print Failed', error.message || 'Could not send bill to printer.', 'error');
@@ -4038,7 +4050,7 @@ const CashierDashboard = ({ onLogout }) => {
               orderId: txn.orderId || null,
               txnNumber: txn.txnNumber || null,
               billNumber: txn.billNumber || null,
-              displayId: txn.billNumber ? `B${txn.billNumber}` : (txn.txnNumber ? `T${txn.txnNumber}` : '—'),
+              displayId: txn.billNumber ? String(txn.billNumber) : (txn.txnNumber ? `T${txn.txnNumber}` : '—'),
               kot: txn.orderId ? `ORD-${txn.orderId.slice(-6).toUpperCase()}` : '—',
               amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
               grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
@@ -4113,6 +4125,17 @@ const CashierDashboard = ({ onLogout }) => {
             } catch { /* storage error — non-fatal */ }
             setTimeout(() => terminatedTableIdsRef.current.delete(selectedTable.backendId), 15000);
           }
+
+          // Notify ItemAnalytics and other listeners to refresh
+          window.dispatchEvent(new Event('softshape_order_updated'));
+
+          // Immediate refresh (silent to avoid loading flicker)
+          loadTransactions(txnDateFilterRef.current, null, { silent: true });
+          // Secondary refresh at 3s — silent (no loading overlay flicker)
+          setTimeout(() => {
+            if (import.meta.env.DEV) console.log(`[Settlement] Secondary loadTransactions for orderId=${orderId}`);
+            loadTransactions(txnDateFilterRef.current, null, { silent: true });
+          }, 3000);
         } else if (isWalkinMode) {
           // Walk-in settlement: no orderId exists, create transaction directly
           const walkinItems = cart
@@ -4170,7 +4193,7 @@ const CashierDashboard = ({ onLogout }) => {
               orderId: txn.orderId || null,
               txnNumber: txn.txnNumber || null,
               billNumber: txn.billNumber || null,
-              displayId: txn.billNumber ? `B${txn.billNumber}` : (txn.txnNumber ? `T${txn.txnNumber}` : '—'),
+              displayId: txn.billNumber ? String(txn.billNumber) : (txn.txnNumber ? `T${txn.txnNumber}` : '—'),
               kot: '—',
               amount: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
               grandTotal: txn.grandTotal != null ? Number(txn.grandTotal) : Number(txn.amount ?? 0),
@@ -4679,7 +4702,10 @@ const CashierDashboard = ({ onLogout }) => {
       tableClickCooldownRef.current.set(table.backendId, Date.now() + 500);
       setTimeout(() => { tableClickCooldownRef.current.delete(table.backendId); }, 500);
     }
-    setSelectedTable(table);
+    // Sanitize: if the table is Free/AVAILABLE, force-clear any stale activeOrder,
+    // kotHistory, currentBill, and items so past-order items don't leak into the new order.
+    const isFreeTable = !table.status || table.status === 'Free' || table.status === 'AVAILABLE' || table.workflowStatus === 'Free';
+    setSelectedTable(isFreeTable ? { ...table, activeOrder: null, kotHistory: [], currentBill: 0, items: [] } : table);
     setCart([]);
     setSelectedOrder(null);
     lastConfirmedItemsRef.current = [];
@@ -4969,7 +4995,7 @@ const CashierDashboard = ({ onLogout }) => {
                 intent: 'PRINT_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: foodIntentId, ok: true, printType: 'KOT' }))
+              }).then(res => ({ intentId: foodIntentId, ok: !!res?.ok, printType: 'KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false, printType: 'KOT' }; })
             );
           }
@@ -4982,7 +5008,7 @@ const CashierDashboard = ({ onLogout }) => {
                 intent: 'PRINT_LIQUOR_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: liquorIntentId, ok: true, printType: 'BAR_KOT' }))
+              }).then(res => ({ intentId: liquorIntentId, ok: !!res?.ok, printType: 'BAR_KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false, printType: 'BAR_KOT' }; })
             );
           }
@@ -5038,11 +5064,14 @@ const CashierDashboard = ({ onLogout }) => {
         // Await local print results BEFORE sending the API call.
         // This ensures the backend gets the correct localPrinted flag.
         const localPrintResults = await Promise.allSettled(localPrintPromises);
-        // localPrinted must be true only if ALL prints succeeded.
+        // localPrinted must be true only if ALL prints succeeded AND were not just queued.
         // Using .some() caused partial success (food OK, liquor failed) to
         // set localPrinted=true, which made the backend skip the print_job
         // socket emit — the failed print was silently lost.
-        localPrinted = localPrintResults.length > 0 && localPrintResults.every(r => r.status === 'fulfilled' && r.value?.printed);
+        // Similarly, a queued job (printed: true, queued: true) means the Print Agent
+        // accepted but did NOT actually print — treating it as printed would disable
+        // the backend socket fallback, silently losing the KOT if the queue can't dispatch.
+        localPrinted = localPrintResults.length > 0 && localPrintResults.every(r => r.status === 'fulfilled' && r.value?.printed && !r.value?.queued);
 
         if (localPrinted) {
           markKotNumberPrinted(preReservedKotNumber);

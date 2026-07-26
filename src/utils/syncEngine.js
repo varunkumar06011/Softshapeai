@@ -525,6 +525,16 @@ export async function syncPendingActions() {
   syncing = true;
   setSyncStatus('syncing');
 
+  // Flush queued print jobs FIRST — printing is time-sensitive (KOTs, bills)
+  // and must complete before cloud sync so the kitchen isn't waiting on
+  // network round-trips for their tickets.
+  try {
+    const { flushQueuedPrintJobs } = await import('./printOffline');
+    await flushQueuedPrintJobs();
+  } catch (e) {
+    // printOffline may not be available in all environments
+  }
+
   try {
     const allActions = await getPendingActions();
     if (allActions.length === 0) {
@@ -1007,14 +1017,6 @@ export async function syncPendingActions() {
     // Fix #2: Prune old acknowledged conflict audit entries (30 days)
     await pruneConflictAuditLog().catch(() => {});
 
-    // Flush any queued offline print jobs now that we're online
-    try {
-      const { flushQueuedPrintJobs } = await import('./printOffline');
-      await flushQueuedPrintJobs();
-    } catch (e) {
-      // printOffline may not be available in all environments
-    }
-
     console.log(`[SyncEngine] Sync complete: ${succeeded} succeeded, ${skipped} skipped, ${failed} failed`);
   } catch (err) {
     console.warn('[SyncEngine] Sync failed:', err.message);
@@ -1055,7 +1057,8 @@ async function syncIndividually(actions) {
         }
       } catch (err) {
         groupResults.set(action.id, { status: 'error', error: err.message });
-        break; // Network error — stop this group
+        // Don't break — continue with remaining actions in this group
+        continue;
       }
     }
   });
