@@ -2731,10 +2731,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleReprintFoundBill = (txn) => {
-    setReprintPinTarget(txn);
-    setReprintPinInput('');
-    setReprintPinError('');
-    setShowReprintPinModal(true);
+    doReprintFoundBill(txn);
   };
 
   const verifyReprintPin = async () => {
@@ -4972,8 +4969,8 @@ const CashierDashboard = ({ onLogout }) => {
                 intent: 'PRINT_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: foodIntentId, ok: true }))
-                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false }; })
+              }).then(() => ({ intentId: foodIntentId, ok: true, printType: 'KOT' }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false, printType: 'KOT' }; })
             );
           }
           if (hasLiquorItems) {
@@ -4985,8 +4982,8 @@ const CashierDashboard = ({ onLogout }) => {
                 intent: 'PRINT_LIQUOR_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: liquorIntentId, ok: true }))
-                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false }; })
+              }).then(() => ({ intentId: liquorIntentId, ok: true, printType: 'BAR_KOT' }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false, printType: 'BAR_KOT' }; })
             );
           }
           if (intentPromises.length > 0) {
@@ -4995,7 +4992,7 @@ const CashierDashboard = ({ onLogout }) => {
             if (allOk) {
               intentSucceeded = true;
               localPrinted = true;
-              kotEventIds = intentResults.map(r => r.value?.intentId).filter(Boolean);
+              kotEventIds = intentResults.filter(r => r.status === 'fulfilled' && r.value?.ok).map(r => ({ type: r.value.printType, eventId: r.value.intentId }));
               markKotNumberPrinted(preReservedKotNumber);
               console.log(`[KOT] Output intent succeeded for KOT #${preReservedKotNumber} — runtime handled printing`);
             }
@@ -5013,8 +5010,8 @@ const CashierDashboard = ({ onLogout }) => {
         const foodEventId = `${requestId}-food`;
         const liquorEventId = `${requestId}-liquor`;
         kotEventIds = [];
-        if (foodEscpos.length > 0) kotEventIds.push(foodEventId);
-        if (liquorEscpos.length > 0) kotEventIds.push(liquorEventId);
+        if (foodEscpos.length > 0) kotEventIds.push({ type: 'KOT', eventId: foodEventId });
+        if (liquorEscpos.length > 0) kotEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
 
         const localPrintPromises = [];
         if (foodEscpos.length > 0) {
@@ -5055,12 +5052,12 @@ const CashierDashboard = ({ onLogout }) => {
           // backend's eventId dedup doesn't suppress re-emission of failed ones.
           const succeededEventIds = [];
           if (foodEscpos.length > 0 && localPrintResults[0]?.status === 'fulfilled' && localPrintResults[0]?.value?.printed) {
-            succeededEventIds.push(foodEventId);
+            succeededEventIds.push({ type: 'KOT', eventId: foodEventId });
           }
           if (liquorEscpos.length > 0) {
             const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
             if (localPrintResults[liquorIdx]?.status === 'fulfilled' && localPrintResults[liquorIdx]?.value?.printed) {
-              succeededEventIds.push(liquorEventId);
+              succeededEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
             }
           }
           kotEventIds = succeededEventIds;
@@ -7396,15 +7393,18 @@ const CashierDashboard = ({ onLogout }) => {
                     Edit Bill
                   </button>
                   {/* Primary source of truth: billPrintedTableIds then socket status */}
+                  {/* Settlement button is gated on !isPrintingBill so it only appears */}
+                  {/* AFTER the bill is actually printed, not during the print call. */}
                   {(() => {
                     const tableKey = selectedTable.isExtra ? selectedTable.id : selectedTable.backendId;
                     // If bill was printed and not yet settled → always show Settlement (ignore stale sync)
-                    if (billPrintedTableIds.has(tableKey)) return true;
+                    // But NOT while printing is in progress — settlement must wait for print confirmation
+                    if (billPrintedTableIds.has(tableKey) && !isPrintingBill) return true;
                     // Settled this session → treat as done
                     if (settledTableIds.has(tableKey)) return false;
-                    // Fall back to socket-driven status
+                    // Fall back to socket-driven status — but suppress during active printing
                     const s = selectedTable.status;
-                    return s === 'Waiting Bill' || s === 'BILLING_REQUESTED';
+                    return !isPrintingBill && (s === 'Waiting Bill' || s === 'BILLING_REQUESTED');
                   })() ? (
                     <button
                       onClick={() => { if (isPrintingBill) return; setShowSettleConfirm(true); }}

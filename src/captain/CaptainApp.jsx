@@ -3207,8 +3207,8 @@ export default function CaptainApp({ onLogout }) {
                 intent: 'PRINT_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: foodIntentId, ok: true }))
-                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false }; })
+              }).then(() => ({ intentId: foodIntentId, ok: true, printType: 'KOT' }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false, printType: 'KOT' }; })
             );
           }
           if (hasLiquorItems) {
@@ -3220,8 +3220,8 @@ export default function CaptainApp({ onLogout }) {
                 intent: 'PRINT_LIQUOR_KOT',
                 payload: { ...kotOrderData, requestId },
                 priority: 'CRITICAL',
-              }).then(() => ({ intentId: liquorIntentId, ok: true }))
-                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false }; })
+              }).then(() => ({ intentId: liquorIntentId, ok: true, printType: 'BAR_KOT' }))
+                .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false, printType: 'BAR_KOT' }; })
             );
           }
           if (intentPromises.length > 0) {
@@ -3230,7 +3230,7 @@ export default function CaptainApp({ onLogout }) {
             if (allOk) {
               intentSucceeded = true;
               localPrinted = true;
-              kotEventIds = intentResults.map(r => r.value?.intentId).filter(Boolean);
+              kotEventIds = intentResults.filter(r => r.status === 'fulfilled' && r.value?.ok).map(r => ({ type: r.value.printType, eventId: r.value.intentId }));
               markKotNumberPrinted(preReservedKotNumber);
               console.log(`[KOT] Output intent succeeded for KOT #${preReservedKotNumber} — runtime handled printing`);
             }
@@ -3251,8 +3251,8 @@ export default function CaptainApp({ onLogout }) {
         const foodEventId = `${requestId}-food`;
         const liquorEventId = `${requestId}-liquor`;
         kotEventIds = [];
-        if (foodEscpos.length > 0) kotEventIds.push(foodEventId);
-        if (liquorEscpos.length > 0) kotEventIds.push(liquorEventId);
+        if (foodEscpos.length > 0) kotEventIds.push({ type: 'KOT', eventId: foodEventId });
+        if (liquorEscpos.length > 0) kotEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
 
         // Bug D: Await local print FIRST, then pass the correct localPrinted flag to the API.
         // This matches the cashier's approach and eliminates dependency on eventId dedup
@@ -3298,12 +3298,12 @@ export default function CaptainApp({ onLogout }) {
           // backend's eventId dedup doesn't suppress re-emission of failed ones.
           const succeededEventIds = [];
           if (foodEscpos.length > 0 && printResults[0]?.status === 'fulfilled' && printResults[0]?.value?.printed) {
-            succeededEventIds.push(foodEventId);
+            succeededEventIds.push({ type: 'KOT', eventId: foodEventId });
           }
           if (liquorEscpos.length > 0) {
             const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
             if (printResults[liquorIdx]?.status === 'fulfilled' && printResults[liquorIdx]?.value?.printed) {
-              succeededEventIds.push(liquorEventId);
+              succeededEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
             }
           }
           kotEventIds = succeededEventIds;
@@ -3427,8 +3427,8 @@ export default function CaptainApp({ onLogout }) {
               const edgeFoodEventId = `${requestId}-food`;
               const edgeLiquorEventId = `${requestId}-liquor`;
               edgeKotEventIds = [];
-              if (edgeFoodEscpos.length > 0) edgeKotEventIds.push(edgeFoodEventId);
-              if (edgeLiquorEscpos.length > 0) edgeKotEventIds.push(edgeLiquorEventId);
+              if (edgeFoodEscpos.length > 0) edgeKotEventIds.push({ type: 'KOT', eventId: edgeFoodEventId });
+              if (edgeLiquorEscpos.length > 0) edgeKotEventIds.push({ type: 'BAR_KOT', eventId: edgeLiquorEventId });
               const edgePrintPromises = [];
               if (edgeFoodEscpos.length > 0) {
                 edgePrintPromises.push(
@@ -3454,12 +3454,12 @@ export default function CaptainApp({ onLogout }) {
                   // Filter edgeKotEventIds to only successful prints
                   const edgeSucceededEventIds = [];
                   if (edgeFoodEscpos.length > 0 && edgePrintResults[0]?.status === 'fulfilled' && edgePrintResults[0]?.value?.printed) {
-                    edgeSucceededEventIds.push(edgeFoodEventId);
+                    edgeSucceededEventIds.push({ type: 'KOT', eventId: edgeFoodEventId });
                   }
                   if (edgeLiquorEscpos.length > 0) {
                     const liquorIdx = edgeFoodEscpos.length > 0 ? 1 : 0;
                     if (edgePrintResults[liquorIdx]?.status === 'fulfilled' && edgePrintResults[liquorIdx]?.value?.printed) {
-                      edgeSucceededEventIds.push(edgeLiquorEventId);
+                      edgeSucceededEventIds.push({ type: 'BAR_KOT', eventId: edgeLiquorEventId });
                     }
                   }
                   edgeKotEventIds = edgeSucceededEventIds;
