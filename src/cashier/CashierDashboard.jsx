@@ -804,6 +804,105 @@ const CashierDashboard = ({ onLogout }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Reconstruct extra tables from server data on reload/reconnect ──────────
+  // When tables are fetched from the edge/cloud, each table now returns ALL active
+  // orders (parent + extra). This effect reconciles the extraTables state with the
+  // server data: adds missing extra tables and removes settled/missing ones.
+  useEffect(() => {
+    if (!activeTables || activeTables.length === 0) return;
+
+    // Collect all active order IDs from server data
+    const allServerOrderIds = new Set();
+    const extraOrdersToReconstruct = [];
+
+    for (const table of activeTables) {
+      const allOrders = table.orders || [];
+      if (allOrders.length <= 1) continue;
+
+      for (const order of allOrders) {
+        allServerOrderIds.add(order.id);
+        if (order.isExtraTable) {
+          extraOrdersToReconstruct.push({ table, order });
+        }
+      }
+    }
+
+    setExtraTables(prev => {
+      // Quick exit: if no extra orders to reconstruct and no existing extra tables to purge,
+      // return prev (same reference) to skip re-render
+      if (extraOrdersToReconstruct.length === 0 && prev.length === 0) return prev;
+
+      // Remove extra tables whose activeOrder.id is no longer active on the server
+      const filtered = prev.filter(et => {
+        if (!et.activeOrder?.id) return true;
+        // Keep if the order is still active on the server, or if it's a local-only
+        // extra table (offline order ID starts with 'extra-' or 'offline-')
+        if (String(et.activeOrder.id).startsWith('extra-') || String(et.activeOrder.id).startsWith('offline-')) return true;
+        return allServerOrderIds.has(et.activeOrder.id);
+      });
+
+      // Add missing extra tables from server data
+      const existingIds = new Set(filtered.map(et => et.id));
+      const existingOrderIds = new Set(filtered.map(et => et.activeOrder?.id).filter(Boolean));
+
+      for (const { table, order } of extraOrdersToReconstruct) {
+        // Skip if we already have this extra table by order ID
+        if (existingOrderIds.has(order.id)) continue;
+
+        const backendId = table.backendId || table.id;
+        const existingCount = filtered.filter(et => et.baseBackendId === backendId).length;
+        const prefix = (table.sectionName || table.section?.name || '').toLowerCase().includes('family') ? 'F' :
+                       (table.sectionName || table.section?.name || '').toLowerCase().includes('parcel') ? 'P' :
+                       (table.sectionName || table.section?.name || '').toLowerCase().includes('gobox') ? 'GB' :
+                       (table.sectionName || table.section?.name || '').toLowerCase().includes('bar') ? 'B' :
+                       (table.sectionName || table.section?.name || '').toLowerCase().includes('ac') ? 'AC' :
+                       'V';
+        let label = existingCount === 0
+          ? `${prefix}${table.number}-X`
+          : `${prefix}${table.number}-X${existingCount + 1}`;
+
+        // Layer 12.2: Handle label collision — two terminals may have independently
+        // created the same label (e.g., both created V5-X). Increment suffix until unique.
+        if (existingIds.has(label)) {
+          let suffix = existingCount + 2;
+          while (existingIds.has(`${prefix}${table.number}-X${suffix}`)) {
+            suffix++;
+          }
+          label = `${prefix}${table.number}-X${suffix}`;
+        }
+
+        filtered.push({
+          id: label,
+          number: label,
+          backendId,
+          baseBackendId: backendId,
+          isExtra: true,
+          status: order.status || 'Occupied',
+          workflowStatus: order.status || 'Occupied',
+          activeOrder: {
+            id: order.id,
+            items: order.items || [],
+            status: order.status,
+            revision: order.revision,
+            updatedAt: order.updatedAt,
+          },
+          section: table.section,
+          sectionName: table.sectionName || table.section?.name,
+          capacity: table.capacity,
+        });
+        existingIds.add(label);
+        existingOrderIds.add(order.id);
+      }
+
+      // No-op guard: if nothing was purged and nothing was added, return prev
+      if (filtered.length === prev.length && extraOrdersToReconstruct.every(({ order }) => prev.some(et => et.activeOrder?.id === order.id))) {
+        return prev;
+      }
+
+      return filtered;
+    });
+  }, [activeTables]);
+
   // Keep selectedTable in sync with extraTables — extra table state (activeOrder.id, items, status)
   // is updated via setExtraTables (e.g. after createOrder resolves), but selectedTable is a separate
   // snapshot. Without this sync, handleFinalBill can't find the real orderId and modal shows stale data.
@@ -3310,7 +3409,9 @@ const CashierDashboard = ({ onLogout }) => {
 
   // ── Venue extra table helpers (shared between bar and restaurant sections) ──
   const handleAddVenueExtraTable = (parentTable) => {
-    const existingCount = extraTables.filter(et => et.baseBackendId === parentTable.backendId).length;
+    const localCount = extraTables.filter(et => et.baseBackendId === parentTable.backendId).length;
+    const serverExtraCount = (parentTable.orders || []).filter(o => o.isExtraTable).length;
+    const existingCount = Math.max(localCount, serverExtraCount);
     const prefix = (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('family') ? 'F' :
                    (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('parcel') ? 'P' :
                    (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('gobox') ? 'GB' :
@@ -4437,6 +4538,8 @@ const CashierDashboard = ({ onLogout }) => {
         editQuantities,
         addedItems: billAdditions,
         editedBy: 'Cashier',
+        isExtraTable: !!selectedTable.isExtra,
+        tableNumber: selectedTable.isExtra ? selectedTable.number : null,
       });
       if (updatedOrder?.offline) {
         // Offline: don't merge server fields (they don't exist). Keep local state as-is.
@@ -8834,7 +8937,8 @@ const CashierDashboard = ({ onLogout }) => {
                 batchItems,
                 'Cashier',
                 selectedTable.number || selectedTable.id,
-                batchRequestId
+                batchRequestId,
+                !!selectedTable.isExtra
               );
               clearTimeout(cancelTimeout);
               if (cancelResult?.offline) {

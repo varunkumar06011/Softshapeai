@@ -367,6 +367,10 @@ async function replayActionsToEdge(actions) {
         platform: body.platform || 'DINE_IN',
         orderByRole: body.orderByRole || undefined,
         preReservedKotNumber: body.preReservedKotNumber ?? null,
+        isExtraTable: !!body.isExtraTable,
+        tableNumber: body.tableNumber || undefined,
+        localPrinted: body.localPrinted || false,
+        kotEventIds: body.kotEventIds || null,
       };
 
       // For update-items, include orderId (resolve from offline mapping if needed)

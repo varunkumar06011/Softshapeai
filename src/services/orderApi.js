@@ -123,6 +123,9 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   // Edge server writes to local SQLite, prints KOT, enqueues sync — all local, ~15-40ms.
   // For edge-local (PIN) auth, go straight to edgeFetch bypassing the health check.
   const useEdgeDirect = isEdgeLocalAuth();
+  if (import.meta.env.DEV && isExtraTable && !tableNumber) {
+    console.warn('[orderApi] createOrder: isExtraTable=true but tableNumber is empty — KOT/bill printing will use parent table number');
+  }
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const edgeBody = {
@@ -135,6 +138,8 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         preReservedKotNumber: preReservedKotNumber ?? null,
         localPrinted,
         kotEventIds,
+        isExtraTable: !!isExtraTable,
+        tableNumber: tableNumber || undefined,
       };
       const result = await edgeFetch('/api/edge/order', {
         method: 'POST',
@@ -357,6 +362,9 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   // Edge server needs the actual tableId to find/create the order.
   // If tableId is not provided, skip edge path — can't route without it.
   const useEdgeDirect = isEdgeLocalAuth();
+  if (import.meta.env.DEV && isExtraTable && !tableNumber) {
+    console.warn('[orderApi] updateOrderItems: isExtraTable=true but tableNumber is empty — KOT/bill printing will use parent table number');
+  }
   if (tableId && (useEdgeDirect || await isEdgeAvailable())) {
     try {
       const edgeBody = {
@@ -369,6 +377,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         preReservedKotNumber: preReservedKotNumber ?? null,
         localPrinted,
         kotEventIds,
+        isExtraTable: !!isExtraTable,
+        tableNumber: tableNumber || undefined,
       };
       const result = await edgeFetch('/api/edge/order/update', {
         method: 'POST',
@@ -590,7 +600,7 @@ export async function updateOrderStatus(orderId, status) {
   }
 }
 
-export async function requestBilling(orderId) {
+export async function requestBilling(orderId, { isExtraTable = false } = {}) {
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
@@ -598,7 +608,7 @@ export async function requestBilling(orderId) {
       const result = await edgeFetch('/api/edge/order/request-billing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
+        body: JSON.stringify({ orderId, isExtraTable: !!isExtraTable }),
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
@@ -1008,7 +1018,7 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
   );
 }
 
-export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null, localPrinted = false, eventId = null) {
+export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null, localPrinted = false, eventId = null, isExtraTable = false) {
   const cancelRequestId = requestId || generateRequestId();
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
@@ -1018,7 +1028,7 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       const result = await edgeFetch('/api/edge/order/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted, eventId }),
+        body: JSON.stringify({ orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, localPrinted, eventId, isExtraTable: !!isExtraTable }),
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
@@ -1176,7 +1186,7 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
   }
 }
 
-export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier' }) {
+export async function editBill(orderId, { removedItemIds = [], editQuantities = {}, addedItems = [], editedBy = 'Cashier', isExtraTable = false, tableNumber = null } = {}) {
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
@@ -1184,7 +1194,7 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
       const result = await edgeFetch('/api/edge/order/edit-bill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, removedItemIds, editQuantities, addedItems, editedBy }),
+        body: JSON.stringify({ orderId, removedItemIds, editQuantities, addedItems, editedBy, isExtraTable: !!isExtraTable, tableNumber }),
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
@@ -1509,7 +1519,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
 
 export { generateRequestId };
 
-export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null) {
+export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null, isExtraTable = false) {
   // items: Array<{ orderItemId: string, cancelQuantity: number }>
   const cancelRequestId = requestId || generateRequestId();
 
@@ -1520,7 +1530,7 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
       const result = await edgeFetch('/api/edge/order/cancel-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, items, cancelledBy, tableNumber, requestId: cancelRequestId }),
+        body: JSON.stringify({ orderId, items, cancelledBy, tableNumber, requestId: cancelRequestId, isExtraTable: !!isExtraTable }),
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
