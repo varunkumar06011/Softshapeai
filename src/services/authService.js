@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, setStoredEdgeRuntimeToken, getEdgeConnectivityState, invalidateEdgeHealthCache } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, setStoredEdgeApiKey, getStoredEdgeRuntimeToken, setStoredEdgeRuntimeToken, getEdgeConnectivityState, invalidateEdgeHealthCache } from './edgeHealth.js';
 import secureStorage from '../utils/secureStorage.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
@@ -160,6 +160,16 @@ export const authService = {
         setStoredEdgeRuntimeToken(data.runtimeToken);
       }
 
+      // Save the edge API key returned by the edge server. Captain devices
+      // don't do cloud login, so /api/edge/key (requires JWT) is unreachable.
+      // The PIN login response now includes edgeApiKey so the phone gets both
+      // credentials in one call. Without this, all subsequent edgeFetch() calls
+      // get 401 "Missing or invalid edge API key".
+      const effectiveApiKey = data.edgeApiKey || edgeApiKey;
+      if (data.edgeApiKey) {
+        setStoredEdgeApiKey(data.edgeApiKey);
+      }
+
       // Store a local session marker — not a cloud JWT, but enough for LAN API calls
       const localToken = `edge-local-${Date.now()}`;
       secureStorage.setItem('ss_token', localToken);
@@ -173,8 +183,8 @@ export const authService = {
       try {
         const outletRes = await fetch(`${EDGE_URL}/api/edge/outlet`, {
           headers: {
-            ...(edgeApiKey ? { 'X-Edge-Key': edgeApiKey } : {}),
-            ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
+            ...(effectiveApiKey ? { 'X-Edge-Key': effectiveApiKey } : {}),
+            ...(data.runtimeToken ? { 'Authorization': `Bearer ${data.runtimeToken}` } : {}),
           },
         });
         if (outletRes.ok) {

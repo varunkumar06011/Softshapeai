@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, LogOut, Cloud } from 'lucide-react';
+import { Bell, LogOut, Cloud, Wifi, AlertTriangle, WifiOff, Loader2 } from 'lucide-react';
 
 export default function TopNavbar({
   restaurant,
@@ -9,7 +9,41 @@ export default function TopNavbar({
   onEdgeSettingsClick,
   edgeStatus,
 }) {
-  const edgeLabel = 'Cloud';
+  const checking = edgeStatus?.checking;
+  const available = edgeStatus?.available;
+  const connState = edgeStatus?.connState;
+
+  let edgeLabel = 'Cloud';
+  let Icon = Cloud;
+  let bg = '#EFF6FF';
+  let color = '#2563EB';
+  let border = '#BFDBFE';
+
+  if (checking) {
+    edgeLabel = 'Checking';
+    Icon = Loader2;
+  } else if (available) {
+    edgeLabel = 'Edge';
+    Icon = Wifi;
+    bg = '#ECFDF5';
+    color = '#059669';
+    border = '#A7F3D0';
+  } else if (connState === 'edge_not_ready') {
+    edgeLabel = 'Setup';
+    Icon = AlertTriangle;
+    bg = '#FFFBEB';
+    color = '#D97706';
+    border = '#FDE68A';
+  } else if (connState === 'cloud_reachable') {
+    edgeLabel = 'Cloud';
+    Icon = Cloud;
+  } else {
+    edgeLabel = 'Offline';
+    Icon = WifiOff;
+    bg = '#FEF2F2';
+    color = '#DC2626';
+    border = '#FECACA';
+  }
 
   return (
     <header
@@ -47,15 +81,15 @@ export default function TopNavbar({
       <div className="flex items-center gap-0.5 sm:gap-1.5 md:gap-2 pr-1 sm:pr-4 md:pr-6 shrink-0">
         <button
           onClick={onEdgeSettingsClick}
-          className="flex items-center gap-0.5 px-1.5 py-1 sm:px-3 sm:py-2 rounded-xl border text-[9px] sm:text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 whitespace-nowrap"
+          className={`flex items-center gap-0.5 px-1.5 py-1 sm:px-3 sm:py-2 rounded-xl border text-[9px] sm:text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 whitespace-nowrap ${checking ? 'animate-pulse' : ''}`}
           style={{
-            background: '#EFF6FF',
-            color: '#2563EB',
-            borderColor: '#BFDBFE',
+            background: bg,
+            color,
+            borderColor: border,
           }}
           aria-label={`Connection status: ${edgeLabel}`}
         >
-          <Cloud size={12} className="shrink-0" />
+          <Icon size={12} className={`shrink-0 ${checking ? 'animate-spin' : ''}`} />
           <span className="text-[9px] sm:text-xs">{edgeLabel}</span>
         </button>
 

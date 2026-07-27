@@ -12,6 +12,7 @@ import secureStorage from "../utils/secureStorage";
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_RUNTIME_TOKEN_STORAGE_KEY = "softshape_edge_runtime_token";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
+const EDGE_DISCOVERED_URL_STORAGE_KEY = "softshape_edge_url_discovered";
 
 const DEFAULT_EDGE_URL = 'http://127.0.0.1:3101';
 const EDGE_CHECK_TIMEOUT_MS = 3000;
@@ -39,6 +40,10 @@ export function getEdgeUrl() {
   try {
     const stored = localStorage.getItem(EDGE_URL_STORAGE_KEY);
     if (stored) return stored;
+  } catch { /* ignore */ }
+  try {
+    const discovered = localStorage.getItem(EDGE_DISCOVERED_URL_STORAGE_KEY);
+    if (discovered) return discovered;
   } catch { /* ignore */ }
   if (_discoveredEdgeUrl) return _discoveredEdgeUrl;
   return DEFAULT_EDGE_URL;
@@ -124,6 +129,8 @@ export function invalidateEdgeHealthCache() {
   _discoveryLastFailed = 0;
   _connectivityState = 'checking';
   _connectivityLastCheck = 0;
+  // Clear persisted discovered URL so getEdgeUrl() doesn't return a stale one.
+  try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
   // Intentionally does NOT clear _discoveryFailReason — it's a diagnostic,
   // not a health cache. See comment at the variable declaration.
 }
@@ -216,9 +223,13 @@ export async function discoverEdgeUrlFromBackend() {
     const data = await res.json();
     if (data.lanIp) {
       const edgeUrl = `http://${data.lanIp}:3101`;
-      // Don't persist to localStorage — keep it in-memory so it refreshes
-      // on each login. But set it as the discovered URL so getEdgeUrl() returns it.
+      // Persist to localStorage so the URL survives page reloads (e.g. after
+      // logout triggers window.location.href = '/captain'). Without this,
+      // getEdgeUrl() falls back to DEFAULT_EDGE_URL (127.0.0.1:3101) which is
+      // the phone itself, not the cashier PC — causing "edge unreachable".
+      // The health check still verifies reachability on next use.
       _discoveredEdgeUrl = edgeUrl;
+      try { localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, edgeUrl); } catch { /* ignore */ }
       _edgeLastCheck = 0; // force re-check
       console.log('[edgeHealth] Discovered edge server at', edgeUrl, 'from backend');
       return edgeUrl;
@@ -406,6 +417,8 @@ export async function discoverEdgeOnLAN({ force = false } = {}) {
       for (const r of results) {
         if (r.status === 'fulfilled' && r.value) {
           _discoveredEdgeUrl = r.value;
+          // Persist so the URL survives page reloads (e.g. after logout).
+          try { localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, r.value); } catch { /* ignore */ }
           _discoveryFailReason = null;
           console.log('[Edge] Discovered edge server on LAN:', r.value);
           return r.value;
@@ -472,9 +485,11 @@ export async function isEdgeAvailable() {
       return _edgeAvailable;
     }
 
-    // If using a stale discovered URL, reset it so discovery can find the new one
-    if (edgeUrl !== DEFAULT_EDGE_URL && _discoveredEdgeUrl === edgeUrl) {
+    // If using a stale discovered URL, reset it so discovery can find the new one.
+    // Clear both in-memory and localStorage so getEdgeUrl() doesn't return it.
+    if (edgeUrl !== DEFAULT_EDGE_URL) {
       _discoveredEdgeUrl = null;
+      try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
     }
 
     // Try backend discovery first (cashier's LAN IP from print agent heartbeat)

@@ -17,10 +17,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Users, Download, Cloud } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Users, Download, Cloud, Wifi } from 'lucide-react';
 import { authService } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
 import { reconnectSocket } from '../../hooks/useSocket';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable } from '../../services/edgeHealth';
 
 // Resolves the backend base URL from Vite env vars
 function getApiBase() {
@@ -49,6 +50,15 @@ const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable, edgeRe
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Captain edge URL manual input — shown when edge is not auto-discovered
+  const [edgeUrlInput, setEdgeUrlInput] = useState(() => {
+    const url = getEdgeUrl();
+    // Don't pre-fill 127.0.0.1 — that's the phone itself, not useful
+    if (url && !url.includes('127.0.0.1')) return url;
+    return '';
+  });
+  const [edgeUrlSaved, setEdgeUrlSaved] = useState(false);
 
   // Multi-outlet picker state
   const [accessibleOutlets, setAccessibleOutlets] = useState([]);
@@ -267,6 +277,49 @@ const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable, edgeRe
                   >
                     <Users size={20} /> {loading ? 'Loading…' : 'Find Staff'}
                   </button>
+
+                  {role === 'captain' && !edgeAvailable && (
+                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1 flex items-center gap-1">
+                        <Wifi size={12} /> Edge Server URL (Cashier PC LAN IP)
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          className="flex-1 h-12 rounded-2xl border-2 border-gray-50 bg-gray-50 px-4 text-xs font-bold outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                          type="text"
+                          value={edgeUrlInput}
+                          onChange={(e) => { setEdgeUrlInput(e.target.value); setEdgeUrlSaved(false); }}
+                          placeholder="http://192.168.1.50:3101"
+                        />
+                        <button
+                          onClick={async () => {
+                            const url = edgeUrlInput.trim();
+                            if (!url) { setError('Enter the edge server URL'); return; }
+                            setEdgeUrl(url);
+                            const ok = await isEdgeAvailable();
+                            if (ok) {
+                              setEdgeUrlSaved(true);
+                              setError('');
+                            } else {
+                              setError('Could not reach edge server at that URL. Check the IP and make sure the cashier PC is on the same WiFi.');
+                            }
+                          }}
+                          className="px-4 h-12 rounded-2xl bg-gray-900 text-white text-xs font-black uppercase tracking-wider hover:bg-gray-700 transition-all"
+                        >
+                          Connect
+                        </button>
+                      </div>
+                      {edgeUrlSaved && (
+                        <p className="text-[10px] font-bold text-green-600 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          Edge server connected! You can now log in with PIN.
+                        </p>
+                      )}
+                      <p className="text-[10px] text-gray-400 font-bold">
+                        Ask the cashier for their PC's IP address (shown in Edge Settings on the cashier app).
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -445,6 +498,15 @@ const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable, edgeRe
                 Edge server connected
               </span>
             )}
+          </div>
+        )}
+
+        {role === 'captain' && !edgeAvailable && (
+          <div className="mt-6 flex flex-col items-center gap-2">
+            <span className="flex items-center gap-1 text-[10px] font-bold text-gray-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+              Edge server not connected — PIN login requires edge
+            </span>
           </div>
         )}
 

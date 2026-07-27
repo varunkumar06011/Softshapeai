@@ -64,7 +64,7 @@ import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 
 
@@ -806,6 +806,15 @@ export default function CaptainApp({ onLogout }) {
 
   // ── All useState/useRef declarations FIRST (before any useMemo that references them) ──
 
+  // Detect if LoginScreen already completed edge PIN login. LoginScreen calls
+  // authService.captainLogin() which stores edge-local token + runtime token.
+  // But it does NOT set captain_auth_v2 / active_captain (CaptainApp-specific).
+  // Without this bridge, the user sees a second PIN screen inside CaptainApp.
+  // Strict check: edge-local token + runtime token must both exist.
+  // This is NOT the old broken bypass (user?.role === 'CAPTAIN' alone) which
+  // accepted cloud JWTs that have no runtime token.
+  const loginScreenDidEdgePinLogin = isEdgeLocalAuth() && !!getStoredEdgeRuntimeToken();
+
   const [currentCaptain, setCurrentCaptain] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('active_captain'));
     if (saved) {
@@ -815,14 +824,17 @@ export default function CaptainApp({ onLogout }) {
         localStorage.removeItem(getTenantScopedKey('active_captain'));
       }
     }
-    // Respect main auth context when captain logged in via shared LoginScreen
-    if (user?.role === 'CAPTAIN' && user?.name) {
-      return {
+    // LoginScreen already did edge PIN login — sync from AuthContext user.
+    if (loginScreenDidEdgePinLogin && user?.role === 'CAPTAIN' && user?.name) {
+      const enriched = {
         id: user.id,
         name: user.name,
         initials: user.name.split(' ').map(n => n[0]).join('').toUpperCase(),
         color: 'bg-[#EFF6FF] text-[#1D4ED8]',
       };
+      localStorage.setItem(getTenantScopedKey('active_captain'), JSON.stringify(enriched));
+      localStorage.setItem(getTenantScopedKey('captain_auth_v2'), 'true');
+      return enriched;
     }
     return null;
   });
@@ -831,8 +843,8 @@ export default function CaptainApp({ onLogout }) {
     const auth = localStorage.getItem(getTenantScopedKey('captain_auth_v2')) === 'true';
     const hasCaptain = !!localStorage.getItem(getTenantScopedKey('active_captain'));
     if (auth && hasCaptain) return false;
-    // Also respect main auth context (captain logged in via shared LoginScreen PIN flow)
-    if (user?.role === 'CAPTAIN') return false;
+    // LoginScreen already did edge PIN login — don't show second PIN screen.
+    if (loginScreenDidEdgePinLogin) return false;
     return true;
   });
 
