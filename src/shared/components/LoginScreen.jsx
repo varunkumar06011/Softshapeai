@@ -77,40 +77,6 @@ const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable, edgeRe
     if (code) setSlug(code);
   }, [isCashier, role]);
 
-  // Edge-first login: when the terminal is linked to an edge server, skip the
-  // restaurant-code step and load the crew list directly from the local edge
-  // DB. This is the Petpooja-style single-login flow — the terminal already
-  // knows which restaurant it belongs to, so the cashier just picks a profile
-  // and enters their PIN. Falls through to the slug step if edge is down or
-  // returns no staff.
-  useEffect(() => {
-    if (!edgeAvailable) return;
-    if (!isCashier && role !== 'captain') return;
-    if (step !== 'slug') return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const data = await authService.fetchCrewEdge();
-        if (cancelled) return;
-        const staff = isCashier ? data.cashiers : role === 'manager' ? data.managers : data.captains;
-        if (!staff || staff.length === 0) {
-          const roleLabel = isCashier ? 'cashiers' : role === 'manager' ? 'managers' : 'captains';
-          throw new Error(`No ${roleLabel} found on this terminal.`);
-        }
-        setStaffList(staff);
-        setRestaurantId(data.outletId || edgeRestaurantId || null);
-        setStep('staff');
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load staff from edge server');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [edgeAvailable, isCashier, role, step, edgeRestaurantId]);
-
   // Admin email+password login
   const handleAdminLogin = async () => {
     if (!email.trim() || !password.trim()) {

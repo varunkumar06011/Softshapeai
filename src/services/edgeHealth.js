@@ -116,6 +116,8 @@ export async function ensureEdgeApiKey() {
 export function resetEdgeCache() {
   _edgeLastCheck = 0;
   _edgeAvailable = false;
+  _connectivityState = 'checking';
+  _connectivityLastCheck = 0;
 }
 
 /**
@@ -407,7 +409,14 @@ export async function discoverEdgeOnLAN({ force = false } = {}) {
         try {
           const res = await fetch(`${url}/health`, { signal: controller.signal });
           clearTimeout(timeoutId);
-          if (res.ok) return url;
+          if (!res.ok) return null;
+          const health = await res.json().catch(() => ({}));
+          // Reject non-onboarded edge servers — a print agent installed but
+          // never linked to a restaurant responds on /health with
+          // onboarded=false. Returning it poisons PIN login with 401
+          // "Restaurant is not linked locally" (Bug 2).
+          if (health.onboarded === false) return null;
+          return url;
         } catch {
           clearTimeout(timeoutId);
         }
@@ -457,16 +466,19 @@ export async function isEdgeAvailable() {
     const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (res.ok) {
-      // The Runtime returns isOperational=true when runtimeState === READY.
-      // For new restaurants, isOperational is true but onboarded is false —
-      // the edge server is running and ready to accept registration, just
-      // not yet linked to a restaurant. We must NOT block on onboarded here,
-      // or the EdgeSetupScreen can never show the registration form
-      // (chicken-and-egg: can't onboard if edge isn't "available").
-      // Callers that need onboarding (orders, PIN login) check isLocalReady()
-      // or onboarded separately.
+      // isEdgeAvailable() returns true when isOperational is true, even if
+      // not yet onboarded — EdgeSetupScreen needs this to show the registration
+      // form (chicken-and-egg). Callers that need onboarding (orders, PIN
+      // login) check isLocalReady() or getEdgeConnectivityState() separately.
       const health = await res.json().catch(() => ({}));
       _edgeAvailable = health.isOperational === true;
+      // Sync connectivity state so the UI and login gate agree. Without this,
+      // isEdgeAvailable() can say "connected" while getEdgeConnectivityState()
+      // says "unreachable" (cache desync — Bug 3).
+      _connectivityState = (_edgeAvailable && health.sessionValid && health.onboarded !== false)
+        ? 'edge_reachable'
+        : 'edge_not_ready';
+      _connectivityLastCheck = now;
     } else {
       _edgeAvailable = false;
     }
