@@ -132,6 +132,7 @@ export const getAllOrderItems = (table) => {
         removedFromBill: i.removedFromBill || i.s === 'Cancelled' || i.status === 'CANCELLED' || false,
         menuType: i.menuType || null,
         gstEnabled: i.gstEnabled ?? null,
+        menuItemId: i.menuItemId || undefined,
         _fromKot: true,
       })))
     : [];
@@ -150,6 +151,7 @@ export const getAllOrderItems = (table) => {
       editedQuantity: Number(item.editedQuantity ?? 0),
       menuType: item.menuItem?.menuType || item.menuType || null,
       gstEnabled: item.gstEnabled ?? item.menuItem?.gstEnabled ?? null,
+      menuItemId: item.menuItemId || undefined,
     }));
 
     // DB activeOrder.items is the source of truth — server now filters removedFromBill

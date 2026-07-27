@@ -4057,7 +4057,10 @@ const CashierDashboard = ({ onLogout }) => {
                   quantity: Number(i.quantity ?? i.q ?? 1),
                   price: Number(i.price ?? i.p ?? 0),
                   menuType: i.menuType || 'FOOD',
+                  menuItemId: i.menuItemId || i.id || undefined,
+                  gstEnabled: i.gstEnabled ?? true,
                 })),
+              serviceChargeAmount: Number(activeOrderCalc.serviceChargeAmount ?? 0),
             }
           );
 
@@ -4141,7 +4144,7 @@ const CashierDashboard = ({ onLogout }) => {
             itemCount: getBillableItems(selectedTable).filter(i => Number(i.quantity ?? i.q ?? 1) > 0).length,
             items: getBillableItems(selectedTable)
               .filter(i => Number(i.quantity ?? i.q ?? 1) > 0)
-              .map(i => ({ name: i.name ?? i.n, quantity: Number(i.quantity ?? i.q ?? 1), price: Number(i.price ?? i.p ?? 0) })),
+              .map(i => ({ name: i.name ?? i.n, quantity: Number(i.quantity ?? i.q ?? 1), price: Number(i.price ?? i.p ?? 0), menuItemId: i.menuItemId || i.id || undefined, gstEnabled: i.gstEnabled ?? true })),
             captainId: 'CASHIER',
             captainName: 'Head Cashier',
             method,
@@ -4252,6 +4255,8 @@ const CashierDashboard = ({ onLogout }) => {
               quantity: Number(i.quantity ?? i.q ?? 1),
               price: Number(i.price ?? i.p ?? 0),
               menuType: i.menuType || 'FOOD',
+              menuItemId: i.menuItemId || i.id || undefined,
+              gstEnabled: i.gstEnabled ?? true,
             }));
 
           const walkinSectionTag = (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel';
