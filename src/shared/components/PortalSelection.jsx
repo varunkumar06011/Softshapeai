@@ -75,13 +75,21 @@ const PortalSelection = ({ onSelect }) => {
             alt="Softshape"
             className="h-12 w-auto rounded-lg shadow-lg shadow-black/20"
           />
-          <Link
-            to={isDesktopApp ? '/onboarding' : '/onboarding/legacy'}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#E53935] px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-[#B71C1C]"
-          >
-            Get Started
-            <ArrowRight size={16} />
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/archives"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/5"
+            >
+              Archives
+            </Link>
+            <Link
+              to={isDesktopApp ? '/onboarding' : '/onboarding/legacy'}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#E53935] px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-[#B71C1C]"
+            >
+              Get Started
+              <ArrowRight size={16} />
+            </Link>
+          </div>
         </nav>
 
         {/* Hero content */}
@@ -347,6 +355,12 @@ const PortalSelection = ({ onSelect }) => {
             <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-gray-500">Powered by Vtech</p>
           </div>
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-8">
+            <Link
+              to="/archives"
+              className="text-sm font-semibold text-gray-600 hover:text-[#E53935] transition-colors"
+            >
+              Archives
+            </Link>
             <Link
               to={isDesktopApp ? '/onboarding' : '/onboarding/legacy'}
               className="text-sm font-semibold text-[#E53935] hover:text-[#B71C1C] transition-colors"

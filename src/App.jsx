@@ -39,6 +39,7 @@ import SyncStatusIndicator from "./shared/components/SyncStatusIndicator";
 import AppUpdateBanner from "./shared/components/AppUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import ArchivesPage from "./pages/ArchivesPage";
 const TableQRCodes = lazy(() => import("./admin/TableQRCodes"));
 const CaptainReportCard = lazy(() => import("./admin/CaptainReportCard"));
 const CaptainsGroupReport = lazy(() => import("./admin/CaptainsGroupReport"));
@@ -295,6 +296,7 @@ function AnimatedRoutes() {
         <Route path="/onboarding" element={<AnimatedPage><QuickOnboarding /></AnimatedPage>} />
         <Route path="/onboarding/legacy" element={<AnimatedPage><OnboardingWizard /></AnimatedPage>} />
         <Route path="/edge-setup" element={<AnimatedPage><EdgeSetupScreen /></AnimatedPage>} />
+        <Route path="/archives" element={<AnimatedPage><ArchivesPage /></AnimatedPage>} />
         <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
         <Route path="/reset-password" element={<AnimatedPage><ResetPasswordPage /></AnimatedPage>} />
         <Route path="/admin" element={<AnimatedPage><AdminLoginWrapper /></AnimatedPage>} />
