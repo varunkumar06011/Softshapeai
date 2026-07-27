@@ -94,6 +94,7 @@ describe('useSettlementGuards', () => {
   });
 
   it('clears guards via the writer when all pending actions are synced', async () => {
+    vi.useFakeTimers();
     let resolveLoad;
     mockLoadSettlementGuards.mockImplementation(() => new Promise(resolve => { resolveLoad = resolve; }));
 
@@ -104,13 +105,19 @@ describe('useSettlementGuards', () => {
     });
     expect(result.current.settledOrderIds.has('order-1')).toBe(true);
 
+    const now = Date.now();
     act(() => {
-      rerender({ hasPending: false, lastSyncAt: Date.now() });
+      rerender({ hasPending: false, lastSyncAt: now });
     });
 
-    await waitFor(() => expect(mockClearSettlementGuards).toHaveBeenCalled());
-    await waitFor(() => expect(result.current.settledOrderIds.size).toBe(0));
-    await waitFor(() => expect(result.current.settledTableIds.size).toBe(0));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+
+    expect(mockClearSettlementGuards).toHaveBeenCalled();
+    expect(result.current.settledOrderIds.size).toBe(0);
+    expect(result.current.settledTableIds.size).toBe(0);
+    vi.useRealTimers();
     unmount();
   });
 });
