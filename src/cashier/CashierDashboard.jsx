@@ -39,7 +39,7 @@ import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createO
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { setLocalPrinterMapping } from '../utils/offlineDB';
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken } from '../services/edgeHealth';
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, resetEdgeCache } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
@@ -2898,6 +2898,7 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       // Edge-only reprint: the edge server has the order in SQLite and rebuilds
       // ESC/POS from the stored record. No cloud path needed.
+      resetEdgeCache(); // invalidate stale 30s cache before reprint check
       try {
         const edgeResult = await edgeFetch('/api/edge/order/print-bill', {
           method: 'POST',
@@ -3732,6 +3733,7 @@ const CashierDashboard = ({ onLogout }) => {
         // Output Intent + local print and let printBillEdge handle it.
         let localPrinted = false;
         const reprintBillEventId = `reprint-${orderId}-${Date.now()}`;
+        resetEdgeCache(); // invalidate stale 30s cache before reprint check
         let edgeReachableForReprint = isEdgeLocalAuth();
         if (!edgeReachableForReprint) {
           try { edgeReachableForReprint = await isEdgeAvailable(); } catch { edgeReachableForReprint = false; }

@@ -23,8 +23,12 @@ export async function sendOutputIntent(intent) {
         body: JSON.stringify(intent),
       });
       if (result && result.jobs) {
-        const allOk = result.jobs.every((j) => j.ok);
-        return { ok: allOk, jobs: result.jobs };
+        const allOk = result.jobs.every((j) => j.ok === true);
+        const anyPending = result.jobs.some((j) => j.ok === null || j.pending);
+        const anyFailed = result.jobs.some((j) => j.ok === false);
+        if (allOk) return { ok: true, jobs: result.jobs };
+        if (anyPending && !anyFailed) return { ok: true, pending: true, jobs: result.jobs };
+        return { ok: false, jobs: result.jobs };
       }
       return { ok: true };
     } catch (err) {

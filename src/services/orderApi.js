@@ -36,7 +36,7 @@ import {
   removePendingAction,
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth } from "./edgeHealth.js";
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, resetEdgeCache } from "./edgeHealth.js";
 
 // Generate a unique request ID for idempotency tracking
 function generateRequestId() {
@@ -159,7 +159,16 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
       // Propagate business-logic errors (409/404/400) so the caller can handle
       // them (e.g. retry as update on 409). Only network errors (no statusCode)
       // should queue offline / fall through to cloud.
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] createOrder: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         // Edge-local auth: queue offline instead of cloud fallback (cloud will reject fake token)
         console.warn('[Edge] createOrder edge failed, queuing offline:', edgeErr.message);
@@ -398,7 +407,16 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
       // Propagate business-logic errors (409/404/400) so the caller can handle
       // them. Only network errors (no statusCode) should queue offline / fall
       // through to cloud.
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] updateOrderItems: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         // Edge-local auth: queue offline instead of cloud fallback
         console.warn('[Edge] updateOrderItems edge failed, queuing offline:', edgeErr.message);
@@ -536,7 +554,16 @@ export async function updateOrderStatus(orderId, status) {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] updateOrderStatus: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] updateOrderStatus edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -612,7 +639,16 @@ export async function requestBilling(orderId, { isExtraTable = false } = {}) {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] requestBilling: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] requestBilling edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -690,7 +726,16 @@ export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
       });
       if (result && result.success) return result.order || result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] markOrderPaid: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] markOrderPaid edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -895,7 +940,16 @@ export async function saveTransaction({
       });
       if (result && result.success) return { id: result.transaction.id, transaction: result.transaction };
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] saveTransaction: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] saveTransaction edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1032,7 +1086,16 @@ export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNu
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] cancelOrderItem: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] cancelOrderItem edge failed, queuing offline:', edgeErr.message);
         await addPendingAction({
@@ -1120,7 +1183,16 @@ export async function swapTable(sourceTableBackendId, targetTableBackendId, swap
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] swapTable: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] swapTable edge failed, queuing offline:', edgeErr.message);
         await addPendingAction({
@@ -1198,7 +1270,16 @@ export async function editBill(orderId, { removedItemIds = [], editQuantities = 
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] editBill: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] editBill edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1281,7 +1362,16 @@ export async function transferItems(sourceTableBackendId, targetTableBackendId, 
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] transferItems: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] transferItems edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1400,7 +1490,16 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] confirmPayment: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] confirmPayment edge failed, queuing offline:', edgeErr.message);
         const requestId = generateRequestId();
@@ -1474,6 +1573,7 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   if (localPrinted) qs.set('localPrinted', 'true');
 
   // ── Edge server first (local SQLite, assigns real bill number + prints) ──────
+  resetEdgeCache(); // invalidate stale 30s cache before reprint check
   const useEdgeDirect = isEdgeLocalAuth();
   if (useEdgeDirect || await isEdgeAvailable()) {
     try {
@@ -1488,11 +1588,12 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       }
       return { success: false, error: edgeResult?.error || 'Print bill failed on edge', offline: false, order: { id: orderId } };
     } catch (edgeErr) {
-      if (edgeErr?.status) {
+      if (edgeErr?.status && [400, 409].includes(edgeErr.status)) {
         console.warn('[Edge] printBill edge rejected:', edgeErr.status, edgeErr.message);
         return { success: false, error: edgeErr.message, offline: false, order: { id: orderId } };
       }
-      console.warn('[Edge] printBill edge unreachable:', edgeErr.message);
+      // 404/500 → fall through to cloud fallback
+      console.warn('[Edge] printBill edge error, falling through to cloud:', edgeErr.message);
     }
   }
 
@@ -1534,7 +1635,16 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
       });
       if (result && result.success) return result;
     } catch (edgeErr) {
-      if (edgeErr?.statusCode) throw edgeErr;
+      if (edgeErr?.statusCode === 401) {
+        const msg = (edgeErr.message || '').toLowerCase();
+        if (msg.includes('not linked locally')) {
+          console.warn('[Edge] cancelOrderItems: edge not onboarded, queuing offline');
+        } else {
+          throw edgeErr;
+        }
+      } else if (edgeErr?.statusCode) {
+        throw edgeErr;
+      }
       if (useEdgeDirect) {
         console.warn('[Edge] cancelOrderItems edge failed, queuing offline:', edgeErr.message);
         await addPendingAction({

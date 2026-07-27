@@ -15,6 +15,7 @@ import { isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
+import { getRestaurantConfig } from '../utils/getRestaurantConfig';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 
 export default function ExpenditureModule() {
@@ -38,6 +39,7 @@ export default function ExpenditureModule() {
   const [saving, setSaving] = useState(false);
   const [savedExpenditure, setSavedExpenditure] = useState(null);
   const [error, setError] = useState('');
+  const [savedMsg, setSavedMsg] = useState('');
   const [printing, setPrinting] = useState(false);
   const [printingId, setPrintingId] = useState(null);
 
@@ -149,6 +151,7 @@ export default function ExpenditureModule() {
 
   const handleSave = async () => {
     setError('');
+    setSavedMsg('');
     if (!paidToSearch.trim()) {
       setError('Please select who this expenditure is paid to');
       return;
@@ -229,7 +232,7 @@ export default function ExpenditureModule() {
     }
   };
 
-  const dispatchExpenditurePrint = async (expenditureId) => {
+  const dispatchExpenditurePrint = async (expenditureId, existingExpData = null) => {
     const edgeLocal = isEdgeLocalAuth();
     if (edgeLocal) {
       // Edge server builds ESC/POS and creates print job through durable queue
@@ -238,28 +241,60 @@ export default function ExpenditureModule() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expenditureId }),
       });
+      // Fix 13C-frontend: consume printed/pending from edge response
+      if (result?.pending) {
+        setSavedMsg('Expenditure saved — printing in progress, will complete shortly.');
+      } else if (result?.printed) {
+        setSavedMsg('Expenditure printed');
+      } else if (result?.printError) {
+        setSavedMsg('Expenditure saved but print failed — use reprint to try again.');
+      }
       return result;
     }
     const result = await apiFetch(`/api/expenditures/${expenditureId}/print`, { method: 'POST' });
     if (result?.escposData && result?.eventId) {
+      // Fix 13C: Use existing expenditure data if available (from handleSave or list item)
+      // The backend does not expose GET /api/expenditures/:id, so we rely on the
+      // data already available in the component state.
+      const expData = existingExpData;
+
       // ── R3: Try Output Intent API first ──────────────────────────────
       try {
+        const restConfig = getRestaurantConfig();
+        const intentPayload = expData ? {
+          expenditureNo: expData.expenditureNo,
+          expenditureDate: expData.expenditureDate || expData.date,
+          paidToType: expData.paidToType || '',
+          paidToName: expData.paidToName || '',
+          amount: Number(expData.amount),
+          narration: expData.narration || null,
+          approvedByName: expData.approvedByName || expData.approver || null,
+          createdByName: expData.createdBy?.name || expData.createdByName || null,
+          status: expData.voided ? 'VOIDED' : (expData.status || 'ACTIVE'),
+          restaurant: { name: restConfig?.name || '' },
+        } : { escposData: result.escposData, expenditureId };
+
         const intentResult = await sendOutputIntent({
           type: 'OUTPUT',
           intentId: generateIntentId(),
           intent: 'PRINT_EXPENDITURE',
-          payload: { escposData: result.escposData, expenditureId },
+          payload: intentPayload,
           priority: 'NORMAL',
         });
         if (intentResult?.ok) {
           console.log('[ExpenditureModule] Output intent succeeded — runtime handled printing');
+          if (intentResult?.pending) {
+            setSavedMsg('Expenditure saved — printing in progress.');
+          } else {
+            setSavedMsg('Expenditure printed');
+          }
           return result;
         }
       } catch (intentErr) {
         console.warn('[ExpenditureModule] Output intent failed, falling back to local print:', intentErr.message);
       }
       // ── Fallback: local print ──────────────────────────────────────────
-      printLocal({ type: 'EXPENDITURE', escposData: result.escposData, eventId: result.eventId, data: {} })
+      printLocal({ type: 'EXPENDITURE', escposData: result.escposData, eventId: result.eventId, data: expData || {} })
         .catch((err) => console.warn('[ExpenditureModule] Local print attempt failed:', err?.message || err));
     }
     return result;
@@ -270,15 +305,22 @@ export default function ExpenditureModule() {
     const expenditure = await handleSave();
     if (!expenditure) return;
 
-    // Edge server already prints on save — skip separate print dispatch
+    // Edge server already prints on save — consume print status from save response
     if (isEdgeLocalAuth()) {
+      if (expenditure?.pending) {
+        setSavedMsg('Expenditure saved — printing in progress, will complete shortly.');
+      } else if (expenditure?.printed) {
+        setSavedMsg('Expenditure saved and printed');
+      } else if (expenditure?.printError) {
+        setSavedMsg('Expenditure saved but print failed — use reprint to try again.');
+      }
       setSavedExpenditure(null);
       return;
     }
 
     setPrinting(true);
     try {
-      await dispatchExpenditurePrint(expenditure.id);
+      await dispatchExpenditurePrint(expenditure.id, expenditure);
       setSavedExpenditure(null);
     } catch (err) {
       setError('Saved, but print failed — use reprint button below.');
@@ -292,7 +334,7 @@ export default function ExpenditureModule() {
     if (!savedExpenditure) return;
     setPrinting(true);
     try {
-      await dispatchExpenditurePrint(savedExpenditure.id);
+      await dispatchExpenditurePrint(savedExpenditure.id, savedExpenditure);
       setSavedExpenditure(null);
     } catch (err) {
       setError(err.message || 'Failed to print expenditure');
@@ -301,11 +343,12 @@ export default function ExpenditureModule() {
     }
   };
 
-  const handleReprint = async (expenditureId) => {
+  const handleReprint = async (expenditureId, expData = null) => {
     setError('');
+    setSavedMsg('');
     setPrintingId(expenditureId);
     try {
-      await dispatchExpenditurePrint(expenditureId);
+      await dispatchExpenditurePrint(expenditureId, expData);
     } catch (err) {
       setError(err.message || 'Failed to print expenditure');
     } finally {
@@ -412,6 +455,12 @@ export default function ExpenditureModule() {
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-bold">
             {error}
+          </div>
+        )}
+
+        {savedMsg && !error && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-lg text-xs font-bold">
+            {savedMsg}
           </div>
         )}
 
@@ -675,7 +724,7 @@ export default function ExpenditureModule() {
                     </span>
                   </div>
                   <button
-                    onClick={() => handleReprint(v.id)}
+                    onClick={() => handleReprint(v.id, v)}
                     disabled={printingId === v.id}
                     title="Print expenditure"
                     className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"

@@ -13,6 +13,7 @@ import {
   renderCancelKOT,
   renderTableSwap,
   renderXReport,
+  renderExpenditure,
   renderReceipt,
   numberToWords,
 } from "@softshape/output";
@@ -27,6 +28,7 @@ import type {
   XReportDenomination,
   XReportExpenditureRow,
   XReportData,
+  ExpenditurePrintData,
   RenderedOutput,
 } from "@softshape/output";
 
@@ -45,6 +47,7 @@ export {
   type XReportDenomination,
   type XReportExpenditureRow,
   type XReportData,
+  type ExpenditurePrintData,
 };
 
 export function buildFoodKOT(orderData: OrderData): object[] {
@@ -73,6 +76,10 @@ export function buildTableSwap(input: TableSwapPrintInput): object[] {
 
 export function buildXReportEscpos(data: XReportData): object[] {
   return toBlocks(renderXReport(data));
+}
+
+export function buildExpenditureEscpos(data: ExpenditurePrintData): object[] {
+  return toBlocks(renderExpenditure(data));
 }
 
 export function buildReceipt(

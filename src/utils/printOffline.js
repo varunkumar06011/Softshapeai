@@ -29,7 +29,7 @@
 
 import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
-import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT, buildTableSwap } from './escposFrontend';
+import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT, buildTableSwap, buildXReportEscpos, buildExpenditureEscpos } from './escposFrontend';
 import { getStoredEdgeApiKey } from '../services/edgeHealth';
 
 // ── Platform detection ───────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ function resolvePrinter(jobType, mapping) {
   // Fall back to mapping
   if (jobType === 'KOT' || jobType === 'CANCEL_KOT') return mapping.kitchen;
   if (jobType === 'BAR_KOT') return mapping.bar;
-  if (jobType === 'FINAL_BILL' || jobType === 'BILL' || jobType === 'VOUCHER' || jobType === 'EXPENDITURE') return mapping.bill || null;
+  if (jobType === 'FINAL_BILL' || jobType === 'BILL' || jobType === 'VOUCHER' || jobType === 'EXPENDITURE' || jobType === 'X_REPORT') return mapping.bill || null;
   if (jobType === 'TABLE_SWAP') return mapping.kitchen;
   return null;
 }
@@ -405,6 +405,10 @@ export async function printLocal(job) {
         escposData = buildCancelKOT(d);
       } else if (jobType === 'TABLE_SWAP') {
         escposData = buildTableSwap(d);
+      } else if (jobType === 'X_REPORT') {
+        escposData = buildXReportEscpos(d);
+      } else if (jobType === 'EXPENDITURE') {
+        escposData = buildExpenditureEscpos(d);
       }
     } catch (err) {
       console.warn('[printOffline] ESC/POS build failed, falling back to text:', err.message);

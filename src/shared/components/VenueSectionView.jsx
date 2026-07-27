@@ -104,8 +104,8 @@ export default function VenueSectionView({
       {sectionTables.map((table) => (
         <div key={table.backendId || table.id} className="relative">
           <VenueTableCard table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
-          {/* Add Extra (+) button — only on free regular tables */}
-          {onAddExtraTable && (table.status === 'Free' || table.status === 'AVAILABLE' || !table.status) && (
+          {/* Add Extra (+) button — on all non-cleaning tables (extra tables run concurrently with parent) */}
+          {onAddExtraTable && !['Cleaning', 'CLEANING'].includes(table.status) && (
             <button
               onClick={(e) => {
                 e.stopPropagation();

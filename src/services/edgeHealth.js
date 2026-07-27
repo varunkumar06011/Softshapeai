@@ -200,8 +200,15 @@ export async function discoverEdgeUrlFromBackend() {
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const headers = getAuthHeaders();
+    if (!headers['Authorization']) {
+      const preAuthToken = secureStorage.getItem('ss_preauth_token');
+      if (preAuthToken) {
+        headers['Authorization'] = `Bearer ${preAuthToken}`;
+      }
+    }
     const res = await fetch(`${API_BASE}/api/print/agent-endpoint`, {
-      headers: getAuthHeaders(),
+      headers,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -442,7 +449,7 @@ export async function isEdgeAvailable() {
       // during STARTING if the HTTP server is listening but config sync
       // hasn't completed yet. Only isOperational guarantees local data is ready.
       const health = await res.json().catch(() => ({}));
-      _edgeAvailable = health.isOperational === true;
+      _edgeAvailable = health.isOperational === true && health.onboarded !== false;
     } else {
       _edgeAvailable = false;
     }
@@ -478,7 +485,7 @@ export async function isEdgeAvailable() {
           clearTimeout(timeoutId);
           if (res.ok) {
             const health = await res.json().catch(() => ({}));
-            if (health.isOperational === true) {
+            if (health.isOperational === true && health.onboarded !== false) {
               _edgeAvailable = true;
               // Sync connectivity state so the UI immediately reflects the
               // discovered edge server, instead of waiting for the next
@@ -508,7 +515,7 @@ export async function isEdgeAvailable() {
           clearTimeout(timeoutId);
           if (res.ok) {
             const health = await res.json().catch(() => ({}));
-            _edgeAvailable = health.isOperational === true;
+            _edgeAvailable = health.isOperational === true && health.onboarded !== false;
             if (_edgeAvailable) {
               // Sync connectivity state for the UI
               if (health.sessionValid) {
@@ -559,7 +566,7 @@ export async function getEdgeConnectivityState() {
     clearTimeout(timeoutId);
     if (res.ok) {
       const health = await res.json().catch(() => ({}));
-      if (health.isOperational === true && health.sessionValid) {
+      if (health.isOperational === true && health.sessionValid && health.onboarded !== false) {
         _connectivityState = 'edge_reachable';
         // Sync isEdgeAvailable cache so print routing (orderApi.js) sees the
         // same result as the UI. Without this, isEdgeAvailable() could return
@@ -585,9 +592,18 @@ export async function getEdgeConnectivityState() {
     _connectivityState = 'fully_offline';
   }
 
-  // Trigger background discovery if not yet attempted
+  // Trigger discovery if not yet attempted. On the first call, block on
+  // discovery so the caller gets an accurate result. On subsequent calls,
+  // fire-and-forget to avoid adding latency.
   if (_connectivityState === 'cloud_reachable' || _connectivityState === 'fully_offline') {
-    isEdgeAvailable().catch(() => {});
+    if (!_discoveryLastFailed && !_discoveredEdgeUrl) {
+      try {
+        await isEdgeAvailable();
+        if (_edgeAvailable) return _connectivityState;
+      } catch { /* discovery failed */ }
+    } else {
+      isEdgeAvailable().catch(() => {});
+    }
   }
 
   return _connectivityState;

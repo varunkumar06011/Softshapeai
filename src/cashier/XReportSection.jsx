@@ -309,7 +309,7 @@ export default function XReportSection() {
     // gets dispatched through the same pipeline as KOTs and bills — instant, with retry.
     if (edgeLocal) {
       try {
-        await edgeFetch(`/api/edge/x-report/print`, {
+        const result = await edgeFetch(`/api/edge/x-report/print`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -332,7 +332,15 @@ export default function XReportSection() {
             cashFromNotes: round2(cashFromNotes),
           }),
         });
-        setSavedMsg('X Report printed');
+        if (result?.pending) {
+          setSavedMsg('X Report saved — printing in progress, will complete shortly.');
+        } else if (result?.printed) {
+          setSavedMsg('X Report printed');
+        } else if (result?.printError) {
+          setSavedMsg('X Report saved but print failed — use reprint to try again.');
+        } else {
+          setSavedMsg('X Report printed');
+        }
         return;
       } catch (err) {
         setError('Print failed: ' + err.message);
@@ -389,7 +397,9 @@ export default function XReportSection() {
           priority: 'NORMAL',
         });
         if (intentResult?.ok) {
-          setSavedMsg('X Report printed via runtime');
+          setSavedMsg(intentResult?.pending
+            ? 'X Report saved — printing in progress, will complete shortly.'
+            : 'X Report printed via runtime');
           return;
         }
       } catch (intentErr) {

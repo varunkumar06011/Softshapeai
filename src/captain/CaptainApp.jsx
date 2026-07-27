@@ -592,6 +592,7 @@ export default function CaptainApp({ onLogout }) {
   const [edgeUrlInput, setEdgeUrlInput] = useState('');
   const [edgeStatus, setEdgeStatus] = useState({ checking: false, available: false, url: '' });
   const [discoveryStatus, setDiscoveryStatus] = useState('');
+  const [printServiceDown, setPrintServiceDown] = useState(false);
 
   const checkEdgeStatus = useCallback(async () => {
     setEdgeStatus(prev => ({ ...prev, checking: true }));
@@ -608,6 +609,16 @@ export default function CaptainApp({ onLogout }) {
     // interval and may return stale false while connState is edge_reachable).
     const edgeReachable = connState === 'edge_reachable' || (available && connState !== 'edge_not_ready');
     setEdgeStatus({ checking: false, available: edgeReachable, url, connState });
+
+    // Fix 4B: Check print service health when edge is reachable
+    if (edgeReachable) {
+      try {
+        const health = await edgeFetch('/health');
+        setPrintServiceDown(health?.printService?.ready === false);
+      } catch { /* edge health check failed — non-fatal */ }
+    } else {
+      setPrintServiceDown(false);
+    }
   }, []);
 
   // Fallback: refresh restaurantType/enabledModules for existing sessions
@@ -2440,13 +2451,17 @@ export default function CaptainApp({ onLogout }) {
 
   const notificationIdRef = useRef(0);
 
-  const addNotification = (title, type = 'success') => {
+  const addNotification = (title, typeOrDesc = 'success', type) => {
+
+    const actualType = type || (['success', 'error', 'warning'].includes(typeOrDesc) ? typeOrDesc : 'info');
+    const description = type ? typeOrDesc : null;
 
     const id = ++notificationIdRef.current;
 
-    setNotifications(prev => [...prev, { id, title, type }]);
+    setNotifications(prev => [...prev, { id, title, type: actualType, description }]);
 
-    const timer = setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
+    const duration = actualType === 'error' ? 5000 : actualType === 'warning' ? 4000 : 3000;
+    const timer = setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), duration);
 
     return () => clearTimeout(timer);
 
@@ -2989,6 +3004,36 @@ export default function CaptainApp({ onLogout }) {
     isSubmittingKotRef.current = false;
     lastConfirmedItemsRef.current = [];
 
+    // Fix 12B: Restore pending KOT from localStorage (crash recovery)
+    // Must run AFTER setKotError(null) so the restored error isn't wiped.
+    if (activeTableId) {
+      try {
+        const pendingKotRaw = localStorage.getItem('captain_pending_kot');
+        if (pendingKotRaw) {
+          const pendingKot = JSON.parse(pendingKotRaw);
+          if (pendingKot.tableId === activeTableId && pendingKot.requestId) {
+            // Only restore if not expired (10 min TTL)
+            if (Date.now() - pendingKot.timestamp < 600000) {
+              retryRequestIdRef.current = pendingKot.requestId;
+              kotRequestIdRef.current = pendingKot.requestId;
+              setKotError({
+                message: pendingKot.message || 'Previous KOT submission was interrupted. Tap Retry to resend.',
+                retryItems: pendingKot.items || [],
+              });
+            } else {
+              // Expired — clear stale entry for this table only
+              localStorage.removeItem('captain_pending_kot');
+            }
+          } else if (pendingKot.tableId !== activeTableId) {
+            // Different table — don't delete, it may be needed when switching back
+          } else {
+            // No tableId match or no requestId — stale entry, remove
+            localStorage.removeItem('captain_pending_kot');
+          }
+        }
+      } catch { /* localStorage parse error — non-fatal */ }
+    }
+
     if (activeTableId) {
       // Ensure the cart for this table starts empty so stale items never appear.
       // (If the table truly has a live session, the sync service will populate it via socket.)
@@ -3344,7 +3389,12 @@ export default function CaptainApp({ onLogout }) {
             }
           }
         } catch (apiErr) {
-          if (localPrinted) {
+          // Fix 12D: Treat "Duplicate KOT detected" 409 as success —
+          // the KOT was already committed by a previous submission with the same requestId
+          if (apiErr?.statusCode === 409 && (apiErr.message || '').includes('Duplicate KOT detected')) {
+            console.warn('[KOT] Duplicate KOT detected — treating as success (idempotent replay)');
+            savedOrder = { id: existingOrderId, offline: false, duplicate: true };
+          } else if (localPrinted) {
             console.warn('[KOT] API failed but local print succeeded — KOT was printed but not synced to server');
             addNotification(
               `KOT #${preReservedKotNumber} Printed ⚠ Sync Pending`,
@@ -3638,6 +3688,10 @@ export default function CaptainApp({ onLogout }) {
       lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
       setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
       lastAnyItemAddedRef.current = 0;
+
+      // Fix 12C: Clear persisted KOT on success
+      try { localStorage.removeItem('captain_pending_kot'); } catch { /* non-fatal */ }
+
       if (savedOrder?.offline) {
         addNotification(`KOT #${preReservedKotNumber != null ? preReservedKotNumber : newKOT.id} Queued (Offline)`, 'KOT saved locally — will sync when back online.', 'warning');
       } else if (anyQueued) {
@@ -3656,12 +3710,98 @@ export default function CaptainApp({ onLogout }) {
       if (savedOrder?.edge && savedOrder?.printResults) {
         const printResults = savedOrder.printResults;
         const hasFailures = printResults.length > 0 &&
-          printResults.some(r => !r.ok);
-        if (hasFailures) {
-          const failed = printResults.filter(r => !r.ok);
+          printResults.some(r => r.ok === false);
+        const hasPending = printResults.some(r => r.ok === null || r.pending);
+        const hasSuccess = printResults.some(r => r.ok === true);
+        if (hasFailures && !hasPending) {
+          const failed = printResults.filter(r => r.ok === false);
+          const allFailed = printResults.length > 0 && printResults.every(r => r.ok === false);
+          // If ALL prints failed (not partial), attempt local print fallback
+          // via Print Agent — the edge server may not have a printer configured
+          // but the Tauri frontend's local printer mapping may have one.
+          if (allFailed && !localPrinted) {
+            console.warn('[KOT] Edge print failed for all jobs — attempting local print fallback:', failed.map(r => r.error).join('; '));
+            try {
+              const { printLocal } = await import('../utils/printOffline');
+              const fallbackKotOrderData = {
+                tableNumber: activeTable?.number ?? activeTable?.id,
+                orderId: savedOrder?.id || existingOrderId || 'pending',
+                items: itemsForPrint.map(i => ({
+                  name: i.n || i.name,
+                  quantity: i.q ?? i.quantity ?? 1,
+                  price: Number(i.p ?? i.price ?? 0),
+                  notes: i.notes || null,
+                  type: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'liquor' : 'food',
+                  menuItemId: String(i.id || i.menuItemId || ''),
+                  menuType: (i.menuType || 'FOOD').toUpperCase(),
+                  printerName: i.printerName || null,
+                  printerTarget: i.printerTarget || null,
+                  categoryPrinterTarget: i.categoryPrinterTarget || null,
+                })),
+                kotId: String(realKotId || preReservedKotNumber || newKOT?.id || ''),
+                sectionName: activeTable?.section?.name || 'Main Hall',
+                captainName: currentCaptain?.name || 'Captain',
+                sectionTag: activeTable?.sectionTag || undefined,
+                restaurantName: restaurant?.name || undefined,
+              };
+              const hasFoodItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() !== 'LIQUOR');
+              const hasLiquorItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR');
+              const fallbackPromises = [];
+              if (hasFoodItems) {
+                const foodEscpos = buildFoodKOT(fallbackKotOrderData);
+                if (foodEscpos.length > 0) {
+                  fallbackPromises.push(printLocal({ type: 'KOT', escposData: foodEscpos, eventId: `${savedOrder?.id || requestId}-food-fallback`, data: fallbackKotOrderData }).catch(() => ({ printed: false })));
+                }
+              }
+              if (hasLiquorItems) {
+                const liquorEscpos = buildLiquorKOT(fallbackKotOrderData);
+                if (liquorEscpos.length > 0) {
+                  fallbackPromises.push(printLocal({ type: 'BAR_KOT', escposData: liquorEscpos, eventId: `${savedOrder?.id || requestId}-liquor-fallback`, data: fallbackKotOrderData }).catch(() => ({ printed: false })));
+                }
+              }
+              if (fallbackPromises.length > 0) {
+                const fallbackResults = await Promise.allSettled(fallbackPromises);
+                const anyPrinted = fallbackResults.some(r => r.status === 'fulfilled' && r.value?.printed);
+                if (anyPrinted) {
+                  addNotification(`KOT #${realKotId || newKOT.id} Printed via fallback`, 'Edge server printer not configured — printed via local Print Agent.', 'warning');
+                  _edgePrintHandled = true;
+                } else {
+                  addNotification(
+                    `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
+                    failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+                    'error'
+                  );
+                  _edgePrintHandled = true;
+                }
+              } else {
+                addNotification(
+                  `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
+                  failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+                  'error'
+                );
+                _edgePrintHandled = true;
+              }
+            } catch (fallbackErr) {
+              console.warn('[KOT] Local print fallback failed:', fallbackErr?.message);
+              addNotification(
+                `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
+                failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+                'error'
+              );
+              _edgePrintHandled = true;
+            }
+          } else {
+            addNotification(
+              `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
+              failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+              'error'
+            );
+            _edgePrintHandled = true;
+          }
+        } else if (hasPending || hasFailures) {
           addNotification(
-            `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
-            failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
+            `KOT #${realKotId || newKOT.id} Saved — printing`,
+            'Printer warming up — will print automatically.',
             'warning'
           );
         }
@@ -3709,6 +3849,17 @@ export default function CaptainApp({ onLogout }) {
       // check will return the existing committed order instead of throwing
       // "Duplicate KOT detected".
       retryRequestIdRef.current = requestId;
+
+      // Fix 12A: Persist requestId to localStorage for crash recovery
+      try {
+        localStorage.setItem('captain_pending_kot', JSON.stringify({
+          tableId: activeTableId,
+          requestId,
+          items: retrySnapshot,
+          message: err.message || 'Network error — kitchen did not receive this order.',
+          timestamp: Date.now(),
+        }));
+      } catch { /* localStorage write error — non-fatal */ }
 
       setKotError({
 
@@ -4283,7 +4434,13 @@ export default function CaptainApp({ onLogout }) {
       style={{ height: 'calc(var(--captain-vh, 1dvh) * 100)' }}
     >
 
-
+      {/* Fix 4B: Print service warning banner */}
+      {printServiceDown && (
+        <div className="bg-amber-500 text-white px-4 py-2 text-sm font-bold flex items-center gap-2 shrink-0 z-30">
+          <AlertCircle size={16} />
+          Printer service is offline — KOTs will be saved and printed automatically when the printer comes back online.
+        </div>
+      )}
 
       {/* WAITER CALL EMERGENCY OVERLAY */}
 
@@ -6520,7 +6677,7 @@ export default function CaptainApp({ onLogout }) {
 
           >
 
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${n.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-[#E53935]'}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${n.type === 'success' ? 'bg-green-50 text-green-600' : n.type === 'warning' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-[#E53935]'}`}>
 
               {n.type === 'success' ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
 
@@ -6530,7 +6687,11 @@ export default function CaptainApp({ onLogout }) {
 
               <p className="text-[11px] font-black text-gray-900 uppercase tracking-tight leading-none">{n.title}</p>
 
-              <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase">Cloud Synchronized</p>
+              {n.description ? (
+                <p className="text-[9px] font-bold text-gray-500 mt-1 leading-tight">{n.description}</p>
+              ) : (
+                <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase">Cloud Synchronized</p>
+              )}
 
             </div>
 

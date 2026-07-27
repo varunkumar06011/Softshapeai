@@ -88,7 +88,7 @@ export const authService = {
     if (connState === 'edge_reachable') {
       const edgeResult = await this._tryEdgePinLogin(userId, pin);
       if (edgeResult) return edgeResult;
-      throw new Error('Edge server unreachable — check the restaurant server machine. PIN login requires the edge server to be running.');
+      throw new Error('Edge server is not set up for this restaurant. Please complete onboarding on the cashier machine first, or check the Edge URL in Settings.');
     }
 
     if (connState === 'edge_not_ready') {
@@ -99,7 +99,7 @@ export const authService = {
         if (retryState === 'edge_reachable') {
           const edgeResult = await this._tryEdgePinLogin(userId, pin);
           if (edgeResult) return edgeResult;
-          throw new Error('Edge server unreachable — check the restaurant server machine.');
+          throw new Error('Edge server is not set up for this restaurant. Please complete onboarding on the cashier machine first, or check the Edge URL in Settings.');
         }
         if (retryState !== 'edge_not_ready') break;
       }
