@@ -445,11 +445,15 @@ export async function isEdgeAvailable() {
     clearTimeout(timeoutId);
     if (res.ok) {
       // The Runtime returns isOperational=true when runtimeState === READY.
-      // This is the single source of truth — status "ok" alone may be sent
-      // during STARTING if the HTTP server is listening but config sync
-      // hasn't completed yet. Only isOperational guarantees local data is ready.
+      // For new restaurants, isOperational is true but onboarded is false —
+      // the edge server is running and ready to accept registration, just
+      // not yet linked to a restaurant. We must NOT block on onboarded here,
+      // or the EdgeSetupScreen can never show the registration form
+      // (chicken-and-egg: can't onboard if edge isn't "available").
+      // Callers that need onboarding (orders, PIN login) check isLocalReady()
+      // or onboarded separately.
       const health = await res.json().catch(() => ({}));
-      _edgeAvailable = health.isOperational === true && health.onboarded !== false;
+      _edgeAvailable = health.isOperational === true;
     } else {
       _edgeAvailable = false;
     }
@@ -485,12 +489,12 @@ export async function isEdgeAvailable() {
           clearTimeout(timeoutId);
           if (res.ok) {
             const health = await res.json().catch(() => ({}));
-            if (health.isOperational === true && health.onboarded !== false) {
+            if (health.isOperational === true) {
               _edgeAvailable = true;
               // Sync connectivity state so the UI immediately reflects the
               // discovered edge server, instead of waiting for the next
               // getEdgeConnectivityState() poll cycle.
-              if (health.sessionValid) {
+              if (health.sessionValid && health.onboarded !== false) {
                 _connectivityState = 'edge_reachable';
               } else {
                 _connectivityState = 'edge_not_ready';
@@ -515,7 +519,7 @@ export async function isEdgeAvailable() {
           clearTimeout(timeoutId);
           if (res.ok) {
             const health = await res.json().catch(() => ({}));
-            _edgeAvailable = health.isOperational === true && health.onboarded !== false;
+            _edgeAvailable = health.isOperational === true;
             if (_edgeAvailable) {
               // Sync connectivity state for the UI
               if (health.sessionValid) {
@@ -571,6 +575,12 @@ export async function getEdgeConnectivityState() {
         // Sync isEdgeAvailable cache so print routing (orderApi.js) sees the
         // same result as the UI. Without this, isEdgeAvailable() could return
         // a stale false for up to 30s while the UI already shows Edge Connected.
+        _edgeAvailable = true;
+        _edgeLastCheck = now;
+      } else if (health.isOperational === true) {
+        // Edge server is running but not onboarded or session invalid —
+        // still reachable for registration/setup, just not ready for POS ops.
+        _connectivityState = 'edge_not_ready';
         _edgeAvailable = true;
         _edgeLastCheck = now;
       } else {

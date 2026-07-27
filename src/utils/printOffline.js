@@ -30,7 +30,7 @@
 import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT, buildTableSwap, buildXReportEscpos, buildExpenditureEscpos } from './escposFrontend';
-import { getStoredEdgeApiKey } from '../services/edgeHealth';
+import { getStoredEdgeApiKey, getEdgeUrl } from '../services/edgeHealth';
 
 // ── Platform detection ───────────────────────────────────────────────────────
 
@@ -196,6 +196,17 @@ async function discoverPrintAgentUrls() {
   const configuredUrl = await getPrintAgentUrl();
   if (configuredUrl) {
     add(configuredUrl);
+  }
+
+  // 1b. Edge server URL discovered by the app (LAN broadcast / backend lookup).
+  //     On Android, this is the primary way to find the edge server — the captain
+  //     app discovers it via discoverEdgeOnLAN() / discoverEdgeUrlFromBackend()
+  //     and stores it in localStorage as 'softshape_edge_url'. Without this,
+  //     discoverPrintAgentUrls() would only try localhost (useless on a phone)
+  //     and the backend endpoint (needs internet, not just LAN WiFi).
+  const edgeUrl = getEdgeUrl();
+  if (edgeUrl) {
+    add(edgeUrl);
   }
 
   // 2. Backend-reported URL (from Print Agent registration/heartbeat)

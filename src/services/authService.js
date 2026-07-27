@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, getEdgeConnectivityState, invalidateEdgeHealthCache } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, setStoredEdgeRuntimeToken, getEdgeConnectivityState, invalidateEdgeHealthCache } from './edgeHealth.js';
 import secureStorage from '../utils/secureStorage.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
@@ -151,6 +151,14 @@ export const authService = {
 
       const data = await res.json();
       if (!data.success) return null;
+
+      // Save the runtime token returned by the edge server so that
+      // subsequent edgeFetch() calls can send it as Authorization: Bearer.
+      // Captain devices skip EdgeSetupScreen when the edge server is already
+      // set up, so this is the only place they can obtain the runtime token.
+      if (data.runtimeToken) {
+        setStoredEdgeRuntimeToken(data.runtimeToken);
+      }
 
       // Store a local session marker — not a cloud JWT, but enough for LAN API calls
       const localToken = `edge-local-${Date.now()}`;
