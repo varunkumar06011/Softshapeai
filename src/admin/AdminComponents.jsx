@@ -18292,7 +18292,7 @@ export function BarMenuPage() {
 
 export function StaffManagement({ role }) {
 
-  const isManagerReadOnly = role === 'manager';
+  const isManagerReadOnly = false;
 
   const DESIGNATIONS = [
     'helper', 'cleaning', 'master', 'assistant', 'family cleaning', 'washroom cleaning', 'supervisor',
@@ -18571,7 +18571,6 @@ export function StaffManagement({ role }) {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 border border-gray-200 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 w-48"
           />
-          {!isManagerReadOnly && (
           <button
             onClick={() => setImportModalOpen(true)}
             className="px-3 py-1.5 bg-gray-900 text-white text-[12px] font-bold rounded-xl hover:bg-gray-800 transition flex items-center gap-1"
@@ -18579,10 +18578,9 @@ export function StaffManagement({ role }) {
             <Upload size={14} />
             Import Staff
           </button>
-          )}
           <button
-            onClick={() => isManagerReadOnly ? handleAccessDenied() : setModalOpen(true)}
-            className={`px-3 py-1.5 text-white text-[12px] font-bold rounded-xl transition ${isManagerReadOnly ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#E53935] hover:bg-red-700'}`}
+            onClick={() => setModalOpen(true)}
+            className={`px-3 py-1.5 text-white text-[12px] font-bold rounded-xl transition bg-[#E53935] hover:bg-red-700`}
           >
             + Add Staff
           </button>
