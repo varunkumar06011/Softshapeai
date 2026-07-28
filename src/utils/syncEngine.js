@@ -610,6 +610,15 @@ export async function syncPendingActions() {
       if (action.edgeSynced && !action.edgeSyncFailed) {
         continue;
       }
+      // Skip settle-order actions — these target the edge server's
+      // /api/edge/order/settle endpoint, not the cloud's offline-sync.
+      // They are retried exclusively by drainSettlementQueue() in
+      // orderApi.js. If sent to cloud offline-sync, the cloud returns
+      // "skipped" (unknown actionType) and the sync engine removes the
+      // action from IndexedDB — permanently losing the settlement.
+      if (action.actionType === 'settle-order') {
+        continue;
+      }
       if (action.dependsOnOrderId && String(action.dependsOnOrderId).startsWith('offline-')) {
         if (resolvedOfflineIds.has(action.dependsOnOrderId)) {
           // Parent has synced — update this action's entityId to the real ID
@@ -641,14 +650,32 @@ export async function syncPendingActions() {
 
     console.log(`[SyncEngine] Syncing ${readyActions.length} ready action(s), ${blockedActions.length} blocked on parent`);
 
-    // Try bulk sync first (more efficient, handles per-entity ordering server-side)
-    let results;
-    try {
-      results = await bulkSync(readyActions);
-    } catch (bulkErr) {
-      console.warn('[SyncEngine] Bulk sync failed, falling back to individual sync:', bulkErr.message);
-      // Fallback: sync individually, grouped by entity
-      results = await syncIndividually(readyActions);
+    // Partition: actions handled by cloud's /api/orders/offline-sync go through
+    // bulkSync; all others go through syncSingleAction which sends directly to
+    // their real cloud URL. This prevents unhandled action types from being
+    // silently dropped (offline-sync returns "skipped" for unknown types, which
+    // the sync engine treats as success and removes from the queue).
+    const BULK_SYNCABLE_TYPES = new Set([
+      'create-order', 'update-items', 'print-bill', 'settle', 'cancel-items',
+      'cancel-item', 'transfer-items', 'swap-table', 'mark-paid',
+      'save-transaction', 'confirm-payment', 'delete-transaction',
+    ]);
+    const bulkActions = readyActions.filter(a => BULK_SYNCABLE_TYPES.has(a.actionType));
+    const individualActions = readyActions.filter(a => !BULK_SYNCABLE_TYPES.has(a.actionType));
+
+    let results = [];
+    if (bulkActions.length > 0) {
+      try {
+        results = await bulkSync(bulkActions);
+      } catch (bulkErr) {
+        console.warn('[SyncEngine] Bulk sync failed, falling back to individual sync:', bulkErr.message);
+        results = await syncIndividually(bulkActions);
+      }
+    }
+    if (individualActions.length > 0) {
+      console.log(`[SyncEngine] Syncing ${individualActions.length} action(s) via individual sync (not supported by offline-sync)`);
+      const individualResults = await syncIndividually(individualActions);
+      results = [...(results || []), ...individualResults];
     }
 
     // Build a result map by requestId so out-of-order bulk-sync results cannot be
@@ -879,11 +906,19 @@ export async function syncPendingActions() {
 
     if (newlyUnblocked.length > 0) {
       console.log(`[SyncEngine] Second pass: syncing ${newlyUnblocked.length} newly-unblocked action(s)`);
-      let pass2Results;
-      try {
-        pass2Results = await bulkSync(newlyUnblocked);
-      } catch {
-        pass2Results = await syncIndividually(newlyUnblocked);
+      const pass2Bulk = newlyUnblocked.filter(a => BULK_SYNCABLE_TYPES.has(a.actionType));
+      const pass2Individual = newlyUnblocked.filter(a => !BULK_SYNCABLE_TYPES.has(a.actionType));
+      let pass2Results = [];
+      if (pass2Bulk.length > 0) {
+        try {
+          pass2Results = await bulkSync(pass2Bulk);
+        } catch {
+          pass2Results = await syncIndividually(pass2Bulk);
+        }
+      }
+      if (pass2Individual.length > 0) {
+        const indResults = await syncIndividually(pass2Individual);
+        pass2Results = [...(pass2Results || []), ...indResults];
       }
       const pass2Map = new Map((pass2Results || []).map(r => [r.requestId, r]));
       for (const action of newlyUnblocked) {
