@@ -684,8 +684,16 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
             if (t.backendId !== order.tableId) return t;
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
             const hasItems = (order.items || []).length > 0;
-            if ((t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') && !hasItems) {
-              console.warn('[TableSync] Ignoring stale order:created (no items) for settled table', t.number);
+            // Block stale order:created from reviving a Free/settled table.
+            // A legitimate new order on a Free table arrives with items (the
+            // edge server's createOrder always includes items). A stale
+            // order:created from a previous session arriving after settlement
+            // typically has no items (edge broadcast only sends order id/rev).
+            // Block both: no-items events (stale) AND events for recently
+            // terminated tables. Allow with-items events to re-occupy.
+            const isFree = t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free';
+            if (isFree && !hasItems) {
+              console.warn('[TableSync] Ignoring stale order:created (no items) for Free table', t.number);
               return t;
             }
             return {
@@ -709,9 +717,14 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
           const next = prev.map((t) => {
             if (t.backendId !== order.tableId) return t;
             if (shouldSkipTableUpdate && shouldSkipTableUpdate(t)) return t;
-            const hasItems = (order.items || []).length > 0;
-            if ((t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free') && !hasItems) {
-              console.warn('[TableSync] Ignoring stale order:updated (no items) for settled table', t.number);
+            // Block any order:updated that would revive a Free/settled table.
+            // A settled table should only be re-occupied by an explicit
+            // order:created event (new order), not a stale order:updated
+            // from the previous session. This prevents duplicate/lingering
+            // items from reappearing after settlement or termination.
+            const isFree = t.dbStatus === 'AVAILABLE' || t.status === 'Free' || t.workflowStatus === 'Free';
+            if (isFree) {
+              console.warn('[TableSync] Ignoring stale order:updated for Free table', t.number);
               return t;
             }
             return {

@@ -5214,7 +5214,7 @@ const CashierDashboard = ({ onLogout }) => {
           if (selectedTable.isExtra) {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
-              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id, localPrinted, kotEventIds);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.backendId, localPrinted, kotEventIds);
             } else {
               orderResponse = await createOrder({
                 tableId: selectedTable.backendId,
@@ -5233,7 +5233,7 @@ const CashierDashboard = ({ onLogout }) => {
               });
             }
           } else if (selectedTable.activeOrder?.id) {
-            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.id, localPrinted, kotEventIds);
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, preReservedKotNumber, selectedTable.backendId, localPrinted, kotEventIds);
           } else {
             try {
               orderResponse = await createOrder({
@@ -5268,7 +5268,7 @@ const CashierDashboard = ({ onLogout }) => {
                   console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
                 }
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
-                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, preReservedKotNumber, selectedTable.id, localPrinted, kotEventIds);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, preReservedKotNumber, selectedTable.backendId, localPrinted, kotEventIds);
               } else {
                 throw createErr;
               }
@@ -5299,7 +5299,7 @@ const CashierDashboard = ({ onLogout }) => {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
               if (import.meta.env.DEV) console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, selectedTable.id);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, null);
             } else {
               orderResponse = await createOrder({
                 tableId: selectedTable.backendId,
@@ -5315,7 +5315,7 @@ const CashierDashboard = ({ onLogout }) => {
               });
             }
           } else if (selectedTable.activeOrder?.id) {
-            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, selectedTable.id);
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, null);
           } else {
             try {
               orderResponse = await createOrder({
@@ -5346,7 +5346,7 @@ const CashierDashboard = ({ onLogout }) => {
                 } catch (fetchErr) {
                   console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
                 }
-                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, false, null, null, selectedTable.id);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, false, null, null, null);
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
               } else {
                 throw createErr;
@@ -8074,7 +8074,7 @@ const CashierDashboard = ({ onLogout }) => {
 
               <button
                 onClick={() => {
-                  if (!selectedSettleMethod || isPrintingBill) return;
+                  if (!selectedSettleMethod || isPrintingBill || isSettling) return;
                   const cashAmt = Number(otherCashInput) || 0;
                   const cardAmt = Number(otherCardInput) || 0;
                   const isMixed = selectedSettleMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0);
@@ -8085,13 +8085,13 @@ const CashierDashboard = ({ onLogout }) => {
                   setOtherCashInput('');
                   setOtherCardInput('');
                 }}
-                disabled={!selectedSettleMethod || isPrintingBill}
-                className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill
+                disabled={!selectedSettleMethod || isPrintingBill || isSettling}
+                className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill && !isSettling
                   ? 'bg-[#F59E0B] text-[#1E293B] shadow-lg shadow-[#F59E0B]/20 hover:bg-[#D97706] border border-[#B45309]'
                   : 'bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200'
                   }`}
               >
-                {isPrintingBill ? 'Processing...' : 'Settle'}
+                {isPrintingBill || isSettling ? 'Processing...' : 'Settle'}
               </button>
             </div>
           </div>

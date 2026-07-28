@@ -99,6 +99,17 @@ export async function ensureEdgeApiKey() {
   const cached = getStoredEdgeApiKey();
   if (cached) return cached;
 
+  // Edge-local tokens (offline PIN login) are not cloud JWTs — the backend
+  // rejects them with 401. Skip the cloud fetch entirely; the edge server
+  // returns edgeApiKey in the PIN login response, so the captain should
+  // already have it. If not, there's no way to get it from cloud with a
+  // fake token.
+  const token = secureStorage.getItem('ss_token');
+  if (token && token.startsWith('edge-local-')) {
+    console.warn("[Edge] Skipping edge API key fetch — edge-local token cannot authenticate with cloud");
+    return null;
+  }
+
   try {
     const res = await fetch(`${API_BASE}/api/edge/key`, {
       headers: getAuthHeaders(),
@@ -210,10 +221,21 @@ export async function discoverEdgeUrlFromBackend() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     const headers = getAuthHeaders();
-    if (!headers['Authorization']) {
+    // Edge-local tokens (offline PIN login) are not cloud JWTs — the backend
+    // rejects them with 401. Fall back to the preauth token so backend
+    // discovery still works when the captain has a stale edge-local session
+    // and the edge server is unreachable.
+    const token = secureStorage.getItem('ss_token');
+    const isEdgeLocal = token && token.startsWith('edge-local-');
+    if (!headers['Authorization'] || isEdgeLocal) {
       const preAuthToken = secureStorage.getItem('ss_preauth_token');
       if (preAuthToken) {
         headers['Authorization'] = `Bearer ${preAuthToken}`;
+      } else if (isEdgeLocal) {
+        // No preauth token and only an edge-local token — cloud discovery
+        // will fail. Skip the fetch entirely rather than wasting 3s on a 401.
+        clearTimeout(timeoutId);
+        return null;
       }
     }
     const res = await fetch(`${API_BASE}/api/print/agent-endpoint`, {
@@ -233,6 +255,15 @@ export async function discoverEdgeUrlFromBackend() {
       _discoveredEdgeUrl = edgeUrl;
       try { localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, edgeUrl); } catch { /* ignore */ }
       _edgeLastCheck = 0; // force re-check
+      // Invalidate the Print Agent URL cache in printOffline.js so the next
+      // print attempt rebuilds the candidate list with the new edge URL.
+      // Without this, the captain uses a stale 30s-cached list that only
+      // contains 127.0.0.1:3101 (the phone itself) for up to 30s after
+      // discovery completes — KOT prints fail during this window.
+      try {
+        const { invalidatePrintAgentUrlCache } = await import('../utils/printOffline');
+        invalidatePrintAgentUrlCache();
+      } catch { /* printOffline not loaded yet — cache will rebuild on first call */ }
       console.log('[edgeHealth] Discovered edge server at', edgeUrl, 'from backend');
       return edgeUrl;
     }
@@ -429,6 +460,13 @@ export async function discoverEdgeOnLAN({ force = false } = {}) {
           // Persist so the URL survives page reloads (e.g. after logout).
           try { localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, r.value); } catch { /* ignore */ }
           _discoveryFailReason = null;
+          _edgeLastCheck = 0; // force health re-check on new URL
+          // Invalidate the Print Agent URL cache so the next print attempt
+          // rebuilds the candidate list with the newly discovered edge URL.
+          try {
+            const { invalidatePrintAgentUrlCache } = await import('../utils/printOffline');
+            invalidatePrintAgentUrlCache();
+          } catch { /* printOffline not loaded yet */ }
           console.log('[Edge] Discovered edge server on LAN:', r.value);
           return r.value;
         }

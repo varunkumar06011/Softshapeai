@@ -5,7 +5,7 @@
 // falling back to the cloud backend if the edge is unavailable.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { edgeFetch, isEdgeAvailable } from "./edgeHealth";
+import { edgeFetch, isEdgeAvailable, isEdgeLocalAuth } from "./edgeHealth";
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 
 /**
@@ -34,6 +34,15 @@ export async function sendOutputIntent(intent) {
     } catch (err) {
       console.warn("[outputClient] Edge intent failed, falling back to cloud:", err.message);
     }
+  }
+
+  // Edge-local tokens (offline PIN login) are not cloud JWTs — the cloud
+  // /api/output/intent endpoint rejects them with 401. Skip the cloud
+  // fallback and return { ok: false } so the caller falls through to the
+  // local print path instead of wasting 4s on a guaranteed 401.
+  if (isEdgeLocalAuth()) {
+    console.warn("[outputClient] Skipping cloud fallback — edge-local token cannot authenticate with cloud");
+    return { ok: false };
   }
 
   const res = await fetch(`${apiUrl("/api/output/intent")}`, {

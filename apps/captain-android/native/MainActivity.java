@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(EscposPrintPlugin.class);
+        registerPlugin(LocalNetworkPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

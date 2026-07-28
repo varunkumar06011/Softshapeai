@@ -3374,7 +3374,7 @@ export default function CaptainApp({ onLogout }) {
 
         try {
           if (existingOrderId) {
-            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId, localPrinted, kotEventIds);
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds);
             savedOrder = response;
           } else {
             try {
@@ -3394,7 +3394,7 @@ export default function CaptainApp({ onLogout }) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
                 activeOrderIdRef.current = createErr.existingOrderId;
-                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableId, localPrinted, kotEventIds);
+                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds);
               } else {
                 throw createErr;
               }
@@ -3543,7 +3543,7 @@ export default function CaptainApp({ onLogout }) {
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId, edgeHasPrintedIds, edgeKotIdsToSend);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3569,7 +3569,7 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableId, edgeHasPrintedIds, edgeKotIdsToSend);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3983,6 +3983,7 @@ export default function CaptainApp({ onLogout }) {
       : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
     let cancelLocalPrinted = false;
+    let cancelEventId = null;
     try {
       const cancelEscpos = buildCancelKOT({
         tableNumber: String(activeTable?.number ?? activeTable?.id ?? 'N/A'),
@@ -4000,7 +4001,7 @@ export default function CaptainApp({ onLogout }) {
           receiptHeader: restaurant?.receiptHeader || undefined,
         },
       });
-      const cancelEventId = `${cancelRequestId}-cancel`;
+      cancelEventId = `${cancelRequestId}-cancel`;
       const cancelResult = await printLocal({
         type: 'CANCEL_KOT',
         escposData: cancelEscpos,
@@ -6820,7 +6821,7 @@ export default function CaptainApp({ onLogout }) {
 
                             console.error('Move table failed:', err);
 
-                            alert(err?.response?.data?.error || 'Move failed. Please try again.');
+                            addNotification('Move Failed', err?.response?.data?.error || err?.message || 'Move failed. Please try again.', 'error');
 
                           } finally {
 

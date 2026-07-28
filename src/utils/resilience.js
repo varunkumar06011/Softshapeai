@@ -129,6 +129,8 @@ export class BackgroundQueue {
     this.isProcessing = true;
     console.log(`[BackgroundQueue:${this.name}] Processing ${this.queue.length} tasks`);
 
+    let lastDroppedError = null;
+
     while (this.queue.length > 0) {
       const task = this.queue.shift();
       try {
@@ -144,16 +146,27 @@ export class BackgroundQueue {
         }
       } catch (error) {
         console.error(`[BackgroundQueue:${this.name}] Task failed:`, error);
-        // Re-queue for retry (limit retries)
+        // Re-queue for retry with exponential backoff (limit retries)
         if ((task.retryCount || 0) < 3) {
           task.retryCount = (task.retryCount || 0) + 1;
+          const delay = Math.min(1000 * Math.pow(2, task.retryCount - 1), 5000);
+          console.warn(`[BackgroundQueue:${this.name}] Retry ${task.retryCount}/3 after ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
           this.queue.push(task);
+        } else {
+          // Max retries exceeded — propagate error so caller can rollback/handle
+          lastDroppedError = error;
+          console.error(`[BackgroundQueue:${this.name}] Task dropped after 3 retries:`, error);
         }
       }
     }
 
     this.isProcessing = false;
     console.log(`[BackgroundQueue:${this.name}] Processing complete`);
+
+    if (lastDroppedError) {
+      throw lastDroppedError;
+    }
   }
 
   getQueueSize() {

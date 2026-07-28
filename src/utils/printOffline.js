@@ -30,7 +30,8 @@
 import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT, buildTableSwap, buildXReportEscpos, buildExpenditureEscpos } from './escposFrontend';
-import { getStoredEdgeApiKey, getEdgeUrl } from '../services/edgeHealth';
+import { getStoredEdgeApiKey, getEdgeUrl, isEdgeLocalAuth } from '../services/edgeHealth';
+import secureStorage from './secureStorage';
 
 // ── Platform detection ───────────────────────────────────────────────────────
 
@@ -169,6 +170,17 @@ let _lastDiscoveryTime = 0;
 const DISCOVERY_CACHE_MS = 30_000;
 
 /**
+ * Invalidate the cached Print Agent URL list so the next discoverPrintAgentUrls()
+ * call rebuilds it from scratch. Call this when a new edge URL is discovered
+ * (e.g. from discoverEdgeUrlFromBackend) so the captain doesn't use a stale
+ * candidate list that only contains 127.0.0.1:3101 for up to 30s.
+ */
+export function invalidatePrintAgentUrlCache() {
+  _cachedAgentUrls = null;
+  _lastDiscoveryTime = 0;
+}
+
+/**
  * Build a list of candidate Print Agent URLs to try, in priority order:
  *   1. User-configured URL from IndexedDB (manual setting)
  *   2. Backend-reported LAN IP (fetched from /api/print/agent-endpoint)
@@ -213,34 +225,49 @@ async function discoverPrintAgentUrls() {
   //    Increased from 300ms to 2000ms — captain on mobile WiFi needs more time
   //    to reach the cloud backend, and 300ms was causing the fetch to abort
   //    before the response arrived, so the LAN IP was never discovered.
+  //    Edge-local tokens (offline PIN login) are not cloud JWTs — use the
+  //    preauth token instead so discovery works with a stale edge-local session.
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(apiUrl('/api/print/agent-endpoint'), {
-      method: 'GET',
-      headers: getAuthHeaders(),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      // Version check: invalidate stale cached URL before any code reads it.
-      // Only clear on a confirmed version mismatch — never on network failure.
-      if (data?.cacheVersion) {
-        const storedVersion = localStorage.getItem('print_agent_cache_version');
-        if (storedVersion !== data.cacheVersion) {
-          localStorage.removeItem('last_working_print_agent_url');
-          localStorage.setItem('print_agent_cache_version', data.cacheVersion);
+    const headers = getAuthHeaders();
+    if (isEdgeLocalAuth()) {
+      const preAuthToken = secureStorage.getItem('ss_preauth_token');
+      if (preAuthToken) {
+        headers['Authorization'] = `Bearer ${preAuthToken}`;
+      } else {
+        // No preauth token — skip the fetch, it will 401.
+        clearTimeout(timeout);
+        headers._skip = true;
+      }
+    }
+    if (!headers._skip) {
+      const res = await fetch(apiUrl('/api/print/agent-endpoint'), {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        // Version check: invalidate stale cached URL before any code reads it.
+        // Only clear on a confirmed version mismatch — never on network failure.
+        if (data?.cacheVersion) {
+          const storedVersion = localStorage.getItem('print_agent_cache_version');
+          if (storedVersion !== data.cacheVersion) {
+            localStorage.removeItem('last_working_print_agent_url');
+            localStorage.setItem('print_agent_cache_version', data.cacheVersion);
+          }
         }
-      }
-      if (data.httpUrl) add(data.httpUrl);
-      if (data.lanIp) {
-        // Edge server (port 3101) is the LAN print path — broadcasts via
-        // WebSocket to the Tauri frontend for physical printing.
-        add(`http://${data.lanIp}:3101`);
-      }
-      if (data.printerMapping && Object.keys(data.printerMapping).length > 0) {
-        setLocalPrinterMapping(data.printerMapping).catch(() => {});
+        if (data.httpUrl) add(data.httpUrl);
+        if (data.lanIp) {
+          // Edge server (port 3101) is the LAN print path — broadcasts via
+          // WebSocket to the Tauri frontend for physical printing.
+          add(`http://${data.lanIp}:3101`);
+        }
+        if (data.printerMapping && Object.keys(data.printerMapping).length > 0) {
+          setLocalPrinterMapping(data.printerMapping).catch(() => {});
+        }
       }
     }
   } catch {

@@ -12,6 +12,7 @@ RES_XML_DIR="$SCRIPT_DIR/../android/app/src/main/res/xml"
 # Copy Java plugins
 mkdir -p "$APP_DIR"
 cp "$SCRIPT_DIR/EscposPrintPlugin.java" "$APP_DIR/"
+cp "$SCRIPT_DIR/LocalNetworkPlugin.java" "$APP_DIR/"
 cp "$SCRIPT_DIR/MainActivity.java" "$APP_DIR/"
 
 # Copy AndroidManifest.xml (adds INTERNET permission + cleartext traffic for TCP printing)
@@ -21,4 +22,4 @@ cp "$SCRIPT_DIR/AndroidManifest.xml" "$SCRIPT_DIR/../android/app/src/main/Androi
 mkdir -p "$RES_XML_DIR"
 cp "$SCRIPT_DIR/network_security_config.xml" "$RES_XML_DIR/"
 
-echo "[cap-sync-native] Copied EscposPrintPlugin.java, MainActivity.java, AndroidManifest.xml, network_security_config.xml to android project"
+echo "[cap-sync-native] Copied EscposPrintPlugin.java, LocalNetworkPlugin.java, MainActivity.java, AndroidManifest.xml, network_security_config.xml to android project"
