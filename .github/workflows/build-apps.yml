@@ -93,7 +93,7 @@ jobs:
         shell: bash
         run: |
           bun install
-          bun build --compile server.ts --outfile edge-server.exe --target=bun-windows-x64-baseline
+          bun build --compile server.ts --outfile edge-server.exe --target=bun-windows-x64
 
       - name: Verify edge-server.exe was produced
         working-directory: softshape-print-agent/softshape-print-agent/edge-server
