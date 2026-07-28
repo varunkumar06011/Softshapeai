@@ -2,6 +2,7 @@ package ai.softshape.captain;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -74,7 +75,7 @@ public class LocalNetworkPlugin extends Plugin {
             LinkProperties lp = cm.getLinkProperties(activeNetwork);
             if (lp == null) return null;
 
-            for (java.net.LinkAddress la : lp.getLinkAddresses()) {
+            for (LinkAddress la : lp.getLinkAddresses()) {
                 InetAddress addr = la.getAddress();
                 if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
                     return addr.getHostAddress();
