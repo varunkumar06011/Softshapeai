@@ -366,7 +366,7 @@ async function replayActionsToEdge(actions) {
         requestId: action.requestId,
         platform: body.platform || 'DINE_IN',
         orderByRole: body.orderByRole || undefined,
-        preReservedKotNumber: body.preReservedKotNumber ?? null,
+        preReservedKotNumber: typeof body.preReservedKotNumber === 'number' && body.preReservedKotNumber > 0 ? body.preReservedKotNumber : null,
         isExtraTable: !!body.isExtraTable,
         tableNumber: body.tableNumber || undefined,
         localPrinted: body.localPrinted || false,

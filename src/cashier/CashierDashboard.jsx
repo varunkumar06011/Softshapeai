@@ -5299,7 +5299,7 @@ const CashierDashboard = ({ onLogout }) => {
             const orderId = selectedTable.activeOrder?.id;
             if (orderId) {
               if (import.meta.env.DEV) console.log('[ExtraTable] updateOrderItems:', orderId, 'items:', apiItems.length);
-              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, null);
+              orderResponse = await updateOrderItems(orderId, apiItems, requestId, 'Cashier', true, selectedTable.number, selectedTable.activeOrder?.updatedAt, 45000, null, null, null, null);
             } else {
               orderResponse = await createOrder({
                 tableId: selectedTable.backendId,
@@ -5315,7 +5315,7 @@ const CashierDashboard = ({ onLogout }) => {
               });
             }
           } else if (selectedTable.activeOrder?.id) {
-            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, false, null, null, null);
+            orderResponse = await updateOrderItems(selectedTable.activeOrder.id, apiItems, requestId, 'Cashier', false, null, selectedTable.activeOrder?.updatedAt, 45000, null, null, null, null);
           } else {
             try {
               orderResponse = await createOrder({
@@ -5346,7 +5346,7 @@ const CashierDashboard = ({ onLogout }) => {
                 } catch (fetchErr) {
                   console.warn('[KOT] Failed to fetch existing order for 409 fallback:', fetchErr.message);
                 }
-                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, false, null, null, null);
+                orderResponse = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, 'Cashier', false, null, null, 45000, null, null, null, null);
                 setSelectedTable(prev => prev ? { ...prev, activeOrder: { ...prev.activeOrder, id: createErr.existingOrderId } } : prev);
               } else {
                 throw createErr;
@@ -5591,6 +5591,10 @@ const CashierDashboard = ({ onLogout }) => {
         );
       } else {
         // Definitive HTTP error (400, 401, 409, etc.) — keep cart for retry
+        // Clear requestId so the retry gets a fresh one (avoids replaying
+        // the stored rejection from command_log on the backend).
+        kotRequestIdRef.current = null;
+        lastKotCartSignatureRef.current = null;
         addNotification(
           'KOT Not Sent to Kitchen',
           `${err.message || 'Network error'}. Cart kept — tap KOT again to retry.`,

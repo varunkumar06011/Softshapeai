@@ -115,7 +115,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   if (isExtraTable) { orderData.isExtraTable = true; }
   if (sectionTag) { orderData.sectionTag = sectionTag; }
   if (platform) { orderData.platform = platform; }
-  if (preReservedKotNumber != null) { orderData.preReservedKotNumber = preReservedKotNumber; }
+  if (typeof preReservedKotNumber === 'number' && preReservedKotNumber > 0) { orderData.preReservedKotNumber = preReservedKotNumber; }
   if (localPrinted) { orderData.localPrinted = true; }
   if (kotEventIds) { orderData.kotEventIds = kotEventIds; }
 
@@ -135,7 +135,7 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         requestId: requestId || generateRequestId(),
         platform,
         orderByRole: authService.getUserRole?.() || undefined,
-        preReservedKotNumber: preReservedKotNumber ?? null,
+        preReservedKotNumber: typeof preReservedKotNumber === 'number' && preReservedKotNumber > 0 ? preReservedKotNumber : null,
         localPrinted,
         kotEventIds,
         isExtraTable: !!isExtraTable,
@@ -363,7 +363,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (isExtraTable) { body.isExtraTable = true; }
   if (tableNumber) { body.tableNumber = tableNumber; }
   if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
-  if (preReservedKotNumber != null) { body.preReservedKotNumber = preReservedKotNumber; }
+  if (typeof preReservedKotNumber === 'number' && preReservedKotNumber > 0) { body.preReservedKotNumber = preReservedKotNumber; }
   if (localPrinted) { body.localPrinted = true; }
   if (kotEventIds) { body.kotEventIds = kotEventIds; }
 
@@ -385,7 +385,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         captainName,
         requestId: requestId || generateRequestId(),
         orderByRole: authService.getUserRole?.() || undefined,
-        preReservedKotNumber: preReservedKotNumber ?? null,
+        preReservedKotNumber: typeof preReservedKotNumber === 'number' && preReservedKotNumber > 0 ? preReservedKotNumber : null,
         localPrinted,
         kotEventIds,
         isExtraTable: !!isExtraTable,

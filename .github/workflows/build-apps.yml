@@ -79,7 +79,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.19
+          bun-version: latest
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
@@ -93,7 +93,7 @@ jobs:
         shell: bash
         run: |
           bun install
-          bun build --compile server.ts --outfile edge-server.exe --target=bun-windows-x64
+          bun build --compile server.ts --outfile edge-server.exe --target=bun-windows-x64-baseline
 
       - name: Verify edge-server.exe was produced
         working-directory: softshape-print-agent/softshape-print-agent/edge-server
