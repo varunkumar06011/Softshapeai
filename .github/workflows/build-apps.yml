@@ -12,11 +12,11 @@ on:
 env:
   NODE_VERSION: 24
   VITE_API_URL: https://api.softshape.in/
-  VITE_FIREBASE_API_KEY: AIzaSyD7OBT4VOtniMIGWSkpCVHV6wPsdJZKqy4
+  VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
   VITE_FIREBASE_AUTH_DOMAIN: softshapeai-14324.firebaseapp.com
   VITE_FIREBASE_PROJECT_ID: softshapeai-14324
   VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-  VITE_SENTRY_DSN: https://0265523fc50be65aad6018cb11266b19@o4511625453699072.ingest.us.sentry.io/4511625461497856
+  VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
   VITE_PRINT_AGENT_DOWNLOAD_URL: https://github.com/varunkumar06011/softshape-print-agent/releases/latest/download/SoftShape.Print.Agent_x64-setup.exe
   VITE_CASHIER_DESKTOP_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/latest/download/SoftShape.Cashier_x64-setup.exe
   VITE_CASHIER_ANDROID_DOWNLOAD_URL: https://github.com/varunkumar06011/Softshapeai/releases/latest/download/cashier-android.apk
