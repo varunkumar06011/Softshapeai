@@ -368,13 +368,15 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
   if (kotEventIds) { body.kotEventIds = kotEventIds; }
 
   // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
-  // Edge server needs the actual tableId to find/create the order.
-  // If tableId is not provided, skip edge path — can't route without it.
+  // The edge server resolves tableId from the order record if not provided,
+  // so we no longer skip the edge path when tableId is missing. This prevents
+  // edge-local auth tokens from falling through to the cloud backend (which
+  // rejects them with "Invalid or expired token").
   const useEdgeDirect = isEdgeLocalAuth();
   if (import.meta.env.DEV && isExtraTable && !tableNumber) {
     console.warn('[orderApi] updateOrderItems: isExtraTable=true but tableNumber is empty — KOT/bill printing will use parent table number');
   }
-  if (tableId && (useEdgeDirect || await isEdgeAvailable())) {
+  if (useEdgeDirect || await isEdgeAvailable()) {
     try {
       const edgeBody = {
         orderId,

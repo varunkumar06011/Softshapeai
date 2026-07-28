@@ -30,7 +30,7 @@
 import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT, buildTableSwap, buildXReportEscpos, buildExpenditureEscpos } from './escposFrontend';
-import { getStoredEdgeApiKey, getEdgeUrl, isEdgeLocalAuth } from '../services/edgeHealth';
+import { getStoredEdgeApiKey, getEdgeUrl, isEdgeLocalAuth, getStoredEdgeRuntimeToken } from '../services/edgeHealth';
 import secureStorage from './secureStorage';
 
 // ── Platform detection ───────────────────────────────────────────────────────
@@ -305,8 +305,10 @@ async function tryPrintAgentUrls(body, jobType) {
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const edgeKey = getStoredEdgeApiKey();
+      const runtimeToken = getStoredEdgeRuntimeToken();
       const headers = { 'Content-Type': 'application/json' };
       if (edgeKey) headers['X-Edge-Key'] = edgeKey;
+      if (runtimeToken) headers['Authorization'] = `Bearer ${runtimeToken}`;
       const res = await fetch(`${url}/print`, {
         method: 'POST',
         headers,
