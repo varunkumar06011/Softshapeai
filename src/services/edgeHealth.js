@@ -124,6 +124,38 @@ export async function ensureEdgeApiKey() {
   }
 }
 
+/**
+ * Fetch the runtime token from the edge server using the stored edge API key.
+ * This is the recovery path for captains that logged in via cloud (and thus
+ * never obtained a runtime token from PIN login). The edge server's
+ * /api/edge/runtime-token endpoint accepts the X-Edge-Key header and returns
+ * the runtime token — no Bearer token required (the endpoint is in PUBLIC_PATHS).
+ */
+export async function ensureEdgeRuntimeToken() {
+  const cached = getStoredEdgeRuntimeToken();
+  if (cached) return cached;
+
+  const edgeApiKey = getStoredEdgeApiKey();
+  if (!edgeApiKey) return null;
+
+  try {
+    const res = await fetch(`${getEdgeUrl()}/api/edge/runtime-token`, {
+      headers: { 'X-Edge-Key': edgeApiKey },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.runtimeToken) {
+      setStoredEdgeRuntimeToken(data.runtimeToken);
+      return data.runtimeToken;
+    }
+    return null;
+  } catch (err) {
+    console.warn("[Edge] Failed to fetch runtime token:", err.message);
+    return null;
+  }
+}
+
 export function resetEdgeCache() {
   _edgeLastCheck = 0;
   _edgeAvailable = false;
@@ -294,17 +326,27 @@ export function isEdgeLocalAuth() {
  * Tries the local network gateway + likely host IPs across all RFC 1918
  * ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x).
  *
- * @param {{ force?: boolean }} [opts] — force: true bypasses the failure
- *   cooldown (used by the Auto-Discover button so a manual retry always
- *   runs a fresh scan instead of being throttled).
+ * @param {{ force?: boolean, expectedRestaurantId?: string }} [opts]
+ *   - force: true bypasses the failure cooldown (used by the Auto-Discover
+ *     button so a manual retry always runs a fresh scan instead of being
+ *     throttled).
+ *   - expectedRestaurantId: when provided, only edge servers whose
+ *     /health.restaurantId matches this outlet are accepted. This prevents
+ *     connecting to the wrong outlet's edge server when two outlets share
+ *     the same WiFi LAN. An in-flight unfiltered scan is drained first so
+ *     the filtered scan always runs fresh.
  * Returns the discovered edge URL or null.
  */
-export async function discoverEdgeOnLAN({ force = false } = {}) {
+export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId } = {}) {
   if (_discoveryInProgress) {
-    if (!force) return _discoveryInProgress;
-    // Forced (Auto-Discover button): wait for in-flight passive scan to
-    // drain, then re-scan fresh. Avoids concurrent probes on the same IPs.
-    await _discoveryInProgress.catch(() => {});
+    // A filtered scan must always run fresh — an in-flight unfiltered scan
+    // could return the wrong outlet's edge server. Wait for it to drain,
+    // then proceed to our own filtered scan.
+    if (force || expectedRestaurantId) {
+      await _discoveryInProgress.catch(() => {});
+    } else {
+      return _discoveryInProgress;
+    }
   }
 
   _discoveryInProgress = (async () => {
@@ -317,17 +359,29 @@ export async function discoverEdgeOnLAN({ force = false } = {}) {
 
     // Cooldown: recent discovery failed. Fast-fail without re-scanning.
     // _discoveryFailReason persists so the UI can still show why.
-    // Bypassed by force: true (Auto-Discover button).
-    if (!force && Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
+    // Bypassed by force: true (Auto-Discover button) or when a specific
+    // outlet is requested (expectedRestaurantId) — a filtered scan for a
+    // different outlet must always run, even if an unfiltered scan failed.
+    if (!force && !expectedRestaurantId && Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
       return null;
     }
 
     // Clear fail reason at the start of a fresh attempt
     _discoveryFailReason = null;
 
-    // If we already have a working edge URL, don't rediscover
+    // If we already have a working edge URL, don't rediscover — UNLESS a
+    // specific outlet is requested. The persisted discovered URL may belong
+    // to a different outlet (e.g. captain logged out of bar, now logging
+    // into restaurant on the same WiFi). In that case, clear the stale URL
+    // so getEdgeUrl() doesn't return it during the fresh filtered scan.
     const currentUrl = getEdgeUrl();
-    if (currentUrl !== DEFAULT_EDGE_URL && _edgeAvailable) {
+    if (expectedRestaurantId) {
+      if (currentUrl !== DEFAULT_EDGE_URL) {
+        _discoveredEdgeUrl = null;
+        try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
+        resetEdgeCache();
+      }
+    } else if (currentUrl !== DEFAULT_EDGE_URL && _edgeAvailable) {
       return currentUrl;
     }
 
@@ -447,6 +501,12 @@ export async function discoverEdgeOnLAN({ force = false } = {}) {
           // onboarded=false. Returning it poisons PIN login with 401
           // "Restaurant is not linked locally" (Bug 2).
           if (health.onboarded === false) return null;
+          // Reject edge servers belonging to a different outlet. When two
+          // outlets (e.g. bar + restaurant) share the same WiFi, both edge
+          // servers respond on /health. Without this filter, discovery
+          // returns whichever answers first — potentially the wrong outlet,
+          // causing PIN login 401s and KOT prints going to the wrong kitchen.
+          if (expectedRestaurantId && health.restaurantId && health.restaurantId !== expectedRestaurantId) return null;
           return url;
         } catch {
           clearTimeout(timeoutId);
@@ -477,9 +537,11 @@ export async function discoverEdgeOnLAN({ force = false } = {}) {
     // This covers every failure exit: WebRTC unavailable + fallback list
     // exhausted, or WebRTC succeeded but no edge server on the probed /24.
     _discoveryLastFailed = Date.now();
-    _discoveryFailReason =
-      'Could not find the cashier PC on this LAN. If your network uses ' +
-      '10.x.x.x or 172.16-31.x.x, enter the Edge URL manually in Settings.';
+    _discoveryFailReason = expectedRestaurantId
+      ? 'Could not find this outlet\'s edge server on the LAN. Another outlet\'s ' +
+        'edge server may be present but was skipped. Enter the correct Edge URL manually in Settings.'
+      : 'Could not find the cashier PC on this LAN. If your network uses ' +
+        '10.x.x.x or 172.16-31.x.x, enter the Edge URL manually in Settings.';
     return null;
   })();
 
@@ -748,6 +810,9 @@ export async function edgeFetch(path, options = {}) {
         let body = null;
         try { body = await res.json(); } catch { /* ignore */ }
         const isKeyError = body?.error && /edge api key/i.test(body.error);
+        let isTokenError = body?.error && /runtime token/i.test(body.error);
+
+        // Step 1: Recover edge API key if missing/rejected
         if (isKeyError || !edgeApiKey) {
           console.warn('[edgeFetch] Edge API key missing or rejected — refreshing from cloud');
           // Don't remove the existing key until we have a fresh one.
@@ -758,11 +823,41 @@ export async function edgeFetch(path, options = {}) {
             setStoredEdgeApiKey(freshKey);
             const retryHeaders = { ...headers, 'X-Edge-Key': freshKey };
             res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
+            // Key was fixed — check if retry also failed with a token error
+            if (res.status === 401) {
+              try { body = await res.json(); } catch { /* ignore */ }
+              isTokenError = body?.error && /runtime token/i.test(body.error);
+            } else {
+              isTokenError = false;
+            }
           } else if (!freshKey && edgeApiKey) {
             // Refresh failed but we still have the old key — it might be
             // stale on the edge server side. Surface the original 401 error
             // instead of silently wiping the key.
             console.warn('[edgeFetch] Could not refresh edge API key — keeping existing key');
+          }
+        }
+
+        // Step 2: Recover runtime token if missing/rejected (either originally
+        // or after key recovery retry returned a token 401). Using a separate
+        // if (not else if) so both recoveries can run in sequence when both
+        // credentials are missing.
+        if (isTokenError || (!runtimeToken && !isKeyError)) {
+          console.warn('[edgeFetch] Runtime token missing or rejected — fetching from edge server');
+          // If we already have a token but the server rejected it, the token
+          // is stale (rotated). Clear it so ensureEdgeRuntimeToken() fetches
+          // a fresh one instead of returning the cached invalid token.
+          if (runtimeToken) {
+            try { localStorage.removeItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
+          }
+          const freshToken = await ensureEdgeRuntimeToken().catch(() => null);
+          if (freshToken) {
+            const retryHeaders = { ...headers, 'Authorization': `Bearer ${freshToken}` };
+            res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
+          } else if (runtimeToken) {
+            // Restore the old token so we don't leave things worse than before
+            setStoredEdgeRuntimeToken(runtimeToken);
+            console.warn('[edgeFetch] Could not refresh runtime token — keeping existing token');
           }
         }
       }

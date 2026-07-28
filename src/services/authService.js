@@ -15,7 +15,7 @@
 
 import { purgeLegacyCaches, clearTenantCaches } from '../utils/cacheKeys';
 import { API_BASE } from './apiConfig';
-import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, getEdgeUrl, getStoredEdgeApiKey, setStoredEdgeApiKey, getStoredEdgeRuntimeToken, setStoredEdgeRuntimeToken, getEdgeConnectivityState, invalidateEdgeHealthCache } from './edgeHealth.js';
+import { ensureEdgeApiKey, isEdgeAvailable, edgeFetch, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeUrl, getStoredEdgeApiKey, setStoredEdgeApiKey, getStoredEdgeRuntimeToken, setStoredEdgeRuntimeToken, getEdgeConnectivityState, invalidateEdgeHealthCache } from './edgeHealth.js';
 import secureStorage from '../utils/secureStorage.js';
 
 const CLOUD_LOGIN_TIMEOUT_MS = 4000;
@@ -80,6 +80,13 @@ export const authService = {
     // Wrong PIN (401 edgeInvalidCredentials) is terminal — re-throw so the
     // user sees "Invalid PIN" rather than silently succeeding via cloud.
     try {
+      // Run outlet-filtered LAN discovery so we connect to THIS outlet's edge
+      // server, not a sibling outlet's server on the same WiFi. Skips
+      // automatically if a manual edge URL is configured or discovery is
+      // already done. Non-blocking on failure — cloud fallback still works.
+      if (restaurantId) {
+        await discoverEdgeOnLAN({ expectedRestaurantId: restaurantId }).catch(() => {});
+      }
       const connState = await getEdgeConnectivityState();
       if (connState === 'edge_reachable') {
         const edgeResult = await this._tryEdgePinLogin(userId, pin);
@@ -260,8 +267,11 @@ export const authService = {
     localStorage.setItem('ss_user', JSON.stringify(data.user));
     // Pre-fetch the LAN edge API key for the new outlet.
     ensureEdgeApiKey().catch(() => {});
-    // Discover edge server LAN URL for the new outlet.
+    // Discover edge server LAN URL for the new outlet. Try cloud discovery
+    // first (outlet-aware via JWT), then filtered LAN scan as fallback so
+    // we don't connect to a sibling outlet's edge server on shared WiFi.
     discoverEdgeUrlFromBackend().catch(() => {});
+    discoverEdgeOnLAN({ expectedRestaurantId: outletId }).catch(() => {});
     if (data.restaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
     }
