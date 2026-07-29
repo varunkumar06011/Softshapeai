@@ -140,7 +140,9 @@ export default function VenueSectionView({
 function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
   const status = table.status || 'Free';
   const isFree = status === 'Free' || status === 'AVAILABLE';
-  const isOccupied = !isFree;
+  const isWaitingBill = status === 'Waiting Bill' || status === 'BILLING_REQUESTED' || status === 'BILLING';
+  const isPreparing = status === 'Preparing' && !isFree;
+  const isOccupied = !isFree && !isWaitingBill && !isPreparing;
   const isExtra = table.isExtra;
 
   // Bug 2 fix: Read fresh restaurant config so GST settings changes are reflected
@@ -172,9 +174,13 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
       className={`${compactMode ? 'h-16 p-2 sm:p-3 rounded-xl sm:rounded-2xl' : 'aspect-square p-4 sm:p-5 rounded-2xl sm:rounded-3xl'} border-2 transition-all flex flex-col items-center justify-between group relative overflow-hidden active:scale-95 w-full ${
         isExtra
           ? 'bg-blue-50 border-dashed border-blue-300 text-blue-600 hover:border-blue-400 shadow-sm'
-          : isFree
-            ? 'bg-white border-gray-100 hover:border-gray-300'
-            : 'bg-amber-50 border-amber-200 text-amber-700 shadow-lg shadow-amber-100'
+          : isWaitingBill
+            ? 'bg-yellow-100 border-yellow-400 text-yellow-700 shadow-lg shadow-yellow-100 animate-pulse'
+            : isPreparing
+              ? 'bg-orange-50 border-orange-400 text-orange-700 shadow-lg shadow-orange-100'
+              : isOccupied
+                ? 'bg-red-50 border-red-400 text-red-600 shadow-lg shadow-red-100'
+                : 'bg-white border-gray-100 hover:border-gray-300'
       }`}
     >
       {/* Section Badge - Top Left */}
@@ -201,7 +207,11 @@ function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
         <div className={`w-full ${compactMode ? 'py-1 rounded-lg text-[7px] sm:text-[8px]' : 'py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px]'} font-black uppercase tracking-widest flex items-center justify-center gap-1 ${
           isFree
             ? 'bg-gray-100 text-gray-400'
-            : 'bg-amber-500 text-white'
+            : isWaitingBill
+              ? 'bg-yellow-500 text-white'
+              : isPreparing
+                ? 'bg-orange-500 text-white'
+                : 'bg-red-500 text-white'
         }`}>
           {status}
         </div>

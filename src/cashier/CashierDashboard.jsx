@@ -150,6 +150,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder: isFreeWorkflow ? null : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null)),
     billNumber: isFreeWorkflow ? null : (row.orders?.[0]?.billNumber ?? row.activeOrder?.billNumber ?? null),
+    updatedAt: row.updatedAt || row.updated_at || existing?.updatedAt || null,
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
   };
 };
@@ -1909,6 +1910,16 @@ const CashierDashboard = ({ onLogout }) => {
       const applyTableUpdate = (prev) => prev.map(t => {
         if (t.backendId !== table.id) return t;
 
+        // Stale-event guard: skip updates with an older updatedAt than the local table
+        // (same pattern as captain/tableSyncService). Prevents late stale table:updated
+        // events from reviving a settled table with ghost items after the sync pause.
+        const incomingTableUpdated = table.updatedAt ? new Date(table.updatedAt).getTime() : (table.updated_at ? new Date(table.updated_at).getTime() : 0);
+        const existingTableUpdated = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
+        if (incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated) {
+          console.warn('[CashierDashboard] Skipping stale table:updated event for', t.number, { incoming: incomingTableUpdated, existing: existingTableUpdated });
+          return t;
+        }
+
         const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
         const incomingIsAvailable = incomingStatus === 'Free' || incomingStatus === 'AVAILABLE' || table.status === 'AVAILABLE';
         if (incomingIsAvailable && t.activeOrder) {
@@ -2084,7 +2095,7 @@ const CashierDashboard = ({ onLogout }) => {
       if (!isExtraTable) {
         const clearTable = (prev) => prev.map(t =>
           t.backendId === tableId
-            ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null, billNumber: null }
+            ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null, billNumber: null, updatedAt: new Date().toISOString() }
             : t
         );
         setActiveTables(clearTable, { skipPersist: true });
@@ -6041,7 +6052,8 @@ const CashierDashboard = ({ onLogout }) => {
 
                     {activeTab === 'tables' && enabledModules.tables !== false && (
                       <div className="space-y-4">
-                        {/* ── SUBCATEGORY PILLS — dynamically from fetched sections ── */}
+                        {/* ── SUBCATEGORY PILLS + STATUS LEGEND ── */}
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="flex gap-2 flex-wrap">
                           {fetchedSections.length > 0
                             ? fetchedSections
@@ -6076,6 +6088,23 @@ const CashierDashboard = ({ onLogout }) => {
                                 <p className="text-gray-400 text-xs">Create sections and tables in the admin panel to see them here.</p>
                               </div>
                             )}
+                        </div>
+
+                        {/* Status legend */}
+                        <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-wider text-gray-500 flex-wrap pt-2">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3 h-3 rounded border-2 border-gray-200 bg-white" /> Free
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3 h-3 rounded border-2 border-red-400 bg-red-50" /> Occupied
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3 h-3 rounded border-2 border-orange-400 bg-orange-50" /> Preparing
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3 h-3 rounded border-2 border-yellow-400 bg-yellow-100" /> Bill Printed
+                          </span>
+                        </div>
                         </div>
 
                         {/* ── VENUE SECTION VIEWS (data-driven from fetchedSections) ── */}
