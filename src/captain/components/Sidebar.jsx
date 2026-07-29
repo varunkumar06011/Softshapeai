@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
 import {
-  LayoutGrid, ClipboardList, UtensilsCrossed, Settings
+  LayoutGrid, UtensilsCrossed, Settings
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'floor', label: 'Floor', icon: LayoutGrid },
-  { id: 'orders', label: 'Orders', icon: ClipboardList },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];

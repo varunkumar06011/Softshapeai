@@ -184,6 +184,23 @@ export function useBarMenuSync() {
     };
   }, []);
 
+  // Listen for background sync events from barMenuService.syncBarMenuInBackground
+  // This updates the in-memory state when fresh data is fetched from the API/edge
+  useEffect(() => {
+    const handleBackgroundSync = (event) => {
+      const { items: freshItems } = event.detail || {};
+      if (freshItems && Array.isArray(freshItems) && freshItems.length > 0) {
+        // Re-map and update global state
+        import('./barMenuService.js').then(({ mapBarMenuItems }) => {
+          barGlobalMenu = mapBarMenuItems(freshItems, freshItems);
+          notifySubscribers();
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("bar-menu-synced", handleBackgroundSync);
+    return () => window.removeEventListener("bar-menu-synced", handleBackgroundSync);
+  }, []);
+
   return { ...state, refreshMenu };
 }
 

@@ -55,7 +55,7 @@ export default function FloorOverview({
 
   return (
     <div className="flex-grow overflow-y-auto bg-[#F8FAFC] scroll-smooth">
-      <div className="max-w-7xl mx-auto p-4 sm:p-6">
+      <div className="max-w-7xl mx-auto p-4 sm:p-6 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
         {/* Header row */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>

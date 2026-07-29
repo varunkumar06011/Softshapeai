@@ -1,10 +1,9 @@
 import React from 'react';
-import { LayoutGrid, ClipboardList, Plus, UtensilsCrossed, Settings } from 'lucide-react';
+import { LayoutGrid, Plus, UtensilsCrossed, Settings } from 'lucide-react';
 
 export default function MobileBottomNav({ activeSection, onSectionChange, onFabClick }) {
   const items = [
     { id: 'floor', label: 'Floor', icon: LayoutGrid },
-    { id: 'orders', label: 'Orders', icon: ClipboardList },
     { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -15,7 +14,7 @@ export default function MobileBottomNav({ activeSection, onSectionChange, onFabC
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Mobile navigation"
     >
-      {items.slice(0, 2).map(({ id, label, icon: Icon }) => (
+      {items.slice(0, 1).map(({ id, label, icon: Icon }) => (
         <button
           key={id}
           onClick={() => onSectionChange(id)}

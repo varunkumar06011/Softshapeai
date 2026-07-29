@@ -512,7 +512,7 @@ const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOu
               </span>
             )}
           </div>
-          <h3 className="captain-item-title font-extrabold text-[11px] sm:text-[12px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 transition-colors group-hover:text-red-600">
+          <h3 className="captain-item-title font-extrabold text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 truncate transition-colors group-hover:text-red-600">
             {item.n}
           </h3>
           {item.desc && (
@@ -1042,8 +1042,12 @@ export default function CaptainApp({ onLogout }) {
 
   const [activeView, setActiveView] = useState(() => localStorage.getItem(getTenantScopedKey('captain_active_tab')) || 'assignment');
 
-  // 8-section sidebar navigation: floor | orders | menu | transactions | reports | customers | staff | settings
-  const [activeSection, setActiveSection] = useState(() => localStorage.getItem(getTenantScopedKey('captain_active_section')) || 'floor');
+  // sidebar navigation: floor | menu | settings
+  const [activeSection, setActiveSection] = useState(() => {
+    const saved = localStorage.getItem(getTenantScopedKey('captain_active_section'));
+    if (!saved || saved === 'orders') return 'floor';
+    return saved;
+  });
 
   const [tableSubCategory, setTableSubCategory] = useState(() => {
 
@@ -1097,33 +1101,13 @@ export default function CaptainApp({ onLogout }) {
   // FIX #1: Keep layout height synced to actual visible viewport
 
   useEffect(() => {
-
     const setVh = () => {
-
-      const vh = (window.visualViewport?.height ?? window.innerHeight) * 0.01;
-
+      const vh = window.innerHeight * 0.01;
       document.documentElement.style.setProperty('--captain-vh', `${vh}px`);
-
     };
-
     setVh();
-
-    window.visualViewport?.addEventListener('resize', setVh);
-
-    window.visualViewport?.addEventListener('scroll', setVh);
-
-    window.addEventListener('resize', setVh);
-
-    return () => {
-
-      window.visualViewport?.removeEventListener('resize', setVh);
-
-      window.visualViewport?.removeEventListener('scroll', setVh);
-
-      window.removeEventListener('resize', setVh);
-
-    };
-
+    window.addEventListener('orientationchange', setVh);
+    return () => window.removeEventListener('orientationchange', setVh);
   }, []);
 
   // ── Debug: log mount and key state ──
@@ -1131,29 +1115,6 @@ export default function CaptainApp({ onLogout }) {
     console.log('[CaptainApp] mounted. user:', user?.id, 'role:', user?.role, 'restaurant:', restaurant?.id);
   }, []);
 
-  useEffect(() => {
-    const handleViewportResize = () => {
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      const screenHeight = window.screen.height;
-      const screenWidth = window.innerWidth;
-      // Skip cart minimization and scroll when instruction input is focused
-      if (viewportHeight < screenHeight * 0.7 && screenWidth < 1024 && !isInstructionFocusedRef.current) {
-        setIsCartMinimized(true);
-        // Prevent the browser from scrolling the page up when keyboard opens
-        if (window.visualViewport) {
-          window.scrollTo(0, 0);
-          document.documentElement.scrollTop = 0;
-          document.body.scrollTop = 0;
-        }
-      }
-    };
-
-    window.visualViewport?.addEventListener('resize', handleViewportResize);
-
-    return () => {
-      window.visualViewport?.removeEventListener('resize', handleViewportResize);
-    };
-  }, []);
 
 
 
@@ -1811,6 +1772,19 @@ export default function CaptainApp({ onLogout }) {
   }, [searchQuery, activeCategory, activeDiet, outletFilteredMenuItems, todaySpecials]);
 
 
+
+  const itemQtyMap = useMemo(() => {
+    const map = new Map();
+    for (const item of currentSessionItems) {
+      map.set(item.n, (map.get(item.n) || 0) + (item.q || 0));
+    }
+    return map;
+  }, [currentSessionItems]);
+
+  const cartItemCount = useMemo(() =>
+    currentSessionItems.reduce((sum, i) => sum + (Number(i.q) || 0), 0),
+    [currentSessionItems]
+  );
 
   const suggestedSpecials = useMemo(() => {
 
@@ -4450,7 +4424,10 @@ export default function CaptainApp({ onLogout }) {
   return (
     <div
       className="flex flex-col bg-[#F8FAFC] overflow-hidden font-['Inter',sans-serif] text-[#111827]"
-      style={{ height: 'calc(var(--captain-vh, 1dvh) * 100)' }}
+      style={{
+        height: 'calc(var(--captain-vh, 1dvh) * 100)',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+      }}
     >
 
       {/* Fix 4B: Print service warning banner */}
@@ -4770,7 +4747,7 @@ export default function CaptainApp({ onLogout }) {
 
       {activeSection === 'floor' && activeView === 'assignment' && (
 
-        <div className="flex-grow overflow-y-auto bg-gray-50/40">
+        <div className="flex-grow overflow-y-auto bg-gray-50/40 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
 
           {!assignment ? (
 
@@ -5061,7 +5038,7 @@ export default function CaptainApp({ onLogout }) {
 
         {view === 'tables' ? (
 
-          <div className="flex-grow overflow-y-auto p-4 sm:p-6 scroll-smooth bg-gray-50/50">
+          <div className="flex-grow overflow-y-auto p-4 sm:p-6 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] scroll-smooth bg-gray-50/50">
 
             <div className="max-w-6xl mx-auto">
 
@@ -5306,12 +5283,12 @@ export default function CaptainApp({ onLogout }) {
                 <button
                   onClick={() => setIsCartMinimized(false)}
                   className="relative p-2.5 bg-green-50 text-green-600 rounded-xl border border-green-100 shrink-0 flex items-center justify-center lg:hidden"
-                  aria-label={`Cart with ${currentSessionItems.reduce((sum, i) => sum + (Number(i.q) || 0), 0)} items`}
+                  aria-label={`Cart with ${cartItemCount} items`}
                 >
                   <ShoppingCart size={18} />
-                  {currentSessionItems.reduce((sum, i) => sum + (Number(i.q) || 0), 0) > 0 && (
+                  {cartItemCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-[#EF4444] text-white text-[9px] font-bold flex items-center justify-center">
-                      {currentSessionItems.reduce((sum, i) => sum + (Number(i.q) || 0), 0)}
+                      {cartItemCount}
                     </span>
                   )}
                 </button>
@@ -5660,7 +5637,7 @@ export default function CaptainApp({ onLogout }) {
 
   return (
 
-    <div className="pb-12">
+    <div className="pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
 
       <div className="text-center py-8">
 
@@ -5702,7 +5679,7 @@ export default function CaptainApp({ onLogout }) {
 
             {related.slice(0, 12).map((item, idx) => {
 
-              const totalQty = currentSessionItems.filter(i => i.n === item.n).reduce((acc, i) => acc + i.q, 0);
+              const totalQty = itemQtyMap.get(item.n) || 0;
 
               const isVeg = item.t === 'veg';
 
@@ -5736,7 +5713,7 @@ export default function CaptainApp({ onLogout }) {
 
                       </div>
 
-                      <h3 className="font-extrabold text-[11px] sm:text-[12px] text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 line-clamp-2 group-hover:text-red-600">{item.n}</h3>
+                      <h3 className="captain-item-title font-extrabold text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 truncate group-hover:text-red-600">{item.n}</h3>
 
                       {item.desc && <p className="text-[10px] text-gray-400 font-medium line-clamp-1">{item.desc}</p>}
 
@@ -5796,11 +5773,11 @@ export default function CaptainApp({ onLogout }) {
 
 })() : (
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 pb-12">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
 
                       {filteredMenu.map((item, idx) => {
 
-                        const totalQty = currentSessionItems.filter(i => i.n === item.n).reduce((acc, i) => acc + i.q, 0);
+                        const totalQty = itemQtyMap.get(item.n) || 0;
 
                         return (
 
