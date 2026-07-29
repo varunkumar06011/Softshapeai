@@ -53,6 +53,13 @@ const PortalSelection = ({ onSelect }) => {
       icon: QrCode,
       color: '#B71C1C',
     },
+    {
+      id: 'manager',
+      title: 'Manager Portal',
+      description: 'Shift, staff, and operations oversight for floor managers.',
+      icon: LayoutDashboard,
+      color: '#B71C1C',
+    },
   ];
 
   return (
@@ -75,10 +82,16 @@ const PortalSelection = ({ onSelect }) => {
             alt="Softshape"
             className="h-12 w-auto rounded-lg shadow-lg shadow-black/20"
           />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              to="/manager"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2.5 text-xs sm:px-5 sm:text-sm font-semibold text-white transition-all hover:bg-white/5"
+            >
+              Manager
+            </Link>
             <Link
               to="/archives"
-              className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/5"
+              className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/5"
             >
               Archives
             </Link>
