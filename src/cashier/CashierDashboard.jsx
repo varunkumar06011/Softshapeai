@@ -685,12 +685,17 @@ const CashierDashboard = ({ onLogout }) => {
 
   function shallowEqualSelectedTable(prev, next) {
     if (!prev || !next) return prev === next;
+    // Compare billable item count so cancellations (which change items but
+    // may not always change totalAmount due to rounding) trigger re-renders.
+    const prevBillableCount = (prev.activeOrder?.items || []).filter(i => !i.removedFromBill).length;
+    const nextBillableCount = (next.activeOrder?.items || []).filter(i => !i.removedFromBill).length;
     return (
       prev.status === next.status &&
       prev.workflowStatus === next.workflowStatus &&
       prev.currentBill === next.currentBill &&
       prev.activeOrder?.id === next.activeOrder?.id &&
       prev.activeOrder?.totalAmount === next.activeOrder?.totalAmount &&
+      prevBillableCount === nextBillableCount &&
       (prev.kotHistory?.length ?? 0) === (next.kotHistory?.length ?? 0)
     );
   }
@@ -960,6 +965,7 @@ const CashierDashboard = ({ onLogout }) => {
 
   const [discountMode, setDiscountMode] = useState('percent');
   const [rawDiscountInput, setRawDiscountInput] = useState('');
+  const prevDiscountTableIdRef = useRef(null);
   const [walkinTableNumber, setWalkinTableNumber] = useState(null); // 1-20 when active
   const [isWalkinMode, setIsWalkinMode] = useState(false);
 
@@ -2486,25 +2492,42 @@ const CashierDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     if (!selectedTable?.backendId) return;
+    const isTableSwitch = prevDiscountTableIdRef.current !== selectedTable?.backendId;
+    prevDiscountTableIdRef.current = selectedTable?.backendId;
+
     if (selectedTable?.discount && Number(selectedTable.discount) > 0) {
-      // Only auto-fill if cashier hasn't already typed something
-      setRawDiscountInput(prev => {
-        if (!prev || prev === '0' || prev === '') {
-          setDiscountMode('percent');
-          return String(Number(selectedTable.discount));
-        }
-        return prev;
-      });
+      if (isTableSwitch) {
+        // Fresh table switch — always load this table's discount
+        setDiscountMode('percent');
+        setRawDiscountInput(String(Number(selectedTable.discount)));
+      } else {
+        // Same table, server discount updated — don't clobber cashier's typing
+        setRawDiscountInput(prev => {
+          if (!prev || prev === '0' || prev === '') {
+            setDiscountMode('percent');
+            return String(Number(selectedTable.discount));
+          }
+          return prev;
+        });
+      }
       return;
     }
-    // Fallback: restore from localStorage if server discount is missing
+    // No server discount — try localStorage fallback
     try {
       const stored = localStorage.getItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`));
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed?.value) setRawDiscountInput(parsed.value);
+        if (parsed?.value) {
+          setRawDiscountInput(parsed.value);
+          return;
+        }
       }
     } catch { /* ignore */ }
+    // No discount for this table — clear any leftover from the previous table
+    if (isTableSwitch) {
+      setRawDiscountInput('');
+      setDiscountMode('percent');
+    }
   }, [selectedTable?.backendId, selectedTable?.discount]);
 
   useEffect(() => {
@@ -4793,6 +4816,9 @@ const CashierDashboard = ({ onLogout }) => {
       const hasItems = (freshExtra.activeOrder?.items?.length || 0) > 0 || (freshExtra.kotHistory?.length || 0) > 0;
       const hasBill = Number(freshExtra.currentBill || 0) > 0;
       const isFreeExtra = (!freshExtra.status || freshExtra.status === 'Free') && !hasItems && !hasBill;
+      // Track extra table in the discount ref so switching back to a regular
+      // table is correctly detected as a table switch (extra tables have no backendId).
+      prevDiscountTableIdRef.current = freshExtra.id;
       // Pre-populate discount if this extra table already has one stored
       if (freshExtra.discountPercent && Number(freshExtra.discountPercent) > 0) {
         setDiscountMode('percent');
@@ -8942,6 +8968,7 @@ const CashierDashboard = ({ onLogout }) => {
             // Snapshot pre-cancel state so we can rollback on error
             const preCancelItems = selectedTable?.activeOrder?.items ? [...selectedTable.activeOrder.items] : [];
             const preCancelKotHistory = selectedTable?.kotHistory ? [...selectedTable.kotHistory] : [];
+            const preCancelBill = selectedTable?.currentBill ?? 0;
 
             try {
               // ONE API call → ONE CANCEL_KOT socket event → ONE printed slip
@@ -8986,7 +9013,12 @@ const CashierDashboard = ({ onLogout }) => {
                   items: applyCancelToItems(prev.activeOrder.items || []),
                 } : prev.activeOrder;
                 const updatedKotHistory = applyCancelToKotHistory(prev.kotHistory);
-                return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
+                // Recalculate currentBill from the updated billable items so the
+                // table grid reflects the cancelled amount immediately, matching
+                // CaptainApp's optimistic cancel behavior.
+                const billableItems = (updatedOrder?.items || []).filter(i => !i.removedFromBill);
+                const newBill = billableItems.reduce((sum, i) => sum + (Number(i.p ?? i.price ?? 0) * Number(i.q ?? i.quantity ?? 1)), 0);
+                return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory, currentBill: newBill };
               };
               setSelectedTable(applyCancelOptimistic);
 
@@ -8996,7 +9028,9 @@ const CashierDashboard = ({ onLogout }) => {
                 const updatedOrder = t.activeOrder
                   ? { ...t.activeOrder, items: applyCancelToItems(t.activeOrder.items || []) }
                   : t.activeOrder;
-                return { ...t, activeOrder: updatedOrder };
+                const billableItems = (updatedOrder?.items || []).filter(i => !i.removedFromBill);
+                const newBill = billableItems.reduce((sum, i) => sum + (Number(i.p ?? i.price ?? 0) * Number(i.q ?? i.quantity ?? 1)), 0);
+                return { ...t, activeOrder: updatedOrder, currentBill: newBill };
               }));
 
               const entries = Object.values(cancelSelected);
@@ -9038,7 +9072,9 @@ const CashierDashboard = ({ onLogout }) => {
                     items: applyCancelToItems(prev.activeOrder.items || []),
                   } : prev.activeOrder;
                   const updatedKotHistory = applyCancelToKotHistory(prev.kotHistory);
-                  return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory };
+                  const billableItems = (updatedOrder?.items || []).filter(i => !i.removedFromBill);
+                  const newBill = billableItems.reduce((sum, i) => sum + (Number(i.p ?? i.price ?? 0) * Number(i.q ?? i.quantity ?? 1)), 0);
+                  return { ...prev, activeOrder: updatedOrder, kotHistory: updatedKotHistory, currentBill: newBill };
                 });
                 addNotification('Items already cancelled', 'success');
               } else {
@@ -9047,6 +9083,7 @@ const CashierDashboard = ({ onLogout }) => {
                   ...prev,
                   activeOrder: prev.activeOrder ? { ...prev.activeOrder, items: preCancelItems } : prev.activeOrder,
                   kotHistory: preCancelKotHistory,
+                  currentBill: preCancelBill,
                 } : prev);
                 addNotification(`Cancel failed: ${err.message}`, 'error');
               }

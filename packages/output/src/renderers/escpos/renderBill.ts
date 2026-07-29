@@ -289,7 +289,9 @@ export function renderBill(input: BillPrintInput): RenderedOutput {
     ? Math.round((discountedSubtotal + tax) * (scPercent / 100) * 100) / 100
     : 0;
 
-  const total = Math.round(Math.max(0, discountedSubtotal + tax + serviceChargeAmount) * 100) / 100;
+  const rawTotal = Math.max(0, discountedSubtotal + tax + serviceChargeAmount);
+  const total = Math.round(rawTotal);
+  const roundOff = Math.round((total - rawTotal) * 100) / 100;
 
   cmds.push(
     separator(),
@@ -311,10 +313,15 @@ export function renderBill(input: BillPrintInput): RenderedOutput {
     cmds.push(BOLD_OFF);
   }
 
+  if (roundOff !== 0) {
+    const roStr = (roundOff > 0 ? '+' : '') + roundOff.toFixed(2);
+    cmds.push(padRight('Round Off', roStr) + '\n');
+  }
+
   cmds.push(
     separator('='),
     BOLD_ON,
-    padRight('TOTAL', 'Rs.' + total.toFixed(2)) + '\n',
+    padRight('TOTAL', 'Rs.' + total.toFixed(0)) + '\n',
     BOLD_OFF,
     separator(),
     CENTER,

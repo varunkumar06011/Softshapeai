@@ -208,7 +208,7 @@ const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable, edgeRe
 
         {role === 'captain' && (
           <a
-            href={import.meta.env.VITE_CAPTAIN_ANDROID_DOWNLOAD_URL || 'https://github.com/varunkumar06011/Softshapeai/releases/download/v1.2.7/captain-android.apk'}
+            href={import.meta.env.VITE_CAPTAIN_ANDROID_DOWNLOAD_URL}
             download="SoftShape-Captain.apk"
             className="flex items-center justify-center gap-2 rounded-2xl bg-[#B71C1C] px-4 py-3 text-sm font-black uppercase tracking-widest text-white hover:bg-[#8B0000] transition-colors mb-2"
           >

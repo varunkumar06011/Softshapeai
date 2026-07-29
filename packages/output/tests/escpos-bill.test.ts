@@ -48,19 +48,19 @@ describe('renderBill GST parity', () => {
     expect(result.sgst).toBeCloseTo(12.5, 2);
     expect(result.serviceCharge).toBe(0);
     expect(result.discount).toBe(0);
-    expect(result.total).toBeCloseTo(525, 2);
+    expect(result.total).toBe(525);
   });
 
   it('GST + 10% discount', () => {
     const result = parseBillAmounts(renderBill({ ...BASE_INPUT, discountPercent: 10 }).blocks[0].data);
     expect(result.discount).toBe(50);
-    expect(result.total).toBeCloseTo(472.5, 2);
+    expect(result.total).toBe(473);
   });
 
   it('GST + 5% service charge', () => {
     const result = parseBillAmounts(renderBill({ ...BASE_INPUT, serviceChargePercent: 5 }).blocks[0].data);
     expect(result.serviceCharge).toBeCloseTo(26.25, 2);
-    expect(result.total).toBeCloseTo(551.25, 2);
+    expect(result.total).toBe(551);
   });
 
   it('GST + 5% service charge + 10% discount', () => {
