@@ -133,7 +133,7 @@ const normalizeKotsModule = (kots) => {
   return kots.map(kot => ({
     id: String(kot.kotNumber ?? kot.id ?? ''),
     time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
-    items: (kot.items || []).map(ki => ({
+    items: (kot.items || []).filter(ki => ki.status !== 'CANCELLED' && ki.s !== 'Cancelled').map(ki => ({
       id: ki.menuItemId || ki.id,
       n: ki.name ?? ki.n,
       p: Number(ki.price ?? ki.p ?? 0),
@@ -2066,7 +2066,7 @@ export default function CaptainApp({ onLogout }) {
       return kots.map(kot => ({
         id: String(kot.kotNumber ?? kot.id ?? ''),
         time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
-        items: (kot.items || []).map(ki => ({
+        items: (kot.items || []).filter(ki => ki.status !== 'CANCELLED' && ki.s !== 'Cancelled').map(ki => ({
           id: ki.menuItemId || ki.id,
           n: ki.name ?? ki.n,
           p: Number(ki.price ?? ki.p ?? 0),

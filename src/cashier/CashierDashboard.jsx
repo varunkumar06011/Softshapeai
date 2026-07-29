@@ -115,7 +115,7 @@ const normalizeKots = (kots) => {
   return kots.map(kot => ({
     id: String(kot.kotNumber ?? kot.id ?? ''),
     time: kot.createdAt ? new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
-    items: (kot.items || []).map(ki => ({
+    items: (kot.items || []).filter(ki => ki.status !== 'CANCELLED' && ki.s !== 'Cancelled').map(ki => ({
       id: ki.menuItemId || ki.id,
       n: ki.name ?? ki.n,
       p: Number(ki.price ?? ki.p ?? 0),
@@ -2652,17 +2652,19 @@ const CashierDashboard = ({ onLogout }) => {
 
   const liveKotQueue = useMemo(() => {
     return activeTableOrders.flatMap((order) =>
-      (order.table.kotHistory || []).map((kot) => ({
-        id: kot.id,
-        type: kot.type || 'FOOD',
-        table: order.table,
-        tableLabel: order.id,
-        time: kot.time || order.time,
-        status: kot.status || 'Incoming',
-        createdAt: kot.createdAt || Date.now(),
-        itemsReady: kot.itemsReady || 0,
-        items: kot.items || [],
-      }))
+      (order.table.kotHistory || [])
+        .filter(kot => !(kot.items || []).every(i => i.s === 'Cancelled'))
+        .map((kot) => ({
+          id: kot.id,
+          type: kot.type || 'FOOD',
+          table: order.table,
+          tableLabel: order.id,
+          time: kot.time || order.time,
+          status: kot.status || 'Incoming',
+          createdAt: kot.createdAt || Date.now(),
+          itemsReady: kot.itemsReady || 0,
+          items: (kot.items || []).filter(i => i.s !== 'Cancelled'),
+        }))
     );
   }, [activeTableOrders]);
 
@@ -7128,7 +7130,7 @@ const CashierDashboard = ({ onLogout }) => {
                           }
                           return [...(selectedTable.kotHistory || [])]
                             .reverse()
-                            .flatMap(k => k.items.map(i => ({ ...i, isKotSent: true, kotId: k.id })));
+                            .flatMap(k => k.items.filter(i => i.s !== 'Cancelled' && !i.removedFromBill).map(i => ({ ...i, isKotSent: true, kotId: k.id })));
                         })();
                         const pendingItems = [...cart].reverse().map(i => ({ ...i, isKotSent: false }));
                         const displayCart = [...pendingItems, ...sessionItems];
