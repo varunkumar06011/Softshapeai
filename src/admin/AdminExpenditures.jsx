@@ -28,6 +28,7 @@ export default function AdminExpenditures() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editExpenditure, setEditExpenditure] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const loadExpenditures = useCallback(async () => {
     setLoading(true);
@@ -56,11 +57,13 @@ export default function AdminExpenditures() {
 
   const handleAction = async (id, action) => {
     setActionLoading((prev) => ({ ...prev, [id]: true }));
+    setActionError('');
     try {
       await apiFetch(`/api/expenditures/${id}/${action}`, { method: 'POST' });
       loadExpenditures();
     } catch (err) {
       console.error(`[AdminExpenditures] ${action} failed:`, err);
+      setActionError(err.message || `${action} failed`);
     } finally {
       setActionLoading((prev) => ({ ...prev, [id]: false }));
     }
@@ -95,6 +98,14 @@ export default function AdminExpenditures() {
 
   return (
     <div className="space-y-4">
+      {actionError && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+          <span className="text-xs font-bold text-red-700">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-red-400 hover:text-red-600">
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">

@@ -1,8 +1,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// CloseDayDialog — "Close Day" action with sync confirmation
+// DEPRECATED — CloseDayDialog
 // ─────────────────────────────────────────────────────────────────────────────
-// Forces a full sync pass via the edge server, shows the day's summary,
-// and only allows closing when all records are synced and confirmed.
+// This component is fully DEPRECATED as of v23.9.5.
+// It is not imported or rendered anywhere in the app.
+// The "Close Day" feature was designed to force a sync push and lock the
+// day's transactions, but it was never wired up to the cashier UI and the
+// underlying /api/edge/close-day endpoint is not called from the client.
+//
+// The edge server endpoint (POST /api/edge/close-day) still exists in
+// server.ts for backward compatibility but should not be relied upon.
+// Sync verification is now handled by the sync engine's automatic retry
+// loop, dead-letter recovery UI (DeadLetterBanner), and the backfill
+// endpoint (POST /api/edge/sync/backfill).
+//
+// Do NOT render this component. Do NOT wire up a "Close Day" button.
+// If day-locking is needed in the future, build a new flow that:
+//   1. Calls POST /api/edge/sync/backfill first
+//   2. Calls POST /api/edge/sync/push to flush
+//   3. Checks GET /api/edge/sync/status for pending/dead-letter counts
+//   4. Only locks if both are zero
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
@@ -10,7 +26,16 @@ import { X, CheckCircle2, AlertTriangle, Loader2, Lock, RefreshCw } from 'lucide
 import { isEdgeAvailable, edgeFetch } from '../../services/edgeHealth';
 import { apiUrl, getAuthHeaders } from '../../services/apiConfig';
 
+// DEPRECATED — returns null. See file header for details.
 export default function CloseDayDialog({ open, onClose, onClosed }) {
+  // eslint-disable-next-line no-unused-vars
+  const _ = { open, onClose, onClosed }; // preserve props signature for backward compat
+  return null;
+}
+
+// ── Original implementation (deprecated, retained for reference) ────────────
+// Do not import or call this function.
+function _DeprecatedCloseDayDialog({ open, onClose, onClosed }) {
   const [step, setStep] = useState('idle'); // idle | syncing | summary | done
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState('');

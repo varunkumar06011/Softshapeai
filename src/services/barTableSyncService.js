@@ -200,8 +200,12 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
       activeOrder = incomingOrder;
     }
   }
-  // Preserve existing items if incoming has none (partial socket payloads)
-  if (incomingOrder && existingOrder && (!incomingOrder.items || incomingOrder.items.length === 0) && existingOrder.items?.length > 0) {
+  // Preserve existing items only when incoming items is absent (partial socket
+  // payloads where `items` is undefined). An explicit empty array `items: []`
+  // means "no active items" (e.g. all items cancelled/removed) and must NOT
+  // resurrect stale items — doing so would revive cancelled items after a
+  // table refresh.
+  if (incomingOrder && existingOrder && incomingOrder.items == null && existingOrder.items?.length > 0) {
     activeOrder = { ...incomingOrder, items: existingOrder.items };
   }
   // Fall back to existing if no incoming order and table is not free

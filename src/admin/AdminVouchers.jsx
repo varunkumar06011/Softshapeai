@@ -25,6 +25,7 @@ export default function AdminVouchers() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({ paidToName: '', paidToType: 'MISCELLANEOUS', amount: '', narration: '', voucherDate: today });
   const [creating, setCreating] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const loadVouchers = useCallback(async () => {
     setLoading(true);
@@ -53,11 +54,13 @@ export default function AdminVouchers() {
 
   const handleAction = async (id, action) => {
     setActionLoading((prev) => ({ ...prev, [id]: true }));
+    setActionError('');
     try {
       await apiFetch(`/api/vouchers/${id}/${action}`, { method: 'POST' });
       loadVouchers();
     } catch (err) {
       console.error(`[AdminVouchers] ${action} failed:`, err);
+      setActionError(err.message || `${action} failed`);
     } finally {
       setActionLoading((prev) => ({ ...prev, [id]: false }));
     }
@@ -118,6 +121,14 @@ export default function AdminVouchers() {
 
   return (
     <div className="space-y-4">
+      {actionError && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+          <span className="text-xs font-bold text-red-700">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-red-400 hover:text-red-600">
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">

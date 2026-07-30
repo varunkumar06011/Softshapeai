@@ -55,7 +55,7 @@ export default function PendingActionsModal({ open, onClose }) {
 
   const handleRetryAll = async () => {
     for (const action of actions) {
-      if (action.status === 'error' || action.status === 'conflict' || action.status === 'auth_error') {
+      if (action.status === 'error' || action.status === 'conflict' || action.status === 'auth_error' || action.status === 'failed-permanent') {
         await updatePendingAction(action.id, { status: 'pending', lastError: null, attempts: 0 });
       }
     }
@@ -85,6 +85,7 @@ export default function PendingActionsModal({ open, onClose }) {
     error: 'text-red-600 bg-red-50',
     conflict: 'text-amber-600 bg-amber-50',
     auth_error: 'text-red-700 bg-red-100',
+    'failed-permanent': 'text-red-800 bg-red-100',
   };
 
   const statusIcons = {
@@ -94,6 +95,7 @@ export default function PendingActionsModal({ open, onClose }) {
     error: <AlertTriangle size={12} />,
     conflict: <AlertTriangle size={12} />,
     auth_error: <AlertTriangle size={12} />,
+    'failed-permanent': <AlertTriangle size={12} />,
   };
 
   return (
@@ -116,7 +118,7 @@ export default function PendingActionsModal({ open, onClose }) {
                 Clear All
               </button>
             )}
-            {actions.some(a => a.status === 'error' || a.status === 'conflict' || a.status === 'auth_error') && (
+            {actions.some(a => a.status === 'error' || a.status === 'conflict' || a.status === 'auth_error' || a.status === 'failed-permanent') && (
               <button
                 onClick={handleRetryAll}
                 className="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600 transition-colors"
@@ -181,7 +183,7 @@ export default function PendingActionsModal({ open, onClose }) {
                       )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {(action.status === 'error' || action.status === 'conflict' || action.status === 'auth_error') && (
+                      {(action.status === 'error' || action.status === 'conflict' || action.status === 'auth_error' || action.status === 'failed-permanent') && (
                         <button
                           onClick={() => handleRetry(action.id)}
                           className="rounded p-1.5 text-blue-500 hover:bg-blue-50 transition-colors"

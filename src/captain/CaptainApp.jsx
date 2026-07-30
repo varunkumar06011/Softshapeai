@@ -64,7 +64,7 @@ import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import secureStorage from '../utils/secureStorage';
 
@@ -596,6 +596,16 @@ export default function CaptainApp({ onLogout }) {
   const [discoveryStatus, setDiscoveryStatus] = useState('');
   const [printServiceDown, setPrintServiceDown] = useState(false);
 
+  // Edge reconnect trigger — increments when edge transitions from unavailable
+  // to available, forcing sections/tables/menu to re-fetch from edge.
+  const [edgeReconnectTrigger, setEdgeReconnectTrigger] = useState(0);
+  // Refs for data refetch functions — set after the hooks are defined below.
+  // checkEdgeStatus is a useCallback with [] deps, so it can't directly reference
+  // functions defined later in the render. Refs bridge this gap.
+  const refetchAllDataRef = useRef(null);
+  // Track previous edge availability to detect transitions.
+  const wasEdgeReachableRef = useRef(false);
+
   const checkEdgeStatus = useCallback(async () => {
     setEdgeStatus(prev => ({ ...prev, checking: true }));
     // Discover edge URL from backend first (if no manual URL configured) so
@@ -604,13 +614,40 @@ export default function CaptainApp({ onLogout }) {
       await discoverEdgeUrlFromBackend().catch(() => {});
     }
     const url = getEdgeUrl();
-    const available = await isEdgeAvailable();
-    const connState = await getEdgeConnectivityState();
-    // Use connState as the primary signal — it's more granular and more
-    // accurate than the boolean isEdgeAvailable (which has a longer cache
-    // interval and may return stale false while connState is edge_reachable).
-    const edgeReachable = connState === 'edge_reachable' || (available && connState !== 'edge_not_ready');
-    setEdgeStatus({ checking: false, available: edgeReachable, url, connState });
+    let available = await isEdgeAvailable();
+    let connState = await getEdgeConnectivityState();
+    let edgeReachable = connState === 'edge_reachable' || (available && connState !== 'edge_not_ready');
+
+    // Edge is top priority: if edge is not reachable, actively search for it
+    // on the LAN instead of passively staying on cloud. This ensures the
+    // captain app continuously tries to find and connect to the edge server.
+    if (!edgeReachable) {
+      setDiscoveryStatus('Searching for edge server on LAN…');
+      const discovered = await discoverEdgeOnLAN().catch(() => null);
+      if (discovered) {
+        // Edge found on LAN — invalidate cache and re-check availability
+        // so subsequent fetches use the newly discovered edge URL.
+        invalidateEdgeHealthCache();
+        available = await isEdgeAvailable();
+        connState = await getEdgeConnectivityState();
+        edgeReachable = connState === 'edge_reachable' || (available && connState !== 'edge_not_ready');
+        setDiscoveryStatus(`Found edge server: ${discovered}`);
+      } else {
+        const reason = getEdgeDiscoveryFailReason();
+        setDiscoveryStatus(reason || 'Edge server not found on LAN — retrying…');
+      }
+    }
+
+    setEdgeStatus({ checking: false, available: edgeReachable, url: getEdgeUrl(), connState });
+
+    // Detect edge transition: unavailable → available. On transition, trigger
+    // a full data re-fetch so the app switches from cloud to edge immediately.
+    if (edgeReachable && !wasEdgeReachableRef.current) {
+      console.log('[CaptainApp] Edge became available — triggering data re-fetch from edge');
+      setEdgeReconnectTrigger(t => t + 1);
+      refetchAllDataRef.current?.();
+    }
+    wasEdgeReachableRef.current = edgeReachable;
 
     // Fix 4B: Check print service health when edge is reachable
     if (edgeReachable) {
@@ -641,15 +678,17 @@ export default function CaptainApp({ onLogout }) {
   const restaurantConfig = useMemo(() => getRestaurantConfig(), [configVersion]);
 
   // ── Periodic edge connectivity polling ──────────────────────────────────────
-  // Poll every 30 seconds so the status card reflects connectivity state.
-  // The getEdgeConnectivityState function has its own 10s cache, so this is
-  // effectively a continuous check that doesn't overload the edge server.
+  // Poll every 15 seconds when edge is NOT reachable (aggressive LAN discovery)
+  // and every 30 seconds when edge IS reachable (maintenance check).
+  // Edge is top priority — the app must continuously search for and connect to
+  // the edge server instead of passively staying on cloud.
   useEffect(() => {
+    const interval = edgeStatus.available ? 30_000 : 15_000;
     const pollInterval = setInterval(() => {
       checkEdgeStatus();
-    }, 30_000);
+    }, interval);
     return () => clearInterval(pollInterval);
-  }, [checkEdgeStatus]);
+  }, [checkEdgeStatus, edgeStatus.available]);
 
   // ── Trigger LAN discovery on mount for captain devices ──────────────────────
   useEffect(() => {
@@ -728,7 +767,9 @@ export default function CaptainApp({ onLogout }) {
     return () => clearTimeout(timeout);
   }, []);
 
-  // Fetch sections dynamically - edge-first with cloud fallback
+  // Fetch sections dynamically - edge-first with cloud fallback.
+  // Re-runs when edge reconnects (edgeReconnectTrigger) so sections switch
+  // from cloud to edge as soon as the edge server is discovered on LAN.
   const [fetchedSections, setFetchedSections] = useState([]);
   useEffect(() => {
     const fetchSections = async () => {
@@ -780,7 +821,7 @@ export default function CaptainApp({ onLogout }) {
       }
     };
     fetchSections();
-  }, []);
+  }, [edgeReconnectTrigger]);
 
   // Refs needed by table sync guards — declared early so they're available to useTableSync/useBarTableSync
   const isSubmittingKotRef = useRef(false);
@@ -798,7 +839,17 @@ export default function CaptainApp({ onLogout }) {
 
   const { menuItems: barMenu, loading: barMenuLoading } = useBarMenuSync();
 
-
+  // Wire up the refetch ref so checkEdgeStatus can trigger a full data re-fetch
+  // when edge is discovered on LAN. This ref bridges the gap between
+  // checkEdgeStatus (defined early with [] deps) and the refetch functions
+  // (defined here via hooks).
+  useEffect(() => {
+    refetchAllDataRef.current = () => {
+      refetchRestaurantTables?.();
+      refetchBarTables?.();
+      refreshMenu?.();
+    };
+  }, [refetchRestaurantTables, refetchBarTables, refreshMenu]);
 
   const { activeCalls, clearCall } = useWaiterCalls(activeOutlet);
 

@@ -169,7 +169,7 @@ export default function AdminPurchases() {
   // ── PO Form ──────────────────────────────────────────────────────────────────
   const [poForm, setPoForm] = useState({
     vendorId: '',
-    orderDate: () => getKolkataDateString(),
+    orderDate: getKolkataDateString(),
     notes: '',
     items: [{ name: '', quantity: '', unit: '', unitCost: '', ledgerCategoryId: null }],
   });

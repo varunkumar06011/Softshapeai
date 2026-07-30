@@ -683,6 +683,7 @@ export default function AdminDailyBalanceSheet() {
   // ── Status transitions ─────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setStatusLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (outletId && outletId !== 'all') params.set('outletId', outletId);
@@ -695,6 +696,7 @@ export default function AdminDailyBalanceSheet() {
   const handleLock = async () => {
     if (!confirm('Lock this balance sheet? It cannot be edited after locking.')) return;
     setStatusLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (outletId && outletId !== 'all') params.set('outletId', outletId);
@@ -707,6 +709,7 @@ export default function AdminDailyBalanceSheet() {
   const handleUnlock = async () => {
     if (!confirm('Unlock this balance sheet? It will become editable again.')) return;
     setStatusLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (outletId && outletId !== 'all') params.set('outletId', outletId);

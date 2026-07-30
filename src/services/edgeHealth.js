@@ -24,7 +24,7 @@ let _edgeLastCheck = 0;
 let _discoveredEdgeUrl = null;
 let _discoveryInProgress = null;
 let _discoveryLastFailed = 0;
-const DISCOVERY_FAILURE_COOLDOWN_MS = 30_000;
+const DISCOVERY_FAILURE_COOLDOWN_MS = 15_000;
 
 // Diagnostic reason for the last failed LAN discovery. Survives cache
 // invalidation (invalidateEdgeHealthCache does NOT clear this) because it's

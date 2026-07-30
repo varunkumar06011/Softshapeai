@@ -324,6 +324,34 @@ function AnimatedRoutes() {
 
 function PortalSelectionWrapper() {
   const navigate = useNavigate();
+  const [redirecting, setRedirecting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.();
+      if (!isNative) return;
+      try {
+        const { App } = await import('@capacitor/app');
+        const info = await App.getInfo();
+        const role = info.id?.replace('ai.softshape.', '');
+        if (cancelled || !role) return;
+        setRedirecting(true);
+        navigate(`/${role}`, { replace: true });
+      } catch {
+        // web or unknown — stay on portal selection
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [navigate]);
+
+  if (redirecting) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span>
+      </div>
+    );
+  }
   return <PortalSelection onSelect={(role) => navigate(`/${role}`)} />;
 }
 
@@ -474,7 +502,13 @@ function CaptainLoginWrapper() {
     <LoginScreen
       role="captain"
       onLogin={() => {}}
-      onBack={() => navigate('/')}
+      onBack={() => {
+        if (window.Capacitor?.isNativePlatform?.()) {
+          import('@capacitor/app').then(({ App }) => App.exitApp());
+        } else {
+          navigate('/');
+        }
+      }}
       onEdgeSetup={() => navigate('/edge-setup')}
       edgeAvailable={edgeCheck === true}
       edgeRestaurantId={edgeRestaurantId}

@@ -1111,8 +1111,9 @@ async function syncIndividually(actions) {
 // ── Initialization ───────────────────────────────────────────────────────────
 
 let initialized = false;
-let syncIntervalId = null;
+let syncTimerId = null;
 let edgeReplayIntervalId = null;
+let consecutiveSyncFailures = 0;
 const SYNC_INTERVAL_MS = 30000; // 30 seconds
 const EDGE_REPLAY_INTERVAL_MS = 15000; // 15 seconds
 
@@ -1138,12 +1139,24 @@ export function initSyncEngine() {
     setSyncStatus('idle');
   });
 
-  // Periodic sync when backend is reachable
-  syncIntervalId = setInterval(() => {
+  // Periodic sync when backend is reachable — uses recursive setTimeout with
+  // exponential backoff so that consecutive failures slow the retry rate
+  // instead of hammering the cloud every 30s. Backoff resets on success.
+  async function scheduleSyncCycle() {
     if (isBackendReachable() && !syncing) {
-      syncPendingActions();
+      await syncPendingActions();
+      if (syncStatus === 'error') {
+        consecutiveSyncFailures++;
+      } else {
+        consecutiveSyncFailures = 0;
+      }
     }
-  }, SYNC_INTERVAL_MS);
+    const delay = consecutiveSyncFailures > 0
+      ? getBackoffDelay(consecutiveSyncFailures)
+      : SYNC_INTERVAL_MS;
+    syncTimerId = setTimeout(scheduleSyncCycle, delay);
+  }
+  syncTimerId = setTimeout(scheduleSyncCycle, SYNC_INTERVAL_MS);
 
   // ── Edge replay interval ──────────────────────────────────────────────────
   // Every 15 seconds, check if the edge server is available. If so, replay
@@ -1178,14 +1191,15 @@ export function initSyncEngine() {
 }
 
 export function stopSyncEngine() {
-  if (syncIntervalId) {
-    clearInterval(syncIntervalId);
-    syncIntervalId = null;
+  if (syncTimerId) {
+    clearTimeout(syncTimerId);
+    syncTimerId = null;
   }
   if (edgeReplayIntervalId) {
     clearInterval(edgeReplayIntervalId);
     edgeReplayIntervalId = null;
   }
+  consecutiveSyncFailures = 0;
   initialized = false;
 }
 
