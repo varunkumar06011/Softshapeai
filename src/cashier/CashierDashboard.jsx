@@ -3728,19 +3728,25 @@ const CashierDashboard = ({ onLogout }) => {
     // Run reprint in background without blocking UI
     (async () => {
       try {
-        // Apply discount update before reprinting (always send, even 0, to reflect current input)
+        // Apply discount update before reprinting — non-fatal if it fails.
+        // The discount is also passed via discountPercent in the printBill call,
+        // so even if this PATCH fails the bill will still print with the correct discount.
         if (!selectedTable.isExtra && selectedTable.backendId) {
-          if (isEdgeLocalAuth()) {
-            await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
-              method: 'PATCH',
-              body: JSON.stringify({ discount: discountPercent }),
-            });
-          } else {
-            await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-              body: JSON.stringify({ discount: discountPercent }),
-            }, { retries: 1 });
+          try {
+            if (isEdgeLocalAuth()) {
+              await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ discount: discountPercent }),
+              });
+            } else {
+              await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify({ discount: discountPercent }),
+              }, { retries: 1 });
+            }
+          } catch (discountErr) {
+            console.warn('[handleReprintBill] Table discount update failed (non-fatal):', discountErr.message);
           }
           // Persist discount so it survives modal close/reopen until settlement
           localStorage.setItem(getTenantScopedKey(`cashier_table_discount_${selectedTable.backendId}`), JSON.stringify({

@@ -641,13 +641,13 @@ export default function CaptainApp({ onLogout }) {
   const restaurantConfig = useMemo(() => getRestaurantConfig(), [configVersion]);
 
   // ── Periodic edge connectivity polling ──────────────────────────────────────
-  // Poll every 10 seconds so the status card reflects real-time connectivity.
+  // Poll every 30 seconds so the status card reflects connectivity state.
   // The getEdgeConnectivityState function has its own 10s cache, so this is
   // effectively a continuous check that doesn't overload the edge server.
   useEffect(() => {
     const pollInterval = setInterval(() => {
       checkEdgeStatus();
-    }, 10_000);
+    }, 30_000);
     return () => clearInterval(pollInterval);
   }, [checkEdgeStatus]);
 
