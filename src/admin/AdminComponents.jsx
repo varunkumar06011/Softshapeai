@@ -13429,7 +13429,7 @@ export function Inventory() {
 
     if (!item) return false;
 
-    const itemName = item.name || item.menuItem?.name || '';
+    const itemName = item.displayName || item.name || item.menuItem?.name || '';
 
     const matchesSearch = itemName.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -13658,7 +13658,7 @@ export function Inventory() {
               if (displayItems.length === 0) return;
               const headers = ['S.NO', 'ITEM', 'CATEGORY', 'PRICE', 'STOCK(ml)', 'BOTTLE_SIZE(ml)', 'REORDER(bottles)', 'COST_PER_BOTTLE'];
               const rows = displayItems.map((item, index) => {
-                const name = item.name || item.menuItem?.name || '';
+                const name = item.displayName || item.name || item.menuItem?.name || '';
                 const category = item.category || (typeof item.menuItem?.category === 'object' ? item.menuItem.category.name : item.menuItem?.category) || '';
                 const price = parseFloat(item.menuItem?.basePrice || item.menuItem?.price || 0);
                 const stock = parseFloat(item.currentStock || 0);
@@ -13862,7 +13862,7 @@ export function Inventory() {
               <AlertCircle className="text-amber-600" size={24} />
               <div>
                 <p className="font-bold text-amber-800">{lowStockItems.length} item(s) below reorder level</p>
-                <p className="text-sm text-amber-600">{lowStockItems.map((i) => i.name || i.menuItem?.name || 'Unknown Item').join(', ')}</p>
+                <p className="text-sm text-amber-600">{lowStockItems.map((i) => i.displayName || i.name || i.menuItem?.name || 'Unknown Item').join(', ')}</p>
               </div>
             </div>
           )}
@@ -13983,9 +13983,9 @@ export function Inventory() {
                       <div className="flex items-center gap-3">
                         <div className="relative group shrink-0">
                           {item.menuItem?.imageUrl ? (
-                            <img src={item.menuItem.imageUrl} alt={item.name || item.menuItem?.name || ''} className="h-9 w-9 rounded-full object-cover border border-gray-200 shadow-sm" />
+                            <img src={item.menuItem.imageUrl} alt={item.displayName || item.name || item.menuItem?.name || ''} className="h-9 w-9 rounded-full object-cover border border-gray-200 shadow-sm" />
                           ) : (
-                            <IngredientAvatar name={item.name || item.menuItem?.name || 'Unknown Item'} />
+                            <IngredientAvatar name={item.displayName || item.name || item.menuItem?.name || 'Unknown Item'} />
                           )}
                         </div>
                         <div className="flex flex-col gap-1">
@@ -14005,7 +14005,7 @@ export function Inventory() {
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 group/name">
-                              <p className="font-black text-gray-900 text-sm">{toTitleCase(item.name || item.menuItem?.name || 'Unknown Item')}</p>
+                              <p className="font-black text-gray-900 text-sm">{toTitleCase(item.displayName || item.name || item.menuItem?.name || 'Unknown Item')}</p>
                               <button
                                 onClick={() => !item.isVirtual && setEditingBarCell({ itemId: item.id, field: 'name', value: toTitleCase(item.name || item.menuItem?.name || '') })}
                                 className="p-0.5 text-gray-400 hover:text-gray-700 opacity-0 group-hover/name:opacity-100 transition-opacity"
@@ -14147,7 +14147,7 @@ export function Inventory() {
 
                   <div className="flex items-center gap-3 mb-2">
 
-                    <h3 className="font-black text-sm uppercase tracking-wide text-gray-900 truncate">{item.name || item.menuItem?.name || 'Unknown Item'}</h3>
+                    <h3 className="font-black text-sm uppercase tracking-wide text-gray-900 truncate">{item.displayName || item.name || item.menuItem?.name || 'Unknown Item'}</h3>
 
 
 
