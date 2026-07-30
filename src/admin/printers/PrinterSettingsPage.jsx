@@ -25,9 +25,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 // Poll interval for checking print agent connection status (30 seconds)
 const POLL_INTERVAL_MS = 30_000;
 
-const PRINT_AGENT_DOWNLOAD_URL =
-  import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL ||
-  'https://github.com/varunkumar06011/softshape-print-agent/releases/latest';
+const PRINT_AGENT_DOWNLOAD_URL = import.meta.env.VITE_PRINT_AGENT_DOWNLOAD_URL;
 const downloadUrlMissing = !PRINT_AGENT_DOWNLOAD_URL;
 
 function StatusDot({ status }) {

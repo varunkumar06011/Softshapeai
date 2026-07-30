@@ -164,6 +164,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKotsModule(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory || []))),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder: isFreeWorkflow ? null : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null)),
+    updatedAt: row.updatedAt || row.updated_at || existing?.updatedAt || null,
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
   };
 };
@@ -640,13 +641,13 @@ export default function CaptainApp({ onLogout }) {
   const restaurantConfig = useMemo(() => getRestaurantConfig(), [configVersion]);
 
   // ── Periodic edge connectivity polling ──────────────────────────────────────
-  // Poll every 10 seconds so the status card reflects real-time connectivity.
+  // Poll every 30 seconds so the status card reflects connectivity state.
   // The getEdgeConnectivityState function has its own 10s cache, so this is
   // effectively a continuous check that doesn't overload the edge server.
   useEffect(() => {
     const pollInterval = setInterval(() => {
       checkEdgeStatus();
-    }, 10_000);
+    }, 30_000);
     return () => clearInterval(pollInterval);
   }, [checkEdgeStatus]);
 
@@ -1905,7 +1906,7 @@ export default function CaptainApp({ onLogout }) {
       try {
         localStorage.setItem(getTenantScopedKey('captain_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
       } catch {}
-      setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 5000);
+      setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 15000);
       // Clear cart for this table from localStorage-backed state
       setTableCarts(prev => {
         const next = { ...prev };
@@ -1986,17 +1987,17 @@ export default function CaptainApp({ onLogout }) {
 
       // Mark table as recently terminated so stale socket events (order:updated,
       // table:updated from before settlement) cannot revive it and cause ghost items.
-      // Same pattern as cashier — 5s grace window.
+      // Same pattern as cashier — 15s grace window.
       terminatedTableIdsRef.current.add(tableId);
       recentlyTerminatedRef.current[tableId] = Date.now();
       try {
         localStorage.setItem(getTenantScopedKey('captain_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
       } catch {}
-      setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 5000);
+      setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 15000);
 
       const clearTable = (prev) => prev.map(t =>
         t.backendId === tableId || t.id === tableId
-          ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null }
+          ? { ...t, status: 'Free', workflowStatus: 'Free', activeOrder: null, orders: [], kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null, updatedAt: new Date().toISOString() }
           : t
       );
       setActiveTables(clearTable);
@@ -2063,7 +2064,7 @@ export default function CaptainApp({ onLogout }) {
         if (!incomingFree) return;
       }
       const termTsTbl = recentlyTerminatedRef.current[table.id];
-      if (termTsTbl && Date.now() - termTsTbl < 5000) {
+      if (termTsTbl && Date.now() - termTsTbl < 15000) {
         const incomingFree = table.status === 'AVAILABLE' || table.status === 'Free' || table.workflowStatus === 'Free';
         if (!incomingFree) return;
       }
@@ -2071,6 +2072,16 @@ export default function CaptainApp({ onLogout }) {
         if (t.backendId !== table.id && t.id !== table.id) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
+
+        // Stale-event guard: skip updates with an older updatedAt than the local table
+        // (same pattern as tableSyncService). Prevents late stale table:updated events
+        // from reviving a settled table with ghost items after the termination window.
+        const incomingTableUpdated = table.updatedAt ? new Date(table.updatedAt).getTime() : 0;
+        const existingTableUpdated = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
+        if (incomingTableUpdated > 0 && existingTableUpdated > 0 && incomingTableUpdated < existingTableUpdated) {
+          console.warn('[CaptainApp] Skipping stale table:updated event for', t.number, { incoming: incomingTableUpdated, existing: existingTableUpdated });
+          return t;
+        }
 
         // Issue 14: Map backend status to frontend status (same as cashier)
         const incomingStatus = table.workflowStatus || (table.status !== undefined ? toFrontendTableStatus(table.status) : t.status);
@@ -2123,7 +2134,7 @@ export default function CaptainApp({ onLogout }) {
       // Guard: block stale events for recently terminated tables
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTsUpd = recentlyTerminatedRef.current[order.tableId];
-      if (termTsUpd && Date.now() - termTsUpd < 5000) return;
+      if (termTsUpd && Date.now() - termTsUpd < 15000) return;
       // Issue 17: Freeze items once billing is requested — stale order:updated
       // events must not change items while the cashier is processing the bill.
       if (billRequestedTableIdsRef.current.has(order.tableId)) return;
@@ -2131,13 +2142,15 @@ export default function CaptainApp({ onLogout }) {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
-        // Server is authoritative — directly use incoming items (no merge)
-        const serverItems = order.items || (t.activeOrder?.items || []);
-        // Skip stale order:updated with no items for settled/Free tables to prevent ghost items
-        if ((t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') && serverItems.length === 0) {
-          console.warn('[CaptainApp] Ignoring stale order:updated (no items) for settled table', t.number);
+        // Guard: block ALL stale order:updated for settled/Free tables to prevent ghost items
+        // (cashier blocks all; captain previously only blocked empty-item events, which let
+        // stale events carrying the old order's items revive a settled table.)
+        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
+          console.warn('[CaptainApp] Ignoring stale order:updated for settled table', t.number);
           return t;
         }
+        // Server is authoritative — directly use incoming items (no merge)
+        const serverItems = order.items || (t.activeOrder?.items || []);
         // Preserve existing kotHistory when incoming event has no kots data (partial update)
         const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
         return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: incomingKotArr };
@@ -2154,20 +2167,20 @@ export default function CaptainApp({ onLogout }) {
       // Guard: block stale events for recently terminated tables
       if (terminatedTableIdsRef.current.has(order.tableId)) return;
       const termTsCre = recentlyTerminatedRef.current[order.tableId];
-      if (termTsCre && Date.now() - termTsCre < 5000) return;
+      if (termTsCre && Date.now() - termTsCre < 15000) return;
       // Issue 17: Freeze items once billing is requested
       if (billRequestedTableIdsRef.current.has(order.tableId)) return;
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip active table during KOT submission to prevent duplicate items in display
         if (isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current)) return t;
-        // Server is authoritative — directly use incoming items (no merge)
-        const serverItems = order.items || [];
-        // Skip stale order:created with no items for settled/Free tables
-        if ((t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') && serverItems.length === 0) {
-          console.warn('[CaptainApp] Ignoring stale order:created (no items) for settled table', t.number);
+        // Guard: block ALL stale order:created for settled/Free tables to prevent ghost items
+        if (t.status === 'Free' || t.workflowStatus === 'Free' || t.dbStatus === 'AVAILABLE') {
+          console.warn('[CaptainApp] Ignoring stale order:created for settled table', t.number);
           return t;
         }
+        // Server is authoritative — directly use incoming items (no merge)
+        const serverItems = order.items || [];
         // Preserve existing kotHistory when incoming event has no kots data (partial update)
         const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory
           : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
@@ -3073,6 +3086,50 @@ export default function CaptainApp({ onLogout }) {
       setActiveSection('floor');
     }
   }, [view, activeTableId]);
+
+  // ── Android hardware back button ────────────────────────────────────────────
+  // Intercept the phone back button so it navigates within the app (close
+  // modals / leave session) instead of immediately exiting to the home screen.
+  // Exits only after a second press on the home floor view.
+  const backHandlerRef = useRef(null);
+  const lastBackPressRef = useRef(0);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    backHandlerRef.current = () => {
+      if (editingItem) { setEditingItem(null); return; }
+      if (previewItem) { setPreviewItem(null); return; }
+      if (showMoveModal) { setShowMoveModal(false); return; }
+      if (showKotConfirm) { setShowKotConfirm(false); return; }
+      if (showLiquorQtyPicker) { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); return; }
+      if (showEdgeSettings) { setShowEdgeSettings(false); return; }
+      if (view === 'session') { setView('tables'); setActiveSection('floor'); return; }
+      if (activeSection === 'menu') { setActiveSection('floor'); return; }
+      if (activeSection === 'settings') { setActiveSection('floor'); return; }
+      if (activeSection === 'floor' && activeView === 'assignment') {
+        setActiveView('tables');
+        localStorage.setItem(getTenantScopedKey('captain_active_tab'), 'tables');
+        return;
+      }
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) { import('@capacitor/app').then(({ App }) => App.exitApp()); return; }
+      lastBackPressRef.current = now;
+      addNotification('Press back again to exit', 'warning');
+    };
+  });
+
+  useEffect(() => {
+    if (!window.Capacitor?.isNativePlatform?.()) return;
+    let cancelled = false;
+    let listenerPromise;
+    import('@capacitor/app').then(({ App }) => {
+      if (cancelled) return;
+      listenerPromise = App.addListener('backButton', () => backHandlerRef.current?.());
+    });
+    return () => {
+      cancelled = true;
+      listenerPromise?.then(l => l.remove()).catch(() => {});
+    };
+  }, []);
 
   const sendIncrementalKOT = async (retryRequestId = null) => {
     // Issue 9: Don't clear previous print timeouts here — each KOT's timeout
@@ -5813,7 +5870,7 @@ export default function CaptainApp({ onLogout }) {
 
               {/* SESSION ORDER PANEL */}
 
-              <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'lg:h-auto overflow-hidden' : 'fixed inset-0 z-[100] lg:relative lg:inset-auto lg:h-auto lg:z-40'} bg-white flex flex-col shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300 ${!isCartMinimized ? 'animate-in fade-in slide-in-from-bottom-12 lg:animate-none' : ''}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 16px)', height: isCartMinimized ? 'calc(5rem + env(safe-area-inset-bottom, 16px))' : undefined }}>
+              <div className={`w-full lg:w-[420px] ${isCartMinimized ? 'hidden lg:flex lg:h-auto overflow-hidden' : 'fixed inset-0 z-[100] lg:relative lg:inset-auto lg:h-auto lg:z-40'} bg-white flex flex-col shrink-0 shadow-[0_0_100px_rgba(0,0,0,0.04)] transition-all duration-300 ${!isCartMinimized ? 'animate-in fade-in slide-in-from-bottom-12 lg:animate-none' : ''}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 16px)', height: isCartMinimized ? 'calc(5rem + env(safe-area-inset-bottom, 16px))' : undefined }}>
 
                 <div
 

@@ -10,13 +10,26 @@ import { X, Plus, Minus } from 'lucide-react';
 
 export default function QuantityPicker({ isOpen, itemName, onSelect, onClose }) {
   const [quantity, setQuantity] = useState('1');
+  const [visibleHeight, setVisibleHeight] = useState(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
       setQuantity('1');
-      // Focus the input after the modal animates in so the user can type immediately
       const timer = setTimeout(() => inputRef.current?.focus(), 50);
+
+      const vv = window.visualViewport;
+      if (vv) {
+        const update = () => setVisibleHeight(vv.height);
+        update();
+        vv.addEventListener('resize', update);
+        return () => {
+          clearTimeout(timer);
+          vv.removeEventListener('resize', update);
+          setVisibleHeight(null);
+        };
+      }
+
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -44,6 +57,7 @@ export default function QuantityPicker({ isOpen, itemName, onSelect, onClose }) 
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      style={visibleHeight ? { height: `${visibleHeight}px` } : undefined}
       onClick={onClose}
     >
       <div
