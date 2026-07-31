@@ -137,6 +137,25 @@ h1, h2, h3, h4, h5, h6 {
   100% { border-color: rgba(229, 57, 53, 0.2); }
 }
 
+/* Breathing animation for tables waiting for bill (yellow pulse) */
+@keyframes tableBreathing {
+  0%, 100% { background-color: rgba(254, 252, 232, 0.6); border-color: rgba(234, 179, 8, 0.25); }
+  50% { background-color: rgba(234, 179, 8, 0.22); border-color: rgba(234, 179, 8, 0.7); }
+}
+
+.animate-table-breathing {
+  animation: tableBreathing 1.8s ease-in-out infinite;
+}
+
+@keyframes legendBreathing {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.animate-legend-breathing {
+  animation: legendBreathing 1.8s ease-in-out infinite;
+}
+
 .animate-fade-in {
   animation: fadeIn 0.4s var(--ease-ios-decel) forwards;
 }

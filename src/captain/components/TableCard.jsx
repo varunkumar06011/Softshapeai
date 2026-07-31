@@ -4,6 +4,7 @@ import { UtensilsCrossed } from 'lucide-react';
 const STATUS_CONFIG = {
   'Free': { color: '#22C55E', bg: 'bg-white', icon: UtensilsCrossed, label: 'Free' },
   'Occupied': { color: '#EF4444', bg: 'bg-red-50/50', icon: UtensilsCrossed, label: 'Occupied' },
+  'Waiting Bill': { color: '#EAB308', bg: 'bg-yellow-50/60', icon: UtensilsCrossed, label: 'Waiting Bill', pulse: true },
 };
 
 const TableCard = memo(function TableCard({ table, onSelect, isSelected }) {
@@ -17,7 +18,7 @@ const TableCard = memo(function TableCard({ table, onSelect, isSelected }) {
       onClick={() => onSelect(table)}
       className={`relative aspect-square rounded-2xl border p-1.5 sm:p-3 flex flex-col items-center justify-center transition-all duration-150 hover:scale-[1.02] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 ${
         cfg.bg
-      } ${isSelected ? 'ring-2 ring-[#EF4444] ring-offset-1' : 'border-gray-200 shadow-sm'}`}
+      } ${cfg.pulse ? 'animate-table-breathing' : ''} ${isSelected ? 'ring-2 ring-[#EF4444] ring-offset-1' : 'border-gray-200 shadow-sm'}`}
       aria-label={`Table ${table.number || table.id}, ${cfg.label}`}
     >
       {/* Table number top-left */}

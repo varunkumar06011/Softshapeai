@@ -75,8 +75,9 @@ function readCache() {
     }
     const raw = localStorage.getItem(getTablesCacheKey());
     const parsed = raw ? JSON.parse(raw) : [];
-    // Deduplicate cached tables to prevent duplicate cards on load
-    return Array.from(new Map(parsed.map(t => [t.backendId, t])).values());
+    // Drop any local-N entries that slipped through, then deduplicate by backendId
+    const clean = parsed.filter(t => t.backendId && !String(t.backendId).startsWith('local-'));
+    return Array.from(new Map(clean.map(t => [t.backendId, t])).values());
   } catch {
     return [];
   }
@@ -191,23 +192,13 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
         activeOrder = existingOrder;
       }
     } else {
-      // Incoming is newer — server is authoritative, trust it directly.
-      // Only preserve existing items if incoming has none (genuine partial payload).
-      // Preserve local cancellations: if an item was locally cancelled but the
-      // incoming payload hasn't confirmed the cancel yet, keep it cancelled
-      const existingCancelledIds = new Set(
-        existingItems.filter(i => i.removedFromBill && i.id).map(i => i.id)
-      );
-      const preservedIncomingItems = incomingItems.map(incomingItem => {
-        if (existingCancelledIds.has(incomingItem.id) && !incomingItem.removedFromBill) {
-          return { ...incomingItem, removedFromBill: true, quantity: 0 };
-        }
-        return incomingItem;
-      });
-      if (incomingItems.length === 0 && existingItems.length > 0) {
+      // Incoming is newer — the server is authoritative.
+      // Preserve existing items only when the payload is genuinely partial;
+      // an explicit empty items array confirms that no active items remain.
+      if (incomingItems.length === 0 && existingItems.length > 0 && incomingOrder.items == null) {
         activeOrder = { ...incomingOrder, items: existingItems };
       } else {
-        activeOrder = { ...incomingOrder, items: preservedIncomingItems };
+        activeOrder = incomingOrder;
       }
     }
   }
@@ -242,13 +233,16 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     id: parseDisplayId(row.number),
     number: row.number,
     dbStatus,
-    status: keepWorkflowStatus && existing ? existing.status : persistedStatus,
+    status: (keepWorkflowStatus || _persistingCount > 0) && existing ? existing.status : persistedStatus,
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
-    guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
-    time: (isFreeWorkflow || !row.sessionStartedAt) ? null : (() => { try { const d = new Date(row.sessionStartedAt); return isNaN(d.getTime()) ? null : d.toISOString(); } catch { return null; } })(),
-    captainId: isFreeWorkflow ? null : (row.captainId ?? null),
+    guests: _persistingCount > 0 && existing ? existing.guests : (row.guests ?? 0),
+    time: _persistingCount > 0 && existing
+      ? existing.time
+      : (!row.sessionStartedAt ? null : (() => { try { const d = new Date(row.sessionStartedAt); return isNaN(d.getTime()) ? null : d.toISOString(); } catch { return null; } })()),
+    captainId: _persistingCount > 0 && existing ? existing.captainId : (row.captainId ?? null),
+    lastUpdatedAt: existing?.lastUpdatedAt || null,
     kotHistory: mergedKotHistory,
     currentBill: isFreeWorkflow ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
     activeOrder: isFreeWorkflow ? null : activeOrder,
@@ -532,14 +526,38 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
       return;
     }
 
-    setTablesState((current) => {
-      const apiEmpty = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
-      const occupiedCount = current.filter(t => t.status && t.status !== 'Free' && t.status !== 'AVAILABLE').length;
-      if (apiEmpty && occupiedCount > 0) {
-        console.warn('[TableSync] Refetch returned empty but local cache has occupied tables; keeping cache to avoid data loss');
+    const apiEmpty = !apiTables || !Array.isArray(apiTables) || apiTables.length === 0;
+    if (apiEmpty) {
+      setTablesState((current) => {
+        const occupiedCount = current.filter(t => t.status && t.status !== 'Free' && t.status !== 'AVAILABLE').length;
+        if (occupiedCount > 0) {
+          console.warn('[TableSync] Refetch returned empty but local cache has occupied tables; keeping cache to avoid data loss');
+        }
         return current;
-      }
-      const merged = apiEmpty ? [] : mergeTablesFromApi(apiTables, current);
+      });
+      // Retry once after a transient empty response without clearing the current table state.
+      setTimeout(() => {
+        if (!mountedRef.current || cancelledRef.current) return;
+        fetchTables(rid)
+          .then(retryData => {
+            if (!mountedRef.current || cancelledRef.current) return;
+            const retryTables = flattenSections(retryData);
+            if (retryTables.length === 0) return;
+            setTablesState((current) => {
+              const merged = mergeTablesFromApi(retryTables, current);
+              const deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
+              writeCache(deduped);
+              return deduped;
+            });
+          })
+          .catch(err => console.warn('[TableSync] Retry fetch failed:', err.message));
+      }, 1500);
+      if (mountedRef.current && !cancelledRef.current) setIsSyncing(false);
+      return;
+    }
+
+    setTablesState((current) => {
+      const merged = mergeTablesFromApi(apiTables, current);
       // Deduplicate by backendId to prevent duplicate cards
       let deduped = Array.from(new Map(merged.map(t => [t.backendId, t])).values());
       // Guard: preserve active table's existing entry during KOT submission to prevent duplicate display

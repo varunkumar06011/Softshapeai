@@ -293,7 +293,8 @@ function AnimatedRoutes() {
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname.split('/').slice(0, 3).join('/')}>
         <Route path="/" element={<AnimatedPage><PortalSelectionWrapper /></AnimatedPage>} />
-        <Route path="/onboarding" element={<AnimatedPage><QuickOnboarding /></AnimatedPage>} />
+        {/* QuickOnboarding (4-step offline) is deprecated — redirect to the 13-step web wizard */}
+        <Route path="/onboarding" element={<Navigate to="/onboarding/legacy" replace />} />
         <Route path="/onboarding/legacy" element={<AnimatedPage><OnboardingWizard /></AnimatedPage>} />
         <Route path="/edge-setup" element={<AnimatedPage><EdgeSetupScreen /></AnimatedPage>} />
         <Route path="/archives" element={<AnimatedPage><ArchivesPage /></AnimatedPage>} />

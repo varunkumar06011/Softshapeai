@@ -12,8 +12,9 @@
 // The setup token is generated from Admin → Printers → "Generate Setup Token"
 // on the web dashboard. It's valid for 15 minutes.
 //
-// If the owner doesn't have a cloud account yet, they can skip to
-// QuickOnboarding (Path B) which creates everything locally.
+// DEPRECATED: Offline onboarding (QuickOnboarding / Path B) is retired.
+// All restaurants must register via the 13-step web wizard first, then link
+// the desktop app via this EdgeSetupScreen.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -465,8 +466,10 @@ export default function EdgeSetupScreen() {
   // ── Navigate to cashier login ───────────────────────────────────────────────
   const handleGoToCashier = () => navigate('/cashier');
 
-  // ── Skip to offline onboarding (Path B) ─────────────────────────────────────
-  const handleSkipToOffline = () => navigate('/onboarding');
+  // ── Skip to offline onboarding (Path B) — DEPRECATED ─────────────────────
+  // Offline onboarding (QuickOnboarding) is deprecated. Users must register via
+  // the 13-step web wizard at /onboarding/legacy, then link via /edge-setup.
+  // const handleSkipToOffline = () => navigate('/onboarding');
 
   // ── Go back to the previous step ───────────────────────────────────────────
   const handleBack = useCallback(() => {
@@ -733,13 +736,7 @@ export default function EdgeSetupScreen() {
                       >
                         <ArrowLeft size={14} /> Back
                       </button>
-                      <span className="text-gray-200">|</span>
-                      <button
-                        onClick={handleSkipToOffline}
-                        className="text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
-                      >
-                        Set up offline →
-                      </button>
+                      {/* "Set up offline" button — DEPRECATED (QuickOnboarding retired) */}
                     </div>
                     <button
                       onClick={handleRegister}

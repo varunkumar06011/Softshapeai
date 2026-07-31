@@ -192,6 +192,47 @@ export const getBillableItems = (table) => {
 export const getTableItems = getAllOrderItems;
 
 /**
+ * Returns the table's KOTs in print order, each with normalized items.
+ * Used by the cashier table view to display items grouped by KOT (as printed),
+ * instead of flattening all items into one merged list.
+ *
+ * Each returned KOT has: { id, time, items: [{ id, n, p, q, quantity, notes,
+ *   removedFromBill, menuType, gstEnabled, menuItemId, orderItemId, s }] }
+ *
+ * Falls back to [] when no KOT data is available (e.g. walk-in orders).
+ */
+export const getTableKots = (table) => {
+  if (!table) return [];
+  const kotSource = (Array.isArray(table.kots) && table.kots.length > 0)
+    ? table.kots
+    : (Array.isArray(table.kotHistory) ? table.kotHistory : []);
+  if (kotSource.length === 0) return [];
+  return kotSource.map(kot => ({
+    id: String(kot.kotNumber ?? kot.id ?? ''),
+    time: kot.createdAt
+      ? (kot.time || new Date(kot.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }))
+      : (kot.time || null),
+    items: (kot.items || [])
+      .filter(i => i && (i.q ?? i.quantity ?? 0) !== 0)
+      .map(i => ({
+        id: i.id ?? null,
+        n: i.n ?? i.name ?? '',
+        p: Number(i.p ?? i.price ?? 0),
+        q: Number(i.q ?? i.quantity ?? 1),
+        quantity: Number(i.q ?? i.quantity ?? 1),
+        notes: i.notes || null,
+        removedFromBill: i.removedFromBill || i.s === 'Cancelled' || i.status === 'CANCELLED' || false,
+        cancelledQuantity: Number(i.cancelledQuantity ?? 0),
+        menuType: i.menuType || null,
+        gstEnabled: i.gstEnabled ?? null,
+        menuItemId: i.menuItemId || undefined,
+        orderItemId: i.orderItemId || undefined,
+        s: i.status === 'CANCELLED' ? 'Cancelled' : (i.s ?? 'KOT Sent'),
+      })),
+  })).filter(kot => kot.items.length > 0);
+};
+
+/**
  * Groups items by normalized name, summing quantities and prices.
  * Preserves original IDs for cancellation workflows.
  * Items with removedFromBill=true are skipped.

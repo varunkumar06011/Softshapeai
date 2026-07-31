@@ -12,6 +12,7 @@ const AREA_ICONS = {
 const STATUS_LEGEND = [
   { color: '#22C55E', label: 'Free' },
   { color: '#EF4444', label: 'Occupied' },
+  { color: '#EAB308', label: 'Waiting Bill', pulse: true },
 ];
 
 export default function FloorOverview({
@@ -203,9 +204,12 @@ export default function FloorOverview({
 
             {/* Status legend */}
             <div className="flex items-center gap-3 text-xs font-medium text-gray-400">
-              {STATUS_LEGEND.map(({ color, label }) => (
+              {STATUS_LEGEND.map(({ color, label, pulse }) => (
                 <span key={label} className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                  <span
+                    className={`w-2 h-2 rounded-full ${pulse ? 'animate-legend-breathing' : ''}`}
+                    style={{ backgroundColor: color }}
+                  />
                   {label}
                 </span>
               ))}

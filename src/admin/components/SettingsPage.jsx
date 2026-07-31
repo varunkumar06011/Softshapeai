@@ -198,6 +198,15 @@ function SettingsPage({ onNavigate }) {
   const [savedPassword, setSavedPassword] = useState(false);
   const [passwordError, setPasswordError] = useState(null);
 
+  // Delete password state
+  const [hasDeletePassword, setHasDeletePassword] = useState(false);
+  const [showDeletePasswordForm, setShowDeletePasswordForm] = useState(false);
+  const [deletePasswordForm, setDeletePasswordForm] = useState({ currentPassword: '', newDeletePassword: '', confirmDeletePassword: '' });
+  const [showDeletePasswords, setShowDeletePasswords] = useState({ current: false, new: false, confirm: false });
+  const [savingDeletePassword, setSavingDeletePassword] = useState(false);
+  const [savedDeletePassword, setSavedDeletePassword] = useState(false);
+  const [deletePasswordError, setDeletePasswordError] = useState(null);
+
   // Owner email OTP verification state
   const [showOwnerEmailModal, setShowOwnerEmailModal] = useState(false);
   const [ownerEmailSessionId, setOwnerEmailSessionId] = useState(null);
@@ -243,6 +252,14 @@ function SettingsPage({ onNavigate }) {
           halfBottleMl: r.halfBottleMl ?? 375,
         });
         setManagerTabs(r.enabledModules?.managerTabs || {});
+
+        // Check if delete password is set
+        try {
+          const dpStatus = await apiFetch('/api/restaurant/delete-password-status');
+          if (!cancelled) setHasDeletePassword(!!dpStatus?.hasDeletePassword);
+        } catch {
+          // Non-critical
+        }
 
         // Load staff counts
         try {
@@ -449,6 +466,37 @@ function SettingsPage({ onNavigate }) {
       setPasswordError(err.message || 'Failed to change password');
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  const handleDeletePasswordChange = async () => {
+    if (deletePasswordForm.newDeletePassword !== deletePasswordForm.confirmDeletePassword) {
+      setDeletePasswordError('New delete passwords do not match');
+      return;
+    }
+    if (deletePasswordForm.newDeletePassword.length < 4) {
+      setDeletePasswordError('Delete password must be at least 4 characters');
+      return;
+    }
+    setSavingDeletePassword(true);
+    setDeletePasswordError(null);
+    try {
+      await apiFetch('/api/restaurant/delete-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: deletePasswordForm.currentPassword,
+          newDeletePassword: deletePasswordForm.newDeletePassword,
+        }),
+      });
+      setDeletePasswordForm({ currentPassword: '', newDeletePassword: '', confirmDeletePassword: '' });
+      setShowDeletePasswordForm(false);
+      setSavedDeletePassword(true);
+      setHasDeletePassword(true);
+      setTimeout(() => setSavedDeletePassword(false), 3000);
+    } catch (err) {
+      setDeletePasswordError(err.message || 'Failed to set delete password');
+    } finally {
+      setSavingDeletePassword(false);
     }
   };
 
@@ -1179,6 +1227,152 @@ function SettingsPage({ onNavigate }) {
                       setShowPasswordForm(false);
                       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
                       setPasswordError(null);
+                    }}
+                    className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-bold transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </SectionCard>
+
+          {/* Delete Password Section */}
+          <SectionCard title="Delete Password" icon={Lock}>
+            <p className="text-xs text-gray-500">
+              This password is required when deleting transactions, expenditures, or other sensitive records.
+              Set a dedicated password different from your login password for extra security.
+            </p>
+
+            {hasDeletePassword && !showDeletePasswordForm && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Check size={16} className="text-green-600" />
+                  <span className="text-sm font-medium text-gray-700">Delete password is set</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDeletePasswordForm(true);
+                    setDeletePasswordError(null);
+                    setSavedDeletePassword(false);
+                  }}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-bold transition-all"
+                >
+                  Change Delete Password
+                </button>
+              </div>
+            )}
+
+            {!hasDeletePassword && !showDeletePasswordForm && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={16} className="text-amber-600" />
+                  <span className="text-sm font-medium text-gray-700">No delete password set — your login password is used by default</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDeletePasswordForm(true);
+                    setDeletePasswordError(null);
+                    setSavedDeletePassword(false);
+                  }}
+                  className="px-4 py-2 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl text-sm font-bold transition-all"
+                >
+                  Set Delete Password
+                </button>
+              </div>
+            )}
+
+            {showDeletePasswordForm && (
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>Current Login Password</label>
+                  <div className="relative">
+                    <input
+                      className={inputClass + ' pr-10'}
+                      type={showDeletePasswords.current ? 'text' : 'password'}
+                      value={deletePasswordForm.currentPassword}
+                      onChange={(e) => setDeletePasswordForm({ ...deletePasswordForm, currentPassword: e.target.value })}
+                      placeholder="Enter your login password to confirm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDeletePasswords({ ...showDeletePasswords, current: !showDeletePasswords.current })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showDeletePasswords.current ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>New Delete Password</label>
+                  <div className="relative">
+                    <input
+                      className={inputClass + ' pr-10'}
+                      type={showDeletePasswords.new ? 'text' : 'password'}
+                      value={deletePasswordForm.newDeletePassword}
+                      onChange={(e) => setDeletePasswordForm({ ...deletePasswordForm, newDeletePassword: e.target.value })}
+                      placeholder="At least 4 characters"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDeletePasswords({ ...showDeletePasswords, new: !showDeletePasswords.new })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showDeletePasswords.new ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Confirm New Delete Password</label>
+                  <div className="relative">
+                    <input
+                      className={inputClass + ' pr-10'}
+                      type={showDeletePasswords.confirm ? 'text' : 'password'}
+                      value={deletePasswordForm.confirmDeletePassword}
+                      onChange={(e) => setDeletePasswordForm({ ...deletePasswordForm, confirmDeletePassword: e.target.value })}
+                      placeholder="Re-enter new delete password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDeletePasswords({ ...showDeletePasswords, confirm: !showDeletePasswords.confirm })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showDeletePasswords.confirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                {deletePasswordError && (
+                  <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                    <AlertCircle size={16} />
+                    {deletePasswordError}
+                  </div>
+                )}
+
+                {savedDeletePassword && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 rounded-lg px-3 py-2">
+                    <Check size={16} />
+                    Delete password saved successfully
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleDeletePasswordChange}
+                    disabled={savingDeletePassword}
+                    className={saveBtnClass + ' flex items-center gap-2'}
+                  >
+                    {savingDeletePassword ? (
+                      <><Loader2 size={16} className="animate-spin" /> Saving...</>
+                    ) : (
+                      <><Lock size={16} /> Save Delete Password</>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowDeletePasswordForm(false);
+                      setDeletePasswordForm({ currentPassword: '', newDeletePassword: '', confirmDeletePassword: '' });
+                      setDeletePasswordError(null);
                     }}
                     className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-bold transition-all"
                   >

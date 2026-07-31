@@ -29,7 +29,7 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame
+  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -44,7 +44,7 @@ import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
-import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
+import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems, getTableKots } from '../shared/utils/billing';
 import { validateTableIntegrity } from '../utils/syncInvariant';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -134,6 +134,31 @@ const mapRealtimeTablePayload = (row, existing = null) => {
   const dbStatus = row.status;
   const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
 
+  // Resolve incoming activeOrder, then preserve local cancellations that the
+  // server payload hasn't confirmed yet. Without this, a swap arriving via
+  // socket before a pending cancel is persisted would re-render cancelled
+  // items as active in the new table. Mirrors mapBackendTable in tableSyncService.
+  const incomingOrder = isFreeWorkflow
+    ? null
+    : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null));
+  let activeOrder = incomingOrder;
+  if (incomingOrder && existing?.activeOrder && incomingOrder.id === existing.activeOrder.id) {
+    const incomingItems = Array.isArray(incomingOrder.items) ? incomingOrder.items : [];
+    const existingItems = Array.isArray(existing.activeOrder.items) ? existing.activeOrder.items : [];
+    const existingCancelledIds = new Set(
+      existingItems.filter(i => i?.removedFromBill && i?.id).map(i => i.id)
+    );
+    if (existingCancelledIds.size > 0) {
+      const preservedItems = incomingItems.map(incomingItem => {
+        if (existingCancelledIds.has(incomingItem.id) && !incomingItem.removedFromBill) {
+          return { ...incomingItem, removedFromBill: true, quantity: 0, q: 0 };
+        }
+        return incomingItem;
+      });
+      activeOrder = { ...incomingOrder, items: preservedItems };
+    }
+  }
+
   return {
     backendId: row.id,
     id: Number(row.number) || row.number,
@@ -148,7 +173,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
     kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : [])),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
-    activeOrder: isFreeWorkflow ? null : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null)),
+    activeOrder,
     billNumber: isFreeWorkflow ? null : (row.orders?.[0]?.billNumber ?? row.activeOrder?.billNumber ?? null),
     updatedAt: row.updatedAt || row.updated_at || existing?.updatedAt || null,
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
@@ -587,6 +612,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [cancelSelected, setCancelSelected] = useState({});
   const [cancelBatchLoading, setCancelBatchLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState({});
+  const [showLastItemWarning, setShowLastItemWarning] = useState(false);
   const [isKotSending, setIsKotSending] = useState(false);
   const [isTerminating, setIsTerminating] = useState(false);
   const isSubmittingKotRef = useRef(false);
@@ -3131,16 +3157,20 @@ const CashierDashboard = ({ onLogout }) => {
         // ── R3: Try Output Intent API for bill printing ──────────────────────
         const billItems = getBillableItems(selectedTable);
         const billCalc = calculateOrderTotal(billItems, discountPercent, restaurantConfig);
+        // Group identical items (by name + price + notes) so the printed bill
+        // shows one line per product with summed quantity, instead of separate
+        // lines for each KOT submission of the same item.
+        const groupedBillItems = groupOrderItems(billItems);
         const billPayload = {
           billNumber: 'PENDING',
           tableNumber: selectedTable.number,
           sectionTag: selectedTable.sectionTag || null,
-          items: billItems.map(i => ({
-            name: i.name || i.n || '',
-            quantity: i.quantity || i.q || 1,
-            price: i.price || i.p || 0,
-            amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
-            menuType: i.menuType || i.type || undefined,
+          items: groupedBillItems.map(i => ({
+            name: i.n || '',
+            quantity: i.q || i.quantity || 1,
+            price: i.p || 0,
+            amount: (i.p || 0) * (i.q || i.quantity || 1),
+            menuType: i.menuType || undefined,
             notes: i.notes || null,
           })),
           subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
@@ -3148,8 +3178,8 @@ const CashierDashboard = ({ onLogout }) => {
           tax: (billCalc.cgst || billCalc.sgst) ? { cgst: billCalc.cgst, sgst: billCalc.sgst, total: (billCalc.cgst || 0) + (billCalc.sgst || 0) } : null,
           roundOff: billCalc.roundOff ?? 0,
           grandTotal: billCalc.grandTotal,
-          itemCount: billItems.length,
-          qtyCount: billItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
+          itemCount: groupedBillItems.length,
+          qtyCount: groupedBillItems.reduce((s, i) => s + (i.q || i.quantity || 1), 0),
           section: selectedTable.section?.name || undefined,
           restaurant: {
             name: restaurant?.name || undefined,
@@ -3187,7 +3217,7 @@ const CashierDashboard = ({ onLogout }) => {
           eventId: billEventId,
           data: {
             tableNumber: selectedTable.number,
-            items: billItems,
+            items: groupedBillItems,
             subtotal: billCalc.rawSubtotal ?? billCalc.subtotal,
             discount: discountPercent > 0 ? { percent: discountPercent, amount: billCalc.discountAmount } : null,
             cgst: billCalc.cgst,
@@ -3785,16 +3815,17 @@ const CashierDashboard = ({ onLogout }) => {
           // ── R3: Try Output Intent API for reprint ────────────────────────
           const reprintItems = getBillableItems(selectedTable);
           const reprintCalc = calculateOrderTotal(reprintItems, discountPercent, restaurantConfig);
+          const groupedReprintItems = groupOrderItems(reprintItems);
           const reprintPayload = {
             billNumber: selectedTable.billNumber || 'REPRINT',
             tableNumber: selectedTable.number,
             sectionTag: selectedTable.sectionTag || null,
-            items: reprintItems.map(i => ({
-              name: i.name || i.n || '',
-              quantity: i.quantity || i.q || 1,
-              price: i.price || i.p || 0,
-              amount: (i.price || i.p || 0) * (i.quantity || i.q || 1),
-              menuType: i.menuType || i.type || undefined,
+            items: groupedReprintItems.map(i => ({
+              name: i.n || '',
+              quantity: i.q || i.quantity || 1,
+              price: i.p || 0,
+              amount: (i.p || 0) * (i.q || i.quantity || 1),
+              menuType: i.menuType || undefined,
               notes: i.notes || null,
             })),
             subtotal: reprintCalc.rawSubtotal ?? reprintCalc.subtotal,
@@ -3802,8 +3833,8 @@ const CashierDashboard = ({ onLogout }) => {
             tax: (reprintCalc.cgst || reprintCalc.sgst) ? { cgst: reprintCalc.cgst, sgst: reprintCalc.sgst, total: (reprintCalc.cgst || 0) + (reprintCalc.sgst || 0) } : null,
             roundOff: reprintCalc.roundOff ?? 0,
             grandTotal: reprintCalc.grandTotal,
-            itemCount: reprintItems.length,
-            qtyCount: reprintItems.reduce((s, i) => s + (i.quantity || i.q || 1), 0),
+            itemCount: groupedReprintItems.length,
+            qtyCount: groupedReprintItems.reduce((s, i) => s + (i.q || i.quantity || 1), 0),
             isReprint: true,
             section: selectedTable.section?.name || undefined,
             restaurant: {
@@ -3839,7 +3870,7 @@ const CashierDashboard = ({ onLogout }) => {
             eventId: reprintBillEventId,
             data: {
               tableNumber: selectedTable.number,
-              items: reprintItems,
+              items: groupedReprintItems,
               subtotal: reprintCalc.rawSubtotal ?? reprintCalc.subtotal,
               discount: discountPercent > 0 ? { percent: discountPercent, amount: reprintCalc.discountAmount } : null,
               cgst: reprintCalc.cgst,
@@ -7441,48 +7472,71 @@ const CashierDashboard = ({ onLogout }) => {
                 <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#1E3A8A] border-b border-red-100 pb-1 shrink-0">
                   Order Summary
                 </h3>
-                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-3 mt-2">
                   {(isModalDataLoading && getAllOrderItems(selectedTable).length === 0) ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 size={20} className="animate-spin text-gray-400" />
                     </div>
                   ) : (
-                    groupOrderItems(getAllOrderItems(selectedTable))
-                      .map((item, idx) => {
-                        const isCancelled = item.quantity === 0;
+                    (() => {
+                      const kots = getTableKots(selectedTable);
+                      if (kots.length === 0) {
                         return (
-                          <div key={`${item.n}-${idx}`} className={`flex justify-between items-center py-2 border-b border-gray-100 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
-                            <div className="flex items-start gap-3">
-                              <span className={`min-w-[32px] h-7 rounded-lg border shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                                {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
-                              </span>
-                              <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
-                            </div>
-                            <div className="flex items-center gap-2 sm:gap-3">
-                              <span className={`text-[10px] font-bold whitespace-nowrap ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
-                              <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                                ₹{Number(item.p * item.q).toFixed(2)}
-                              </span>
-                              {isCancelled ? (
-                                <span className="text-xs font-black text-red-400 uppercase tracking-widest">Cancelled</span>
-                              ) : (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowCancelModal(true);
-                                    const gKey = `${item.n}::${item.p}`;
-                                    setCancelSelected({ [gKey]: { item, quantity: 1 } });
-                                  }}
-                                  className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
-                                  title="Cancel Item"
-                                >
-                                  <X size={16} strokeWidth={3} />
-                                </button>
-                              )}
-                            </div>
+                          <div className="flex items-center justify-center py-8">
+                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">No items yet</p>
                           </div>
                         );
-                      })
+                      }
+                      return kots.map((kot) => (
+                        <div key={kot.id} className="space-y-1">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-1">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">KOT #{kot.id}</span>
+                            <span className="text-[9px] font-black text-gray-400 uppercase">{kot.time || '—'}</span>
+                          </div>
+                          {kot.items.map((item, iIdx) => {
+                            const isCancelled = item.removedFromBill || item.s === 'Cancelled';
+                            return (
+                              <div key={`${kot.id}-${iIdx}`} className={`flex justify-between items-center py-1.5 border-b border-gray-50 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
+                                <div className="flex items-start gap-2">
+                                  <span className={`min-w-[28px] h-6 rounded-lg border shadow-sm flex items-center justify-center text-xs font-black px-1 shrink-0 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                    {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
+                                  </span>
+                                  <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
+                                </div>
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                  <span className={`text-[10px] font-bold whitespace-nowrap ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
+                                  <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                                    ₹{Number(item.p * item.q).toFixed(2)}
+                                  </span>
+                                  {isCancelled ? (
+                                    <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Cancelled</span>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const billableItems = getBillableItems(selectedTable);
+                                        const gKey = `${item.n}::${item.p}`;
+                                        if (billableItems.length <= 1) {
+                                          setShowLastItemWarning(true);
+                                          setCancelSelected({ [gKey]: { item, quantity: 1 } });
+                                        } else {
+                                          setShowCancelModal(true);
+                                          setCancelSelected({ [gKey]: { item, quantity: 1 } });
+                                        }
+                                      }}
+                                      className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100"
+                                      title="Cancel Item"
+                                    >
+                                      <X size={16} strokeWidth={3} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ));
+                    })()
                   )}
                 </div>
               </div>
@@ -8896,6 +8950,37 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         ))}
       </div>
+
+      {/* LAST ITEM WARNING — cancelling the only item will terminate the table */}
+      {showLastItemWarning && selectedTable && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setShowLastItemWarning(false); setCancelSelected({}); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4 border border-red-100">
+                <AlertTriangle size={28} className="text-red-500" />
+              </div>
+              <h3 className="font-black text-base text-gray-900 mb-2">Last Item on Table</h3>
+              <p className="text-sm text-gray-500 font-semibold leading-relaxed mb-6">
+                This table has only one item. Cancelling it will <span className="text-red-500 font-black">terminate the table</span> and free it for new orders.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowLastItemWarning(false); setCancelSelected({}); }}
+                  className="flex-1 py-3.5 rounded-xl text-xs font-black text-gray-500 hover:bg-gray-100 transition-colors uppercase tracking-widest"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => { setShowLastItemWarning(false); setShowCancelModal(true); }}
+                  className="flex-[2] py-3.5 rounded-xl text-xs font-black uppercase tracking-widest bg-[#F59E0B] text-[#1E293B] hover:bg-[#D97706] shadow-lg shadow-[#F59E0B]/30 transition-all"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CANCEL ITEMS MODAL */}
       {showCancelModal && selectedTable && (() => {

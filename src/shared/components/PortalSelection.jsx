@@ -96,7 +96,7 @@ const PortalSelection = ({ onSelect }) => {
               Archives
             </Link>
             <Link
-              to={isDesktopApp ? '/onboarding' : '/onboarding/legacy'}
+              to="/onboarding/legacy"
               className="inline-flex items-center gap-2 rounded-lg bg-[#E53935] px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-[#B71C1C]"
             >
               Get Started
@@ -117,7 +117,7 @@ const PortalSelection = ({ onSelect }) => {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
-                to={isDesktopApp ? '/onboarding' : '/onboarding/legacy'}
+                to="/onboarding/legacy"
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#E53935] px-7 py-3.5 text-sm font-bold text-white transition-all hover:bg-[#B71C1C]"
               >
                 Get Started Free
@@ -375,7 +375,7 @@ const PortalSelection = ({ onSelect }) => {
               Archives
             </Link>
             <Link
-              to={isDesktopApp ? '/onboarding' : '/onboarding/legacy'}
+              to="/onboarding/legacy"
               className="text-sm font-semibold text-[#E53935] hover:text-[#B71C1C] transition-colors"
             >
               New Restaurant? Get Started

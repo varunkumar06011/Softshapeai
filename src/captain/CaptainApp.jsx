@@ -149,6 +149,32 @@ const mapRealtimeTablePayload = (row, existing = null) => {
   if (!row) return existing;
   const dbStatus = row.status;
   const isFreeWorkflow = row.workflowStatus === 'Free' || row.status === 'Free' || dbStatus === 'AVAILABLE';
+
+  // Resolve incoming activeOrder, then preserve local cancellations that the
+  // server payload hasn't confirmed yet. Without this, a swap arriving via
+  // socket before a pending cancel is persisted would re-render cancelled
+  // items as active in the new table. Mirrors mapBackendTable in tableSyncService.
+  const incomingOrder = isFreeWorkflow
+    ? null
+    : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null));
+  let activeOrder = incomingOrder;
+  if (incomingOrder && existing?.activeOrder && incomingOrder.id === existing.activeOrder.id) {
+    const incomingItems = Array.isArray(incomingOrder.items) ? incomingOrder.items : [];
+    const existingItems = Array.isArray(existing.activeOrder.items) ? existing.activeOrder.items : [];
+    const existingCancelledIds = new Set(
+      existingItems.filter(i => i?.removedFromBill && i?.id).map(i => i.id)
+    );
+    if (existingCancelledIds.size > 0) {
+      const preservedItems = incomingItems.map(incomingItem => {
+        if (existingCancelledIds.has(incomingItem.id) && !incomingItem.removedFromBill) {
+          return { ...incomingItem, removedFromBill: true, quantity: 0, q: 0 };
+        }
+        return incomingItem;
+      });
+      activeOrder = { ...incomingOrder, items: preservedItems };
+    }
+  }
+
   return {
     backendId: row.id,
     id: Number(row.number) || row.number,
@@ -163,7 +189,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
     kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKotsModule(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory || []))),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
-    activeOrder: isFreeWorkflow ? null : ((row.orders?.[0] && row.orders[0].tableId === row.id) ? row.orders[0] : (row.activeOrder || null)),
+    activeOrder,
     updatedAt: row.updatedAt || row.updated_at || existing?.updatedAt || null,
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
   };
@@ -1658,10 +1684,6 @@ export default function CaptainApp({ onLogout }) {
     return calculateOrderTotal([...itemsForTotal, ...currentSessionItems], 0, restaurantConfig);
 
   }, [activeTable, currentSessionItems, restaurantConfig]);
-
-  const billableItems = useMemo(() => getBillableItems(activeTable) || [], [activeTable]);
-
-
 
   // Helper functions for captain colors
 
@@ -6105,33 +6127,6 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-                  {billableItems.length > 0 && (
-                    <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
-                      <h4 className="text-[11px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2"><History size={16} /> Ordered Items</h4>
-                      <div className="space-y-1.5">
-                        {billableItems.map((item, idx) => {
-                          const name = item.n || item.name || 'Item';
-                          const qty = item.q ?? item.quantity ?? 1;
-                          const price = item.p ?? item.price ?? 0;
-                          return (
-                            <div key={idx} className="bg-gray-50 p-2 rounded-xl border border-gray-100">
-                              <div className="flex justify-between items-start mb-1">
-                                <p className="text-[11px] font-black text-gray-900 uppercase pr-8 leading-tight">{name}</p>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-gray-500">Qty: {qty}</span>
-                                <div className="text-right">
-                                  <span className="text-[9px] font-bold text-gray-400">₹{price} × {qty}</span>
-                                  <span className="text-sm font-black text-gray-900 block">₹{price * qty}</span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
                   {/* ACTIVE DRAFT */}
 
                   <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
@@ -6897,6 +6892,26 @@ export default function CaptainApp({ onLogout }) {
                               activeRestaurantId,
 
                             );
+
+                            // Optimistically apply swap in local state so the socket
+                            // echo (table:swapped) can preserve local cancellations.
+                            // Without this, a pending cancel could re-render as active
+                            // on the target table when the server payload hasn't
+                            // confirmed the cancel yet.
+                            const sourceId = activeTable?.backendId;
+                            const targetId = t.backendId;
+                            const sourceSnap = activeTable ? { ...activeTable } : null;
+                            if (sourceSnap) {
+                              setActiveTables(prev => prev.map(pt => {
+                                if (pt.backendId === sourceId) {
+                                  return { ...pt, status: 'Free', workflowStatus: 'Free', activeOrder: null, kotHistory: [], currentBill: 0, captainId: null, guests: 0, time: null };
+                                }
+                                if (pt.backendId === targetId) {
+                                  return { ...pt, status: sourceSnap.status, workflowStatus: sourceSnap.workflowStatus, activeOrder: sourceSnap.activeOrder, kotHistory: sourceSnap.kotHistory || [], currentBill: sourceSnap.currentBill || 0, captainId: sourceSnap.captainId || null, guests: sourceSnap.guests || 0, time: sourceSnap.time || null };
+                                }
+                                return pt;
+                              }));
+                            }
 
                             setShowMoveModal(false);
 
