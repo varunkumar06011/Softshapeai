@@ -363,6 +363,23 @@ export const authService = {
   },
 
   async fetchCrew(restaurantId) {
+    // ── Edge-first crew fetch with cloud fallback ──────────────────────────────
+    // Mirrors captainLogin()'s edge-then-cloud pattern. When the edge server is
+    // reachable, fetch crew locally (offline-capable, low latency). Falls through
+    // to the cloud /api/auth/crew endpoint if edge is unavailable or errors.
+    try {
+      if (restaurantId) {
+        await discoverEdgeOnLAN({ expectedRestaurantId: restaurantId }).catch(() => {});
+      }
+      const connState = await getEdgeConnectivityState();
+      if (connState === 'edge_reachable') {
+        const edgeResult = await this.fetchCrewEdge();
+        if (edgeResult) return edgeResult;
+      }
+    } catch {
+      // Network/timeout errors — fall through to cloud.
+    }
+
     const res = await fetch(`${API_BASE}/api/auth/crew?restaurantId=${encodeURIComponent(restaurantId)}`, {
       headers: this.getAuthHeader(),
     });
@@ -388,7 +405,7 @@ export const authService = {
       captains: staff.filter(u => u.role === 'CAPTAIN'),
       cashiers: staff.filter(u => u.role === 'CASHIER'),
       managers: staff.filter(u => u.role === 'MANAGER'),
-      outletId: null,
+      outletId: data.outletId || null,
     };
   },
 };

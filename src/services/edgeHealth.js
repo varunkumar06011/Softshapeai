@@ -969,6 +969,28 @@ export async function triggerEdgeConfigResync() {
   return _configResyncInProgress;
 }
 
+// ── Backfill missing transactions (recover unsynced settlements) ────────────
+// Calls the edge server's /api/edge/sync/backfill endpoint, which scans all
+// locally settled orders and re-enqueues transaction sync records that are
+// missing from sync_queue (dequeued as rejected/conflict, dead-lettered, or
+// never enqueued). Also handles walk-in transactions.
+//
+// Returns { success, summary, details } on success, throws on edge unreachable.
+
+/**
+ * Re-enqueue missing transaction syncs on the edge server.
+ * @param {{ dryRun?: boolean }} opts — dryRun=true to preview without changes
+ * @returns {Promise<{success: boolean, dryRun: boolean, summary: object, details: array}>}
+ */
+export async function backfillMissingTransactions({ dryRun = false } = {}) {
+  const path = dryRun ? '/api/edge/sync/backfill?dry-run=1' : '/api/edge/sync/backfill';
+  const result = await edgeFetch(path, {
+    method: 'POST',
+    timeoutMs: 60_000,
+  });
+  return result;
+}
+
 // ── Runtime event bus listener (replaces polling for state changes) ──────────
 // Connects to the Runtime's WebSocket /events endpoint and listens for
 // runtime.state_changed, config_sync.state_changed, and connection.state_changed

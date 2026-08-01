@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, ChevronDown, Plus, Loader2 } from 'lucide-react';
 import { apiFetch } from '../../services/apiConfig';
+import { isEdgeLocalAuth, edgeFetch } from '../../services/edgeHealth';
 
 export default function LedgerCategoryPicker({ entryType = 'EXPENSE', value, onChange, placeholder = 'Search category...' }) {
   const [categories, setCategories] = useState([]);
@@ -13,7 +14,10 @@ export default function LedgerCategoryPicker({ entryType = 'EXPENSE', value, onC
   const loadCategories = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch(`/api/ledger-categories?entryType=${entryType}`);
+      const edgeLocal = isEdgeLocalAuth();
+      const data = edgeLocal
+        ? await edgeFetch(`/api/edge/ledger-categories?entryType=${entryType}`)
+        : await apiFetch(`/api/ledger-categories?entryType=${entryType}`);
       setCategories(data || []);
     } catch (err) {
       console.error('[LedgerCategoryPicker] Load failed:', err);
@@ -57,10 +61,17 @@ export default function LedgerCategoryPicker({ entryType = 'EXPENSE', value, onC
     if (!trimmed) return;
     setCreating(true);
     try {
-      const created = await apiFetch('/api/ledger-categories', {
-        method: 'POST',
-        body: JSON.stringify({ name: trimmed, entryType }),
-      });
+      const edgeLocal = isEdgeLocalAuth();
+      const created = edgeLocal
+        ? await edgeFetch('/api/edge/ledger-categories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmed, entryType }),
+          })
+        : await apiFetch('/api/ledger-categories', {
+            method: 'POST',
+            body: JSON.stringify({ name: trimmed, entryType }),
+          });
       setCategories((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       handleSelect(created);
     } catch (err) {

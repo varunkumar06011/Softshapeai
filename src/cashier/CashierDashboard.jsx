@@ -29,7 +29,8 @@ import {
   Trash2, CreditCard, Banknote, Smartphone, Split, History, ChefHat,
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
-  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle
+  Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle,
+  DatabaseBackup, RefreshCw
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -39,12 +40,12 @@ import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createO
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { setLocalPrinterMapping } from '../utils/offlineDB';
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, resetEdgeCache } from '../services/edgeHealth';
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, resetEdgeCache, backfillMissingTransactions } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { recordSettlementAudit } from '../utils/settlementAuditLog';
 import { getOfflineTransactions, markOfflineTransactionSynced, getOfflinePrintJobs, cacheSections, getCachedSections } from '../utils/offlineDB';
 // REMOVED: Direct QZ Tray calls deleted. Cashier now emits print jobs via backend socket.
-import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems, getTableKots } from '../shared/utils/billing';
+import { calculateOrderTotal, calculateSessionBill, calculateTableBill, getTableItems, getAllOrderItems, getBillableItems, groupOrderItems } from '../shared/utils/billing';
 import { validateTableIntegrity } from '../utils/syncInvariant';
 import { filterMenuItems } from '../shared/utils/menuSearch';
 import { useSocket } from '../hooks/useSocket';
@@ -127,6 +128,19 @@ const normalizeKots = (kots) => {
   }));
 };
 
+// Filter cancelled items from a kotHistory JSON snapshot.
+// kotHistory is a pre-built JSON blob stored on the table row — unlike the DB
+// kots relation (filtered by normalizeKots), the JSON snapshot may still
+// contain cancelled items. This is especially visible after a table swap,
+// where the JSON is copied as-is to the target table.
+const filterCancelledFromKotHistory = (kotHistory) => {
+  if (!Array.isArray(kotHistory)) return [];
+  return kotHistory.map(kot => ({
+    ...kot,
+    items: (kot.items || []).filter(ki => ki.s !== 'Cancelled' && ki.status !== 'CANCELLED'),
+  }));
+};
+
 // INVARIANT: A table with dbStatus === 'AVAILABLE' or workflowStatus === 'Free' MUST ALWAYS have kotHistory = [], currentBill = 0, activeOrder = null. No exception.
 const mapRealtimeTablePayload = (row, existing = null) => {
   if (!row) return existing;
@@ -171,7 +185,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
     time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
-    kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : [])),
+    kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : filterCancelledFromKotHistory(Array.isArray(row.kotHistory) ? row.kotHistory : [])),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder,
     billNumber: isFreeWorkflow ? null : (row.orders?.[0]?.billNumber ?? row.activeOrder?.billNumber ?? null),
@@ -1174,6 +1188,8 @@ const CashierDashboard = ({ onLogout }) => {
   const [txnSearch, setTxnSearch] = useState('');
   const [txnPage, setTxnPage] = useState(1);
   const [activeVenueFilter, setActiveVenueFilter] = useState('all');
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState(null);
 
   // Expenditure summary for the currently selected dashboard date (used for Expenditures + Final Amount tiles)
   const [expenditureSummary, setExpenditureSummary] = useState({ totalAmount: 0, count: 0 });
@@ -1662,6 +1678,25 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [specialsRows, refreshMenu, addNotification, handleCloseSpecialsModal]);
 
+  const handleBackfillTransactions = useCallback(async () => {
+    if (backfillLoading) return;
+    setBackfillLoading(true);
+    setBackfillResult(null);
+    try {
+      const result = await backfillMissingTransactions({ dryRun: false });
+      setBackfillResult(result);
+      const enqueued = (result?.summary?.transactionsReEnqueued || 0) + (result?.summary?.walkinReEnqueued || 0);
+      if (enqueued > 0) {
+        // Reload transactions after a short delay to allow sync worker to push
+        setTimeout(() => loadTransactions(txnDateFilterRef.current, null, { silent: true, force: true }), 3000);
+      }
+    } catch (err) {
+      setBackfillResult({ error: err.message || 'Edge server not reachable' });
+    } finally {
+      setBackfillLoading(false);
+    }
+  }, [backfillLoading, loadTransactions]);
+
   const bulkConfirmAbortRef = useRef(false);
 
   const handleBulkConfirmPayment = useCallback(async () => {
@@ -1840,7 +1875,7 @@ const CashierDashboard = ({ onLogout }) => {
           setSelectedTable(prev => {
             if (!prev) return prev;
             const before = prev;
-            const incomingKotHistory = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+            const incomingKotHistory = Array.isArray(order.kotHistory) ? filterCancelledFromKotHistory(order.kotHistory) : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
             const nextVal = {
               ...prev,
               activeOrder: order,
@@ -1856,7 +1891,7 @@ const CashierDashboard = ({ onLogout }) => {
       }
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's state
       if (payload?.isExtraTable) return;
-      const incomingGridKotHistory = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+      const incomingGridKotHistory = Array.isArray(order.kotHistory) ? filterCancelledFromKotHistory(order.kotHistory) : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip stale order:created for settled/Free tables to prevent ghost items
@@ -1895,7 +1930,7 @@ const CashierDashboard = ({ onLogout }) => {
           setSelectedTable(prev => {
             if (!prev) return prev;
             const before = prev;
-            const incomingKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+            const incomingKotArr = Array.isArray(order.kotHistory) ? filterCancelledFromKotHistory(order.kotHistory) : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
             const nextVal = { ...prev, activeOrder: order, kotHistory: incomingKotArr };
             validateTableIntegrity('CashierDashboard.onOrderUpdated', before, nextVal);
             return nextVal;
@@ -1905,7 +1940,7 @@ const CashierDashboard = ({ onLogout }) => {
       // Skip updating main grid if this order belongs to an extra table — would overwrite parent table's activeOrder
       if (payload?.isExtraTable) return;
       // No click cooldown — real-time updates from captain must always be visible
-      const incomingGridKotArr = Array.isArray(order.kotHistory) ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
+      const incomingGridKotArr = Array.isArray(order.kotHistory) ? filterCancelledFromKotHistory(order.kotHistory) : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : []);
       const updateTables = (prev) => prev.map(t => {
         if (t.backendId !== order.tableId) return t;
         // Guard: skip stale order:updated for settled/Free tables to prevent ghost items
@@ -4742,23 +4777,13 @@ const CashierDashboard = ({ onLogout }) => {
       }
     }
 
-    const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && Boolean(currentVenueId);
-
     const mapped = itemsToFilter.map(item => {
       const overridePrice = venueSpecificPrices[item.id];
 
-      let finalPrice;
-      if (isBarVenueContext) {
-        // Venue override if explicitly set, otherwise fall back to base item price
-        finalPrice = (overridePrice != null && Number(overridePrice) > 0)
-          ? Number(overridePrice)
-          : Number(item.p || item.price || 0);
-      } else {
-        // Restaurant / main floor: venue override if set and > 0, else base price
-        finalPrice = (overridePrice != null && Number(overridePrice) > 0)
-          ? Number(overridePrice)
-          : Number(item.p || item.price || 0);
-      }
+      // If venue override is explicitly set (even 0), use it. Otherwise fall back to base price.
+      const finalPrice = overridePrice !== undefined
+        ? Number(overridePrice)
+        : Number(item.p || item.price || 0);
 
       const remappedVariants = item.variants?.map((v, idx) => {
         const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
@@ -4782,14 +4807,7 @@ const CashierDashboard = ({ onLogout }) => {
         p: finalPrice,
         variants: remappedVariants,
       };
-    }).filter((item) => {
-      if (isBarVenueContext) {
-        return Number(item.p) > 0;
-      }
-      // In restaurant context, show all items (even with p=0, which may be a newly
-      // added item without venue price yet). The price will be resolved from variant.
-      return true;
-    });
+    }).filter((item) => Number(item.p) > 0);
 
     const q = searchQuery.trim().toLowerCase();
 
@@ -6347,7 +6365,43 @@ const CashierDashboard = ({ onLogout }) => {
                           >
                             ↻ Sync
                           </button>
+                          <button
+                            onClick={handleBackfillTransactions}
+                            disabled={backfillLoading}
+                            title="Re-enqueue missing transactions from local database to cloud"
+                            className={`px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-1 ${
+                              backfillLoading
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-850 hover:scale-[1.01] active:scale-[0.99]'
+                            }`}
+                          >
+                            {backfillLoading ? <RefreshCw size={12} className="animate-spin" /> : <DatabaseBackup size={12} />}
+                            Recover Missing
+                          </button>
                         </div>
+                        {backfillResult && (
+                          <div className={`mx-3 my-2 rounded-xl px-4 py-3 text-xs font-bold flex items-center justify-between ${
+                            backfillResult.error
+                              ? 'bg-red-50 border border-red-200 text-red-700'
+                              : 'bg-green-50 border border-green-200 text-green-700'
+                          }`}>
+                            <div>
+                              {backfillResult.error ? (
+                                backfillResult.error
+                              ) : (
+                                <>
+                                  Recovered {(backfillResult.summary?.transactionsReEnqueued || 0) + (backfillResult.summary?.walkinReEnqueued || 0)} transaction(s).
+                                  {' '}Scanned {backfillResult.summary?.settledOrdersScanned} settled orders.
+                                  {' '}Already synced: {backfillResult.summary?.skippedAlreadySynced}.
+                                  {' '}Sync worker will push them to cloud shortly.
+                                </>
+                              )}
+                            </div>
+                            <button onClick={() => setBackfillResult(null)} className="ml-2 text-gray-400 hover:text-gray-600">
+                              <X size={14} />
+                            </button>
+                          </div>
+                        )}
                         {/* Status filter row */}
                         <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap border-b border-gray-100">
                           {[
@@ -7472,71 +7526,48 @@ const CashierDashboard = ({ onLogout }) => {
                 <h3 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-[#1E3A8A] border-b border-red-100 pb-1 shrink-0">
                   Order Summary
                 </h3>
-                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-3 mt-2">
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-0.5 mt-2">
                   {(isModalDataLoading && getAllOrderItems(selectedTable).length === 0) ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 size={20} className="animate-spin text-gray-400" />
                     </div>
                   ) : (
-                    (() => {
-                      const kots = getTableKots(selectedTable);
-                      if (kots.length === 0) {
+                    groupOrderItems(getAllOrderItems(selectedTable))
+                      .map((item, idx) => {
+                        const isCancelled = item.quantity === 0;
                         return (
-                          <div className="flex items-center justify-center py-8">
-                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">No items yet</p>
+                          <div key={`${item.n}-${idx}`} className={`flex justify-between items-center py-2 border-b border-gray-100 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
+                            <div className="flex items-start gap-3">
+                              <span className={`min-w-[32px] h-7 rounded-lg border shadow-sm flex items-center justify-center text-sm font-black px-1.5 shrink-0 mt-0.5 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
+                              </span>
+                              <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
+                            </div>
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <span className={`text-[10px] font-bold whitespace-nowrap ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
+                              <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                                ₹{Number(item.p * item.q).toFixed(2)}
+                              </span>
+                              {isCancelled ? (
+                                <span className="text-xs font-black text-red-400 uppercase tracking-widest">Cancelled</span>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowCancelModal(true);
+                                    const gKey = `${item.n}::${item.p}`;
+                                    setCancelSelected({ [gKey]: { item, quantity: 1 } });
+                                  }}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100 mt-0.5"
+                                  title="Cancel Item"
+                                >
+                                  <X size={16} strokeWidth={3} />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
-                      }
-                      return kots.map((kot) => (
-                        <div key={kot.id} className="space-y-1">
-                          <div className="flex items-center justify-between border-b border-gray-100 pb-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">KOT #{kot.id}</span>
-                            <span className="text-[9px] font-black text-gray-400 uppercase">{kot.time || '—'}</span>
-                          </div>
-                          {kot.items.map((item, iIdx) => {
-                            const isCancelled = item.removedFromBill || item.s === 'Cancelled';
-                            return (
-                              <div key={`${kot.id}-${iIdx}`} className={`flex justify-between items-center py-1.5 border-b border-gray-50 last:border-0 ${isCancelled ? 'opacity-50' : ''}`}>
-                                <div className="flex items-start gap-2">
-                                  <span className={`min-w-[28px] h-6 rounded-lg border shadow-sm flex items-center justify-center text-xs font-black px-1 shrink-0 ${isCancelled ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                                    {isCancelled ? <span className="line-through">{item.q}×</span> : <span>{item.q}×</span>}
-                                  </span>
-                                  <span className={`text-sm font-bold leading-snug ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.n}</span>
-                                </div>
-                                <div className="flex items-center gap-2 sm:gap-3">
-                                  <span className={`text-[10px] font-bold whitespace-nowrap ${isCancelled ? 'text-gray-300' : 'text-gray-400'}`}>₹{item.p} × {item.q}</span>
-                                  <span className={`text-sm font-black whitespace-nowrap ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                                    ₹{Number(item.p * item.q).toFixed(2)}
-                                  </span>
-                                  {isCancelled ? (
-                                    <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Cancelled</span>
-                                  ) : (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const billableItems = getBillableItems(selectedTable);
-                                        const gKey = `${item.n}::${item.p}`;
-                                        if (billableItems.length <= 1) {
-                                          setShowLastItemWarning(true);
-                                          setCancelSelected({ [gKey]: { item, quantity: 1 } });
-                                        } else {
-                                          setShowCancelModal(true);
-                                          setCancelSelected({ [gKey]: { item, quantity: 1 } });
-                                        }
-                                      }}
-                                      className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-colors shadow-sm border border-red-100"
-                                      title="Cancel Item"
-                                    >
-                                      <X size={16} strokeWidth={3} />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ));
-                    })()
+                      })
                   )}
                 </div>
               </div>

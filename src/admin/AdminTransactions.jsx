@@ -13,9 +13,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { History, Check, X, RefreshCw, RotateCcw, Eye } from 'lucide-react';
+import { History, Check, X, RefreshCw, RotateCcw, Eye, DatabaseBackup } from 'lucide-react';
 import { fetchTransactions, deleteTransaction, confirmPayment } from '../services/orderApi';
 import { apiFetch, API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { backfillMissingTransactions } from '../services/edgeHealth';
 import { authService } from '../services/authService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
@@ -72,6 +73,8 @@ export default function AdminTransactions({ onStatsRefresh }) {
   const [staffMap, setStaffMap] = useState({});
   const [deletePassword, setDeletePassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState(null);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/venue/sections`, { credentials: 'include', headers: getAuthHeaders() })
@@ -274,6 +277,24 @@ export default function AdminTransactions({ onStatsRefresh }) {
     }
   };
 
+  const handleBackfill = async () => {
+    setBackfillLoading(true);
+    setBackfillResult(null);
+    try {
+      const result = await backfillMissingTransactions({ dryRun: false });
+      setBackfillResult(result);
+      const enqueued = result?.summary?.transactionsReEnqueued + result?.summary?.walkinReEnqueued;
+      if (enqueued > 0) {
+        // Reload transactions after a short delay to allow sync worker to push
+        setTimeout(() => loadTransactions(txnDateFilter, txnCustomDate), 3000);
+      }
+    } catch (err) {
+      setBackfillResult({ error: err.message || 'Edge server not reachable. Run this from the cashier terminal.' });
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
   const filtered = useMemo(() => {
     let list = transactions;
     if (txnSourceFilter !== 'all') list = list.filter(t => t.source === txnSourceFilter);
@@ -403,6 +424,19 @@ export default function AdminTransactions({ onStatsRefresh }) {
             >
               <RefreshCw size={12} /> Sync
             </button>
+            <button
+              onClick={handleBackfill}
+              disabled={backfillLoading}
+              title="Re-enqueue missing transactions from the cashier terminal's local database"
+              className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-1 ${
+                backfillLoading
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:scale-[1.01] active:scale-[0.99]'
+              }`}
+            >
+              {backfillLoading ? <RefreshCw size={12} className="animate-spin" /> : <DatabaseBackup size={12} />}
+              Recover Missing
+            </button>
             <DateInputButton
               value={txnCustomDate}
               max={getKolkataDateString()}
@@ -440,6 +474,30 @@ export default function AdminTransactions({ onStatsRefresh }) {
               className="ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-400 w-52 shadow-inner transition-colors"
             />
           </div>
+
+          {backfillResult && (
+            <div className={`mx-3 my-2 rounded-xl px-4 py-3 text-xs font-bold flex items-center justify-between ${
+              backfillResult.error
+                ? 'bg-red-50 border border-red-200 text-red-700'
+                : 'bg-green-50 border border-green-200 text-green-700'
+            }`}>
+              <div>
+                {backfillResult.error ? (
+                  backfillResult.error
+                ) : (
+                  <>
+                    Recovered {backfillResult.summary?.transactionsReEnqueued + backfillResult.summary?.walkinReEnqueued} transaction(s).
+                    {' '}Scanned {backfillResult.summary?.settledOrdersScanned} settled orders.
+                    {' '}Already synced: {backfillResult.summary?.skippedAlreadySynced}.
+                    {' '}Sync worker will push them to cloud shortly.
+                  </>
+                )}
+              </div>
+              <button onClick={() => setBackfillResult(null)} className="ml-2 text-gray-400 hover:text-gray-600">
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-left">

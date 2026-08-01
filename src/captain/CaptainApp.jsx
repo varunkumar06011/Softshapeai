@@ -145,6 +145,19 @@ const normalizeKotsModule = (kots) => {
   }));
 };
 
+// Filter cancelled items from a kotHistory JSON snapshot.
+// kotHistory is a pre-built JSON blob stored on the table row — unlike the DB
+// kots relation (filtered by normalizeKots/normalizeKotsModule), the JSON
+// snapshot may still contain cancelled items. This is especially visible after
+// a table swap, where the JSON is copied as-is to the target table.
+const filterCancelledFromKotHistory = (kotHistory) => {
+  if (!Array.isArray(kotHistory)) return [];
+  return kotHistory.map(kot => ({
+    ...kot,
+    items: (kot.items || []).filter(ki => ki.s !== 'Cancelled' && ki.status !== 'CANCELLED'),
+  }));
+};
+
 const mapRealtimeTablePayload = (row, existing = null) => {
   if (!row) return existing;
   const dbStatus = row.status;
@@ -187,7 +200,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     guests: isFreeWorkflow ? 0 : (row.guests ?? 0),
     time: (isFreeWorkflow || !row.sessionStartedAt) ? null : new Date(row.sessionStartedAt).toISOString(),
     captainId: isFreeWorkflow ? null : (row.captainId ?? null),
-    kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKotsModule(row.kots) : (Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory || []))),
+    kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKotsModule(row.kots) : filterCancelledFromKotHistory(Array.isArray(row.kotHistory) ? row.kotHistory : (existing?.kotHistory || []))),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder,
     updatedAt: row.updatedAt || row.updated_at || existing?.updatedAt || null,
@@ -1562,25 +1575,12 @@ export default function CaptainApp({ onLogout }) {
       }
     }
 
-    const isBarVenueContext = (activeOutlet === 'bar' || activeOutlet === 'both') && currentVenueId !== null;
-
     return base.map(item => {
       const overridePrice = venueSpecificPrices[item.id];
-      let finalPrice;
-      if (isBarVenueContext) {
-        const isLiquor = (item.menuType || '').toUpperCase() === 'LIQUOR' || (item.menuType || '').toUpperCase() === 'BAR';
-        if (isLiquor) {
-          // Liquor/bar items: only show with explicit venue price > 0 (no base-price fallback)
-          finalPrice = overridePrice !== undefined ? Number(overridePrice) : 0;
-        } else {
-          // Food items: fall back to base price if no venue-specific price is set
-          finalPrice = overridePrice !== undefined ? Number(overridePrice) : Number(item.p || item.price || 0);
-        }
-      } else {
-        finalPrice = overridePrice !== undefined
-          ? Number(overridePrice)
-          : Number(item.p || item.price || 0);
-      }
+      // If venue override is explicitly set (even 0), use it. Otherwise fall back to base price.
+      const finalPrice = overridePrice !== undefined
+        ? Number(overridePrice)
+        : Number(item.p || item.price || 0);
       const remappedVariants = item.variants?.map((v, idx) => {
         const variantOverride = venueSpecificPrices[`${item.id}_variant_${v.id}`];
         if (variantOverride !== undefined) {
@@ -1594,12 +1594,7 @@ export default function CaptainApp({ onLogout }) {
       }) ?? item.variants;
 
       return { ...item, p: finalPrice, variants: remappedVariants };
-    }).filter(item => {
-      if (isBarVenueContext) {
-        return Number(item.p) > 0;
-      }
-      return true;
-    });
+    }).filter(item => Number(item.p) > 0);
   }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, activeTable, activeTables, fetchedSections]);
 
 
@@ -2181,7 +2176,7 @@ export default function CaptainApp({ onLogout }) {
         // When table is Free (settled), clear items and activeOrder to prevent ghost items
         const serverItems = isTableFree ? [] : (incomingOrder?.items ?? (t.activeOrder?.items || []));
         // Preserve existing kotHistory when incoming event has no kots data (partial update)
-        const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : (Array.isArray(table.kotHistory) && table.kotHistory.length > 0 ? table.kotHistory : (t.kotHistory || [])));
+        const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : filterCancelledFromKotHistory(Array.isArray(table.kotHistory) && table.kotHistory.length > 0 ? table.kotHistory : (t.kotHistory || [])));
         return {
           ...t,
           status: protectedStatus,
@@ -2225,7 +2220,7 @@ export default function CaptainApp({ onLogout }) {
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || (t.activeOrder?.items || []);
         // Preserve existing kotHistory when incoming event has no kots data (partial update)
-        const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
+        const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? filterCancelledFromKotHistory(order.kotHistory) : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
         return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: incomingKotArr };
       });
       setActiveTables(updateTables);
@@ -2255,7 +2250,7 @@ export default function CaptainApp({ onLogout }) {
         // Server is authoritative — directly use incoming items (no merge)
         const serverItems = order.items || [];
         // Preserve existing kotHistory when incoming event has no kots data (partial update)
-        const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? order.kotHistory
+        const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? filterCancelledFromKotHistory(order.kotHistory)
           : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
         return {
           ...t,

@@ -168,9 +168,9 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
 
   const hasOverride = isManual && overrideValue != null && overrideValue !== '';
 
-  const handleBlur = () => {
+  const commit = (val) => {
     if (isLocked) return;
-    let numVal = localValue === '' ? null : Number(localValue);
+    let numVal = val === '' ? null : Number(val);
     if (numVal != null && numVal < 0) numVal = 0; // no negative sales
     if (isManual) {
       // Manual fields stay manual; empty means 0
@@ -184,6 +184,15 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
       }
     }
   };
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setLocalValue(val);
+    // For manual fields, propagate on every keystroke so Save always has the latest value
+    if (isManual) commit(val);
+  };
+
+  const handleBlur = () => commit(localValue);
 
   return (
     <div className={`rounded-xl border p-3 ${hasOverride ? 'border-blue-300 bg-blue-50' : isAuto ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-white'}`}>
@@ -203,7 +212,7 @@ function SalesTile({ label, computedValue, overrideValue, isManual, isLocked, on
         type="number"
         min="0"
         value={localValue}
-        onChange={(e) => setLocalValue(e.target.value)}
+        onChange={handleChange}
         onBlur={handleBlur}
         onFocus={(e) => e.target.select()}
         disabled={isLocked}

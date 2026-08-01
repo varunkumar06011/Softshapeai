@@ -68,6 +68,18 @@ export default function XReportSection() {
     - expenditureTotal
   );
 
+  // Difference between cash balance and counted notes
+  const cashDifference = round2(finalAmount - cashFromNotes);
+  // Suggested denomination breakdown to make up the cash balance (greedy)
+  const denominationSuggestion = (() => {
+    let remaining = Math.round(finalAmount);
+    return DENOMINATIONS.map(d => {
+      const count = Math.floor(remaining / d.value);
+      remaining -= count * d.value;
+      return { ...d, suggestedCount: count };
+    });
+  })();
+
   const loadReport = useCallback(async (date) => {
     setLoading(true);
     setError(null);
@@ -203,9 +215,15 @@ export default function XReportSection() {
         payload.cardAmount = Number(report.cardAmount || 0);
       }
 
-      // Edge-local users: no cloud save endpoint — X Report is computed on-the-fly.
-      // Denominations are UI-only for PIN users. Skip the cloud POST.
-      if (!isEdgeLocalAuth()) {
+      if (isEdgeLocalAuth()) {
+        // Edge-local (PIN) users: persist overrides to the edge server's local
+        // SQLite via edge_config so card amount + denominations survive reload.
+        await edgeFetch('/api/edge/x-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
         await apiFetch('/api/xreports', {
           method: 'POST',
           body: JSON.stringify(payload),
@@ -566,27 +584,61 @@ export default function XReportSection() {
 
             {/* Denomination Count */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Cash Denomination Count</h3>
-              <p className="text-[10px] font-bold text-gray-500 mb-3">Enter note counts — leave empty if none</p>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cash Denomination Count</h3>
+                <button
+                  onClick={() => {
+                    denominationSuggestion.forEach(d => handleFieldChange(d.key, d.suggestedCount));
+                  }}
+                  className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline"
+                  title="Auto-fill note counts to match the cash balance"
+                >
+                  Fill Suggestion
+                </button>
+              </div>
+              <p className="text-[10px] font-bold text-gray-500 mb-3">
+                Enter note counts — suggested counts show how to reach the cash balance
+              </p>
               <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                {DENOMINATIONS.map(d => (
-                  <div key={d.key}>
-                    <label className={labelClass}>{d.label}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={report[d.key] === 0 ? '' : report[d.key]}
-                      onChange={(e) => handleFieldChange(d.key, e.target.value === '' ? 0 : Number(e.target.value))}
-                      onWheel={(e) => e.target.blur()}
-                      className={inputClass}
-                      placeholder="0"
-                    />
-                  </div>
-                ))}
+                {DENOMINATIONS.map((d, i) => {
+                  const sugg = denominationSuggestion[i];
+                  const entered = report[d.key] || 0;
+                  const matches = entered === sugg.suggestedCount;
+                  return (
+                    <div key={d.key}>
+                      <label className={labelClass}>{d.label}</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={entered === 0 ? '' : entered}
+                        onChange={(e) => handleFieldChange(d.key, e.target.value === '' ? 0 : Number(e.target.value))}
+                        onWheel={(e) => e.target.blur()}
+                        className={`${inputClass} ${matches && entered > 0 ? 'ring-2 ring-green-400/40 border-green-300' : ''}`}
+                        placeholder="0"
+                      />
+                      {sugg.suggestedCount > 0 && (
+                        <p className="text-[9px] font-bold text-blue-500 mt-0.5 text-center">
+                          need {sugg.suggestedCount}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-3 flex justify-between items-center pt-3 border-t border-gray-200">
                 <span className="text-xs font-black uppercase text-gray-600">Cash from Notes</span>
                 <span className="text-sm font-black text-gray-900 tabular-nums">₹{round2(cashFromNotes).toFixed(2)}</span>
+              </div>
+              {/* Difference indicator */}
+              <div className="mt-2 flex justify-between items-center pt-2 border-t border-gray-200">
+                <span className="text-xs font-black uppercase text-gray-600">
+                  {cashDifference === 0 ? 'Balanced' : cashDifference > 0 ? 'Short by' : 'Over by'}
+                </span>
+                <span className={`text-sm font-black tabular-nums ${
+                  cashDifference === 0 ? 'text-green-600' : cashDifference > 0 ? 'text-red-600' : 'text-amber-600'
+                }`}>
+                  ₹{Math.abs(cashDifference).toFixed(2)}
+                </span>
               </div>
             </div>
 
