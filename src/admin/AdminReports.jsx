@@ -559,18 +559,42 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
   useEffect(() => { fetchData(); }, [dateFilter, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
+  const transactionHeaders = [
+    { key: 'txnNumber', label: 'Txn No.' },
+    { key: 'txnDate', label: 'Txn Date' },
+    { key: 'paidAt', label: 'Paid At' },
+    { key: 'billNumber', label: 'Bill No.' },
+    { key: 'tableNumber', label: 'Table' },
+    { key: 'tableLabel', label: 'Table Label' },
+    { key: 'method', label: 'Payment Method' },
+    { key: 'status', label: 'Status' },
+    { key: 'itemCount', label: 'Item Count' },
+    { key: 'subtotal', label: 'Subtotal', format: 'money' },
+    { key: 'discountPercent', label: 'Discount %' },
+    { key: 'discountAmount', label: 'Discount', format: 'money' },
+    { key: 'cgst', label: 'CGST', format: 'money' },
+    { key: 'sgst', label: 'SGST', format: 'money' },
+    { key: 'roundOff', label: 'Round Off', format: 'money' },
+    { key: 'tipAmount', label: 'Tip', format: 'money' },
+    { key: 'grandTotal', label: 'Grand Total', format: 'money' },
+    { key: 'sectionTag', label: 'Section' },
+    { key: 'platform', label: 'Platform' },
+    { key: 'captainId', label: 'Captain' },
+    { key: 'items', label: 'Items' },
+  ];
+  const transactionRows = (data?.transactions || []).map((txn) => ({
+    ...txn,
+    paidAt: txn.paidAt ? new Date(txn.paidAt).toLocaleString('en-IN') : '',
+    items: Array.isArray(txn.items) ? txn.items.map((item) => `${item.name || ''} x${item.quantity || 0}`).join(', ') : String(txn.items || ''),
+  }));
   const doPDF = () => {
     if (!data) return;
-    const headers = [
-      { key: 'outlet', label: 'Outlet' }, { key: 'transactions', label: 'Transactions' },
-      { key: 'revenue', label: 'Total Sales', format: 'money' }, { key: 'avgBill', label: 'Avg Bill', format: 'money' },
-    ];
-    const rows = Object.entries(data.byOutlet || {}).map(([outlet, v]) => ({
-      outlet: outlet.charAt(0).toUpperCase() + outlet.slice(1), transactions: v.count,
-      revenue: v.amount, avgBill: v.count > 0 ? Math.round(v.amount / v.count) : 0,
-    }));
-    rows.push({ outlet: 'Total', transactions: data.summary.totalTransactions, revenue: data.summary.totalSales ?? data.summary.totalSubtotal, avgBill: data.summary.averageBillValue });
-    downloadPDF({ title: 'Daily Sales Summary', dateRange: dateRangeText, headers, rows, filename: 'Daily-Sales' });
+    const rows = [...transactionRows, {
+      txnNumber: 'TOTAL',
+      itemCount: data.summary.totalTransactions,
+      grandTotal: data.summary.totalSales ?? data.summary.totalSubtotal,
+    }];
+    downloadPDF({ title: 'Daily Sales — Transaction Details', dateRange: dateRangeText, headers: transactionHeaders, rows, filename: 'Daily-Sales' });
   };
   const doExcel = () => {
     if (!data) return;
@@ -588,6 +612,7 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
       sheets: [
         { name: 'By Outlet', headers: outletHeaders, rows: outletRows },
         { name: 'By Method', headers: methodHeaders, rows: methodRows },
+        { name: 'Transactions', headers: transactionHeaders, rows: transactionRows },
       ],
     });
   };
