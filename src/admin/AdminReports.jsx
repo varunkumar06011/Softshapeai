@@ -587,14 +587,35 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
     paidAt: txn.paidAt ? new Date(txn.paidAt).toLocaleString('en-IN') : '',
     items: Array.isArray(txn.items) ? txn.items.map((item) => `${item.name || ''} x${item.quantity || 0}`).join(', ') : String(txn.items || ''),
   }));
+  const pdfTransactionHeaders = [
+    { key: 'txnNumber', label: 'Txn' },
+    { key: 'txnDate', label: 'Date' },
+    { key: 'billTable', label: 'Bill / Table' },
+    { key: 'method', label: 'Payment' },
+    { key: 'items', label: 'Items' },
+    { key: 'subtotal', label: 'Subtotal', format: 'money' },
+    { key: 'discountAmount', label: 'Discount', format: 'money' },
+    { key: 'cgst', label: 'CGST', format: 'money' },
+    { key: 'sgst', label: 'SGST', format: 'money' },
+    { key: 'tipAmount', label: 'Tip', format: 'money' },
+    { key: 'grandTotal', label: 'Total', format: 'money' },
+    { key: 'source', label: 'Source' },
+    { key: 'status', label: 'Status' },
+  ];
+  const pdfTransactionRows = transactionRows.map((txn) => ({
+    ...txn,
+    billTable: `${txn.billNumber || '—'} / ${txn.tableLabel || txn.tableNumber || '—'}`,
+    items: txn.items.length > 42 ? `${txn.items.slice(0, 39)}...` : txn.items,
+    source: ([txn.sectionTag, txn.platform, txn.captainId].filter(Boolean).join(' / ') || '—').slice(0, 28),
+  }));
   const doPDF = () => {
     if (!data) return;
-    const rows = [...transactionRows, {
+    const rows = [...pdfTransactionRows, {
       txnNumber: 'TOTAL',
       itemCount: data.summary.totalTransactions,
       grandTotal: data.summary.totalSales ?? data.summary.totalSubtotal,
     }];
-    downloadPDF({ title: 'Daily Sales — Transaction Details', dateRange: dateRangeText, headers: transactionHeaders, rows, filename: 'Daily-Sales' });
+    downloadPDF({ title: 'Daily Sales — Transaction Details', dateRange: dateRangeText, headers: pdfTransactionHeaders, rows, filename: 'Daily-Sales', compact: true });
   };
   const doExcel = () => {
     if (!data) return;

@@ -24,7 +24,7 @@ function todayString() {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function downloadPDF({ title, dateRange, headers, rows, filename }) {
+export function downloadPDF({ title, dateRange, headers, rows, filename, compact = false }) {
   const doc = new jsPDF({ orientation: 'landscape' });
   doc.setFontSize(18);
   doc.text(`Softshape — ${title}`, 14, 20);
@@ -48,9 +48,9 @@ export function downloadPDF({ title, dateRange, headers, rows, filename }) {
     body,
     startY: 34,
     theme: 'grid',
-    headStyles: { fillColor: [183, 28, 28], textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: [183, 28, 28], textColor: 255, fontStyle: 'bold', fontSize: compact ? 7 : 9 },
     alternateRowStyles: { fillColor: [245, 245, 245] },
-    styles: { fontSize: 9, cellPadding: 2 },
+    styles: { fontSize: compact ? 7 : 9, cellPadding: compact ? 1 : 2, overflow: compact ? 'ellipsize' : 'linebreak' },
     margin: { left: 14, right: 14 },
   });
 
