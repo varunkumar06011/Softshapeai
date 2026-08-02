@@ -26,7 +26,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { stepVariants, springs, useMotionConfig } from '../shared/animations';
 import { purgeLegacyCaches } from '../utils/cacheKeys';
-import { apiFetch } from '../services/apiConfig';
+import { cloudApiFetch } from '../services/apiConfig';
 import StepRestaurant from './StepRestaurant';
 import StepBranding from './StepBranding';
 import StepOwner from './StepOwner';
@@ -342,7 +342,7 @@ const OnboardingWizard = () => {
         ...(isBarType && cleanBarMenu.categories.length > 0 ? { barMenu: cleanBarMenu } : {}),
       };
 
-      const data = await apiFetch('/api/onboard', {
+      const data = await cloudApiFetch('/api/onboard', {
         method: 'POST',
         body: JSON.stringify(payload),
         timeout: 1800000, // 3 minutes

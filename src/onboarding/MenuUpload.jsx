@@ -14,7 +14,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Leaf, Download, Layers } from 'lucide-react';
-import { API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { cloudApiUrl, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 export default function MenuUpload({ onImported, onboardingMode = false, restaurantType, existingCategories = [], sessionId, targetVenueId }) {
@@ -37,7 +37,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   useEffect(() => {
     if (!onboardingMode && existingCategories.length === 0) {
       const restaurantId = getCurrentRestaurantId();
-      fetch(`${API_BASE}/api/menu/categories?restaurantId=${encodeURIComponent(restaurantId)}`, {
+      fetch(cloudApiUrl(`/api/menu/categories?restaurantId=${encodeURIComponent(restaurantId)}`), {
         headers: getAuthHeaders(),
       })
         .then(res => res.ok ? res.json() : [])
@@ -89,7 +89,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
       let venues = venueNames;
       if (venues.length === 0 && !onboardingMode) {
         try {
-          const res = await fetch(`${API_BASE}/api/venues`, { headers: { ...getAuthHeaders() } });
+          const res = await fetch(cloudApiUrl('/api/venues'), { headers: { ...getAuthHeaders() } });
           if (res.ok) {
             const data = await res.json();
             venues = data.map(v => v.name).filter(Boolean);
@@ -135,7 +135,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
         formData.append('sessionId', sessionId);
       }
 
-      const res = await fetch(`${API_BASE}/api/menu/admin/upload`, {
+      const res = await fetch(cloudApiUrl('/api/menu/admin/upload'), {
         method: 'POST',
         headers: { ...getAuthHeaders() },
         body: formData,
@@ -177,7 +177,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
       }
 
       const restaurantId = getCurrentRestaurantId();
-      const res = await fetch(`${API_BASE}/api/menu/admin/bulk-import`, {
+      const res = await fetch(cloudApiUrl('/api/menu/admin/bulk-import'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({

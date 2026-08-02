@@ -15,7 +15,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send, Upload, Image as ImageIcon, AlertTriangle, X, Loader2 } from 'lucide-react';
-import { apiFetch } from '../services/apiConfig';
+import { cloudApiFetch } from '../services/apiConfig';
 
 // Restaurant type options with icons and descriptions
 const RESTAURANT_TYPES = [
@@ -64,7 +64,7 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
     if (!slug || slug.length < 2) return;
     setSlugChecking(true);
     try {
-      const res = await apiFetch(`/api/onboard/check-slug?slug=${encodeURIComponent(slug)}`, { method: 'GET' });
+      const res = await cloudApiFetch(`/api/onboard/check-slug?slug=${encodeURIComponent(slug)}`, { method: 'GET' });
       setSlugAvailable(res.available);
     } catch {
       setSlugAvailable(null);

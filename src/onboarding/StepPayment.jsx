@@ -14,7 +14,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { CreditCard, Lock, CheckCircle2, ArrowLeft, ArrowRight, Loader2, Smartphone, Wallet, Landmark } from 'lucide-react';
-import { apiFetch, apiUrl, pingBackend } from '../services/apiConfig';
+import { cloudApiFetch, cloudApiUrl, pingCloudBackend } from '../services/apiConfig';
 
 const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onPaymentComplete, onBack, onGoToPlan }) => {
   const [processing, setProcessing] = useState(false);
@@ -28,21 +28,21 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
 
   // Wake up the Render backend before the user clicks Pay + fetch quote + payment config
   useEffect(() => {
-    pingBackend();
-    fetch(apiUrl('/api/onboard/pricing/quote'), {
+    pingCloudBackend();
+    fetch(cloudApiUrl('/api/onboard/pricing/quote'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan, numberOfOutlets: outletCount }),
     }).then(r => r.json()).then(setQuote).catch(() => {});
 
-    fetch(apiUrl('/api/onboard/payment/config'))
+    fetch(cloudApiUrl('/api/onboard/payment/config'))
       .then(r => r.json())
       .then(setPaymentConfig)
       .catch(() => {});
   }, [plan, outletCount]);
 
   const callMockPayment = async () => {
-    return apiFetch('/api/onboard/payment/mock', {
+    return cloudApiFetch('/api/onboard/payment/mock', {
       method: 'POST',
       body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
       timeout: 45000,
@@ -62,7 +62,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
       if (!isRetry && (err.message?.toLowerCase().includes('timed out') || err.message?.toLowerCase().includes('network'))) {
         setError('Connection slow. Retrying once...');
         try {
-          await pingBackend();
+          await pingCloudBackend();
           const result = await callMockPayment();
           setPaymentReference(result.paymentReference);
           onPaymentComplete(result.paymentReference, true);
@@ -84,7 +84,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
     setProgressStep(1);
     try {
       // 1. Create order on backend
-      const { gatewayOrderId, amount } = await apiFetch('/api/onboard/payment/initiate', {
+      const { gatewayOrderId, amount } = await cloudApiFetch('/api/onboard/payment/initiate', {
         method: 'POST',
         body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
         timeout: 45000,
@@ -114,8 +114,8 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
       if (!isRetry && (err.message?.toLowerCase().includes('timed out') || err.message?.toLowerCase().includes('network'))) {
         setError('Connection slow. Retrying once...');
         try {
-          await pingBackend();
-          const { gatewayOrderId, amount } = await apiFetch('/api/onboard/payment/initiate', {
+          await pingCloudBackend();
+          const { gatewayOrderId, amount } = await cloudApiFetch('/api/onboard/payment/initiate', {
             method: 'POST',
             body: JSON.stringify({ plan, numberOfOutlets: outletCount, sessionId }),
             timeout: 45000,
@@ -154,7 +154,7 @@ const StepPayment = ({ plan, outletCount, sessionId, ownerEmail, ownerPhone, onP
     handler: async (response) => {
       // 4. Verify on backend
       setProgressStep(3);
-      const { paymentReference: ref } = await apiFetch('/api/onboard/payment/verify', {
+      const { paymentReference: ref } = await cloudApiFetch('/api/onboard/payment/verify', {
         method: 'POST',
         body: JSON.stringify({
           gatewayOrderId,
