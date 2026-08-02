@@ -138,7 +138,7 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editE
 
   const handleSave = async () => {
     setError('');
-    if (!paidToSearch.trim()) {
+    if (!paidToSearch.trim() && !paidToName.trim()) {
       setError('Please select who this expenditure is paid to');
       return;
     }

@@ -152,7 +152,7 @@ export default function ExpenditureModule() {
   const handleSave = async () => {
     setError('');
     setSavedMsg('');
-    if (!paidToSearch.trim()) {
+    if (!paidToSearch.trim() && !paidToName.trim()) {
       setError('Please select who this expenditure is paid to');
       return;
     }

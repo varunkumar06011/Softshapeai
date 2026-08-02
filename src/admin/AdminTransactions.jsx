@@ -16,7 +16,6 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { History, Check, X, RefreshCw, RotateCcw, Eye, DatabaseBackup } from 'lucide-react';
 import { fetchTransactions, deleteTransaction, confirmPayment } from '../services/orderApi';
 import { apiFetch, API_BASE, getAuthHeaders } from '../services/apiConfig';
-import { backfillMissingTransactions } from '../services/edgeHealth';
 import { authService } from '../services/authService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
@@ -281,15 +280,21 @@ export default function AdminTransactions({ onStatsRefresh }) {
     setBackfillLoading(true);
     setBackfillResult(null);
     try {
-      const result = await backfillMissingTransactions({ dryRun: false });
-      setBackfillResult(result);
-      const enqueued = result?.summary?.transactionsReEnqueued + result?.summary?.walkinReEnqueued;
-      if (enqueued > 0) {
-        // Reload transactions after a short delay to allow sync worker to push
-        setTimeout(() => loadTransactions(txnDateFilter, txnCustomDate), 3000);
+      const result = await apiFetch('/api/transactions/trigger-edge-reconcile', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      const data = await result.json();
+      if (!result.ok) throw new Error(data.error || 'Failed to trigger reconciliation');
+      if (data.success === false) {
+        setBackfillResult({ error: data.message || 'No edge server connected.' });
+      } else {
+        setBackfillResult({ success: true, message: data.message || 'Reconciliation triggered. Sync will complete within 1-2 minutes.' });
+        // Reload transactions after a delay to allow edge sync worker to push
+        setTimeout(() => loadTransactions(txnDateFilter, txnCustomDate), 5000);
       }
     } catch (err) {
-      setBackfillResult({ error: err.message || 'Edge server not reachable. Run this from the cashier terminal.' });
+      setBackfillResult({ error: err.message || 'Failed to trigger edge reconciliation' });
     } finally {
       setBackfillLoading(false);
     }
@@ -427,7 +432,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
             <button
               onClick={handleBackfill}
               disabled={backfillLoading}
-              title="Re-enqueue missing transactions from the cashier terminal's local database"
+              title="Trigger edge server to re-enqueue and sync any missing/dead-lettered transactions"
               className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-1 ${
                 backfillLoading
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -485,12 +490,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                 {backfillResult.error ? (
                   backfillResult.error
                 ) : (
-                  <>
-                    Recovered {backfillResult.summary?.transactionsReEnqueued + backfillResult.summary?.walkinReEnqueued} transaction(s).
-                    {' '}Scanned {backfillResult.summary?.settledOrdersScanned} settled orders.
-                    {' '}Already synced: {backfillResult.summary?.skippedAlreadySynced}.
-                    {' '}Sync worker will push them to cloud shortly.
-                  </>
+                  backfillResult.message || 'Reconciliation triggered. Transactions will appear within 1-2 minutes.'
                 )}
               </div>
               <button onClick={() => setBackfillResult(null)} className="ml-2 text-gray-400 hover:text-gray-600">
