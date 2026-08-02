@@ -631,9 +631,13 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
     const methodRows = Object.entries(data.byMethod || {}).map(([method, v]) => ({ method, count: v.count, amount: v.amount }));
     downloadExcel({ title: 'Daily Sales Summary', dateRange: dateRangeText, filename: 'Daily-Sales',
       sheets: [
+        { name: 'Transactions', headers: transactionHeaders, rows: [...transactionRows, {
+          txnNumber: 'TOTAL',
+          itemCount: data.summary.totalTransactions,
+          grandTotal: data.summary.totalSales ?? data.summary.totalSubtotal,
+        }] },
         { name: 'By Outlet', headers: outletHeaders, rows: outletRows },
         { name: 'By Method', headers: methodHeaders, rows: methodRows },
-        { name: 'Transactions', headers: transactionHeaders, rows: transactionRows },
       ],
     });
   };
