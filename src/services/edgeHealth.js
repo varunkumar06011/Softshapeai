@@ -777,6 +777,7 @@ async function _edgeFetchWithKey(path, options, headers, timeoutMs) {
 export async function edgeFetch(path, options = {}) {
   const edgeApiKey = getStoredEdgeApiKey();
   const runtimeToken = getStoredEdgeRuntimeToken();
+  const staffToken = secureStorage.getItem('ss_edge_staff_token');
   // Allow callers to override timeout — reads use 3s, writes keep 30s.
   const timeoutMs = options.timeoutMs ?? EDGE_FETCH_TIMEOUT_MS;
   const fetchOptions = { ...options };
@@ -790,6 +791,9 @@ export async function edgeFetch(path, options = {}) {
   }
   if (runtimeToken) {
     headers['Authorization'] = `Bearer ${runtimeToken}`;
+  }
+  if (staffToken) {
+    headers['X-Staff-Token'] = staffToken;
   }
 
   // Retry on network errors (not HTTP error statuses). The edge server is a

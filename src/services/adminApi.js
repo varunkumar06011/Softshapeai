@@ -13,22 +13,68 @@
 import { isEdgeAvailable, edgeFetch, getEdgeUrl } from './edgeHealth.js';
 import { apiUrl, getAuthHeaders } from './apiConfig';
 import { generateRequestId } from '../utils/requestId.js';
+import secureStorage from '../utils/secureStorage.js';
 
 // ── Menu item operations (local-first) ───────────────────────────────────────
 
+// Detect edge-local tokens (offline PIN login) so cloud fallback is skipped.
+// A fake/local token must never reach the cloud API — it would be rejected
+// as an invalid JWT and could leak the fact that the device is offline.
+function isEdgeLocalSession() {
+  const token = secureStorage.getItem('ss_token');
+  return !!token && token.startsWith('edge-local-');
+}
+
+// Normalize the create payload for the edge server contract.
+// The edge endpoint expects `basePrice` (not `price`) and `category` (name or id).
+function normalizeEdgePayload(item) {
+  return {
+    ...item,
+    basePrice: item.basePrice ?? item.price,
+    category: item.category ?? item.categoryId,
+    // Strip fields the edge server does not support or that cashiers must not set.
+    imageUrl: undefined,
+    isSpecial: undefined,
+    specialChannel: undefined,
+    specialActive: undefined,
+    specialExpiresAt: undefined,
+    syncToAllOutlets: undefined,
+    targetOutletId: undefined,
+    categoryPrinterTarget: undefined,
+  };
+}
+
 export async function createMenuItem(item) {
+  // Generate an idempotency key so retries return the same item instead of
+  // creating duplicates. The edge server uses this as the item ID when provided.
+  const idempotencyKey = item.idempotencyKey || generateRequestId();
+  const payload = { ...item, idempotencyKey };
+
   if (await isEdgeAvailable()) {
     try {
-      return await edgeFetch('/api/edge/admin/menu-item', {
+      const edgePayload = normalizeEdgePayload(payload);
+      const res = await edgeFetch('/api/edge/admin/menu-item', {
         method: 'POST',
-        body: JSON.stringify(item),
+        body: JSON.stringify(edgePayload),
       });
+      // edgeFetch returns a parsed JSON response. Map to POS shape.
+      if (res && res.success && res.item) {
+        return res.item;
+      }
+      return res;
     } catch { /* fall through to cloud */ }
   }
+
+  // Cloud fallback: skip for edge-local sessions (offline PIN login).
+  // A fake/local token cannot authenticate against the cloud API.
+  if (isEdgeLocalSession()) {
+    throw new Error('Cannot create menu item: edge server is unavailable and cloud fallback is disabled for offline sessions.');
+  }
+
   const res = await fetch(apiUrl('/api/menu/admin/items'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(item),
+    body: JSON.stringify(payload),
   });
   return res.json();
 }
@@ -36,11 +82,29 @@ export async function createMenuItem(item) {
 export async function updateMenuItem(id, updates) {
   if (await isEdgeAvailable()) {
     try {
-      return await edgeFetch(`/api/edge/admin/menu-item/${id}`, {
+      // Normalize payload for the edge contract: edge uses `basePrice`, not `price`.
+      const edgePayload = { ...updates };
+      if (edgePayload.price !== undefined && edgePayload.basePrice === undefined) {
+        edgePayload.basePrice = edgePayload.price;
+        delete edgePayload.price;
+      }
+      // Strip fields cashiers must not set (the edge server also enforces this,
+      // but stripping here avoids sending unsupported fields over the wire).
+      delete edgePayload.imageUrl;
+      delete edgePayload.categoryPrinterTarget;
+      delete edgePayload.syncToAllOutlets;
+      delete edgePayload.targetOutletId;
+      const res = await edgeFetch(`/api/edge/admin/menu-item/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify(updates),
+        body: JSON.stringify(edgePayload),
       });
+      if (res && res.success && res.item) return res.item;
+      return res;
     } catch { /* fall through to cloud */ }
+  }
+  // Cloud fallback: skip for edge-local sessions (offline PIN login).
+  if (isEdgeLocalSession()) {
+    throw new Error('Cannot update menu item: edge server is unavailable and cloud fallback is disabled for offline sessions.');
   }
   const res = await fetch(apiUrl(`/api/menu/admin/items/${id}`), {
     method: 'PATCH',

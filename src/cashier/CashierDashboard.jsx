@@ -30,11 +30,15 @@ import {
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
   Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle,
-  DatabaseBackup, RefreshCw, PackageOpen
+  DatabaseBackup, RefreshCw, PackageOpen, Pencil
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
 import { bulkImportSpecials } from '../services/menuService';
+import { createMenuItem as createMenuItemLocalFirst, updateMenuItem as updateMenuItemLocalFirst } from '../services/adminApi';
+import CashierMenuAddForm from './CashierMenuAddForm';
+import CashierSpecialsManager from './CashierSpecialsManager';
+import CashierReports from './CashierReports';
 import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
@@ -392,7 +396,12 @@ const CashierDashboard = ({ onLogout }) => {
   }, [selectedMenuType]);
 
   // Fallback: refresh restaurantType/enabledModules and live permissions for existing sessions
-  const [userPermissions, setUserPermissions] = useState({});
+  const [userPermissions, setUserPermissions] = useState(() => {
+    // Edge-local (offline PIN) sessions: permissions come from the stored user
+    // object returned by the edge PIN login response.
+    if (isEdgeLocal && user?.permissions) return user.permissions;
+    return {};
+  });
   useEffect(() => {
     if (isEdgeLocal) return; // Skip cloud auth call for PIN users — cloud rejects fake token
     httpFetch(`${API_BASE}/api/auth/me`, { credentials: 'include', headers: getAuthHeaders() }, { retries: 1 })
@@ -4851,8 +4860,11 @@ const CashierDashboard = ({ onLogout }) => {
         return cat.includes('dessert');
       }
 
-      // 1. Diet filter
-      if (activeDiet !== 'All' && item.t !== activeDiet) return false;
+      // 1. Diet filter — liquor is not a dietary item
+      if (activeDiet !== 'All') {
+        if (['LIQUOR', 'BAR'].includes(String(item.menuType || '').toUpperCase())) return false;
+        if (item.t !== activeDiet) return false;
+      }
 
       // 2. Search query filter
       if (q.length > 0) {
@@ -5858,6 +5870,10 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'vouchers', label: 'Expenditures', icon: Receipt },
             { id: 'xreport', label: 'X Report', icon: FileText },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
+            { id: 'reports', label: 'Reports', icon: ClipboardList },
+            ...(userPermissions?.menuAdd ? [{ id: 'menu-management', label: 'Menu Management', icon: Plus }] : []),
+            ...(userPermissions?.menuEdit ? [{ id: 'menu-edit', label: 'Edit Menu', icon: Pencil }] : []),
+            ...(userPermissions?.menuSpecials ? [{ id: 'specials', label: 'Today Specials', icon: Flame }] : []),
           ].filter(item => {
             return true;
           }).map((item) => (
@@ -6069,8 +6085,11 @@ const CashierDashboard = ({ onLogout }) => {
                             })
                             .map((table, i) => {
                               const hasItems = (table.kotHistory?.length > 0) || (table.activeOrder?.items?.length > 0) || Number(table.currentBill ?? 0) > 0;
-                              const isWaitingBill = table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED' || table.status === 'BILLING';
-                              const isPreparing = table.status === 'Preparing' && hasItems;
+                              // Primary source of truth: billPrintedTableIds (matches Settlement button logic).
+                              // Status alone is unreliable — sync messages can revert 'Waiting Bill' to 'Occupied'.
+                              const isBillPrinted = table.backendId && billPrintedTableIds.has(table.backendId) && !settledTableIds.has(table.backendId);
+                              const isWaitingBill = isBillPrinted || table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED' || table.status === 'BILLING';
+                              const isPreparing = !isBillPrinted && table.status === 'Preparing' && hasItems;
                               const isOccupied = hasItems && !isWaitingBill && !isPreparing;
                               const bill = calculateTableBill(table, restaurantConfig);
                               const billAmt = bill?.subtotal > 0
@@ -6295,6 +6314,7 @@ const CashierDashboard = ({ onLogout }) => {
                                 onAddExtraTable={handleAddVenueExtraTable}
                                 onRemoveExtraTable={handleRemoveVenueExtraTable}
                                 compactMode={true}
+                                billPrintedTableIds={billPrintedTableIds}
                               />
                             );
                           })
@@ -6936,6 +6956,41 @@ const CashierDashboard = ({ onLogout }) => {
                       </div>
                     )}
 
+                    {activeTab === 'menu-management' && userPermissions?.menuAdd && (
+                      <CashierMenuAddForm
+                        categories={categories}
+                        activeOutlet={activeOutlet}
+                        refreshMenu={refreshMenu}
+                        createMenuItem={createMenuItemLocalFirst}
+                      />
+                    )}
+
+                    {activeTab === 'menu-edit' && userPermissions?.menuEdit && (
+                      <CashierMenuAddForm
+                        categories={categories}
+                        activeOutlet={activeOutlet}
+                        refreshMenu={refreshMenu}
+                        createMenuItem={createMenuItemLocalFirst}
+                        updateMenuItem={updateMenuItemLocalFirst}
+                        editMode
+                        menuItems={activeOutlet === 'bar' ? barMenuItems : activeOutlet === 'both' ? [...menuItems, ...barMenuItems] : menuItems}
+                      />
+                    )}
+
+                    {activeTab === 'specials' && userPermissions?.menuSpecials && (
+                      <CashierSpecialsManager
+                        menuItems={activeOutlet === 'bar' ? barMenuItems : activeOutlet === 'both' ? [...menuItems, ...barMenuItems] : menuItems}
+                        categories={categories}
+                        refreshMenu={refreshMenu}
+                        updateMenuItem={updateMenuItemLocalFirst}
+                        bulkImportSpecials={bulkImportSpecials}
+                      />
+                    )}
+
+                    {activeTab === 'reports' && (
+                      <CashierReports />
+                    )}
+
                     {false && (
                       <div className="flex flex-col gap-4 h-full">
                         {/* Smart Summary Header */}
@@ -7009,7 +7064,9 @@ const CashierDashboard = ({ onLogout }) => {
                                           <div key={`${kot.id}-${idx}`} className="flex justify-between items-center">
                                             <div className="flex flex-col min-w-0">
                                               <div className="flex items-center gap-1.5">
-                                                <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                                {!['LIQUOR', 'BAR'].includes(String(item.menuType || '').toUpperCase()) && (
+                                                  <div className={`w-1.5 h-1.5 rounded-full ${item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                                )}
                                                 <span className="truncate max-w-[120px]">{item.n}</span>
                                               </div>
                                               {item.notes && (
@@ -7277,9 +7334,11 @@ const CashierDashboard = ({ onLogout }) => {
                               )}
                               {/* Top row: veg/non dot + menuType badge */}
                               <div className="flex items-center justify-between">
-                                <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
-                                  <div className={`w-2 h-2 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
-                                </div>
+                                {!['LIQUOR', 'BAR'].includes(String(item.menuType || '').toUpperCase()) && (
+                                  <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center ${item.t === 'veg' ? 'border-green-600' : 'border-red-600'}`}>
+                                    <div className={`w-2 h-2 rounded-full ${item.t === 'veg' ? 'bg-green-600' : 'bg-red-600'}`} />
+                                  </div>
+                                )}
                                 {(activeOutlet === 'bar' || activeOutlet === 'both') && item.menuType && (
                                   <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg">
                                     {item.menuType === 'FOOD' ? '🍽️ Food' : '🥃 Liquor'}

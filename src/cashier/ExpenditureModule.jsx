@@ -239,7 +239,20 @@ export default function ExpenditureModule() {
       const result = await edgeFetch(`/api/edge/expenditures/print`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expenditureId }),
+        body: JSON.stringify({
+          expenditureId,
+          expenditure: existingExpData ? {
+            expenditureNo: existingExpData.expenditureNo,
+            expenditureDate: existingExpData.expenditureDate || existingExpData.date,
+            paidToType: existingExpData.paidToType,
+            paidToName: existingExpData.paidToName,
+            amount: Number(existingExpData.amount),
+            narration: existingExpData.narration || null,
+            approvedByName: existingExpData.approvedByName || existingExpData.approver || null,
+            createdByName: existingExpData.createdBy?.name || existingExpData.createdByName || null,
+            status: existingExpData.voided ? 'VOIDED' : (existingExpData.status || 'ACTIVE'),
+          } : null,
+        }),
       });
       // Fix 13C-frontend: consume printed/pending from edge response
       if (result?.pending) {

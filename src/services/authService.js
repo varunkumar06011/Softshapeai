@@ -179,6 +179,12 @@ export const authService = {
         setStoredEdgeRuntimeToken(data.runtimeToken);
       }
 
+      // Save the user-bound staff token returned by the edge server.
+      // Used for cashier-specific authorization on edge menu-management writes.
+      if (data.staffToken) {
+        secureStorage.setItem('ss_edge_staff_token', data.staffToken);
+      }
+
       // Save the edge API key returned by the edge server. Captain devices
       // don't do cloud login, so /api/edge/key (requires JWT) is unreachable.
       // The PIN login response now includes edgeApiKey so the phone gets both
@@ -296,6 +302,7 @@ export const authService = {
     const restaurantId = this.getRestaurantId();
     secureStorage.removeItem('ss_token');
     secureStorage.removeItem('ss_preauth_token');
+    secureStorage.removeItem('ss_edge_staff_token');
     localStorage.removeItem('ss_user');
     localStorage.removeItem('ss_restaurant');
     localStorage.removeItem('ss_accessible_outlets');

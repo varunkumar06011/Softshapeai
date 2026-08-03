@@ -314,6 +314,29 @@ jobs:
             apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe.sig
             apps/cashier-desktop/src-tauri/target/release/bundle/msi/*.msi
 
+      - name: Compute checksums and publish to backend
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          CI_PUBLISH_SECRET: ${{ secrets.CI_PUBLISH_SECRET }}
+          BACKEND_URL: https://softshape-backend-production.up.railway.app
+        run: |
+          set -e
+          EXE="apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe"
+          SIG="apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe.sig"
+          VERSION="${{ github.ref_name }}"
+          # Strip leading 'v' if present
+          VERSION="${VERSION#v}"
+          DOWNLOAD_URL="https://github.com/varunkumar06011/Softshapeai/releases/download/${{ github.ref_name }}/SoftShape.Cashier_x64-setup.exe"
+          SHA256=$(sha256sum "$EXE" | awk '{print $1}')
+          SIZE=$(stat -c%s "$EXE")
+          SIGNATURE=$(cat "$SIG")
+          echo "Publishing cashier/windows v$VERSION (sha256=$SHA256, size=$SIZE)"
+          curl -s -X POST "$BACKEND_URL/api/app-updates/publish" \
+            -H "Content-Type: application/json" \
+            -H "X-Publish-Secret: $CI_PUBLISH_SECRET" \
+            -d "{\"app\":\"cashier\",\"platform\":\"windows\",\"latestVersion\":\"$VERSION\",\"downloadUrl\":\"$DOWNLOAD_URL\",\"signature\":\"$SIGNATURE\",\"sha256\":\"$SHA256\",\"size\":$SIZE,\"releaseNotes\":\"Cashier Desktop v$VERSION\"}"
+
   # ── Build Admin Desktop (Tauri, no edge-server) ─────────────────────────────
   build-admin-desktop:
     name: Admin Desktop (Windows)
@@ -526,3 +549,23 @@ jobs:
           tag_name: ${{ github.event.release.tag_name }}
           fail_on_unmatched_files: false
           files: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/${{ matrix.app }}.apk
+
+      - name: Compute checksums and publish to backend
+        if: github.event_name == 'release' && matrix.app == 'captain-android'
+        shell: bash
+        env:
+          CI_PUBLISH_SECRET: ${{ secrets.CI_PUBLISH_SECRET }}
+          BACKEND_URL: https://softshape-backend-production.up.railway.app
+        run: |
+          set -e
+          APK="apps/captain-android/android/app/build/outputs/apk/release/captain-android.apk"
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          DOWNLOAD_URL="https://github.com/varunkumar06011/Softshapeai/releases/download/${{ github.ref_name }}/captain-android.apk"
+          SHA256=$(sha256sum "$APK" | awk '{print $1}')
+          SIZE=$(stat -c%s "$APK")
+          echo "Publishing captain/android v$VERSION (sha256=$SHA256, size=$SIZE)"
+          curl -s -X POST "$BACKEND_URL/api/app-updates/publish" \
+            -H "Content-Type: application/json" \
+            -H "X-Publish-Secret: $CI_PUBLISH_SECRET" \
+            -d "{\"app\":\"captain\",\"platform\":\"android\",\"latestVersion\":\"$VERSION\",\"downloadUrl\":\"$DOWNLOAD_URL\",\"sha256\":\"$SHA256\",\"size\":$SIZE,\"packageId\":\"ai.softshape.captain\",\"releaseNotes\":\"Captain Android v$VERSION\"}"

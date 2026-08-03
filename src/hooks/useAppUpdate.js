@@ -1,24 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// useAppUpdate — Detects new native APK releases for Capacitor Android apps
+// useAppUpdate — Cross-platform native update state hook
 // ─────────────────────────────────────────────────────────────────────────────
-// Compares the installed native app version with the latest GitHub release.
-// Returns update metadata for the AppUpdateBanner component.
-//
-// The app name is detected from the current hostname/path so the correct
-// APK asset and label are used for each app.
+// Drives update UI for both Cashier Desktop (Tauri) and Captain Android
+// (Capacitor).  Checks the backend manifest on startup, supports a manual
+// "Search for new updates" action, and exposes install helpers.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react';
-import { App } from '@capacitor/app';
-import { checkForNativeUpdate, ANDROID_APK_ASSETS } from '../services/appUpdateService';
-
-const APP_NAMES = {
-  captain: 'Captain',
-  cashier: 'Cashier',
-  admin: 'Admin',
-};
+import { useEffect, useState, useCallback } from 'react';
+import { checkForUpdate, installUpdate, getAppLabel } from '../services/appUpdateService';
 
 function detectAppKey() {
+  if (typeof window === 'undefined') return 'captain';
   const path = window.location.pathname;
   if (path.startsWith('/captain')) return 'captain';
   if (path.startsWith('/cashier')) return 'cashier';
@@ -27,51 +19,86 @@ function detectAppKey() {
 }
 
 export function useAppUpdate() {
+  const [appKey] = useState(detectAppKey);
   const [state, setState] = useState({
     checking: true,
     hasUpdate: false,
+    mandatory: false,
     currentVersion: null,
     latestVersion: null,
     downloadUrl: null,
-    appName: 'SoftShape',
+    releaseNotes: null,
+    packageId: null,
+    manifest: null,
+    error: null,
+    dismissed: false,
+    installing: false,
+    installError: null,
+    appName: getAppLabel(appKey),
   });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      const appKey = detectAppKey();
-      const apkAssetName = ANDROID_APK_ASSETS[appKey];
-      if (!apkAssetName) {
-        setState(s => ({ ...s, checking: false }));
-        return;
-      }
-
-      let currentVersion = null;
-      try {
-        const info = await App.getInfo();
-        currentVersion = info.version;
-      } catch {
-        setState(s => ({ ...s, checking: false }));
-        return;
-      }
-
-      const result = await checkForNativeUpdate(apkAssetName);
-      if (cancelled) return;
-
-      setState({
-        checking: false,
-        hasUpdate: result.updateAvailable,
-        currentVersion: currentVersion || result.currentVersion,
-        latestVersion: result.latestVersion,
-        downloadUrl: result.downloadUrl || result.releaseUrl,
-        appName: APP_NAMES[appKey] || 'SoftShape',
-      });
-    }
-
-    run();
-    return () => { cancelled = true; };
+  const handleResult = useCallback((result) => {
+    const m = result.manifest;
+    setState((s) => ({
+      ...s,
+      checking: false,
+      hasUpdate: !!m?.updateAvailable,
+      mandatory: !!m?.mandatory,
+      currentVersion: m?.currentVersion || s.currentVersion,
+      latestVersion: m?.latestVersion || s.latestVersion,
+      downloadUrl: m?.downloadUrl || null,
+      releaseNotes: m?.releaseNotes || null,
+      packageId: m?.packageId || null,
+      manifest: m || null,
+      error: result.error || null,
+      dismissed: m?.mandatory ? false : s.dismissed,
+    }));
   }, []);
 
-  return state;
+  const runCheck = useCallback(async (force = false) => {
+    setState((s) => ({ ...s, checking: true, error: null }));
+    const result = await checkForUpdate(appKey, force);
+    handleResult(result);
+  }, [appKey, handleResult]);
+
+  const checkNow = useCallback(() => runCheck(true), [runCheck]);
+
+  const installNow = useCallback(async () => {
+    if (!state.manifest) return { state: 'failed', error: 'No update selected' };
+    setState((s) => ({ ...s, installing: true, installError: null }));
+    const result = await installUpdate(state.manifest);
+    setState((s) => ({
+      ...s,
+      installing: false,
+      installError: result.error,
+    }));
+    return result;
+  }, [state.manifest]);
+
+  const dismiss = useCallback(() => {
+    if (state.mandatory) return;
+    setState((s) => ({ ...s, dismissed: true }));
+  }, [state.mandatory]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setState((s) => ({ ...s, checking: true }));
+      const result = await checkForUpdate(appKey, false);
+      if (active) handleResult(result);
+    })();
+    return () => { active = false; };
+  }, [appKey, handleResult]);
+
+  return {
+    ...state,
+    appKey,
+    appName: getAppLabel(appKey),
+    checking: state.checking,
+    hasUpdate: state.hasUpdate,
+    mandatory: state.mandatory,
+    checkNow,
+    installNow,
+    dismiss,
+  };
 }

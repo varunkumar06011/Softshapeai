@@ -1074,7 +1074,10 @@ export default function CaptainApp({ onLogout }) {
   // Issue 17: Track tables where billing was requested — freeze items from stale
   // order:updated/order:created events, same pattern as cashier's billPrintedTableIdsRef.
   // Cleared when the table is settled (order:paid) or goes Free.
+  // State-backed mirror drives re-renders for the yellow "Bill Printed" card color
+  // (the ref alone does not trigger re-renders, so the card would not update reliably).
   const billRequestedTableIdsRef = useRef(new Set());
+  const [billRequestedTableIds, setBillRequestedTableIds] = useState(new Set());
 
   // Guards against stale socket events reviving settled tables (same pattern as cashier)
   const terminatedTableIdsRef = useRef(new Set());
@@ -1973,6 +1976,12 @@ export default function CaptainApp({ onLogout }) {
       if (!tableId) return;
       // Issue 17: Clear billing-requested freeze
       billRequestedTableIdsRef.current.delete(tableId);
+      setBillRequestedTableIds(prev => {
+        if (!prev.has(tableId)) return prev;
+        const next = new Set(prev);
+        next.delete(tableId);
+        return next;
+      });
       // Mark table as recently terminated so stale socket events cannot revive it
       terminatedTableIdsRef.current.add(tableId);
       recentlyTerminatedRef.current[tableId] = Date.now();
@@ -2057,6 +2066,12 @@ export default function CaptainApp({ onLogout }) {
 
       // Issue 17: Clear billing-requested freeze
       billRequestedTableIdsRef.current.delete(tableId);
+      setBillRequestedTableIds(prev => {
+        if (!prev.has(tableId)) return prev;
+        const next = new Set(prev);
+        next.delete(tableId);
+        return next;
+      });
 
       // Mark table as recently terminated so stale socket events (order:updated,
       // table:updated from before settlement) cannot revive it and cause ghost items.
@@ -2275,6 +2290,12 @@ export default function CaptainApp({ onLogout }) {
       // Issue 17: Mark this table as billing-requested so stale order events
       // don't change items while the bill is being processed by the cashier.
       billRequestedTableIdsRef.current.add(table.id);
+      setBillRequestedTableIds(prev => {
+        if (prev.has(table.id)) return prev;
+        const next = new Set(prev);
+        next.add(table.id);
+        return next;
+      });
       const updateTables = (prev) => prev.map(t =>
         t.backendId === table.id ? { ...t, status: 'Waiting Bill', workflowStatus: 'Waiting Bill' } : t
       );
@@ -5373,6 +5394,7 @@ export default function CaptainApp({ onLogout }) {
                     venueTables={tableFilter === 'my' ? displayTables.filter(t => t.captainId === currentCaptain?.id) : displayTables}
                     isSyncing={tablesLoading}
                     refetch={refetchRestaurantTables}
+                    billPrintedTableIds={billRequestedTableIds}
                   />
 
                 </>

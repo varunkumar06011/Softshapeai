@@ -439,6 +439,8 @@ const card = cardBase + " bg-white";
 
 const input = "w-full rounded-[4px] border border-[#FFCDD2] bg-white px-3 py-2 text-sm outline-none focus:border-[#E53935]";
 
+const isLiquorMenuItem = (item) => ['LIQUOR', 'BAR'].includes(String(item?.menuType || '').toUpperCase());
+
 // ── Shared helpers (module-level so all components can use them) ──────────
 
 const uploadImageToCloudinary = async (base64DataUri, itemName = '') => {
@@ -1187,11 +1189,15 @@ export function Pos({ onKOTSend = () => {}, onOrderComplete = () => {} }) {
 
               <div className="mt-3 flex items-center justify-between">
 
+                {!isLiquorMenuItem(x) && (
+
                 <div className={`h-4 w-4 rounded-sm border flex items-center justify-center ${x.t === "veg" ? "border-green-600" : "border-red-600"}`}>
 
                   <div className={`h-1.5 w-1.5 rounded-full ${x.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
 
                 </div>
+
+                )}
 
                 <button className={btn + " px-3 py-1 text-[10px] md:text-xs rounded-full"}>Add</button>
 
@@ -1901,6 +1907,10 @@ export function MenuPage({ onAddDish }) {
 
   const [activeOutlet, setActiveOutlet] = useState('restaurant'); // 'restaurant' | 'bar'
 
+  const [selectedMenuItemIds, setSelectedMenuItemIds] = useState(() => new Set());
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [bulkCategorySaving, setBulkCategorySaving] = useState(false);
+
 
 
   // ── Venue/section resolution from actual tenant venues ──
@@ -1920,6 +1930,11 @@ export function MenuPage({ onAddDish }) {
     }
 
   }, [outlets, activeOutlet]);
+
+  useEffect(() => {
+    setSelectedMenuItemIds(new Set());
+    setBulkCategoryId('');
+  }, [activeOutlet]);
 
 
 
@@ -1963,7 +1978,7 @@ export function MenuPage({ onAddDish }) {
 
         c: item.category,
 
-        t: item.isVeg ? 'veg' : 'non',
+        t: isLiquorMenuItem(item) ? null : (item.isVeg ? 'veg' : 'non'),
 
         img: item.imageUrl || DEFAULT_IMG,
 
@@ -2510,6 +2525,57 @@ export function MenuPage({ onAddDish }) {
 
 
 
+  const toggleMenuItemSelection = (id) => {
+    setSelectedMenuItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllMenuItemSelection = () => {
+    setSelectedMenuItemIds(prev => prev.size === adminItems.length
+      ? new Set()
+      : new Set(adminItems.map(item => item.id)));
+  };
+
+  const handleBulkCategoryMove = async () => {
+    if (selectedMenuItemIds.size === 0 || !bulkCategoryId || bulkCategorySaving) return;
+    if (selectedMenuItemIds.size > 100) {
+      alert('You can move at most 100 items at a time.');
+      return;
+    }
+    const targetCategory = dbCategories.find(category => category.id === bulkCategoryId);
+    if (!targetCategory) return;
+    if (!confirm(`Move ${selectedMenuItemIds.size} selected item(s) to ${targetCategory.name}?`)) return;
+
+    setBulkCategorySaving(true);
+    try {
+      const data = await apiFetch('/api/menu/admin/items/bulk-category', {
+        method: 'POST',
+        timeout: 15000,
+        body: JSON.stringify({ itemIds: Array.from(selectedMenuItemIds), targetCategoryId: bulkCategoryId }),
+      });
+
+      if (data.routingConflicts?.length) {
+        alert(`No items were moved because printer routing needs review for ${data.routingConflicts.length} item(s).`);
+        return;
+      }
+      await fetchAdminItems();
+      await fetchCategories();
+      await refreshMenu().catch(() => {});
+      setSelectedMenuItemIds(new Set());
+      setBulkCategoryId('');
+      if (data.skippedIds?.length) {
+        alert(`${data.updatedCount || 0} item(s) moved. ${data.skippedIds.length} item(s) were already in that category.`);
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to move menu items');
+    } finally {
+      setBulkCategorySaving(false);
+    }
+  };
+
   const handleEdit = async (item) => {
 
     setEditingItem({
@@ -2774,7 +2840,7 @@ export function MenuPage({ onAddDish }) {
 
           c: editingItem.c,
 
-          t: body.isVeg ? 'veg' : 'non',
+          t: isLiquorMenuItem({ menuType: body.menuType }) ? null : (body.isVeg ? 'veg' : 'non'),
 
           img: imageUrl ?? editingItem.img ?? DEFAULT_IMG,
 
@@ -3717,6 +3783,44 @@ export function MenuPage({ onAddDish }) {
 
 
 
+    {selectedMenuItemIds.size > 0 && (
+
+      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2">
+
+        <span className="text-sm font-bold text-red-800">{selectedMenuItemIds.size} item(s) selected</span>
+
+        <select
+          value={bulkCategoryId}
+          onChange={e => setBulkCategoryId(e.target.value)}
+          disabled={bulkCategorySaving}
+          className="rounded border border-red-200 bg-white px-2 py-1.5 text-sm"
+        >
+          <option value="">Move to category...</option>
+          {dbCategories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+        </select>
+
+        <button
+          onClick={handleBulkCategoryMove}
+          disabled={bulkCategorySaving || !bulkCategoryId || selectedMenuItemIds.size > 100}
+          className="rounded bg-[#E53935] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+        >
+          {bulkCategorySaving ? 'Moving...' : 'Move selected'}
+        </button>
+
+        <button
+          onClick={() => setSelectedMenuItemIds(new Set())}
+          disabled={bulkCategorySaving}
+          className="text-xs font-bold text-gray-600 underline"
+        >
+          Clear selection
+        </button>
+
+        {selectedMenuItemIds.size > 100 && <span className="text-xs font-semibold text-red-700">Select 100 items or fewer.</span>}
+
+      </div>
+
+    )}
+
     <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
 
       <table className="w-full text-left text-sm whitespace-nowrap">
@@ -3724,6 +3828,15 @@ export function MenuPage({ onAddDish }) {
         <thead className="sticky top-0 bg-white z-10">
 
           <tr className="border-b border-[#FFCDD2]">
+
+            <th className="px-4 py-2 text-center">
+              <input
+                type="checkbox"
+                checked={adminItems.length > 0 && selectedMenuItemIds.size === adminItems.length}
+                onChange={toggleAllMenuItemSelection}
+                aria-label="Select all menu items in this outlet"
+              />
+            </th>
 
             <th className="px-4 py-2">Image</th>
 
@@ -3755,7 +3868,7 @@ export function MenuPage({ onAddDish }) {
 
             <tr>
 
-              <td colSpan={8} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+              <td colSpan={9} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
 
                 Syncing menu from server…
 
@@ -3767,7 +3880,7 @@ export function MenuPage({ onAddDish }) {
 
             <tr>
 
-              <td colSpan={8} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+              <td colSpan={9} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
 
                 {filter.trim()
 
@@ -3784,6 +3897,15 @@ export function MenuPage({ onAddDish }) {
           items.map((item) => (
 
             <tr key={item.id || item.n} className={`border-b border-[#FFEBEE] hover:bg-[#FFF5F5] transition-opacity ${item.isAvailable ? '' : 'opacity-60'}`}>
+
+              <td className="px-4 py-2 text-center">
+                <input
+                  type="checkbox"
+                  checked={selectedMenuItemIds.has(item.id)}
+                  onChange={() => toggleMenuItemSelection(item.id)}
+                  aria-label={`Select ${item.n}`}
+                />
+              </td>
 
               <td className="px-4 py-2">
 
@@ -3815,9 +3937,21 @@ export function MenuPage({ onAddDish }) {
 
               <td className="px-4 py-2">
 
-                <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
+                {isLiquorMenuItem(item) ? (
 
-                {item.t === "veg" ? "Veg" : "Non-Veg"}
+                  <span className="text-gray-400">Not applicable</span>
+
+                ) : (
+
+                  <>
+
+                    <span className={`inline-flex h-2 w-2 rounded-full mr-2 ${item.t === "veg" ? "bg-green-600" : "bg-red-600"}`} />
+
+                    {item.t === "veg" ? "Veg" : "Non-Veg"}
+
+                  </>
+
+                )}
 
               </td>
 
@@ -4053,6 +4187,8 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
+            {!isLiquorMenuItem(editingItem) && (
+
             <div>
 
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
@@ -4078,6 +4214,8 @@ export function MenuPage({ onAddDish }) {
                </div>
 
             </div>
+
+            )}
 
               </div>
 
@@ -4535,6 +4673,8 @@ export function MenuPage({ onAddDish }) {
 
                </div>
 
+            {!isLiquorMenuItem(addingItem) && (
+
             <div>
 
                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Dietary Type</label>
@@ -4560,6 +4700,8 @@ export function MenuPage({ onAddDish }) {
                </div>
 
             </div>
+
+            )}
 
               </div>
 
@@ -16982,7 +17124,7 @@ export function BarMenuPage() {
 
             c: item.category,
 
-            t: item.isVeg ? 'veg' : 'non',
+            t: isLiquorMenuItem(item) ? null : (item.isVeg ? 'veg' : 'non'),
 
             img: item.image || '/placeholder.svg',
 
@@ -18465,7 +18607,7 @@ export function StaffManagement({ role }) {
 
       const body = editing
 
-        ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders } }
+        ? { name: form.name, designation: form.designation, ...(form.pin ? { pin: form.pin } : {}), permissions: { onlineOrders: !!form.permissions?.onlineOrders, menuAdd: !!form.permissions?.menuAdd, menuEdit: !!form.permissions?.menuEdit, menuSpecials: !!form.permissions?.menuSpecials } }
 
         : form.role === 'OWNER'
 
@@ -18917,6 +19059,78 @@ export function StaffManagement({ role }) {
                 >
 
                   <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition ${form.permissions?.onlineOrders ? 'translate-x-5' : 'translate-x-1'}`} />
+
+                </button>
+
+              </div>
+
+            )}
+
+            {editing && editing.role === 'CASHIER' && (
+
+              <div className="flex items-center justify-between">
+
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Can add menu items</label>
+
+                <button
+
+                  type="button"
+
+                  onClick={() => setForm({ ...form, permissions: { ...form.permissions, menuAdd: !form.permissions?.menuAdd } })}
+
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${form.permissions?.menuAdd ? 'bg-[#E53935]' : 'bg-gray-300'}`}
+
+                >
+
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition ${form.permissions?.menuAdd ? 'translate-x-5' : 'translate-x-1'}`} />
+
+                </button>
+
+              </div>
+
+            )}
+
+            {editing && editing.role === 'CASHIER' && (
+
+              <div className="flex items-center justify-between">
+
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Can edit menu items</label>
+
+                <button
+
+                  type="button"
+
+                  onClick={() => setForm({ ...form, permissions: { ...form.permissions, menuEdit: !form.permissions?.menuEdit } })}
+
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${form.permissions?.menuEdit ? 'bg-[#E53935]' : 'bg-gray-300'}`}
+
+                >
+
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition ${form.permissions?.menuEdit ? 'translate-x-5' : 'translate-x-1'}`} />
+
+                </button>
+
+              </div>
+
+            )}
+
+            {editing && editing.role === 'CASHIER' && (
+
+              <div className="flex items-center justify-between">
+
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Can manage Today Specials</label>
+
+                <button
+
+                  type="button"
+
+                  onClick={() => setForm({ ...form, permissions: { ...form.permissions, menuSpecials: !form.permissions?.menuSpecials } })}
+
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${form.permissions?.menuSpecials ? 'bg-[#E53935]' : 'bg-gray-300'}`}
+
+                >
+
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition ${form.permissions?.menuSpecials ? 'translate-x-5' : 'translate-x-1'}`} />
 
                 </button>
 

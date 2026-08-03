@@ -16,6 +16,7 @@
 import React, { useState, useMemo } from 'react';
 import { Download, Smartphone, Monitor, Tablet, Printer, QrCode, AlertTriangle, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import AppUpdateSettings from '../../shared/components/AppUpdateSettings';
 
 // Download URLs for each platform (from Vite env vars)
 const DOWNLOAD_URLS = {
@@ -124,6 +125,8 @@ export default function AppsSection() {
           <p className="text-sm text-gray-500">Install SoftShape on your devices — works offline.</p>
         </div>
       </div>
+
+      <AppUpdateSettings />
 
       {/* Cashier Apps */}
       <div>

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
@@ -233,20 +234,87 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Check for updates using Tauri's built-in updater.
+#[derive(Debug, Serialize)]
+struct UpdateCheckResult {
+    available: bool,
+    version: Option<String>,
+    notes: Option<String>,
+    pub_date: Option<String>,
+}
+
+/// Check for updates using Tauri's built-in updater.  Returns structured
+/// metadata and does NOT download or install.
 #[tauri::command]
-async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
+async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheckResult, String> {
     let update = app.updater()
         .map_err(|e| format!("Updater init failed: {}", e))?
         .check().await
         .map_err(|e| format!("Update check failed: {}", e))?;
+
     if let Some(update) = update {
-        update.download_and_install(|_, _| {}, || {}).await
-            .map_err(|e| format!("Update install failed: {}", e))?;
-        Ok(true)
+        Ok(UpdateCheckResult {
+            available: true,
+            version: Some(update.version.to_string()),
+            notes: update.body.clone(),
+            pub_date: update.date.clone(),
+        })
     } else {
-        Ok(false)
+        Ok(UpdateCheckResult {
+            available: false,
+            version: None,
+            notes: None,
+            pub_date: None,
+        })
     }
+}
+
+// Guard to prevent concurrent or duplicate native update installations.
+static INSTALL_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+struct InstallGuard;
+impl Drop for InstallGuard {
+    fn drop(&mut self) {
+        INSTALL_IN_PROGRESS.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Download and install the validated update.  The Tauri updater endpoint and
+/// its signature verification remain authoritative; no arbitrary URL is trusted.
+/// Accepts the expected latest version for a final sanity check.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle, latest_version: String) -> Result<String, String> {
+    // Only one installation may run at a time.
+    let already_installing = INSTALL_IN_PROGRESS.compare_exchange(
+        false,
+        true,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ).is_err();
+    if already_installing {
+        return Err("Installation already in progress".to_string());
+    }
+    let _guard = InstallGuard;
+
+    let update = app.updater()
+        .map_err(|e| format!("Updater init failed: {}", e))?
+        .check().await
+        .map_err(|e| format!("Update check failed: {}", e))?;
+
+    let update = update.ok_or_else(|| "No update available".to_string())?;
+
+    if update.version.to_string() != latest_version {
+        return Err(format!(
+            "Manifest version mismatch: expected {}, server returned {}",
+            latest_version,
+            update.version
+        ));
+    }
+
+    let installed = update.download_and_install(|_chunk, _total| {}, || {})
+        .await
+        .map_err(|e| format!("Update install failed: {}", e))?;
+
+    Ok(format!("Installed {}; restart required", installed.version))
 }
 
 /// Enable autostart on Windows boot (Run registry key).
@@ -488,6 +556,7 @@ fn main() {
             print_network,
             get_app_version,
             check_for_updates,
+            install_update,
             get_edge_server_status,
             restart_edge_server,
             shutdown_runtime,

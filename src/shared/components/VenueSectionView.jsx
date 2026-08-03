@@ -35,6 +35,9 @@ export default function VenueSectionView({
   onAddExtraTable = null,
   onRemoveExtraTable = null,
   compactMode = false,
+  // Set of table IDs (backendId or extra id) where the bill has been printed but not yet settled.
+  // When present, takes priority over status for the yellow+blink "Bill Printed" color.
+  billPrintedTableIds = null,
 }) {
 
   const targetSectionId = sectionId; // use sectionId for stable matching
@@ -86,7 +89,7 @@ export default function VenueSectionView({
     return (
       <div className={`grid gap-3.5 max-w-[680px] ${compactMode ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
         {pdrTables.map((table) => (
-          <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
+          <VenueTableCard key={table.backendId || table.id} table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} billPrintedTableIds={billPrintedTableIds} />
         ))}
       </div>
     );
@@ -103,7 +106,7 @@ export default function VenueSectionView({
     <div className={`grid gap-3 ${compactMode ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'}`}>
       {sectionTables.map((table) => (
         <div key={table.backendId || table.id} className="relative">
-          <VenueTableCard table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
+          <VenueTableCard table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} billPrintedTableIds={billPrintedTableIds} />
           {/* Add Extra (+) button — on all non-cleaning tables (extra tables run concurrently with parent) */}
           {onAddExtraTable && !['Cleaning', 'CLEANING'].includes(table.status) && (
             <button
@@ -119,7 +122,7 @@ export default function VenueSectionView({
       ))}
       {sectionExtraTables.map((table) => (
         <div key={`extra-${table.id}`} className="relative">
-          <VenueTableCard table={{ ...table, status: table.status || 'Free', isExtra: true }} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
+          <VenueTableCard table={{ ...table, status: table.status || 'Free', isExtra: true }} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} billPrintedTableIds={billPrintedTableIds} />
           {/* Remove Extra (−) button */}
           {onRemoveExtraTable && (
             <button
@@ -137,11 +140,15 @@ export default function VenueSectionView({
   );
 }
 
-function VenueTableCard({ table, sectionName, onClick, compactMode = false }) {
+function VenueTableCard({ table, sectionName, onClick, compactMode = false, billPrintedTableIds = null }) {
   const status = table.status || 'Free';
   const isFree = status === 'Free' || status === 'AVAILABLE';
-  const isWaitingBill = status === 'Waiting Bill' || status === 'BILLING_REQUESTED' || status === 'BILLING';
-  const isPreparing = status === 'Preparing' && !isFree;
+  // Primary source of truth: billPrintedTableIds takes priority over status so that
+  // sync messages reverting 'Waiting Bill' to 'Occupied' do not flip the card back to red.
+  const tableKey = table.isExtra ? table.id : table.backendId;
+  const isBillPrinted = billPrintedTableIds && tableKey && billPrintedTableIds.has(tableKey);
+  const isWaitingBill = isBillPrinted || status === 'Waiting Bill' || status === 'BILLING_REQUESTED' || status === 'BILLING';
+  const isPreparing = !isBillPrinted && status === 'Preparing' && !isFree;
   const isOccupied = !isFree && !isWaitingBill && !isPreparing;
   const isExtra = table.isExtra;
 

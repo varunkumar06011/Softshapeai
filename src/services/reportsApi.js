@@ -20,11 +20,12 @@ import { authService } from "./authService";
 export function isOfflineError(err) {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
   if (!err) return false;
-  const msg = typeof err === 'string' ? err : err.message;
   const name = typeof err === 'string' ? '' : err.name;
   if (name === 'AbortError') return true;
-  if (name === 'TypeError' && /Failed to fetch|NetworkError|Load failed/i.test(msg)) return true;
-  if (/Failed to fetch|NetworkError|Load failed|timed out/i.test(msg)) return true;
+  // Only a real fetch TypeError (DNS/network/CORS) is a true offline error.
+  // Backend 500 messages like "Failed to fetch itemwise sales report" must NOT
+  // match here — those are server errors, not network failures.
+  if (name === 'TypeError' && /Failed to fetch|NetworkError|Load failed/i.test(err.message || '')) return true;
   return false;
 }
 

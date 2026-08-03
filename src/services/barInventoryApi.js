@@ -17,11 +17,9 @@ import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 export function isOfflineError(err) {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
   if (!err) return false;
-  const msg = typeof err === 'string' ? err : err.message;
   const name = typeof err === 'string' ? '' : err.name;
   if (name === 'AbortError') return true;
-  if (name === 'TypeError' && /Failed to fetch|NetworkError|Load failed/i.test(msg)) return true;
-  if (/Failed to fetch|NetworkError|Load failed|timed out/i.test(msg)) return true;
+  if (name === 'TypeError' && /Failed to fetch|NetworkError|Load failed/i.test(err.message || '')) return true;
   return false;
 }
 

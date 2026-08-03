@@ -1,117 +1,261 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// App Update Service — Checks for new native APK releases on GitHub
+// App Update Service — Cross-platform native update detection and installation
 // ─────────────────────────────────────────────────────────────────────────────
-// Used by Capacitor Android apps to detect when a new APK is available and
-// prompt the user to download it. JS/HTML updates are handled by otaService.js
-// (custom OTA mechanism — downloads web bundle, verifies SHA-256, applies on
-// next launch). This service only handles native APK updates.
+// Replaces the GitHub-only Android checker.  This service:
+//   - Detects runtime (Tauri desktop vs Capacitor Android vs browser)
+//   - Reads the current native app version
+//   - Calls the backend /api/app-updates endpoint for a normalized manifest
+//   - Caches results and enforces a simple state machine
+//   - Triggers Tauri installer downloads for Cashier Desktop
+//   - Opens the Android package installer / browser for Captain Android APKs
 //
-// Flow:
-//   1. Read installed native app version via @capacitor/app
-//   2. Fetch latest GitHub release tag from the GitHub API
-//   3. Compare semver versions
-//   4. If newer release exists, return download URL + release notes
-//
-// The app calling this service must pass its own APK asset name so the correct
-// download link is returned.
+// JS/HTML OTA updates are still handled by otaService.js — this service only
+// deals with native app updates.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { App } from '@capacitor/app';
+import { apiUrl } from './apiConfig';
+import { parseSemver } from '../utils/versionCompare';
 
-const REPO = 'varunkumar06011/Softshapeai';
-const RELEASES_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
-const RELEASES_PAGE_URL = `https://github.com/${REPO}/releases/latest`;
+const APP_CONFIG = {
+  cashier: { app: 'cashier', platform: 'windows', label: 'Cashier', packageId: null },
+  captain: { app: 'captain', platform: 'android', label: 'Captain', packageId: 'ai.softshape.captain' },
+  admin:   { app: 'admin',   platform: 'android', label: 'Admin',   packageId: 'ai.softshape.admin' },
+};
 
-/**
- * Parse a version string into a numeric tuple for comparison.
- * Supports "v1.2.3" and "1.2.3" formats.
- */
-function parseVersion(version) {
-  const clean = String(version || '').replace(/^v/i, '').trim();
-  const parts = clean.split('.').map(p => parseInt(p, 10) || 0);
-  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+export function isTauri() {
+  return typeof window !== 'undefined' && !!(window.__TAURI__ || window.__TAURI_INTERNALS__);
 }
 
-/**
- * Compare two semver version strings.
- * Returns:
- *   > 0 if b > a
- *   < 0 if b < a
- *   0 if equal
- */
-function compareVersions(a, b) {
-  const va = parseVersion(a);
-  const vb = parseVersion(b);
-  for (let i = 0; i < 3; i++) {
-    if (va[i] !== vb[i]) return vb[i] - va[i];
-  }
-  return 0;
+export function isCapacitor() {
+  return typeof window !== 'undefined' && !!(window?.Capacitor?.isNativePlatform?.());
 }
 
-/**
- * Detect if the app is running inside a Capacitor WebView.
- */
-function isCapacitorApp() {
-  return !!(window?.Capacitor?.isNativePlatform?.() || window?.Capacitor?.getPlatform?.());
+function getTauriInvoke() {
+  if (typeof window === 'undefined') return null;
+  return (
+    window.__TAURI__?.core?.invoke ||
+    window.__TAURI__?.invoke ||
+    window.__TAURI_INTERNALS__?.invoke ||
+    null
+  );
 }
 
-/**
- * Check whether a newer APK release is available.
- *
- * @param {string} apkAssetName - GitHub release asset name for this app's APK,
- *                                e.g. 'captain-android.apk'
- * @returns {Promise<{ updateAvailable: boolean, currentVersion: string|null, latestVersion: string|null, downloadUrl: string|null, releaseUrl: string|null, releaseNotes: string|null }>}
- */
-export async function checkForNativeUpdate(apkAssetName) {
+function detectAppKey() {
+  const path = window?.location?.pathname || '/';
+  if (path.startsWith('/captain')) return 'captain';
+  if (path.startsWith('/cashier')) return 'cashier';
+  if (path.startsWith('/admin')) return 'admin';
+  // Fallback: Tauri identifier / Capacitor appId would be more reliable here.
+  return isTauri() ? 'cashier' : 'captain';
+}
+
+function getAppConfig(appKey) {
+  return APP_CONFIG[appKey] || null;
+}
+
+function metaKey(app, platform) {
+  return `ss_update_meta_${app}_${platform}`;
+}
+
+function readCache(app, platform) {
   try {
-    if (!isCapacitorApp()) {
-      return { updateAvailable: false, currentVersion: null, latestVersion: null, downloadUrl: null, releaseUrl: null, releaseNotes: null };
-    }
-
-    const appInfo = await App.getInfo();
-    const currentVersion = appInfo.version;
-
-    const res = await fetch(RELEASES_API_URL, {
-      headers: { Accept: 'application/vnd.github+json' },
-    });
-
-    if (!res.ok) {
-      throw new Error(`GitHub API returned ${res.status}`);
-    }
-
-    const release = await res.json();
-    const latestVersion = release.tag_name;
-    const releaseNotes = release.body || null;
-    const releaseUrl = release.html_url || RELEASES_PAGE_URL;
-
-    const asset = release.assets?.find(a => a.name === apkAssetName);
-    const downloadUrl = asset?.browser_download_url || null;
-
-    const updateAvailable = compareVersions(currentVersion, latestVersion) > 0;
-
-    return {
-      updateAvailable,
-      currentVersion,
-      latestVersion,
-      downloadUrl,
-      releaseUrl,
-      releaseNotes,
-    };
-  } catch (err) {
-    console.warn('[AppUpdateService] Failed to check for native update:', err.message);
-    return {
-      updateAvailable: false,
-      currentVersion: null,
-      latestVersion: null,
-      downloadUrl: null,
-      releaseUrl: null,
-      releaseNotes: null,
-    };
+    const raw = localStorage.getItem(metaKey(app, platform));
+    if (!raw) return null;
+    const meta = JSON.parse(raw);
+    const ttl = 1000 * 60 * 5; // 5 minute automatic check cooldown
+    if (Date.now() - meta.timestamp > ttl) return null;
+    return meta;
+  } catch {
+    return null;
   }
 }
 
+function writeCache(app, platform, result) {
+  try {
+    localStorage.setItem(
+      metaKey(app, platform),
+      JSON.stringify({ ...result, timestamp: Date.now() })
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function invalidateUpdateCache() {
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('ss_update_')) localStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+export async function getCurrentVersion() {
+  if (isTauri()) {
+    const invoke = getTauriInvoke();
+    if (invoke) {
+      try {
+        return await invoke('get_app_version');
+      } catch (err) {
+        console.warn('[AppUpdateService] get_app_version failed:', err?.message);
+      }
+    }
+  }
+
+  if (isCapacitor()) {
+    try {
+      const info = await App.getInfo();
+      return info.version;
+    } catch (err) {
+      console.warn('[AppUpdateService] App.getInfo failed:', err?.message);
+    }
+  }
+
+  return null;
+}
+
+const inFlightChecks = new Map();
+
 /**
- * Convenience mapping for each SoftShape Android app.
+ * Check for a native app update using the backend manifest endpoint.
+ *
+ * @param {string} [appKey] - 'cashier', 'captain', or 'admin'
+ * @param {boolean} [force] - Bypass the automatic check cooldown once
+ * @returns {Promise<{ state: string, manifest: object|null, error: string|null }>}
+ */
+export async function checkForUpdate(appKey, force = false) {
+  appKey = appKey || detectAppKey();
+  const cfg = getAppConfig(appKey);
+  if (!cfg) {
+    return { state: 'failed', manifest: null, error: `Unknown app: ${appKey}` };
+  }
+
+  // Reuse in-flight check to prevent duplicate concurrent requests.
+  const flightKey = `${cfg.app}_${cfg.platform}`;
+  const existing = inFlightChecks.get(flightKey);
+  if (existing) {
+    return existing;
+  }
+
+  const promise = (async () => {
+    try {
+      const cached = force ? null : readCache(cfg.app, cfg.platform);
+      if (cached) {
+        return { state: cached.updateAvailable ? (cached.mandatory ? 'available_mandatory' : 'available_optional') : 'up_to_date', manifest: cached, error: null };
+      }
+
+      const currentVersion = await getCurrentVersion();
+      if (!currentVersion) {
+        return { state: 'failed', manifest: null, error: 'Could not determine installed version' };
+      }
+
+      if (!parseSemver(currentVersion)) {
+        return { state: 'failed', manifest: null, error: `Invalid installed version: ${currentVersion}` };
+      }
+
+      const url = apiUrl(`/api/app-updates/${cfg.app}/${cfg.platform}/${encodeURIComponent(currentVersion)}`);
+      const res = await fetch(url, { method: 'GET' });
+
+      if (res.status === 503) {
+        return { state: 'unavailable', manifest: null, error: 'Update server is temporarily unavailable' };
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text}`);
+      }
+
+      const manifest = await res.json();
+      const result = {
+        state: manifest.updateAvailable ? (manifest.mandatory ? 'available_mandatory' : 'available_optional') : 'up_to_date',
+        manifest,
+        error: null,
+      };
+
+      writeCache(cfg.app, cfg.platform, manifest);
+      return result;
+    } catch (err) {
+      console.warn('[AppUpdateService] Update check failed:', err?.message);
+      return { state: 'failed', manifest: null, error: err?.message || 'Network error' };
+    } finally {
+      inFlightChecks.delete(flightKey);
+    }
+  })();
+
+  inFlightChecks.set(flightKey, promise);
+  return promise;
+}
+
+export function getAppLabel(appKey) {
+  return APP_CONFIG[appKey]?.label || 'SoftShape';
+}
+
+export function getAppPlatformLabel(appKey) {
+  return APP_CONFIG[appKey]?.platform === 'windows' ? 'Windows' : 'Android';
+}
+
+const inFlightInstalls = new Map();
+
+/**
+ * Trigger the platform-native installer for the validated update manifest.
+ * For Tauri this invokes the Rust `install_update` command.
+ * For Android this opens the APK download URL in the browser (installer UI).
+ *
+ * @param {object} manifest - Normalized manifest from checkForUpdate
+ * @returns {Promise<{ state: string, error: string|null }>}
+ */
+export async function installUpdate(manifest) {
+  if (!manifest?.updateAvailable || !manifest.downloadUrl) {
+    return { state: 'failed', error: 'No update to install' };
+  }
+
+  // Only one installation per app/platform at a time.
+  const installKey = `${manifest.app}_${manifest.platform}`;
+  const existingInstall = inFlightInstalls.get(installKey);
+  if (existingInstall) return existingInstall;
+
+  const installPromise = (async () => {
+    try {
+      if (manifest.app === 'cashier' && isTauri()) {
+        const invoke = getTauriInvoke();
+        if (!invoke) throw new Error('Tauri bridge not available');
+        await invoke('install_update', { latest_version: manifest.latestVersion });
+        invalidateUpdateCache();
+        return { state: 'restart_required', error: null };
+      }
+
+      if (manifest.platform === 'android') {
+        const expectedAppKey = Object.keys(APP_CONFIG).find(
+          (k) => APP_CONFIG[k].app === manifest.app && APP_CONFIG[k].platform === 'android'
+        );
+        const expectedPackageId = expectedAppKey ? APP_CONFIG[expectedAppKey].packageId : null;
+        if (expectedPackageId && manifest.packageId && manifest.packageId !== expectedPackageId) {
+          throw new Error(`APK package ID does not match this app: expected ${expectedPackageId}, got ${manifest.packageId}`);
+        }
+
+        window.open(manifest.downloadUrl, '_blank');
+        invalidateUpdateCache();
+        return { state: 'installing', error: null };
+      }
+
+      throw new Error('No installer available for this platform');
+    } catch (err) {
+      console.warn('[AppUpdateService] Install failed:', err?.message);
+      return { state: 'failed', error: err?.message || 'Installation failed' };
+    } finally {
+      inFlightInstalls.delete(installKey);
+    }
+  })();
+
+  inFlightInstalls.set(installKey, installPromise);
+  return installPromise;
+}
+
+/**
+ * Legacy convenience mapping for any code still expecting it.
+ * Not used for the new backend-driven flow.
  */
 export const ANDROID_APK_ASSETS = {
   captain: 'captain-android.apk',

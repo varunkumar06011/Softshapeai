@@ -18,6 +18,13 @@ import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
 import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, waitForEdgeReady, triggerEdgeConfigResync } from "./edgeHealth.js";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
+import secureStorage from "../utils/secureStorage.js";
+
+// Detect edge-local tokens (offline PIN login) so cloud fallback is skipped.
+function isEdgeLocalSession() {
+  const token = secureStorage.getItem('ss_token');
+  return !!token && token.startsWith('edge-local-');
+}
 
 async function edgeFetchMenuItems() {
   const items = await edgeFetch('/api/edge/menu/items', { timeoutMs: EDGE_READ_TIMEOUT_MS });
@@ -118,13 +125,13 @@ export function mapFlatMenuItems(items) {
   if (!Array.isArray(items)) return [];
   return items.map((item) => {
     const menuType = (item.menuType || "FOOD").toUpperCase();
-    const isLiquor = menuType === "LIQUOR";
+    const isLiquor = menuType === "LIQUOR" || menuType === "BAR";
     return {
       id: item.id,
       n: item.name,
       p: Math.round(item.price ?? 0),
       c: item.category,
-      t: item.isVeg ? "veg" : "non",
+      t: isLiquor ? null : (item.isVeg ? "veg" : "non"),
       img: item.imageUrl || DEFAULT_MENU_IMAGE,
       desc: item.description || "",
       menuType,
@@ -160,13 +167,13 @@ export function mapPosViewToMenuItems(categories) {
       const defaultVariant =
         item.variants?.find((v) => v.isDefault) || item.variants?.[0];
       const menuType = (item.menuType || "FOOD").toUpperCase();
-      const isLiquor = menuType === "LIQUOR";
+      const isLiquor = menuType === "LIQUOR" || menuType === "BAR";
       items.push({
         id: item.id,
         n: item.name,
         p: Math.round(defaultVariant?.price ?? 0),
         c: category.name,
-        t: item.isVeg ? "veg" : "non",
+        t: isLiquor ? null : (item.isVeg ? "veg" : "non"),
         img: item.imageUrl || DEFAULT_MENU_IMAGE,
         desc: item.description || "",
         menuType,
@@ -380,6 +387,20 @@ export async function createMenuItem(data) {
 }
 
 export async function bulkImportSpecials(items, syncToAllOutlets = true) {
+  // Edge-first path: write to local SQLite, sync to cloud via sync_queue.
+  if (await isEdgeAvailable()) {
+    try {
+      const res = await edgeFetch('/api/edge/admin/bulk-specials', {
+        method: 'POST',
+        body: JSON.stringify({ items, syncToAllOutlets }),
+      });
+      return res;
+    } catch { /* fall through to cloud */ }
+  }
+  // Cloud fallback: skip for edge-local sessions (offline PIN login).
+  if (isEdgeLocalSession()) {
+    throw new Error('Cannot import specials: edge server is unavailable and cloud fallback is disabled for offline sessions.');
+  }
   const res = await fetch(apiUrl('/api/menu/admin/items/bulk-specials'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },

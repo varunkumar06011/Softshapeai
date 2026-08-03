@@ -82,7 +82,14 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
   const outletParam = categoryFilter !== 'all' ? `&outletType=${categoryFilter}` : '';
   const url = `${API_BASE}/api/reports/itemwise-sales?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
   const res = await fetch(url, { headers: getAuthHeaders(), cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch itemwise sales report');
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
   const raw = await res.json();
   const rawItems = Array.isArray(raw.items) ? raw.items : [];
 
