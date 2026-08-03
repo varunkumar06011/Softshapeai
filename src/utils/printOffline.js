@@ -71,6 +71,33 @@ function resolvePrinter(jobType, mapping) {
   return null;
 }
 
+/**
+ * Resolve the effective printer target for a single item.
+ * Falls back through: printerTarget → categoryPrinterTarget → null.
+ */
+export function resolveItemPrinterTarget(item) {
+  return item.printerTarget || item.categoryPrinterTarget || null;
+}
+
+/**
+ * Group items by their effective printer target so each group can be
+ * printed to its own physical printer. Items without a printerTarget
+ * are grouped under null (resolved by role-based mapping later).
+ *
+ * @param {Array} items — items with optional printerTarget/categoryPrinterTarget
+ * @returns {Array<{ printerTarget: string|null, items: Array }>}
+ */
+export function groupItemsByPrinterTarget(items) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const groups = new Map();
+  for (const item of items) {
+    const target = resolveItemPrinterTarget(item);
+    if (!groups.has(target)) groups.set(target, []);
+    groups.get(target).push(item);
+  }
+  return Array.from(groups.entries()).map(([printerTarget, groupItems]) => ({ printerTarget, items: groupItems }));
+}
+
 // ── ESC/POS generation helpers ───────────────────────────────────────────────
 
 function textToEscpos(text) {
@@ -409,7 +436,24 @@ export async function printLocal(job) {
   const platform = detectPlatform();
   const mapping = await getPrinterMapping();
   const jobType = job.type || job.jobType;
-  const printerName = job.printerName || resolvePrinter(jobType, mapping);
+  // Resolve the physical printer for this job. Priority:
+  //   1. Explicit job.printerName (caller already split by printerTarget)
+  //   2. Per-item printerTarget from job.data.items (uniform-target case)
+  //   3. Role-based mapping (kitchen/bar/bill)
+  let printerName = job.printerName;
+  if (!printerName && job.data?.items) {
+    const itemTargets = new Set(
+      job.data.items
+        .map(i => resolveItemPrinterTarget(i))
+        .filter(Boolean)
+    );
+    // Only use item-level target if ALL items agree on the same printer.
+    // Mixed targets should be split by the caller (groupItemsByPrinterTarget).
+    if (itemTargets.size === 1) {
+      printerName = itemTargets.values().next().value;
+    }
+  }
+  if (!printerName) printerName = resolvePrinter(jobType, mapping);
 
   logOfflinePrint({ status: 'start', message: `${jobType} on ${platform}`, detail: `mapped=${printerName || 'none'}` });
 

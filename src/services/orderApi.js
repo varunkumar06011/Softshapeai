@@ -1469,17 +1469,19 @@ export async function deleteTransaction(transactionId, restaurantId, password) {
   } finally { clearTimeout(timeoutId); }
 }
 
-export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount, tipAmount, cashTipAmount, cardTipAmount } = {}) {
+export async function confirmPayment(transactionId, { paymentMethod = 'CASH', cashAmount, cardAmount, upiAmount, tipAmount, cashTipAmount, cardTipAmount, upiTipAmount } = {}) {
   const body = { paymentMethod };
   if (paymentMethod === 'MIXED') {
     body.cashAmount = cashAmount != null ? Number(cashAmount) : 0;
     body.cardAmount = cardAmount != null ? Number(cardAmount) : 0;
+    body.upiAmount = upiAmount != null ? Number(upiAmount) : 0;
   } else if (paymentMethod === 'CASH' && cashAmount != null) {
     body.cashAmount = Number(cashAmount);
   }
   if (tipAmount != null) body.tipAmount = Number(tipAmount);
   if (cashTipAmount != null) body.cashTipAmount = Number(cashTipAmount);
   if (cardTipAmount != null) body.cardTipAmount = Number(cardTipAmount);
+  if (upiTipAmount != null) body.upiTipAmount = Number(upiTipAmount);
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
   const useEdgeDirect = isEdgeLocalAuth();

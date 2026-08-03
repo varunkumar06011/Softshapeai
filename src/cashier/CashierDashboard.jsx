@@ -38,7 +38,7 @@ import { bulkImportSpecials } from '../services/menuService';
 import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
-import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
+import { printLocal, flushQueuedPrintJobs, groupItemsByPrinterTarget } from '../utils/printOffline';
 import { setLocalPrinterMapping } from '../utils/offlineDB';
 import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, resetEdgeCache, backfillMissingTransactions } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
@@ -650,6 +650,10 @@ const CashierDashboard = ({ onLogout }) => {
   const [confirmPaymentMethod, setConfirmPaymentMethod] = useState(null);
   const [confirmCashInput, setConfirmCashInput] = useState('');
   const [confirmCardInput, setConfirmCardInput] = useState('');
+  const [confirmUpiInput, setConfirmUpiInput] = useState('');
+  const [confirmCashTipInput, setConfirmCashTipInput] = useState('');
+  const [confirmCardTipInput, setConfirmCardTipInput] = useState('');
+  const [confirmUpiTipInput, setConfirmUpiTipInput] = useState('');
   const [confirmTipInput, setConfirmTipInput] = useState('');
   const [showSpecialsModal, setShowSpecialsModal] = useState(false);
   const [specialsRows, setSpecialsRows] = useState([{ name: '', price: '', category: 'Main Course', isVeg: true }]);
@@ -662,6 +666,10 @@ const CashierDashboard = ({ onLogout }) => {
   const [tipInput, setTipInput] = useState('');
   const [otherCashInput, setOtherCashInput] = useState('');
   const [otherCardInput, setOtherCardInput] = useState('');
+  const [otherUpiInput, setOtherUpiInput] = useState('');
+  const [otherCashTipInput, setOtherCashTipInput] = useState('');
+  const [otherCardTipInput, setOtherCardTipInput] = useState('');
+  const [otherUpiTipInput, setOtherUpiTipInput] = useState('');
   const [selectedSettleMethod, setSelectedSettleMethod] = useState(null);
   const [isPrintingBill, setIsPrintingBill] = useState(false);
   const isPrintingBillRef = useRef(false);
@@ -1558,6 +1566,10 @@ const CashierDashboard = ({ onLogout }) => {
     setConfirmPaymentMethod(null);
     setConfirmCashInput('');
     setConfirmCardInput('');
+    setConfirmUpiInput('');
+    setConfirmCashTipInput('');
+    setConfirmCardTipInput('');
+    setConfirmUpiTipInput('');
     setConfirmTipInput('');
     setShowConfirmPaymentModal(true);
   }, []);
@@ -1567,17 +1579,26 @@ const CashierDashboard = ({ onLogout }) => {
     try {
       const cashAmt = Number(confirmCashInput) || 0;
       const cardAmt = Number(confirmCardInput) || 0;
-      const tipAmt = Number(confirmTipInput) || 0;
-      const isMixed = confirmPaymentMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0);
+      const upiAmt = Number(confirmUpiInput) || 0;
+      const isMixed = confirmPaymentMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0 || upiAmt > 0);
       const effectiveMethod = isMixed ? 'MIXED' : confirmPaymentMethod;
+
+      // For MIXED, use per-method tip inputs. For direct methods, use the single tip input.
+      const tipAmt = isMixed ? 0 : (Number(confirmTipInput) || 0);
+      const cashTip = isMixed ? (Number(confirmCashTipInput) || 0) : (effectiveMethod === 'CASH' ? tipAmt : 0);
+      const cardTip = isMixed ? (Number(confirmCardTipInput) || 0) : (effectiveMethod === 'CARD' ? tipAmt : 0);
+      const upiTip = isMixed ? (Number(confirmUpiTipInput) || 0) : (effectiveMethod === 'UPI' ? tipAmt : 0);
+      const totalTip = isMixed ? (cashTip + cardTip + upiTip) : tipAmt;
 
       const result = await confirmPayment(confirmPaymentTxn.id, {
         paymentMethod: effectiveMethod,
         cashAmount: cashAmt,
         cardAmount: cardAmt,
-        tipAmount: tipAmt,
-        cashTipAmount: effectiveMethod === 'CASH' ? tipAmt : 0,
-        cardTipAmount: effectiveMethod === 'CARD' ? tipAmt : 0,
+        upiAmount: upiAmt,
+        tipAmount: totalTip,
+        cashTipAmount: cashTip,
+        cardTipAmount: cardTip,
+        upiTipAmount: upiTip,
       });
       if (result?.offline) {
         addNotification('Confirm Queued', `Bill ${confirmPaymentTxn.displayId || confirmPaymentTxn.id} — will sync when online.`, 'warning');
@@ -1597,13 +1618,17 @@ const CashierDashboard = ({ onLogout }) => {
       setConfirmPaymentMethod(null);
       setConfirmCashInput('');
       setConfirmCardInput('');
+      setConfirmUpiInput('');
+      setConfirmCashTipInput('');
+      setConfirmCardTipInput('');
+      setConfirmUpiTipInput('');
       setConfirmTipInput('');
       loadTransactions(txnDateFilterRef.current, null, { silent: true, force: true });
     } catch (err) {
       console.error('[ConfirmPayment] error:', err);
       addNotification('Confirm Failed', err.message || 'Could not confirm payment.', 'error');
     }
-  }, [confirmPaymentTxn, confirmPaymentMethod, confirmCashInput, confirmCardInput, confirmTipInput, loadTransactions]);
+  }, [confirmPaymentTxn, confirmPaymentMethod, confirmCashInput, confirmCardInput, confirmUpiInput, confirmCashTipInput, confirmCardTipInput, confirmUpiTipInput, confirmTipInput, loadTransactions]);
 
   const handleConfirmPaymentCancel = useCallback(() => {
     setShowConfirmPaymentModal(false);
@@ -1611,6 +1636,10 @@ const CashierDashboard = ({ onLogout }) => {
     setConfirmPaymentMethod(null);
     setConfirmCashInput('');
     setConfirmCardInput('');
+    setConfirmUpiInput('');
+    setConfirmCashTipInput('');
+    setConfirmCardTipInput('');
+    setConfirmUpiTipInput('');
     setConfirmTipInput('');
   }, []);
 
@@ -3948,7 +3977,7 @@ const CashierDashboard = ({ onLogout }) => {
     })();
   };
 
-  const handlePayment = async (method, tipAmount = 0, cashAmount = 0, cardAmount = 0) => {
+  const handlePayment = async (method, tipAmount = 0, cashAmount = 0, cardAmount = 0, upiAmount = 0, cashTipAmount = 0, cardTipAmount = 0, upiTipAmount = 0) => {
     if (!selectedTable || !method) return;
     if (isSubmittingPaymentRef.current) return;
     isSubmittingPaymentRef.current = true;
@@ -4141,10 +4170,12 @@ const CashierDashboard = ({ onLogout }) => {
               localTxnId,
               paymentMethod: method,
               tipAmount: Number(tipAmount) || 0,
-              cashTipAmount: method === 'CASH' ? (Number(tipAmount) || 0) : (method === 'MIXED' ? 0 : 0),
-              cardTipAmount: method === 'CARD' ? (Number(tipAmount) || 0) : (method === 'MIXED' ? 0 : 0),
+              cashTipAmount: Number(cashTipAmount) || 0,
+              cardTipAmount: Number(cardTipAmount) || 0,
+              upiTipAmount: Number(upiTipAmount) || 0,
               cashAmount: Number(cashAmount) || 0,
               cardAmount: Number(cardAmount) || 0,
+              upiAmount: Number(upiAmount) || 0,
               discountPercent: selectedTable.isExtra
                 ? (discountPercent || selectedTable.discountPercent || 0)
                 : discountPercent,
@@ -5194,27 +5225,31 @@ const CashierDashboard = ({ onLogout }) => {
         let intentSucceeded = false;
         try {
           const intentPromises = [];
-          if (hasFoodItems) {
+          // Split food items by printerTarget so each group gets its own intent.
+          // The edge server routes each intent to the printer named in the payload.
+          const foodGroups = groupItemsByPrinterTarget(kotOrderData.items.filter(i => i.type !== 'liquor'));
+          const liquorGroups = groupItemsByPrinterTarget(kotOrderData.items.filter(i => i.type === 'liquor'));
+          for (const group of foodGroups) {
             const foodIntentId = generateIntentId();
             intentPromises.push(
               sendOutputIntent({
                 type: 'OUTPUT',
                 intentId: foodIntentId,
                 intent: 'PRINT_KOT',
-                payload: { ...kotOrderData, requestId },
+                payload: { ...kotOrderData, items: group.items, printerName: group.printerTarget || undefined, requestId },
                 priority: 'CRITICAL',
               }).then(res => ({ intentId: foodIntentId, ok: !!res?.ok, printType: 'KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false, printType: 'KOT' }; })
             );
           }
-          if (hasLiquorItems) {
+          for (const group of liquorGroups) {
             const liquorIntentId = generateIntentId();
             intentPromises.push(
               sendOutputIntent({
                 type: 'OUTPUT',
                 intentId: liquorIntentId,
                 intent: 'PRINT_LIQUOR_KOT',
-                payload: { ...kotOrderData, requestId },
+                payload: { ...kotOrderData, items: group.items, printerName: group.printerTarget || undefined, requestId },
                 priority: 'CRITICAL',
               }).then(res => ({ intentId: liquorIntentId, ok: !!res?.ok, printType: 'BAR_KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false, printType: 'BAR_KOT' }; })
@@ -5237,35 +5272,53 @@ const CashierDashboard = ({ onLogout }) => {
 
         // ── Fallback: local print path (existing flow) ──────────────────────────
         if (!intentSucceeded) {
-        const foodEscpos = buildFoodKOT(kotOrderData);
-        const liquorEscpos = buildLiquorKOT(kotOrderData);
+        // Split food and liquor items by printerTarget so each group prints
+        // to its assigned physical printer (e.g. ice creams → Kitchen Kot,
+        // main course → Kitchen Printer). Items without a printerTarget fall
+        // into the null group, resolved by role-based mapping (kitchen/bar).
+        const foodItems = kotOrderData.items.filter(i => i.type !== 'liquor');
+        const liquorItems = kotOrderData.items.filter(i => i.type === 'liquor');
+        const foodGroups = groupItemsByPrinterTarget(foodItems);
+        const liquorGroups = groupItemsByPrinterTarget(liquorItems);
 
-        // Generate shared eventIds for dedup between local print and socket emission
-        const foodEventId = `${requestId}-food`;
-        const liquorEventId = `${requestId}-liquor`;
         kotEventIds = [];
-        if (foodEscpos.length > 0) kotEventIds.push({ type: 'KOT', eventId: foodEventId });
-        if (liquorEscpos.length > 0) kotEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
-
         const localPrintPromises = [];
-        if (foodEscpos.length > 0) {
+        const printJobMeta = []; // { type, eventId, printerTarget } parallel to localPrintPromises
+
+        for (const group of foodGroups) {
+          const groupEscpos = buildFoodKOT({ ...kotOrderData, items: group.items });
+          if (groupEscpos.length === 0) continue;
+          const eventId = group.printerTarget
+            ? `${requestId}-food-${group.printerTarget.replace(/\s+/g, '_')}`
+            : `${requestId}-food`;
+          kotEventIds.push({ type: 'KOT', eventId });
+          printJobMeta.push({ type: 'KOT', eventId });
           localPrintPromises.push(
             printLocal({
               type: 'KOT',
-              escposData: foodEscpos,
-              eventId: foodEventId,
-              data: kotOrderData,
-            }).catch(err => console.warn('[KOT] Local food print failed:', err.message))
+              escposData: groupEscpos,
+              eventId,
+              printerName: group.printerTarget || undefined,
+              data: { ...kotOrderData, items: group.items },
+            }).catch(err => { console.warn('[KOT] Local food print failed:', err.message); return { printed: false }; })
           );
         }
-        if (liquorEscpos.length > 0) {
+        for (const group of liquorGroups) {
+          const groupEscpos = buildLiquorKOT({ ...kotOrderData, items: group.items });
+          if (groupEscpos.length === 0) continue;
+          const eventId = group.printerTarget
+            ? `${requestId}-liquor-${group.printerTarget.replace(/\s+/g, '_')}`
+            : `${requestId}-liquor`;
+          kotEventIds.push({ type: 'BAR_KOT', eventId });
+          printJobMeta.push({ type: 'BAR_KOT', eventId });
           localPrintPromises.push(
             printLocal({
               type: 'BAR_KOT',
-              escposData: liquorEscpos,
-              eventId: liquorEventId,
-              data: kotOrderData,
-            }).catch(err => console.warn('[KOT] Local liquor print failed:', err.message))
+              escposData: groupEscpos,
+              eventId,
+              printerName: group.printerTarget || undefined,
+              data: { ...kotOrderData, items: group.items },
+            }).catch(err => { console.warn('[KOT] Local liquor print failed:', err.message); return { printed: false }; })
           );
         }
 
@@ -5288,13 +5341,9 @@ const CashierDashboard = ({ onLogout }) => {
           // Filter kotEventIds to only those that actually printed, so the
           // backend's eventId dedup doesn't suppress re-emission of failed ones.
           const succeededEventIds = [];
-          if (foodEscpos.length > 0 && localPrintResults[0]?.status === 'fulfilled' && localPrintResults[0]?.value?.printed) {
-            succeededEventIds.push({ type: 'KOT', eventId: foodEventId });
-          }
-          if (liquorEscpos.length > 0) {
-            const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
-            if (localPrintResults[liquorIdx]?.status === 'fulfilled' && localPrintResults[liquorIdx]?.value?.printed) {
-              succeededEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
+          for (let i = 0; i < localPrintResults.length; i++) {
+            if (localPrintResults[i]?.status === 'fulfilled' && localPrintResults[i]?.value?.printed) {
+              succeededEventIds.push(printJobMeta[i]);
             }
           }
           kotEventIds = succeededEventIds;
@@ -5703,27 +5752,80 @@ const CashierDashboard = ({ onLogout }) => {
 
   const settlementBreakdown = useMemo(() => {
     const breakdown = { CASH: 0, CARD: 0, UPI: 0, OTHER: 0, count: 0 };
+    // Pass 2 accumulators: eligible card/UPI tips for reallocation from cash bucket.
+    let totalCardTip = 0;
+    let totalUpiTip = 0;
+
     for (const txn of completedTransactions) {
       const method = (txn.method || '').toUpperCase();
       const amt = Number(txn.grandTotal ?? txn.amount ?? 0);
+      const cTip = Number(txn.cashTipAmount ?? 0);
+      const dTip = Number(txn.cardTipAmount ?? 0);
+      const uTip = Number(txn.upiTipAmount ?? 0);
+
+      // ── Pass 1: base split (no tip math) ──────────────────────────────────
       if (method === 'MIXED') {
         const cash = Number(txn.cashAmount ?? 0);
         const card = Number(txn.cardAmount ?? 0);
-        const other = Math.max(0, amt - cash - card);
+        const upi = Number(txn.upiAmount ?? 0);
         breakdown.CASH += cash;
         breakdown.CARD += card;
-        breakdown.OTHER += other;
-      } else if (method === 'CASH') breakdown.CASH += amt;
-      else if (method === 'CARD') breakdown.CARD += amt;
-      else if (method === 'UPI') breakdown.UPI += amt;
-      else breakdown.OTHER += amt;
+        breakdown.UPI += upi;
+        breakdown.OTHER += Math.max(0, amt - cash - card - upi);
+      } else if (method === 'CASH') {
+        breakdown.CASH += amt;
+      } else if (method === 'CARD') {
+        breakdown.CARD += amt;
+      } else if (method === 'UPI') {
+        breakdown.UPI += amt;
+      } else {
+        breakdown.OTHER += amt;
+      }
+
+      // ── Pass 2: eligibility-aware tip accumulation ─────────────────────────
+      if (dTip === 0 && uTip === 0) {
+        breakdown.count++;
+        continue;
+      }
+      let eligible = false;
+      if (method === 'CARD' || method === 'UPI') {
+        eligible = true;
+      } else if (method === 'MIXED') {
+        // Eligible iff CASH not selected AND (CARD or UPI selected).
+        const hasCash = Number(txn.cashAmount ?? 0) > 0;
+        const hasCard = Number(txn.cardAmount ?? 0) > 0;
+        const hasUpi = Number(txn.upiAmount ?? 0) > 0;
+        eligible = !hasCash && (hasCard || hasUpi);
+      }
+      if (eligible) {
+        totalCardTip += dTip;
+        totalUpiTip += uTip;
+      }
       breakdown.count++;
     }
+
+    // Apply Pass 2 flat adjustment: card/UPI tips move from cash bucket into their
+    // settlement buckets (drawer payout to waiter). Cash tips are NOT touched.
+    // Keeps CASH+CARD+UPI+OTHER == sum(grandTotal).
+    breakdown.CARD += totalCardTip;
+    breakdown.UPI += totalUpiTip;
+    breakdown.CASH -= (totalCardTip + totalUpiTip);
+
     return breakdown;
+  }, [completedTransactions]);
+
+  // Tips paid via card/UPI (cash tips excluded — they never pass through the drawer).
+  const dashboardTips = useMemo(() => {
+    let tips = 0;
+    for (const txn of completedTransactions) {
+      tips += Number(txn.cardTipAmount ?? 0) + Number(txn.upiTipAmount ?? 0);
+    }
+    return tips;
   }, [completedTransactions]);
 
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${completedTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Tips", value: `₹${Number(dashboardTips).toFixed(2)}`, change: `Card + UPI tips ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Sparkles, color: "text-purple-600", bg: "bg-purple-50" },
     { label: "Discounts", value: `₹${Number(dashboardTotalDiscounts).toFixed(2)}`, change: `${completedTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Tag, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "Expenditures", value: `₹${Number(dashboardExpenditureAmount).toFixed(2)}`, change: `${expenditureSummary?.count || 0} expenditures ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Receipt, color: "text-amber-600", bg: "bg-amber-50" },
     { label: "Final Amount", value: `₹${Number(dashboardFinalAmount).toFixed(2)}`, change: "Total Sales − Expenditures", icon: Banknote, color: "text-emerald-600", bg: "bg-emerald-50" },
@@ -5875,7 +5977,7 @@ const CashierDashboard = ({ onLogout }) => {
                       )}
                     </div>
                     {/* Stats Row */}
-                    <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
+                    <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-5 gap-3 overflow-x-auto scrollbar-hide snap-x pb-1 sm:pb-0">
                       {stats.map((stat, i) => (
                         <div key={i} className="min-w-[75vw] sm:min-w-0 snap-start shrink-0 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4">
                           <div className={`w-12 h-12 ${stat.bg} ${stat.color} rounded-2xl flex items-center justify-center shrink-0 shadow-inner`}>
@@ -8121,7 +8223,7 @@ const CashierDashboard = ({ onLogout }) => {
                 <p className="text-3xl font-black text-gray-900 mt-1 tabular-nums">₹{Number(activeGrandTotal > 0 ? activeGrandTotal : 0).toFixed(0)}</p>
               </div>
               <button
-                onClick={() => { setShowSettleConfirm(false); setTipInput(''); setSelectedSettleMethod(null); setOtherCashInput(''); setOtherCardInput(''); }}
+                onClick={() => { setShowSettleConfirm(false); setTipInput(''); setSelectedSettleMethod(null); setOtherCashInput(''); setOtherCardInput(''); setOtherUpiInput(''); setOtherCashTipInput(''); setOtherCardTipInput(''); setOtherUpiTipInput(''); }}
                 className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
               >
                 <X size={20} />
@@ -8138,7 +8240,7 @@ const CashierDashboard = ({ onLogout }) => {
                 ].map(({ label, method, icon: Icon, color }) => (
                   <button
                     key={method}
-                    onClick={() => { setSelectedSettleMethod(method); setOtherCashInput(''); setOtherCardInput(''); }}
+                    onClick={() => { setSelectedSettleMethod(method); setOtherCashInput(''); setOtherCardInput(''); setOtherUpiInput(''); setOtherCashTipInput(''); setOtherCardTipInput(''); setOtherUpiTipInput(''); }}
                     className={`relative flex flex-col items-center gap-2.5 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm ${
                       selectedSettleMethod === method
                         ? color === 'green' ? 'bg-green-50 border-green-600 text-green-700'
@@ -8157,11 +8259,11 @@ const CashierDashboard = ({ onLogout }) => {
                 ))}
               </div>
 
-              {/* Cash/Card sub-boxes when "Other" is selected */}
+              {/* Cash/Card/UPI sub-boxes when "Other" is selected */}
               {selectedSettleMethod === 'OTHER' && (
                 <div className="mb-5 p-4 bg-orange-50 rounded-xl border-2 border-orange-200 space-y-3">
                   <p className="text-xs font-black uppercase text-orange-600 tracking-widest">Other Payment Breakdown (Optional)</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">Cash</label>
                       <div className="relative">
@@ -8175,6 +8277,20 @@ const CashierDashboard = ({ onLogout }) => {
                           onChange={(e) => setOtherCashInput(e.target.value)}
                           placeholder="0"
                           className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                      <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mt-1.5 mb-1 block">Tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={otherCashTipInput}
+                          onChange={(e) => setOtherCashTipInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-7 pr-2 py-2 rounded-lg border-2 border-gray-200 text-sm font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
                         />
                       </div>
                     </div>
@@ -8193,18 +8309,63 @@ const CashierDashboard = ({ onLogout }) => {
                           className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
                         />
                       </div>
+                      <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mt-1.5 mb-1 block">Tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={otherCardTipInput}
+                          onChange={(e) => setOtherCardTipInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-7 pr-2 py-2 rounded-lg border-2 border-gray-200 text-sm font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">UPI</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={otherUpiInput}
+                          onChange={(e) => setOtherUpiInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                      <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mt-1.5 mb-1 block">Tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={otherUpiTipInput}
+                          onChange={(e) => setOtherUpiTipInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-7 pr-2 py-2 rounded-lg border-2 border-gray-200 text-sm font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
                     </div>
                   </div>
                   {(() => {
                     const cash = Number(otherCashInput) || 0;
                     const card = Number(otherCardInput) || 0;
-                    const tip = Number(tipInput) || 0;
-                    const total = cash + card + tip;
+                    const upi = Number(otherUpiInput) || 0;
+                    const tip = (Number(otherCashTipInput) || 0) + (Number(otherCardTipInput) || 0) + (Number(otherUpiTipInput) || 0);
+                    const total = cash + card + upi + tip;
                     const grandTotalNum = Number(activeGrandTotal > 0 ? activeGrandTotal : 0);
-                    const isMixed = cash > 0 || card > 0;
+                    const isMixed = cash > 0 || card > 0 || upi > 0;
                     return (
                       <div className={`text-xs font-bold ${total >= grandTotalNum ? 'text-green-600' : 'text-gray-500'}`}>
-                        {isMixed ? 'MIXED' : 'OTHER'} • Cash+Card+Tip = ₹{total.toFixed(0)}
+                        {isMixed ? 'MIXED' : 'OTHER'} • Cash+Card+UPI+Tip = ₹{total.toFixed(0)}
                         {total >= grandTotalNum ? ' ✓' : ` (₹${(grandTotalNum - total).toFixed(0)} short)`}
                       </div>
                     );
@@ -8212,35 +8373,51 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               )}
 
-              <div className="mb-5">
-                <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xl">₹</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="1"
-                    value={tipInput}
-                    onChange={(e) => setTipInput(e.target.value)}
-                    placeholder="0"
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black font-mono text-gray-900 tabular-nums focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-red-100 transition-colors"
-                  />
+              {/* Single Tip Amount input — only shown for direct methods (CASH/CARD/UPI), not OTHER */}
+              {selectedSettleMethod && selectedSettleMethod !== 'OTHER' && (
+                <div className="mb-5">
+                  <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xl">₹</span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="1"
+                      value={tipInput}
+                      onChange={(e) => setTipInput(e.target.value)}
+                      placeholder="0"
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black font-mono text-gray-900 tabular-nums focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-red-100 transition-colors"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button
                 onClick={() => {
                   if (!selectedSettleMethod || isPrintingBill || isSettling) return;
                   const cashAmt = Number(otherCashInput) || 0;
                   const cardAmt = Number(otherCardInput) || 0;
-                  const isMixed = selectedSettleMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0);
+                  const upiAmt = Number(otherUpiInput) || 0;
+                  const isMixed = selectedSettleMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0 || upiAmt > 0);
                   const effectiveMethod = isMixed ? 'MIXED' : selectedSettleMethod;
-                  handlePayment(effectiveMethod, Number(tipInput) || 0, cashAmt, cardAmt);
+                  // For MIXED, use per-method tip inputs. For direct methods, use single tipInput.
+                  if (isMixed) {
+                    const cTip = Number(otherCashTipInput) || 0;
+                    const dTip = Number(otherCardTipInput) || 0;
+                    const uTip = Number(otherUpiTipInput) || 0;
+                    handlePayment(effectiveMethod, cTip + dTip + uTip, cashAmt, cardAmt, upiAmt, cTip, dTip, uTip);
+                  } else {
+                    handlePayment(effectiveMethod, Number(tipInput) || 0, cashAmt, cardAmt, upiAmt);
+                  }
                   setTipInput('');
                   setSelectedSettleMethod(null);
                   setOtherCashInput('');
                   setOtherCardInput('');
+                  setOtherUpiInput('');
+                  setOtherCashTipInput('');
+                  setOtherCardTipInput('');
+                  setOtherUpiTipInput('');
                 }}
                 disabled={!selectedSettleMethod || isPrintingBill || isSettling}
                 className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill && !isSettling
@@ -8624,7 +8801,7 @@ const CashierDashboard = ({ onLogout }) => {
                 ].map(({ label, method, icon: Icon, color }) => (
                   <button
                     key={method}
-                    onClick={() => { setConfirmPaymentMethod(method); setConfirmCashInput(''); setConfirmCardInput(''); }}
+                    onClick={() => { setConfirmPaymentMethod(method); setConfirmCashInput(''); setConfirmCardInput(''); setConfirmUpiInput(''); setConfirmCashTipInput(''); setConfirmCardTipInput(''); setConfirmUpiTipInput(''); }}
                     className={`relative flex flex-col items-center gap-2.5 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm ${
                       confirmPaymentMethod === method
                         ? color === 'green' ? 'bg-green-50 border-green-600 text-green-700'
@@ -8643,11 +8820,11 @@ const CashierDashboard = ({ onLogout }) => {
                 ))}
               </div>
 
-              {/* Cash/Card sub-boxes when "Other" is selected */}
+              {/* Cash/Card/UPI sub-boxes when "Other" is selected */}
               {confirmPaymentMethod === 'OTHER' && (
                 <div className="mb-5 p-4 bg-orange-50 rounded-xl border-2 border-orange-200 space-y-3">
                   <p className="text-xs font-black uppercase text-orange-600 tracking-widest">Other Payment Breakdown (Optional)</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">Cash</label>
                       <div className="relative">
@@ -8661,6 +8838,20 @@ const CashierDashboard = ({ onLogout }) => {
                           onChange={(e) => setConfirmCashInput(e.target.value)}
                           placeholder="0"
                           className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                      <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mt-1.5 mb-1 block">Tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={confirmCashTipInput}
+                          onChange={(e) => setConfirmCashTipInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-7 pr-2 py-2 rounded-lg border-2 border-gray-200 text-sm font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
                         />
                       </div>
                     </div>
@@ -8679,18 +8870,63 @@ const CashierDashboard = ({ onLogout }) => {
                           className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
                         />
                       </div>
+                      <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mt-1.5 mb-1 block">Tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={confirmCardTipInput}
+                          onChange={(e) => setConfirmCardTipInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-7 pr-2 py-2 rounded-lg border-2 border-gray-200 text-sm font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1 block">UPI</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={confirmUpiInput}
+                          onChange={(e) => setConfirmUpiInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-8 pr-3 py-2.5 rounded-lg border-2 border-gray-200 text-base font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+                      <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider mt-1.5 mb-1 block">Tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={confirmUpiTipInput}
+                          onChange={(e) => setConfirmUpiTipInput(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-7 pr-2 py-2 rounded-lg border-2 border-gray-200 text-sm font-black text-gray-900 tabular-nums focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
                     </div>
                   </div>
                   {(() => {
                     const cash = Number(confirmCashInput) || 0;
                     const card = Number(confirmCardInput) || 0;
-                    const tip = Number(confirmTipInput) || 0;
-                    const total = cash + card + tip;
+                    const upi = Number(confirmUpiInput) || 0;
+                    const tip = (Number(confirmCashTipInput) || 0) + (Number(confirmCardTipInput) || 0) + (Number(confirmUpiTipInput) || 0);
+                    const total = cash + card + upi + tip;
                     const grandTotalNum = Number(confirmPaymentTxn.grandTotal || confirmPaymentTxn.amount || 0);
-                    const isMixed = cash > 0 || card > 0;
+                    const isMixed = cash > 0 || card > 0 || upi > 0;
                     return (
                       <div className={`text-xs font-bold ${total >= grandTotalNum ? 'text-green-600' : 'text-gray-500'}`}>
-                        {isMixed ? 'MIXED' : 'OTHER'} • Cash+Card+Tip = ₹{total.toFixed(0)}
+                        {isMixed ? 'MIXED' : 'OTHER'} • Cash+Card+UPI+Tip = ₹{total.toFixed(0)}
                         {total >= grandTotalNum ? ' ✓' : ` (₹${(grandTotalNum - total).toFixed(0)} short)`}
                       </div>
                     );
@@ -8698,22 +8934,25 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               )}
 
-              <div className="mb-5">
-                <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xl">₹</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="1"
-                    value={confirmTipInput}
-                    onChange={(e) => setConfirmTipInput(e.target.value)}
-                    placeholder="0"
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black font-mono text-gray-900 tabular-nums focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-red-100 transition-colors"
-                  />
+              {/* Single Tip Amount input — only shown for direct methods (CASH/CARD/UPI), not OTHER */}
+              {confirmPaymentMethod && confirmPaymentMethod !== 'OTHER' && (
+                <div className="mb-5">
+                  <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xl">₹</span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="1"
+                      value={confirmTipInput}
+                      onChange={(e) => setConfirmTipInput(e.target.value)}
+                      placeholder="0"
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-gray-200 text-xl font-black font-mono text-gray-900 tabular-nums focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-red-100 transition-colors"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-3">
                 <button

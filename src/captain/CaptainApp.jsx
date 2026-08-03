@@ -59,7 +59,7 @@ import { safeGetJSON } from '../utils/safeParseJSON';
 import { useAuth } from '../context/AuthContext.jsx';
 
 import { getItemCategory } from '../utils/itemHelpers';
-import { printLocal } from '../utils/printOffline';
+import { printLocal, groupItemsByPrinterTarget } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
@@ -3356,36 +3356,39 @@ export default function CaptainApp({ onLogout }) {
         };
 
         // ── R2: Try Output Intent API first (runtime handles printing) ──────────
-        // Send PRINT_KOT and PRINT_LIQUOR_KOT intents to the runtime. If both
-        // succeed, the runtime rendered + queued + dispatched the prints — no
-        // need for local print or localPrinted/kotEventIds. If either fails,
+        // Send PRINT_KOT and PRINT_LIQUOR_KOT intents to the runtime, split by
+        // printerTarget so each group routes to its assigned physical printer.
+        // If all succeed, the runtime rendered + queued + dispatched the prints —
+        // no need for local print or localPrinted/kotEventIds. If any fails,
         // fall back to the existing local print flow.
         const hasFoodItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() !== 'LIQUOR');
         const hasLiquorItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR');
         let intentSucceeded = false;
         try {
           const intentPromises = [];
-          if (hasFoodItems) {
+          const foodGroups = groupItemsByPrinterTarget(kotOrderData.items.filter(i => i.type !== 'liquor'));
+          const liquorGroups = groupItemsByPrinterTarget(kotOrderData.items.filter(i => i.type === 'liquor'));
+          for (const group of foodGroups) {
             const foodIntentId = generateIntentId();
             intentPromises.push(
               sendOutputIntent({
                 type: 'OUTPUT',
                 intentId: foodIntentId,
                 intent: 'PRINT_KOT',
-                payload: { ...kotOrderData, requestId },
+                payload: { ...kotOrderData, items: group.items, printerName: group.printerTarget || undefined, requestId },
                 priority: 'CRITICAL',
               }).then(res => ({ intentId: foodIntentId, ok: !!res?.ok, printType: 'KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_KOT failed:', err.message); return { intentId: foodIntentId, ok: false, printType: 'KOT' }; })
             );
           }
-          if (hasLiquorItems) {
+          for (const group of liquorGroups) {
             const liquorIntentId = generateIntentId();
             intentPromises.push(
               sendOutputIntent({
                 type: 'OUTPUT',
                 intentId: liquorIntentId,
                 intent: 'PRINT_LIQUOR_KOT',
-                payload: { ...kotOrderData, requestId },
+                payload: { ...kotOrderData, items: group.items, printerName: group.printerTarget || undefined, requestId },
                 priority: 'CRITICAL',
               }).then(res => ({ intentId: liquorIntentId, ok: !!res?.ok, printType: 'BAR_KOT' }))
                 .catch(err => { console.warn('[KOT] sendOutputIntent PRINT_LIQUOR_KOT failed:', err.message); return { intentId: liquorIntentId, ok: false, printType: 'BAR_KOT' }; })
@@ -3408,44 +3411,59 @@ export default function CaptainApp({ onLogout }) {
 
         // ── Fallback: local print path (existing flow) ──────────────────────────
         if (!intentSucceeded) {
-        const foodEscpos = buildFoodKOT(kotOrderData);
-        const liquorEscpos = buildLiquorKOT(kotOrderData);
+        // Split food and liquor items by printerTarget so each group prints
+        // to its assigned physical printer (e.g. ice creams → Kitchen Kot,
+        // main course → Kitchen Printer). Items without a printerTarget fall
+        // into the null group, resolved by role-based mapping (kitchen/bar).
+        const foodItems = kotOrderData.items.filter(i => i.type !== 'liquor');
+        const liquorItems = kotOrderData.items.filter(i => i.type === 'liquor');
+        const foodGroups = groupItemsByPrinterTarget(foodItems);
+        const liquorGroups = groupItemsByPrinterTarget(liquorItems);
 
-        // Generate shared eventIds that are passed to both local print and backend.
-        // If local print succeeds with these eventIds, and the backend also emits
-        // via socket (because localPrinted is false), the Print Agent's seenEventIds
-        // dedup will catch it — no duplicate print.
-        const foodEventId = `${requestId}-food`;
-        const liquorEventId = `${requestId}-liquor`;
         kotEventIds = [];
-        if (foodEscpos.length > 0) kotEventIds.push({ type: 'KOT', eventId: foodEventId });
-        if (liquorEscpos.length > 0) kotEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
-
-        // Bug D: Await local print FIRST, then pass the correct localPrinted flag to the API.
-        // This matches the cashier's approach and eliminates dependency on eventId dedup
-        // for the common case (local print succeeds → backend skips socket emission).
         const localPrintPromises = [];
-        if (foodEscpos.length > 0) {
+        const printJobMeta = []; // { type, eventId } parallel to localPrintPromises
+
+        for (const group of foodGroups) {
+          const groupEscpos = buildFoodKOT({ ...kotOrderData, items: group.items });
+          if (groupEscpos.length === 0) continue;
+          const eventId = group.printerTarget
+            ? `${requestId}-food-${group.printerTarget.replace(/\s+/g, '_')}`
+            : `${requestId}-food`;
+          kotEventIds.push({ type: 'KOT', eventId });
+          printJobMeta.push({ type: 'KOT', eventId });
           localPrintPromises.push(
             printLocal({
               type: 'KOT',
-              escposData: foodEscpos,
-              eventId: foodEventId,
-              data: kotOrderData,
+              escposData: groupEscpos,
+              eventId,
+              printerName: group.printerTarget || undefined,
+              data: { ...kotOrderData, items: group.items },
             }).catch(err => { console.warn('[KOT] Local food print failed:', err.message); return { printed: false }; })
           );
         }
-        if (liquorEscpos.length > 0) {
+        for (const group of liquorGroups) {
+          const groupEscpos = buildLiquorKOT({ ...kotOrderData, items: group.items });
+          if (groupEscpos.length === 0) continue;
+          const eventId = group.printerTarget
+            ? `${requestId}-liquor-${group.printerTarget.replace(/\s+/g, '_')}`
+            : `${requestId}-liquor`;
+          kotEventIds.push({ type: 'BAR_KOT', eventId });
+          printJobMeta.push({ type: 'BAR_KOT', eventId });
           localPrintPromises.push(
             printLocal({
               type: 'BAR_KOT',
-              escposData: liquorEscpos,
-              eventId: liquorEventId,
-              data: kotOrderData,
+              escposData: groupEscpos,
+              eventId,
+              printerName: group.printerTarget || undefined,
+              data: { ...kotOrderData, items: group.items },
             }).catch(err => { console.warn('[KOT] Local liquor print failed:', err.message); return { printed: false }; })
           );
         }
 
+        // Bug D: Await local print FIRST, then pass the correct localPrinted flag to the API.
+        // This matches the cashier's approach and eliminates dependency on eventId dedup
+        // for the common case (local print succeeds → backend skips socket emission).
         const printResults = await Promise.allSettled(localPrintPromises);
         // Fix: localPrinted must be true only if ALL prints succeeded.
         // Using .some() caused partial success (food OK, liquor failed) to
@@ -3464,13 +3482,9 @@ export default function CaptainApp({ onLogout }) {
           // Filter kotEventIds to only those that actually printed, so the
           // backend's eventId dedup doesn't suppress re-emission of failed ones.
           const succeededEventIds = [];
-          if (foodEscpos.length > 0 && printResults[0]?.status === 'fulfilled' && printResults[0]?.value?.printed) {
-            succeededEventIds.push({ type: 'KOT', eventId: foodEventId });
-          }
-          if (liquorEscpos.length > 0) {
-            const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
-            if (printResults[liquorIdx]?.status === 'fulfilled' && printResults[liquorIdx]?.value?.printed) {
-              succeededEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
+          for (let i = 0; i < printResults.length; i++) {
+            if (printResults[i]?.status === 'fulfilled' && printResults[i]?.value?.printed) {
+              succeededEventIds.push(printJobMeta[i]);
             }
           }
           kotEventIds = succeededEventIds;
@@ -3594,23 +3608,36 @@ export default function CaptainApp({ onLogout }) {
                 sectionTag: activeTable?.sectionTag || undefined,
                 restaurantName: restaurant?.name || undefined,
               };
-              const edgeFoodEscpos = buildFoodKOT(edgeKotOrderData);
-              const edgeLiquorEscpos = buildLiquorKOT(edgeKotOrderData);
-              const edgeFoodEventId = `${requestId}-food`;
-              const edgeLiquorEventId = `${requestId}-liquor`;
+              const edgeFoodItems = edgeKotOrderData.items.filter(i => i.type !== 'liquor');
+              const edgeLiquorItems = edgeKotOrderData.items.filter(i => i.type === 'liquor');
+              const edgeFoodGroups = groupItemsByPrinterTarget(edgeFoodItems);
+              const edgeLiquorGroups = groupItemsByPrinterTarget(edgeLiquorItems);
               edgeKotEventIds = [];
-              if (edgeFoodEscpos.length > 0) edgeKotEventIds.push({ type: 'KOT', eventId: edgeFoodEventId });
-              if (edgeLiquorEscpos.length > 0) edgeKotEventIds.push({ type: 'BAR_KOT', eventId: edgeLiquorEventId });
               const edgePrintPromises = [];
-              if (edgeFoodEscpos.length > 0) {
+              const edgePrintJobMeta = [];
+              for (const group of edgeFoodGroups) {
+                const groupEscpos = buildFoodKOT({ ...edgeKotOrderData, items: group.items });
+                if (groupEscpos.length === 0) continue;
+                const eventId = group.printerTarget
+                  ? `${requestId}-food-${group.printerTarget.replace(/\s+/g, '_')}`
+                  : `${requestId}-food`;
+                edgeKotEventIds.push({ type: 'KOT', eventId });
+                edgePrintJobMeta.push({ type: 'KOT', eventId });
                 edgePrintPromises.push(
-                  printLocal({ type: 'KOT', escposData: edgeFoodEscpos, eventId: edgeFoodEventId, data: edgeKotOrderData })
+                  printLocal({ type: 'KOT', escposData: groupEscpos, eventId, printerName: group.printerTarget || undefined, data: { ...edgeKotOrderData, items: group.items } })
                     .catch(() => ({ printed: false }))
                 );
               }
-              if (edgeLiquorEscpos.length > 0) {
+              for (const group of edgeLiquorGroups) {
+                const groupEscpos = buildLiquorKOT({ ...edgeKotOrderData, items: group.items });
+                if (groupEscpos.length === 0) continue;
+                const eventId = group.printerTarget
+                  ? `${requestId}-liquor-${group.printerTarget.replace(/\s+/g, '_')}`
+                  : `${requestId}-liquor`;
+                edgeKotEventIds.push({ type: 'BAR_KOT', eventId });
+                edgePrintJobMeta.push({ type: 'BAR_KOT', eventId });
                 edgePrintPromises.push(
-                  printLocal({ type: 'BAR_KOT', escposData: edgeLiquorEscpos, eventId: edgeLiquorEventId, data: edgeKotOrderData })
+                  printLocal({ type: 'BAR_KOT', escposData: groupEscpos, eventId, printerName: group.printerTarget || undefined, data: { ...edgeKotOrderData, items: group.items } })
                     .catch(() => ({ printed: false }))
                 );
               }
@@ -3625,13 +3652,9 @@ export default function CaptainApp({ onLogout }) {
                 } else {
                   // Filter edgeKotEventIds to only successful prints
                   const edgeSucceededEventIds = [];
-                  if (edgeFoodEscpos.length > 0 && edgePrintResults[0]?.status === 'fulfilled' && edgePrintResults[0]?.value?.printed) {
-                    edgeSucceededEventIds.push({ type: 'KOT', eventId: edgeFoodEventId });
-                  }
-                  if (edgeLiquorEscpos.length > 0) {
-                    const liquorIdx = edgeFoodEscpos.length > 0 ? 1 : 0;
-                    if (edgePrintResults[liquorIdx]?.status === 'fulfilled' && edgePrintResults[liquorIdx]?.value?.printed) {
-                      edgeSucceededEventIds.push({ type: 'BAR_KOT', eventId: edgeLiquorEventId });
+                  for (let i = 0; i < edgePrintResults.length; i++) {
+                    if (edgePrintResults[i]?.status === 'fulfilled' && edgePrintResults[i]?.value?.printed) {
+                      edgeSucceededEventIds.push(edgePrintJobMeta[i]);
                     }
                   }
                   edgeKotEventIds = edgeSucceededEventIds;
@@ -3866,20 +3889,26 @@ export default function CaptainApp({ onLogout }) {
                 sectionTag: activeTable?.sectionTag || undefined,
                 restaurantName: restaurant?.name || undefined,
               };
-              const hasFoodItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() !== 'LIQUOR');
-              const hasLiquorItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR');
+              const fbFoodItems = fallbackKotOrderData.items.filter(i => i.type !== 'liquor');
+              const fbLiquorItems = fallbackKotOrderData.items.filter(i => i.type === 'liquor');
+              const fbFoodGroups = groupItemsByPrinterTarget(fbFoodItems);
+              const fbLiquorGroups = groupItemsByPrinterTarget(fbLiquorItems);
               const fallbackPromises = [];
-              if (hasFoodItems) {
-                const foodEscpos = buildFoodKOT(fallbackKotOrderData);
-                if (foodEscpos.length > 0) {
-                  fallbackPromises.push(printLocal({ type: 'KOT', escposData: foodEscpos, eventId: `${savedOrder?.id || requestId}-food-fallback`, data: fallbackKotOrderData }).catch(() => ({ printed: false })));
-                }
+              for (const group of fbFoodGroups) {
+                const groupEscpos = buildFoodKOT({ ...fallbackKotOrderData, items: group.items });
+                if (groupEscpos.length === 0) continue;
+                const eventId = group.printerTarget
+                  ? `${savedOrder?.id || requestId}-food-${group.printerTarget.replace(/\s+/g, '_')}-fallback`
+                  : `${savedOrder?.id || requestId}-food-fallback`;
+                fallbackPromises.push(printLocal({ type: 'KOT', escposData: groupEscpos, eventId, printerName: group.printerTarget || undefined, data: { ...fallbackKotOrderData, items: group.items } }).catch(() => ({ printed: false })));
               }
-              if (hasLiquorItems) {
-                const liquorEscpos = buildLiquorKOT(fallbackKotOrderData);
-                if (liquorEscpos.length > 0) {
-                  fallbackPromises.push(printLocal({ type: 'BAR_KOT', escposData: liquorEscpos, eventId: `${savedOrder?.id || requestId}-liquor-fallback`, data: fallbackKotOrderData }).catch(() => ({ printed: false })));
-                }
+              for (const group of fbLiquorGroups) {
+                const groupEscpos = buildLiquorKOT({ ...fallbackKotOrderData, items: group.items });
+                if (groupEscpos.length === 0) continue;
+                const eventId = group.printerTarget
+                  ? `${savedOrder?.id || requestId}-liquor-${group.printerTarget.replace(/\s+/g, '_')}-fallback`
+                  : `${savedOrder?.id || requestId}-liquor-fallback`;
+                fallbackPromises.push(printLocal({ type: 'BAR_KOT', escposData: groupEscpos, eventId, printerName: group.printerTarget || undefined, data: { ...fallbackKotOrderData, items: group.items } }).catch(() => ({ printed: false })));
               }
               if (fallbackPromises.length > 0) {
                 const fallbackResults = await Promise.allSettled(fallbackPromises);
