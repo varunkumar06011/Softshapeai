@@ -11,7 +11,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
-import { isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
+import { isEdgeAvailable, isEdgeLocalAuth, edgeFetch } from '../services/edgeHealth';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
@@ -152,7 +152,7 @@ export default function ExpenditureModule() {
   const handleSave = async () => {
     setError('');
     setSavedMsg('');
-    if (!paidToSearch.trim()) {
+    if (!paidToSearch.trim() && !paidToName.trim()) {
       setError('Please select who this expenditure is paid to');
       return;
     }
@@ -233,8 +233,8 @@ export default function ExpenditureModule() {
   };
 
   const dispatchExpenditurePrint = async (expenditureId, existingExpData = null) => {
-    const edgeLocal = isEdgeLocalAuth();
-    if (edgeLocal) {
+    const useEdge = isEdgeLocalAuth() || await isEdgeAvailable();
+    if (useEdge) {
       // Edge server builds ESC/POS and creates print job through durable queue
       const result = await edgeFetch(`/api/edge/expenditures/print`, {
         method: 'POST',

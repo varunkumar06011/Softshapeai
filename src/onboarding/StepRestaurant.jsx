@@ -14,7 +14,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useRef } from 'react';
-import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send, Upload, Image as ImageIcon, AlertTriangle, X } from 'lucide-react';
+import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send, Upload, Image as ImageIcon, AlertTriangle, X, Loader2 } from 'lucide-react';
+import { cloudApiFetch } from '../services/apiConfig';
 
 // Restaurant type options with icons and descriptions
 const RESTAURANT_TYPES = [
@@ -43,6 +44,25 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
   const phoneValid = /^[0-9]{10}$/.test(data.phone || '');
   const isValid = data.name.length >= 2 && phoneValid && gstinValid && data.restaurantType && data.outletCount >= 1 && barMlValid;
 
+  const handleSlugChange = (e) => {
+    const val = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+    setSlugEdited(true);
+    onChange({ ...data, slug: val });
+    setSlugAvailable(null);
+  };
+
+  const checkSlugAvailability = async () => {
+    if (!slug || slug.length < 2) return;
+    setSlugChecking(true);
+    try {
+      const res = await cloudApiFetch(`/api/onboard/check-slug?slug=${encodeURIComponent(slug)}`, { method: 'GET' });
+      setSlugAvailable(res.available);
+    } catch {
+      setSlugAvailable(null);
+    } finally {
+      setSlugChecking(false);
+    }
+  };
   const handleLogoSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;

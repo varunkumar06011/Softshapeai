@@ -21,7 +21,7 @@ import {
   Smartphone, Mail, RotateCw, ChevronRight, Download, Monitor
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { apiFetch } from '../services/apiConfig';
+import { cloudApiFetch } from '../services/apiConfig';
 
 const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
   const navigate = useNavigate();
@@ -57,7 +57,7 @@ const OnboardingSuccess = ({ onboardResult, formData, onGoToDashboard }) => {
   const handleResendEmail = async () => {
     setEmailResending(true);
     try {
-      await apiFetch('/api/onboard/resend-welcome', {
+      await cloudApiFetch('/api/onboard/resend-welcome', {
         method: 'POST',
         body: JSON.stringify({ email: user.email, restaurantCode: restaurant.restaurantCode }),
       });

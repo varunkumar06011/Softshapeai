@@ -178,6 +178,8 @@ import DateRangePicker from './components/DateRangePicker';
 
 import MenuUpload from '../onboarding/MenuUpload';
 
+import { translateIngredientName, INGREDIENT_LANGUAGES } from '../utils/ingredientTranslations';
+
 
 
 const { barUnitMl: BAR_UNIT_ML, fullBottleMl: FULL_BOTTLE_ML } = getRestaurantConfig();
@@ -2089,6 +2091,8 @@ export function MenuPage({ onAddDish }) {
   const [kitchenIngredients, setKitchenIngredients] = useState([]);
 
   const [recipeLoading, setRecipeLoading] = useState(false);
+
+  const [recipeLang, setRecipeLang] = useState('en');
 
   // Auto-generate recipes state
   const [autoGenLoading, setAutoGenLoading] = useState(false);
@@ -4272,6 +4276,19 @@ export function MenuPage({ onAddDish }) {
 
                 Recipe (Kitchen Ingredients)
 
+                <div className="flex items-center gap-1 ml-3" onClick={(e) => e.preventDefault()}>
+                  {INGREDIENT_LANGUAGES.map(lang => (
+                    <button
+                      key={lang.code}
+                      type="button"
+                      onClick={() => setRecipeLang(lang.code)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${recipeLang === lang.code ? 'bg-[#E53935] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                      {lang.label}
+                    </button>
+                  ))}
+                </div>
+
               </summary>
 
               <div className="space-y-3">
@@ -4330,7 +4347,7 @@ export function MenuPage({ onAddDish }) {
 
                           {kitchenIngredients.map(ing => (
 
-                            <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                            <option key={ing.id} value={ing.id}>{translateIngredientName(ing.name, recipeLang)} ({ing.unit})</option>
 
                           ))}
 
@@ -4739,6 +4756,19 @@ export function MenuPage({ onAddDish }) {
 
                 Recipe (Kitchen Inventory)
 
+                <div className="flex items-center gap-1 ml-3" onClick={(e) => e.preventDefault()}>
+                  {INGREDIENT_LANGUAGES.map(lang => (
+                    <button
+                      key={lang.code}
+                      type="button"
+                      onClick={() => setRecipeLang(lang.code)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${recipeLang === lang.code ? 'bg-[#E53935] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                      {lang.label}
+                    </button>
+                  ))}
+                </div>
+
               </summary>
 
               <div className="space-y-3">
@@ -4755,7 +4785,7 @@ export function MenuPage({ onAddDish }) {
                     >
                       <option value="">Select ingredient…</option>
                       {kitchenIngredients.map(ing => (
-                        <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                        <option key={ing.id} value={ing.id}>{translateIngredientName(ing.name, recipeLang)} ({ing.unit})</option>
                       ))}
                     </select>
                     <input
@@ -6638,6 +6668,8 @@ export function KitchenInventory() {
 
   const [showDeductionPanel, setShowDeductionPanel] = useState(false);
 
+  const [inventoryLang, setInventoryLang] = useState('en');
+
   const csvImportRef = useRef(null);
 
   const restaurantId = getCurrentRestaurantId();
@@ -7409,6 +7441,17 @@ export function KitchenInventory() {
         <div className="min-w-0 flex-shrink-0">
           <h2 className="text-2xl font-black text-gray-900 tracking-tighter leading-tight">Kitchen<br />Inventory</h2>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 leading-relaxed">Ingredients & Daily<br />Tracking</p>
+          <div className="flex items-center gap-1 mt-2">
+            {INGREDIENT_LANGUAGES.map(lang => (
+              <button
+                key={lang.code}
+                onClick={() => setInventoryLang(lang.code)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${inventoryLang === lang.code ? 'bg-[#E53935] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+              >
+                {lang.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -7778,7 +7821,7 @@ export function KitchenInventory() {
 
             <p className="font-bold text-amber-800">{lowStockItems.length} ingredient(s) below reorder level</p>
 
-            <p className="text-sm text-amber-600">{lowStockItems.map((i) => i.name).join(', ')}</p>
+            <p className="text-sm text-amber-600">{lowStockItems.map((i) => translateIngredientName(i.name, inventoryLang)).join(', ')}</p>
 
           </div>
 
@@ -7986,7 +8029,7 @@ export function KitchenInventory() {
 
                               src={item.image}
 
-                              alt={item.name}
+                              alt={translateIngredientName(item.name, inventoryLang)}
 
                               className="h-12 w-12 rounded-full object-cover border border-gray-200 shadow-sm shrink-0"
 
@@ -7994,7 +8037,7 @@ export function KitchenInventory() {
 
                           ) : (
 
-                            <IngredientAvatar name={item.name} />
+                            <IngredientAvatar name={translateIngredientName(item.name, inventoryLang)} />
 
                           )}
 
@@ -8048,7 +8091,7 @@ export function KitchenInventory() {
 
                             <div className="flex items-center gap-1 group/name">
 
-                              <p className="font-black text-gray-900 text-sm">{item.name}</p>
+                              <p className="font-black text-gray-900 text-sm">{translateIngredientName(item.name, inventoryLang)}</p>
 
                               <button
 
@@ -8339,9 +8382,9 @@ export function KitchenInventory() {
               <div className="flex items-start gap-3">
                 <div className="relative">
                   {item.image ? (
-                    <img src={item.image} alt={item.name} className="h-16 w-16 rounded-lg object-cover border border-gray-200 shrink-0" />
+                    <img src={item.image} alt={translateIngredientName(item.name, inventoryLang)} className="h-16 w-16 rounded-lg object-cover border border-gray-200 shrink-0" />
                   ) : (
-                    <IngredientAvatar name={item.name} />
+                    <IngredientAvatar name={translateIngredientName(item.name, inventoryLang)} />
                   )}
                   <button
                     onClick={() => { setEditingImageItem(item); setImageEditPreview(null); }}
@@ -8353,7 +8396,7 @@ export function KitchenInventory() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="font-black text-gray-900 truncate">{item.name}</p>
+                    <p className="font-black text-gray-900 truncate">{translateIngredientName(item.name, inventoryLang)}</p>
                     <div className="flex items-center gap-1.5">
                       {item.category && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[9px] font-bold" title="Category">{item.category}</span>}
                       <span className="text-[10px] font-bold text-gray-400 uppercase" title="Scale">{item.unit}</span>
@@ -8525,14 +8568,14 @@ export function KitchenInventory() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => { setEditingImageItem(null); setImageEditPreview(null); }}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-black text-gray-900">Edit Image</h3>
-            <p className="text-sm text-gray-500">{editingImageItem.name}</p>
+            <p className="text-sm text-gray-500">{translateIngredientName(editingImageItem.name, inventoryLang)}</p>
             <div className="flex justify-center">
               {imageEditPreview ? (
                 <img src={imageEditPreview} alt="Preview" className="h-32 w-32 rounded-full object-cover border border-gray-200" />
               ) : editingImageItem.image ? (
                 <img src={editingImageItem.image} alt={editingImageItem.name} className="h-32 w-32 rounded-full object-cover border border-gray-200" />
               ) : (
-                <IngredientAvatar name={editingImageItem.name} />
+                <IngredientAvatar name={translateIngredientName(editingImageItem.name, inventoryLang)} />
               )}
             </div>
             <label className="block cursor-pointer">
@@ -8594,7 +8637,7 @@ export function KitchenInventory() {
 
                     <div className="flex-1">
 
-                      <p className="font-bold text-gray-900">{toTitleCase(item.name)}</p>
+                      <p className="font-bold text-gray-900">{translateIngredientName(toTitleCase(item.name), inventoryLang)}</p>
 
                       <p className="text-xs text-gray-500">{item.totalSold} sold</p>
 

@@ -9020,8 +9020,6 @@ const CashierDashboard = ({ onLogout }) => {
 
       {/* CANCEL ITEMS MODAL */}
       {showCancelModal && selectedTable && (() => {
-        const cancellableItems = groupOrderItems(getBillableItems(selectedTable));
-        const groupKey = (item) => `${item.n}::${item.p}`;
         const selectedCount = Object.keys(cancelSelected).length;
         const selectedQuantityTotal = Object.values(cancelSelected).reduce(
           (sum, entry) => sum + Math.max(1, Math.round(Number(entry.quantity ?? 1))),
@@ -9274,133 +9272,105 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               </div>
 
-              {/* Body: List items */}
+              {/* Body: Single selected item (no batch selection) */}
               <div className="p-5 max-h-[40vh] overflow-y-auto custom-scrollbar bg-gray-50/50 space-y-2">
-                {cancellableItems.length === 0 ? (
-                  <p className="text-xs text-gray-400 font-bold text-center py-4">No cancellable items.</p>
-                ) : (
-                  cancellableItems.map((item, idx) => {
-                    const gKey = groupKey(item);
-                    const isSelected = !!cancelSelected[gKey];
-                    const isLoading = (item.originalIds || []).some(id => cancelLoading[id]);
-                    const cancelQuantity = Math.max(
-                      1,
-                      Math.min(
-                        Number(item.q ?? 1),
-                        Math.round(Number(cancelSelected[gKey]?.quantity ?? 1))
-                      )
-                    );
-                    const remainingQuantity = Math.max(0, Number(item.q ?? 0) - cancelQuantity);
-                    return (
-                      <button
-                        key={gKey}
-                        disabled={isLoading}
-                        onClick={() => {
-                          setCancelSelected(prev => {
-                            const next = { ...prev };
-                            if (next[gKey]) delete next[gKey];
-                            else next[gKey] = { item, quantity: 1 };
-                            return next;
-                          });
-                        }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${isSelected
-                          ? 'border-red-500 bg-red-50'
-                          : 'border-transparent bg-white hover:border-gray-200'
-                          } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        {/* Custom Checkbox */}
-                        <div className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 transition-colors ${isSelected
-                          ? 'bg-red-500 border-red-500'
-                          : 'border-gray-300'
-                          }`}>
-                          {isSelected && <Check size={12} className="text-white" />}
-                        </div>
-
-                        <div className="flex-1">
-                          <p className={`text-xs font-black ${isSelected ? 'text-red-900' : 'text-gray-700'}`}>
-                            {item.n}
-                          </p>
-                          <p className="text-[10px] font-bold text-gray-400 mt-0.5">
-                            {isSelected && cancelQuantity < Number(item.q ?? 0) ? (
-                              <>
-                                <span className="line-through">{cancelQuantity}</span>
-                                <span className="ml-2 text-red-500">{remainingQuantity} remain</span>
-                              </>
-                            ) : (
-                              <>Qty: {item.q}</>
-                            )}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isSelected && (
-                            <div className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCancelSelected(prev => {
-                                    if (!prev[gKey]) return prev;
-                                    return {
-                                      ...prev,
-                                      [gKey]: {
-                                        ...prev[gKey],
-                                        quantity: Math.max(1, Number(prev[gKey]?.quantity ?? 1) - 1),
-                                      },
-                                    };
-                                  });
-                                }}
-                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
-                              >
-                                −
-                              </button>
-                              <input
-                                type="number"
-                                min="1"
-                                max={item.q}
-                                value={cancelQuantity}
-                                onChange={(e) => {
-                                  const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
-                                  setCancelSelected(prev => {
-                                    if (!prev[gKey]) return prev;
-                                    return {
-                                      ...prev,
-                                      [gKey]: {
-                                        ...prev[gKey],
-                                        quantity: nextValue,
-                                      },
-                                    };
-                                  });
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-12 text-center bg-transparent text-xs font-black text-red-700 outline-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCancelSelected(prev => {
-                                    if (!prev[gKey]) return prev;
-                                    return {
-                                      ...prev,
-                                      [gKey]: {
-                                        ...prev[gKey],
-                                        quantity: Math.min(Number(item.q ?? 1), Number(prev[gKey]?.quantity ?? 1) + 1),
-                                      },
-                                    };
-                                  });
-                                }}
-                                className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
-                              >
-                                +
-                              </button>
-                            </div>
+                {(() => {
+                  const entries = Object.entries(cancelSelected);
+                  if (entries.length === 0) {
+                    return <p className="text-xs text-gray-400 font-bold text-center py-4">No item selected.</p>;
+                  }
+                  const [gKey, entry] = entries[0];
+                  const item = entry.item;
+                  const isLoading = (item.originalIds || []).some(id => cancelLoading[id]);
+                  const cancelQuantity = Math.max(
+                    1,
+                    Math.min(
+                      Number(item.q ?? 1),
+                      Math.round(Number(entry.quantity ?? 1))
+                    )
+                  );
+                  const remainingQuantity = Math.max(0, Number(item.q ?? 0) - cancelQuantity);
+                  return (
+                    <div
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 border-red-500 bg-red-50 text-left ${isLoading ? 'opacity-50' : ''}`}
+                    >
+                      <div className="flex-1">
+                        <p className="text-xs font-black text-red-900">{item.n}</p>
+                        <p className="text-[10px] font-bold text-gray-400 mt-0.5">
+                          {cancelQuantity < Number(item.q ?? 0) ? (
+                            <>
+                              <span className="line-through">{cancelQuantity}</span>
+                              <span className="ml-2 text-red-500">{remainingQuantity} remain</span>
+                            </>
+                          ) : (
+                            <>Qty: {item.q}</>
                           )}
-                          {isLoading && <Loader2 size={14} className="text-red-500 animate-spin" />}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancelSelected(prev => {
+                                if (!prev[gKey]) return prev;
+                                return {
+                                  ...prev,
+                                  [gKey]: {
+                                    ...prev[gKey],
+                                    quantity: Math.max(1, Number(prev[gKey]?.quantity ?? 1) - 1),
+                                  },
+                                };
+                              });
+                            }}
+                            className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            max={item.q}
+                            value={cancelQuantity}
+                            onChange={(e) => {
+                              const nextValue = Math.max(1, Math.min(Number(item.q ?? 1), Math.round(Number(e.target.value || 1))));
+                              setCancelSelected(prev => {
+                                if (!prev[gKey]) return prev;
+                                return {
+                                  ...prev,
+                                  [gKey]: {
+                                    ...prev[gKey],
+                                    quantity: nextValue,
+                                  },
+                                };
+                              });
+                            }}
+                            className="w-12 text-center bg-transparent text-xs font-black text-red-700 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancelSelected(prev => {
+                                if (!prev[gKey]) return prev;
+                                return {
+                                  ...prev,
+                                  [gKey]: {
+                                    ...prev[gKey],
+                                    quantity: Math.min(Number(item.q ?? 1), Number(prev[gKey]?.quantity ?? 1) + 1),
+                                  },
+                                };
+                              });
+                            }}
+                            className="w-6 h-6 rounded-md bg-red-50 text-red-600 font-black"
+                          >
+                            +
+                          </button>
                         </div>
-                      </button>
-                    );
-                  })
-                )}
+                        {isLoading && <Loader2 size={14} className="text-red-500 animate-spin" />}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Footer */}

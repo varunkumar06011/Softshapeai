@@ -72,6 +72,17 @@ export function apiUrl(path) {
   return `${API_BASE}${normalizedPath}`;
 }
 
+// Onboarding is an online-only flow. It must never inherit a desktop/edge or
+// localhost API base, so it always targets the public cloud backend.
+export const CLOUD_API_BASE = normalizeApiBase(
+  import.meta.env.VITE_CLOUD_API_URL || "https://api.softshape.in"
+);
+
+export function cloudApiUrl(path) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${CLOUD_API_BASE}${normalizedPath}`;
+}
+
 /** Returns auth headers object with Bearer token if available */
 export function getAuthHeaders() {
   const token = secureStorage.getItem('ss_token');
@@ -84,10 +95,11 @@ export function getAuthHeaders() {
 
 /** Fetch wrapper with Bearer token support */
 export async function apiFetch(path, options = {}) {
+  const { _apiBase = API_BASE, ...fetchOptions } = options;
   const token = secureStorage.getItem('ss_token');
   const headers = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...fetchOptions.headers,
   };
 
   if (token) {
@@ -95,17 +107,17 @@ export async function apiFetch(path, options = {}) {
   }
 
   const controller = new AbortController();
-  const timeoutMs = Number(options.timeout) || 15000;
+  const timeoutMs = Number(fetchOptions.timeout) || 15000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(apiUrl(path), {
-      ...options,
+    const response = await fetch(`${_apiBase}${path.startsWith('/') ? path : `/${path}`}`, {
+      ...fetchOptions,
       headers,
       signal: controller.signal,
     });
 
-    if (response.status === 401 && !options._isRetry) {
+    if (response.status === 401 && !fetchOptions._isRetry) {
       // If no token was used for this request, don't attempt refresh or
       // redirect — the caller is likely a background service running before
       // login completes. Just surface the 401 error.
@@ -124,18 +136,18 @@ export async function apiFetch(path, options = {}) {
       // just logged in), retry with the new token instead of wiping session.
       const currentToken = secureStorage.getItem('ss_token');
       if (currentToken && currentToken !== token) {
-        return apiFetch(path, { ...options, _isRetry: true });
+        return apiFetch(path, { ...options, _apiBase, _isRetry: true });
       }
 
       try {
-        const refreshRes = await fetch(apiUrl('/api/auth/refresh'), {
+        const refreshRes = await fetch(`${_apiBase}/api/auth/refresh`, {
           method: 'POST',
           headers: getAuthHeaders(),
         });
         if (refreshRes.ok) {
           const { token: newToken } = await refreshRes.json();
           secureStorage.setItem('ss_token', newToken);
-          return apiFetch(path, { ...options, _isRetry: true });
+          return apiFetch(path, { ...options, _apiBase, _isRetry: true });
         }
       } catch {
         // refresh failed — fall through to error
@@ -181,10 +193,24 @@ export async function apiFetch(path, options = {}) {
   }
 }
 
+/** Fetch wrapper for the online-only onboarding flow. */
+export function cloudApiFetch(path, options = {}) {
+  return apiFetch(path, { ...options, _apiBase: CLOUD_API_BASE });
+}
+
 /** Ping the backend to wake it up. Useful before heavy requests. */
 export async function pingBackend() {
   try {
     await fetch(apiUrl('/health'), { method: 'GET', cache: 'no-store' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function pingCloudBackend() {
+  try {
+    await fetch(cloudApiUrl('/health'), { method: 'GET', cache: 'no-store' });
     return true;
   } catch {
     return false;

@@ -13,7 +13,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, ArrowRight, Sparkles, Store, Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
-import { apiUrl } from '../services/apiConfig';
+import { cloudApiUrl } from '../services/apiConfig';
 
 // Fallback prices if quote API is unavailable (must match backend PLAN_CONFIG)
 const FALLBACK_PRICES = { starter: 1, pro: 99 };
@@ -28,12 +28,12 @@ const StepPlan = ({ selectedPlan, outletCount, wizardSummary, onSelect, onNext, 
     const fetchQuotes = async () => {
       try {
         const [starterRes, proRes] = await Promise.all([
-          fetch(apiUrl('/api/onboard/pricing/quote'), {
+          fetch(cloudApiUrl('/api/onboard/pricing/quote'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ plan: 'starter', numberOfOutlets: outletCount })
           }).then(r => r.json()),
-          fetch(apiUrl('/api/onboard/pricing/quote'), {
+          fetch(cloudApiUrl('/api/onboard/pricing/quote'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ plan: 'pro', numberOfOutlets: outletCount })
