@@ -178,3 +178,41 @@ export async function fetchBarDeductionCheck(orderId) {
   });
   return parseResponse(res);
 }
+
+// ── Bar Item Mapping API ─────────────────────────────────────────────────────
+// Fetch all bar item mappings for the current restaurant
+export async function fetchBarMappings() {
+  const res = await fetch(apiUrl('/api/bar/inventory/mappings'), {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
+  });
+  return parseResponse(res);
+}
+
+// Fetch unmapped (menuItemId, price) pairs from recent liquor orders
+export async function fetchUnmappedBarItems() {
+  const res = await fetch(apiUrl('/api/bar/inventory/mappings/unmapped'), {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
+  });
+  return parseResponse(res);
+}
+
+// Upsert a mapping row
+export async function saveBarMapping({ menuItemId, variantPrice, primaryInvId, secondaryInvId, mlPerUnit }) {
+  const res = await fetch(apiUrl('/api/bar/inventory/mappings'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ menuItemId, variantPrice, primaryInvId, secondaryInvId, mlPerUnit }),
+  });
+  return parseResponse(res);
+}
+
+// Delete a mapping row
+export async function deleteBarMapping(menuItemId, variantPrice) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/mappings/${menuItemId}/${variantPrice}`), {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}

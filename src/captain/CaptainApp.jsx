@@ -32,7 +32,7 @@ import {
 
   Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart, ChevronUp,
 
-  Wifi, WifiOff, AlertTriangle, Cloud
+  Wifi, WifiOff, AlertTriangle, Cloud, PackageOpen
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -523,6 +523,11 @@ const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOu
       {item.isSpecial && (
         <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
           <Flame size={7} className="fill-white" /> Special
+        </div>
+      )}
+      {item.isCombo && (
+        <div className="absolute top-0 left-0 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-br-lg shadow-sm flex items-center gap-0.5 z-10">
+          <PackageOpen size={7} className="text-white" /> Combo
         </div>
       )}
       <div className="w-8 h-8 shrink-0 flex items-center justify-center">

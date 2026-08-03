@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
   ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
   Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale, Landmark, Package, Building2, TrendingDown,
+  PackageOpen,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +17,7 @@ const Tables          = lazy(() => import('./AdminComponents').then(m => ({ defa
 const BarTables       = lazy(() => import('./AdminComponents').then(m => ({ default: m.BarTables })));
 const MenuPage        = lazy(() => import('./AdminComponents').then(m => ({ default: m.MenuPage })));
 const BarMenuPage     = lazy(() => import('./AdminComponents').then(m => ({ default: m.BarMenuPage })));
+const CombosPage      = lazy(() => import('./CombosPage'));
 const Orders          = lazy(() => import('./AdminComponents').then(m => ({ default: m.Orders })));
 const Reports         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Reports })));
 const Payroll         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Payroll })));
@@ -126,6 +128,7 @@ export const adminRoutes = [
   { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner','manager'], element: <Dashboard />,                    source: 'cloud', props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope }) },
   { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner','manager'], element: <TablesSection />,                source: 'local', props: (ctx) => ({ activeOutlet: ctx.activeOutlet, dashboardScope: ctx.dashboardScope }) },
   { key: 'menu',              label: 'Menu',                   icon: UtensilsCrossed,     roles: ['admin','owner','manager'], element: <MenuSection />,                  source: 'local', props: (ctx) => ({ activeOutlet: ctx.activeOutlet, onAddDish: ctx.onAddDish }) },
+  { key: 'combos',            label: 'Combos',                  icon: PackageOpen,         roles: ['admin','owner','manager'], element: <CombosPage mode="page" />,        source: 'local' },
   { key: 'specials',          label: 'Today Specials',         icon: StarIcon,                roles: ['admin','owner','manager'], element: <TodaySpecials />, source: 'local' },
   { key: 'orders',            label: 'Online Orders',          icon: ClipboardList,       roles: ['admin','owner','manager'], element: <Orders />,                       source: 'cloud' },
   { key: 'transactions',      label: 'Transactions',           icon: Receipt,             roles: ['admin','owner','manager'], element: <AdminTransactions />,            source: 'cloud', props: (ctx) => ({ onStatsRefresh: ctx.loadStats }) },
@@ -196,6 +199,7 @@ export function isRouteEnabled(key, enabledModules) {
   if (key === 'pricing') return enabledModules.pricing !== false;
   if (key === 'tables') return enabledModules.tables !== false || enabledModules.food !== false;
   if (key === 'menu') return enabledModules.food !== false || enabledModules.bar !== false;
+  if (key === 'combos') return enabledModules.food !== false || enabledModules.bar !== false;
   if (key === 'orders') return enabledModules.food !== false || enabledModules.bar !== false;
   if (key === 'transactions') return true;
   if (key === 'reports') return true;

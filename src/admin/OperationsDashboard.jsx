@@ -124,7 +124,7 @@ async function fetchPayrollSummary() {
 
 async function loadDashboardData(dateFilter, outletId) {
   const rid = getCurrentRestaurantId();
-  const [sales, payments, categories, barInventory, lowStock, kitchenInventory, payrollRecords] = await Promise.allSettled([
+  const [sales, payments, categories, barInventory, lowStock, kitchenInventory, payrollRecords, unmappedBarItems] = await Promise.allSettled([
     fetchReportDailySales(dateFilter.startDate, dateFilter.endDate, outletId),
     fetchReportPaymentMethods(dateFilter.startDate, dateFilter.endDate, outletId),
     fetchReportCategorywise(dateFilter.startDate, dateFilter.endDate, outletId),
@@ -132,6 +132,7 @@ async function loadDashboardData(dateFilter, outletId) {
     fetchLowStockItems(),
     fetchKitchenInventory(),
     fetchPayrollSummary(),
+    fetchUnmappedBarItems(),
   ]);
 
   return {
@@ -142,6 +143,7 @@ async function loadDashboardData(dateFilter, outletId) {
     lowStock: lowStock.status === 'fulfilled' ? lowStock.value : [],
     kitchenInventory: kitchenInventory.status === 'fulfilled' ? kitchenInventory.value : [],
     payrollRecords: payrollRecords.status === 'fulfilled' ? payrollRecords.value : [],
+    unmappedBarItems: unmappedBarItems.status === 'fulfilled' ? unmappedBarItems.value : [],
   };
 }
 
@@ -198,6 +200,7 @@ export default function OperationsDashboard({ dateFilter, outletId, onDownloadRe
       payrollPayable: totalPayable,
       payrollPaid: totalPaid,
       payrollOutstanding: totalOutstanding,
+      unmappedBarCount: data.unmappedBarItems?.length || 0,
     };
   }, [data]);
 
@@ -305,6 +308,12 @@ export default function OperationsDashboard({ dateFilter, outletId, onDownloadRe
           value={summary.lowStockCount}
           sub={summary.lowStockCount > 0 ? 'Needs attention' : 'Stock healthy'}
           colorClass={summary.lowStockCount > 0 ? 'border-amber-200 bg-amber-50' : 'border-[#FFCDD2]'}
+        />
+        <MiniCard
+          label="Unmapped Bar Items"
+          value={summary.unmappedBarCount}
+          sub={summary.unmappedBarCount > 0 ? 'NO_MAPPING errors' : 'All mapped'}
+          colorClass={summary.unmappedBarCount > 0 ? 'border-red-200 bg-red-50' : 'border-[#FFCDD2]'}
         />
         <MiniCard label="Inventory Value" value={<Money value={summary.totalInventoryValue} />} sub="Bar stock value" colorClass="border-[#FFCDD2]" />
         <MiniCard label="Staff Count" value={summary.staffCount} sub="Active payroll records" colorClass="border-[#FFCDD2]" />

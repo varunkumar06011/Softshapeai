@@ -116,7 +116,9 @@ import {
 
   Loader,
 
-  Activity
+  Activity,
+
+  PackageOpen
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -166,6 +168,8 @@ import { authService } from '../services/authService';
 import { useVenueSections } from '../hooks/useVenueSections';
 
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, adjustStock, recordPurchase, fetchTransactions as fetchBarTransactions, fetchBarTopSelling, fetchBarDeductionCheck } from '../services/barInventoryApi';
+
+import BarMappingPanel from './BarMappingPanel';
 
 import FloorPlanEditor from './FloorPlanEditor';
 
@@ -1980,6 +1984,10 @@ export function MenuPage({ onAddDish }) {
           ? false
           : item.gstEnabled !== false,
 
+        isCombo: item.isCombo === true,
+
+        showInMenu: item.showInMenu !== false,
+
       })));
 
     } catch (err) {
@@ -2033,6 +2041,8 @@ export function MenuPage({ onAddDish }) {
   const items = useMemo(() => {
 
     return adminItems
+
+      .filter((x) => !x.isCombo) // Combos are managed on the dedicated Combos page
 
       .filter((x) => {
 
@@ -13751,6 +13761,13 @@ export function Inventory() {
             <Activity size={14} /> Deduction Check
           </button>
 
+          <button
+            onClick={() => setActiveTab(t => t === 'mappings' ? 'inventory' : 'mappings')}
+            className={`w-full sm:w-auto px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 ${activeTab === 'mappings' ? 'bg-[#B71C1C] text-white shadow-red-100 shadow-xl' : 'bg-[#F4F4F5] text-gray-700 hover:bg-gray-200'}`}
+          >
+            <Layers size={14} /> Bar Mappings
+          </button>
+
           </>)}
 
         </div>
@@ -13849,6 +13866,10 @@ export function Inventory() {
       )}
 
 
+
+      {activeTab === 'mappings' && (
+        <BarMappingPanel />
+      )}
 
 
 

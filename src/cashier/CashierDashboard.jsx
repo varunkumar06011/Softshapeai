@@ -30,7 +30,7 @@ import {
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
   Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle,
-  DatabaseBackup, RefreshCw
+  DatabaseBackup, RefreshCw, PackageOpen
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
@@ -7166,6 +7166,11 @@ const CashierDashboard = ({ onLogout }) => {
                               {isSpecial && (
                                 <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[8px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
                                   <Flame size={8} className="fill-white" /> Special
+                                </div>
+                              )}
+                              {item.isCombo && (
+                                <div className="absolute top-0 left-0 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-[8px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-br-lg shadow-sm flex items-center gap-0.5 z-10">
+                                  <PackageOpen size={8} className="text-white" /> Combo
                                 </div>
                               )}
                               {/* Top row: veg/non dot + menuType badge */}

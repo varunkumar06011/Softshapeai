@@ -14,8 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useRef } from 'react';
-import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send, Upload, Image as ImageIcon, AlertTriangle, X, Loader2 } from 'lucide-react';
-import { apiFetch } from '../services/apiConfig';
+import { Building2, Phone, Mail, FileText, Layers, Utensils, Wine, Coffee, Cloud, UtensilsCrossed, Check, Send, Upload, Image as ImageIcon, AlertTriangle, X } from 'lucide-react';
 
 // Restaurant type options with icons and descriptions
 const RESTAURANT_TYPES = [
@@ -29,9 +28,6 @@ const RESTAURANT_TYPES = [
 const BAR_TYPES = ['BAR_LOUNGE', 'BAR_WITH_DINING'];
 
 const StepRestaurant = ({ data, onChange, onNext }) => {
-  const [slugEdited, setSlugEdited] = useState(false);
-  const [slugChecking, setSlugChecking] = useState(false);
-  const [slugAvailable, setSlugAvailable] = useState(null);
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [pendingType, setPendingType] = useState(null);
   const fileInputRef = useRef(null);
@@ -40,38 +36,12 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
     onChange({ ...data, [field]: value });
   };
 
-  const generateSlug = (name) => {
-    return name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12);
-  };
-
-  const slug = slugEdited ? (data.slug || '') : generateSlug(data.name || '');
-
   const gstinValid = !data.gstin || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(data.gstin || '');
   const barMlValid = !BAR_TYPES.includes(data.restaurantType) || (
     (data.barUnitMl ?? 30) > 0 && (data.halfBottleMl ?? 375) > 0 && (data.fullBottleMl ?? 750) > 0
   );
   const phoneValid = /^[0-9]{10}$/.test(data.phone || '');
   const isValid = data.name.length >= 2 && phoneValid && gstinValid && data.restaurantType && data.outletCount >= 1 && barMlValid;
-
-  const handleSlugChange = (e) => {
-    const val = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
-    setSlugEdited(true);
-    onChange({ ...data, slug: val });
-    setSlugAvailable(null);
-  };
-
-  const checkSlugAvailability = async () => {
-    if (!slug || slug.length < 2) return;
-    setSlugChecking(true);
-    try {
-      const res = await apiFetch(`/api/onboard/check-slug?slug=${encodeURIComponent(slug)}`, { method: 'GET' });
-      setSlugAvailable(res.available);
-    } catch {
-      setSlugAvailable(null);
-    } finally {
-      setSlugChecking(false);
-    }
-  };
 
   const handleLogoSelect = (e) => {
     const file = e.target.files[0];
@@ -126,28 +96,6 @@ const StepRestaurant = ({ data, onChange, onNext }) => {
             placeholder="e.g., Grand Hotel"
           />
         </div>
-
-        {data.name && (
-          <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-            <p className="text-sm text-gray-500">Your restaurant URL:</p>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={slug}
-                onChange={handleSlugChange}
-                onBlur={checkSlugAvailability}
-                className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-[#E53935] font-mono text-sm focus:outline-none focus:border-[#E53935]"
-                placeholder="your-restaurant"
-              />
-              <span className="text-gray-400 text-sm font-mono shrink-0">.softshape.app</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {slugChecking && <Loader2 size={14} className="animate-spin text-gray-400" />}
-              {!slugChecking && slugAvailable === true && <span className="text-xs text-green-600">Available</span>}
-              {!slugChecking && slugAvailable === false && <span className="text-xs text-red-600">Already taken</span>}
-            </div>
-          </div>
-        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">

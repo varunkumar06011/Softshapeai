@@ -145,6 +145,7 @@ export function mapFlatMenuItems(items) {
       active: toBool(item.specialActive),
       expiresAt: item.specialExpiresAt ? new Date(item.specialExpiresAt).getTime() : null,
       outletId: item.outletId || null,
+      isCombo: toBool(item.isCombo),
     };
   });
 }
@@ -402,6 +403,47 @@ export async function deleteMenuItem(id) {
     headers: getAuthHeaders(),
   });
   return parseMenuResponse(res, 'Delete menu item');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Combos — CRUD wrappers around /api/menu/combos
+// A combo is a MenuItem with isCombo=true. It is billed as a single line at
+// its own price, but for KOT printing and inventory deduction it is exploded
+// into its components (each component routed to its own printer/recipe).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchCombos() {
+  const res = await fetch(apiUrl('/api/menu/combos'), {
+    method: 'GET',
+    headers: { ...getAuthHeaders() },
+  });
+  return parseMenuResponse(res, 'Fetch combos');
+}
+
+export async function createCombo(data) {
+  const res = await fetch(apiUrl('/api/menu/combos'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  return parseMenuResponse(res, 'Create combo');
+}
+
+export async function updateCombo(id, data) {
+  const res = await fetch(apiUrl(`/api/menu/combos/${id}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  return parseMenuResponse(res, 'Update combo');
+}
+
+export async function deleteCombo(id) {
+  const res = await fetch(apiUrl(`/api/menu/combos/${id}`), {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return parseMenuResponse(res, 'Delete combo');
 }
 
 export function persistMenu(menuItems, restaurantId = getCurrentRestaurantId()) {

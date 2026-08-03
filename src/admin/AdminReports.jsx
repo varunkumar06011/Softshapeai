@@ -26,7 +26,7 @@ import {
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
   RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, AlertTriangle,
-  ArrowUpDown, Wallet, WifiOff,
+  ArrowUpDown, Wallet, WifiOff, PackageOpen,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
@@ -122,6 +122,7 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
   const foodRevenue = items.filter((it) => it.reportCategory === 'Food').reduce((s, it) => s + it.totalRevenue, 0);
   const liquorRevenue = items.filter((it) => it.reportCategory === 'Liquor').reduce((s, it) => s + it.totalRevenue, 0);
   const beveragesRevenue = items.filter((it) => it.reportCategory === 'Beverages').reduce((s, it) => s + it.totalRevenue, 0);
+  const comboRevenue = items.filter((it) => it.reportCategory === 'Combo').reduce((s, it) => s + it.totalRevenue, 0);
 
   const finalItems = items
     .map((it) => ({
@@ -147,6 +148,7 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
       foodRevenue,
       liquorRevenue,
       beveragesRevenue,
+      comboRevenue,
     },
     dateRange: raw.dateRange,
   };
@@ -777,12 +779,13 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
           <DownloadButtons onPDF={doPDF} onExcel={doExcel} />
         </div>
       </ReportHeader>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <StatCard label="Total Items" value={data.summary.totalItems} sub="Unique SKUs" icon={Package} color="text-blue-600" />
         <StatCard label="Total Quantity" value={data.summary.totalQuantity} sub="Units sold" icon={TrendingUp} color="text-amber-600" />
         <StatCard label="Food Revenue" value={<Money value={data.summary.foodRevenue} />} sub="Food items" icon={DollarSign} color="text-green-600" />
         <StatCard label="Beverages Revenue" value={<Money value={data.summary.beveragesRevenue} />} sub="Beverage items" icon={Coffee} color="text-blue-600" />
         <StatCard label="Liquor Revenue" value={<Money value={data.summary.liquorRevenue} />} sub="Liquor items" icon={StarIcon} color="text-purple-600" />
+        <StatCard label="Combo Revenue" value={<Money value={data.summary.comboRevenue || 0} />} sub="Combo items" icon={PackageOpen} color="text-orange-600" />
       </div>
       <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
         <div className="flex items-center justify-between mb-4">
