@@ -390,6 +390,9 @@ export default function EdgeSetupScreen() {
         try {
           const status = await edgeFetch('/api/edge/status');
           if (status.registered && status.sessionValid) {
+            // Restore edge credentials to localStorage in case they were cleared (e.g. after logout)
+            if (status.edgeApiKey) setStoredEdgeApiKey(status.edgeApiKey);
+            if (status.runtimeToken) setStoredEdgeRuntimeToken(status.runtimeToken);
             // Already registered — check if config is loaded (both menu AND tables, same as startStatusPolling)
             if (status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0) {
               setPhase('ready');
