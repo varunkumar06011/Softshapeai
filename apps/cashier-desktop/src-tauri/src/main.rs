@@ -256,7 +256,7 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheckResult, S
             available: true,
             version: Some(update.version.to_string()),
             notes: update.body.clone(),
-            pub_date: update.date.clone(),
+            pub_date: update.date.map(|d| d.to_string()),
         })
     } else {
         Ok(UpdateCheckResult {
@@ -310,11 +310,13 @@ async fn install_update(app: tauri::AppHandle, latest_version: String) -> Result
         ));
     }
 
-    let installed = update.download_and_install(|_chunk, _total| {}, || {})
+    let installed_version = update.version.clone();
+
+    update.download_and_install(|_chunk, _total| {}, || {})
         .await
         .map_err(|e| format!("Update install failed: {}", e))?;
 
-    Ok(format!("Installed {}; restart required", installed.version))
+    Ok(format!("Installed {}; restart required", installed_version))
 }
 
 /// Enable autostart on Windows boot (Run registry key).
