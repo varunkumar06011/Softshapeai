@@ -1,0 +1,46 @@
+{
+  "id": "dine-in-veg",
+  "name": "Dine-In Vegetarian",
+  "description": "Pure veg restaurant — starters, main course, desserts, beverages",
+  "categories": [
+    {
+      "name": "Starters",
+      "sortOrder": 1,
+      "items": [
+        { "name": "Paneer Tikka", "basePrice": 220, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Veg Manchurian", "basePrice": 180, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Crispy Corn", "basePrice": 160, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Hara Bhara Kabab", "basePrice": 170, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Main Course",
+      "sortOrder": 2,
+      "items": [
+        { "name": "Paneer Butter Masala", "basePrice": 240, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Dal Makhani", "basePrice": 200, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Veg Biryani", "basePrice": 220, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Butter Naan", "basePrice": 50, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Tandoori Roti", "basePrice": 30, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Desserts",
+      "sortOrder": 3,
+      "items": [
+        { "name": "Gulab Jamun", "basePrice": 80, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Ice Cream Scoop", "basePrice": 90, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Rasmalai", "basePrice": 100, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Beverages",
+      "sortOrder": 4,
+      "items": [
+        { "name": "Masala Chai", "basePrice": 30, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Sweet Lassi", "basePrice": 60, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Fresh Lime Soda", "basePrice": 50, "isVeg": true, "menuType": "FOOD" }
+      ]
+    }
+  ]
+}

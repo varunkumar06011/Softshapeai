@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin/dashboard
+Disallow: /admin/qr-codes
+Disallow: /cashier/dashboard
+Disallow: /captain/dashboard
+
+Sitemap: https://softshape.in/sitemap.xml

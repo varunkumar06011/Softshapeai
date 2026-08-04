@@ -1,0 +1,328 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Bar Menu Sync Service — Global bar menu state with pub/sub and caching
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides a singleton bar menu store with React hook integration:
+//   - Fetches bar menu from backend on first access (lazy load)
+//   - Caches to localStorage (per-restaurant scope)
+//   - Pub/sub pattern: components subscribe to menu updates
+//   - useGlobalBarMenuSync() — React hook that re-renders on menu changes
+//   - refreshBarMenu() — force re-fetch from backend
+//
+// This is the bar equivalent of menuSyncService.js (for regular restaurant menu).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useState, useEffect } from "react";
+import { API_BASE, getAuthHeaders } from "./apiConfig";
+import secureStorage from "../utils/secureStorage";
+import {
+  fetchBarMenuFromBackend,
+  readBarMenuCache,
+  writeBarMenuCache,
+  repairBarMenuCloudinaryUrls,
+} from "./barMenuService";
+
+// Singleton state — shared across all components
+let barGlobalMenu = null;
+let _isLoading = true;
+let _loadError = null;
+// Set of subscriber functions notified on state changes
+const subscribers = new Set();
+// Promise that resolves when the initial load completes (prevents duplicate fetches)
+let loadPromise = null;
+// Track whether Cloudinary URL repair has already run this session.
+// The repair sends batch PATCH requests which can trigger 429s if run repeatedly.
+let _repairDoneThisSession = false;
+
+/**
+ * Reset the bar menu state so the next loadBarMenu() call re-fetches from
+ * the backend. Called after login when the restaurantId becomes available.
+ */
+export function resetBarMenuState() {
+  loadPromise = null;
+  barGlobalMenu = null;
+  _isLoading = true;
+  _loadError = null;
+  notifySubscribers();
+  loadBarMenu({ skipRepair: true });
+}
+
+function notifySubscribers() {
+  subscribers.forEach((cb) => cb({ menu: barGlobalMenu ?? [], loading: _isLoading, error: _loadError }));
+}
+
+async function loadBarMenu({ skipRepair = false } = {}) {
+  if (loadPromise) return loadPromise;
+
+  // Skip authenticated fetch if no token is available (e.g. during onboarding).
+  // The service will retry when a component subscribes after login.
+  const token = secureStorage.getItem('ss_token') || secureStorage.getItem('ss_preauth_token');
+  if (!token) {
+    _isLoading = false;
+    _loadError = null;
+    barGlobalMenu = readBarMenuCache();
+    notifySubscribers();
+    return Promise.resolve();
+  }
+
+  const currentPromise = (async () => {
+    _isLoading = true;
+    _loadError = null;
+    notifySubscribers();
+    try {
+      const fetched = await fetchBarMenuFromBackend();
+      // ── Empty-response protection: never replace a valid cached bar menu
+      // with an empty response. Prevents blank bar menu when bridge is half-synced.
+      if (fetched.length === 0 && barGlobalMenu && barGlobalMenu.length > 0) {
+        console.warn('[BarMenuSync] Backend returned empty menu — keeping cached menu');
+        _isLoading = false;
+        notifySubscribers();
+        return;
+      }
+      barGlobalMenu = fetched;
+      writeBarMenuCache(barGlobalMenu);
+      console.log(`[BarMenuSync] Loaded ${barGlobalMenu.length} items`);
+
+      // Restore Cloudinary URLs on bar DB records (lost imageUrl on backend).
+      // Only run once per page session — the repair sends batch PATCH requests
+      // that can cause 429 rate-limit errors if triggered on every menu refresh.
+      if (!skipRepair && !_repairDoneThisSession) {
+        _repairDoneThisSession = true;
+      try {
+        const { repaired, skipped, source, stillMissing } = await repairBarMenuCloudinaryUrls(API_BASE, { force: false });
+        if (!skipped && repaired > 0) {
+          const fresh = await fetchBarMenuFromBackend();
+          barGlobalMenu = fresh;
+          writeBarMenuCache(barGlobalMenu);
+          notifySubscribers();
+          console.log(`[BarMenuSync] Reloaded after ${source} restore (${repaired} updated, ${stillMissing ?? 0} still missing)`);
+        }
+      } catch (err) {
+        console.warn("[BarMenuSync] Image repair failed:", err);
+      }
+      } // end if (!skipRepair && !_repairDoneThisSession)
+    } catch (err) {
+      console.error("[BarMenuSync] Failed:", err);
+      _loadError = err?.message || "Could not reach backend.";
+      barGlobalMenu = readBarMenuCache();
+    }
+    _isLoading = false;
+    notifySubscribers();
+  })();
+
+  loadPromise = currentPromise;
+
+  try {
+    await currentPromise;
+  } catch {
+    // Error already handled inside the promise
+  } finally {
+    // Only clear if this promise is still the current one (prevents race)
+    if (loadPromise === currentPromise) {
+      loadPromise = null;
+    }
+  }
+
+  return currentPromise;
+}
+
+// Lazy load only when a component subscribes; do not fetch at module import time
+// because onboarding pages may import this service before the user is authenticated.
+
+function isBarModuleEnabled() {
+  try {
+    const config = JSON.parse(localStorage.getItem('ss_restaurant') || '{}');
+    return config?.enabledModules?.bar === true;
+  } catch {
+    return false;
+  }
+}
+
+export function useBarMenuSync() {
+  const [state, setState] = useState({
+    menuItems: barGlobalMenu ?? [],
+    loading: _isLoading,
+    error: _loadError,
+  });
+
+  useEffect(() => {
+    // Skip bar menu fetch entirely when bar module is disabled
+    if (!isBarModuleEnabled()) {
+      setState({ menuItems: [], loading: false, error: null });
+      return;
+    }
+    const cb = ({ menu, loading, error }) =>
+      setState({ menuItems: menu, loading, error });
+    subscribers.add(cb);
+    if (barGlobalMenu !== null) cb({ menu: barGlobalMenu, loading: _isLoading, error: _loadError });
+    else loadBarMenu({ skipRepair: true });
+    return () => subscribers.delete(cb);
+  }, []);
+
+  const refreshMenu = () => {
+    loadPromise = null;
+    barGlobalMenu = null;
+    loadBarMenu({ skipRepair: true });
+  };
+
+  // Listen for socket menu update events from admin panel
+  useEffect(() => {
+    let debounceTimer = null;
+    const handleMenuUpdate = (event) => {
+      console.log("[BarMenuSync] Received menu-item-updated event:", event);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        refreshMenu();
+      }, 800);
+    };
+
+    // Listen for custom event from socket wrapper
+    window.addEventListener("menu-item-updated", handleMenuUpdate);
+
+    return () => {
+      window.removeEventListener("menu-item-updated", handleMenuUpdate);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, []);
+
+  // Listen for background sync events from barMenuService.syncBarMenuInBackground
+  // This updates the in-memory state when fresh data is fetched from the API/edge
+  useEffect(() => {
+    const handleBackgroundSync = (event) => {
+      const { items: freshItems } = event.detail || {};
+      if (freshItems && Array.isArray(freshItems) && freshItems.length > 0) {
+        // Re-map and update global state
+        import('./barMenuService.js').then(({ mapBarMenuItems }) => {
+          barGlobalMenu = mapBarMenuItems(freshItems, freshItems);
+          notifySubscribers();
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("bar-menu-synced", handleBackgroundSync);
+    return () => window.removeEventListener("bar-menu-synced", handleBackgroundSync);
+  }, []);
+
+  return { ...state, refreshMenu };
+}
+
+/**
+ * Optimistically update a bar menu item in global state + cache,
+ * then persist to the backend asynchronously.
+ *
+ * @param {string} itemId  - The item's DB id
+ * @param {object} patch   - Fields to change: { n, t, p, img }
+ *                           n → name, t → 'veg'|'non', p → price (single-variant), img → imageUrl
+ * @param {string} apiBase - API base URL (from apiConfig.API_BASE)
+ */
+export function updateBarMenuItem(itemId, patch, apiBase) {
+  if (!barGlobalMenu) return;
+
+  // 1. Apply optimistic update in-memory
+  barGlobalMenu = barGlobalMenu.map((item) => {
+    if (item.id !== itemId) return item;
+    const updated = { ...item };
+    if (patch.n !== undefined) updated.n = patch.n;
+    if (patch.t !== undefined) updated.t = patch.t;
+    if (patch.img !== undefined) updated.img = patch.img;
+    if (patch.venuePrices !== undefined) updated.venuePrices = patch.venuePrices;
+    if (patch.p !== undefined) {
+      updated.p = Number(patch.p);
+      if (updated.variants && updated.variants.length === 1) {
+        updated.variants = [{ ...updated.variants[0], price: Number(patch.p) }];
+      }
+    }
+    return updated;
+  });
+
+  // 2. Persist to cache immediately so a reload doesn't revert
+  writeBarMenuCache(barGlobalMenu);
+  notifySubscribers();
+
+  // 3. Fire background API PATCH
+  const body = {};
+  if (patch.n !== undefined) body.name = patch.n;
+  if (patch.t !== undefined) body.isVeg = patch.t === "veg";
+  if (patch.p !== undefined) body.price = Number(patch.p);
+  if (patch.img !== undefined) body.imageUrl = patch.img;
+  if (patch.venuePrices !== undefined) body.venuePrices = patch.venuePrices;
+
+  fetch(`${apiBase}/api/bar/menu/items/${itemId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const msg = await res.text().catch(() => res.statusText);
+        console.warn(`[BarMenuSync] PATCH ${itemId} failed (${res.status}):`, msg);
+      } else {
+        console.log(`[BarMenuSync] PATCH ${itemId} persisted`);
+      }
+    })
+    .catch((err) => console.warn("[BarMenuSync] PATCH error:", err));
+}
+
+/**
+ * Toggle a bar menu item's availability optimistically.
+ * Supports both global and venue-scoped toggling.
+ *
+ * @param {string} itemId  - The item's DB id
+ * @param {string} apiBase - API base URL
+ * @param {function} onDone - Optional callback on success (e.g. refreshMenu)
+ * @param {function} onError - Optional callback on failure
+ * @param {string|null} venueId - Optional venue ID for scoped toggle
+ */
+export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError, venueId = null) {
+  if (!barGlobalMenu) return;
+
+  const isVenueScope = venueId !== null;
+
+  // Optimistic toggle
+  barGlobalMenu = barGlobalMenu.map((item) => {
+    if (item.id !== itemId) return item;
+    if (isVenueScope) {
+      return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
+    }
+    return { ...item, isAvailable: !(item.isAvailable ?? true) };
+  });
+  writeBarMenuCache(barGlobalMenu);
+  notifySubscribers();
+
+  const endpoint = isVenueScope
+    ? `${apiBase}/api/bar/menu/items/${itemId}/venue-availability`
+    : `${apiBase}/api/bar/menu/items/${itemId}/availability`;
+
+  const fetchOptions = isVenueScope
+    ? { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, body: JSON.stringify({ venueId }) }
+    : { method: "PATCH", headers: { ...getAuthHeaders() } };
+
+  fetch(endpoint, fetchOptions)
+    .then((res) => {
+      if (res.ok) {
+        onDone?.();
+      } else {
+        // Revert on failure
+        barGlobalMenu = barGlobalMenu.map((item) => {
+          if (item.id !== itemId) return item;
+          if (isVenueScope) {
+            return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
+          }
+          return { ...item, isAvailable: !(item.isAvailable ?? true) };
+        });
+        writeBarMenuCache(barGlobalMenu);
+        notifySubscribers();
+        onError?.();
+      }
+    })
+    .catch(() => {
+      barGlobalMenu = barGlobalMenu.map((item) => {
+        if (item.id !== itemId) return item;
+        if (isVenueScope) {
+          return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
+        }
+        return { ...item, isAvailable: !(item.isAvailable ?? true) };
+      });
+      writeBarMenuCache(barGlobalMenu);
+      notifySubscribers();
+      onError?.();
+    });
+}

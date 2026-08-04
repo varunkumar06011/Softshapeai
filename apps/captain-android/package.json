@@ -1,0 +1,27 @@
+{
+  "name": "softshape-captain-android",
+  "version": "23.12.1",
+  "description": "SoftShape Captain Android App (Capacitor)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "cd ../.. && npx vite build",
+    "sync": "npx cap sync android && bash native/sync-native.sh",
+    "build": "npm run build:web && npx cap sync android && bash native/sync-native.sh",
+    "open": "npx cap open android",
+    "apk": "npm run build:web && npx cap sync android && bash native/sync-native.sh && npx cap build android --androidreleasetype APK"
+  },
+  "dependencies": {
+    "@capacitor-firebase/authentication": "^8.3.0",
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/status-bar": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "typescript": "^5.4.5"
+  }
+}

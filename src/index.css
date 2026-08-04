@@ -1,0 +1,341 @@
+@import "tailwindcss";
+@theme {
+  --font-sans: 'Plus Jakarta Sans', 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  --font-heading: 'Manrope', 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --font-mono: 'Roboto Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+}
+
+:root {
+  --color-primary: #6366f1;
+  --color-secondary: #8b5cf6;
+
+  /* iOS-style easing curves */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-ios-decel: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-ios-accel: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Global interaction polish — iOS feel */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+button, a, [role="button"], input, select, textarea {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Global iOS-style easing for all interactive elements */
+button, a, [role="button"] {
+  transition-timing-function: var(--ease-ios-decel);
+  transition-duration: 250ms;
+}
+
+/* GPU hints for animated elements */
+.gpu-layer {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* Momentum scrolling on all scrollable containers */
+.smooth-scroll-container {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+body {
+  margin: 0;
+  padding-top: env(safe-area-inset-top);
+  font-family: 'Plus Jakarta Sans', 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  font-size: 16px;
+  background: #fff5f5;
+  color: #1a1a1a;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Heading styles with 24pt size fallback (respects tailwind classes) */
+h1:not([class*="text-"]),
+h2:not([class*="text-"]),
+h3:not([class*="text-"]),
+h4:not([class*="text-"]),
+h5:not([class*="text-"]),
+h6:not([class*="text-"]) {
+  font-family: 'Manrope', 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-size: 24pt;
+  font-weight: normal;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Manrope', 'Plus Jakarta Sans', 'Inter', sans-serif;
+}
+
+/* Explicit POS Card Title Styles for guaranteed rendering */
+.cashier-item-title {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  font-weight: 800 !important;
+}
+
+.captain-item-title {
+  font-size: 13px !important;
+  line-height: 1.3 !important;
+  font-weight: 700 !important;
+}
+
+.user-item-title {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  font-weight: 600 !important;
+}
+
+.user-special-title {
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+  font-weight: 600 !important;
+}
+
+/* Item name styling - bold */
+.item-name,
+[class*="item"] h3,
+[class*="item"] h4,
+[class*="menu-item"],
+.menu-item-name,
+.dish-name,
+.product-name {
+  font-weight: bold;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes bounceSubtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes pulseBorder {
+  0% { border-color: rgba(229, 57, 53, 0.2); }
+  50% { border-color: rgba(229, 57, 53, 0.6); }
+  100% { border-color: rgba(229, 57, 53, 0.2); }
+}
+
+/* Breathing animation for tables waiting for bill (yellow pulse) */
+@keyframes tableBreathing {
+  0%, 100% { background-color: rgba(254, 252, 232, 0.6); border-color: rgba(234, 179, 8, 0.25); }
+  50% { background-color: rgba(234, 179, 8, 0.22); border-color: rgba(234, 179, 8, 0.7); }
+}
+
+.animate-table-breathing {
+  animation: tableBreathing 1.8s ease-in-out infinite;
+}
+
+@keyframes legendBreathing {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.animate-legend-breathing {
+  animation: legendBreathing 1.8s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s var(--ease-ios-decel) forwards;
+}
+
+.animate-slide-in {
+  animation: slideInRight 0.3s var(--ease-ios-decel) forwards;
+}
+
+.animate-bounce-subtle {
+  animation: bounceSubtle 2s var(--ease-ios) infinite;
+}
+
+.animate-pulse-border {
+  animation: pulseBorder 2s var(--ease-ios) infinite;
+}
+
+.page-enter {
+  animation: fadeIn 0.3s var(--ease-ios-decel) forwards;
+}
+
+@keyframes chartFadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes chartScaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-chart-in {
+  animation: chartFadeInUp 0.5s var(--ease-ios-decel) forwards;
+}
+
+.animate-chart-scale {
+  animation: chartScaleIn 0.4s var(--ease-ios-decel) forwards;
+}
+
+.animate-chart-in-delay-1 {
+  opacity: 0;
+  animation: chartFadeInUp 0.5s var(--ease-ios-decel) 0.1s forwards;
+}
+
+.animate-chart-in-delay-2 {
+  opacity: 0;
+  animation: chartFadeInUp 0.5s var(--ease-ios-decel) 0.2s forwards;
+}
+
+.animate-chart-in-delay-3 {
+  opacity: 0;
+  animation: chartFadeInUp 0.5s var(--ease-ios-decel) 0.3s forwards;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e0e0e0;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #B71C1C;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Hide number input spinners globally */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+@keyframes policeFlash {
+  0%, 100% { background-color: #B71C1C; }
+  50% { background-color: #0D47A1; }
+}
+
+@keyframes emergencyShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px) rotate(-1deg); }
+  75% { transform: translateX(4px) rotate(1deg); }
+}
+
+.animate-police-flash {
+  animation: policeFlash 0.5s var(--ease-ios) infinite;
+}
+
+.animate-emergency-shake {
+  animation: emergencyShake 0.3s var(--ease-ios) infinite;
+}
+
+/* === Bridge fix: animate-in classes (tailwindcss-animate not installed) === */
+/* These replace the 54 broken animate-in usages until framer-motion replaces them */
+@keyframes twFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes twZoomIn95 {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes twSlideInBottom {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes twSlideInBottomSm {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes twSlideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes twSlideInLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-in {
+  animation-duration: 200ms;
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: twFadeIn;
+}
+
+.zoom-in-95 {
+  animation-name: twZoomIn95;
+}
+
+.slide-in-from-bottom-full {
+  animation-name: twSlideInBottom;
+}
+
+.slide-in-from-bottom-4,
+.slide-in-from-bottom-10 {
+  animation-name: twSlideInBottomSm;
+}
+
+.slide-in-from-right {
+  animation-name: twSlideInRight;
+}
+
+.slide-in-from-left {
+  animation-name: twSlideInLeft;
+}
+
+.duration-200 { animation-duration: 200ms; }
+.duration-300 { animation-duration: 300ms; }

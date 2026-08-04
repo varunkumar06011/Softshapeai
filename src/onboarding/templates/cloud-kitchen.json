@@ -1,0 +1,41 @@
+{
+  "id": "cloud-kitchen",
+  "name": "Cloud Kitchen",
+  "description": "Delivery-focused menu — combos, biryani, curries, no table service",
+  "categories": [
+    {
+      "name": "Combos",
+      "sortOrder": 1,
+      "items": [
+        { "name": "Veg Combo (Biryani + Curry + Dessert)", "basePrice": 250, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Chicken Combo (Biryani + Curry + Dessert)", "basePrice": 320, "isVeg": false, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Biryani",
+      "sortOrder": 2,
+      "items": [
+        { "name": "Veg Biryani", "basePrice": 180, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Chicken Biryani", "basePrice": 240, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Mutton Biryani", "basePrice": 340, "isVeg": false, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Curries",
+      "sortOrder": 3,
+      "items": [
+        { "name": "Paneer Butter Masala", "basePrice": 200, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Chicken Curry", "basePrice": 220, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Dal Makhani", "basePrice": 160, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Beverages",
+      "sortOrder": 4,
+      "items": [
+        { "name": "Sweet Lassi", "basePrice": 50, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Fresh Lime Soda", "basePrice": 40, "isVeg": true, "menuType": "FOOD" }
+      ]
+    }
+  ]
+}

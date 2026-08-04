@@ -1,0 +1,46 @@
+{
+  "id": "dine-in-nonveg",
+  "name": "Dine-In Non-Veg",
+  "description": "Mixed veg & non-veg — chicken, mutton, seafood, plus veg options",
+  "categories": [
+    {
+      "name": "Starters",
+      "sortOrder": 1,
+      "items": [
+        { "name": "Chicken 65", "basePrice": 220, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Chicken Tikka", "basePrice": 260, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Fish Fry", "basePrice": 300, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Paneer Tikka", "basePrice": 220, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Crispy Corn", "basePrice": 160, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Main Course",
+      "sortOrder": 2,
+      "items": [
+        { "name": "Chicken Biryani", "basePrice": 280, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Mutton Biryani", "basePrice": 380, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Chicken Curry", "basePrice": 260, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Paneer Butter Masala", "basePrice": 240, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Butter Naan", "basePrice": 50, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Desserts",
+      "sortOrder": 3,
+      "items": [
+        { "name": "Gulab Jamun", "basePrice": 80, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Ice Cream Scoop", "basePrice": 90, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Beverages",
+      "sortOrder": 4,
+      "items": [
+        { "name": "Masala Chai", "basePrice": 30, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Fresh Lime Soda", "basePrice": 50, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Buttermilk", "basePrice": 40, "isVeg": true, "menuType": "FOOD" }
+      ]
+    }
+  ]
+}

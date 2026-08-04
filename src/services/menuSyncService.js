@@ -1,0 +1,442 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Menu Sync Service — Global menu state with pub/sub, caching, and React hook
+// ─────────────────────────────────────────────────────────────────────────────
+// Provides a singleton menu store with React hook integration:
+//   - Fetches menu from backend on first access (lazy load)
+//   - Caches to localStorage (per-restaurant scope with timestamp)
+//   - Pub/sub pattern: components subscribe to menu updates
+//   - useGlobalMenuSync() — React hook that re-renders on menu changes
+//   - refreshMenu() — force re-fetch from backend
+//   - setGlobalMenu() — update menu cache (used after mutations)
+//
+// Cache strategy: localStorage with timestamp, refreshed if older than 5 minutes.
+// This is the regular restaurant equivalent of barMenuSyncService.js (for bar menus).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { fetchMenuFromBackend } from "./menuService";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { isEdgeLocalAuth, isEdgeAvailable, onRuntimeStateChange } from "./edgeHealth";
+
+// ── MenuSnapshot state machine ───────────────────────────────────────────────
+// States: loading, ready, stale, empty, unavailable
+// Each state includes a reason and lastUpdatedAt timestamp for UI display.
+
+export const MENU_SNAPSHOT_STATES = {
+  LOADING: 'loading',
+  READY: 'ready',
+  STALE: 'stale',
+  EMPTY: 'empty',
+  UNAVAILABLE: 'unavailable',
+};
+
+function createSnapshot(state, reason = null, menu = null, lastUpdatedAt = null) {
+  return {
+    state,
+    reason,
+    menu: menu ?? [],
+    lastUpdatedAt: lastUpdatedAt ?? Date.now(),
+  };
+}
+
+// Base localStorage key for the unified menu cache
+const BASE_STORAGE_KEY = "softshape_unified_menu";
+
+// Returns the scoped cache key for a specific restaurant's menu
+function getStorageKey(restaurantId = getCurrentRestaurantId()) {
+  return getScopedCacheKey(BASE_STORAGE_KEY, restaurantId);
+}
+
+// Returns the timestamp key for cache freshness checking
+function getTimestampKey(restaurantId = getCurrentRestaurantId()) {
+  return `${getStorageKey(restaurantId)}:ts`;
+}
+
+function recordMenuCacheTimestamp(restaurantId = getCurrentRestaurantId()) {
+  try {
+    localStorage.setItem(getTimestampKey(restaurantId), String(Date.now()));
+  } catch (e) {
+    console.warn('[MenuSync] Failed to write cache timestamp', e);
+  }
+}
+
+export function getMenuCacheAgeMs(restaurantId = getCurrentRestaurantId()) {
+  try {
+    const ts = localStorage.getItem(getTimestampKey(restaurantId));
+    if (!ts) return Infinity;
+    return Date.now() - Number(ts);
+  } catch {
+    return Infinity;
+  }
+}
+
+// Initialize global menu from localStorage to allow instant rendering
+let globalMenu = null;
+try {
+  const saved = localStorage.getItem(getStorageKey());
+  if (saved) {
+    globalMenu = JSON.parse(saved);
+  }
+  // Evict stale un-scoped unified menu cache
+  LEGACY_UNSCOPED_KEYS.forEach(k => {
+    if (k === BASE_STORAGE_KEY) localStorage.removeItem(k);
+  });
+} catch (e) {
+  console.error("Failed to parse initial menu from local storage", e);
+}
+
+// If we already have a menu, we don't need to block UI with a loading screen
+let _isLoading = !globalMenu || globalMenu.length === 0;
+let _loadError = null;
+let _syncProgress = null; // { stage, entity, percent } when edge sync is in progress
+const subscribers = new Set();
+let loadPromise = null;
+
+// ── Subscribe to edge runtime sync progress events ───────────────────────────
+// When the edge server emits config_sync.progress, update _syncProgress so
+// the UI can show "Syncing menu items… 45%" instead of a blank screen.
+// When config_sync.state_changed arrives with newState=READY, clear progress.
+if (typeof window !== "undefined") {
+  onRuntimeStateChange((event) => {
+    if (event.type === "config_sync.progress") {
+      _syncProgress = event.data;
+      notifySubscribers();
+    } else if (event.type === "config_sync.state_changed") {
+      if (event.data?.newState === "READY" || event.data?.newState === "FAILED") {
+        _syncProgress = null;
+        notifySubscribers();
+      }
+    }
+  });
+}
+
+/**
+ * Reset the menu state so the next loadInitialMenu() call re-fetches from
+ * the backend. Called after login when the restaurantId becomes available
+ * for the first time (e.g. edge-local PIN login).
+ */
+export function resetMenuState() {
+  loadPromise = null;
+  globalMenu = null;
+  _isLoading = true;
+  _loadError = null;
+  notifySubscribers();
+  loadInitialMenu();
+}
+
+function dispatchMenuEvent(menu) {
+  try {
+    window.dispatchEvent(
+      new CustomEvent("softshape_menu_updated", { detail: menu })
+    );
+  } catch (_) {}
+}
+
+function notifySubscribers() {
+  subscribers.forEach((callback) =>
+    callback({
+      menu: globalMenu ?? [],
+      loading: _isLoading,
+      error: _loadError,
+      syncProgress: _syncProgress,
+    })
+  );
+}
+
+async function loadInitialMenu() {
+  if (loadPromise) return loadPromise;
+
+  const currentPromise = (async () => {
+    // Only show loading if we have no cached menu
+    _isLoading = !globalMenu || globalMenu.length === 0;
+    _loadError = null;
+    notifySubscribers();
+
+    try {
+      const apiItems = await fetchMenuFromBackend();
+
+      // ── Empty-response protection: never replace a valid cached menu with
+      // an empty response from the bridge. This prevents a blank menu when
+      // the bridge is temporarily unavailable or half-synced.
+      if (apiItems.length === 0 && globalMenu && globalMenu.length > 0) {
+        console.warn('[MenuSync] Bridge returned empty menu — keeping cached menu');
+        _isLoading = false;
+        notifySubscribers();
+        return;
+      }
+
+      globalMenu = apiItems;
+      console.log(`[MenuSync] Loaded ${globalMenu.length} items from backend`);
+    } catch (err) {
+      console.error("[MenuSync] Failed to load initial menu", err);
+      // Only surface error if we have absolutely nothing to show
+      if (!globalMenu || globalMenu.length === 0) {
+        _loadError =
+          err?.message ||
+          "Could not reach backend. Check VITE_API_URL and backend deployment.";
+      }
+      // Propagate error to callers instead of swallowing
+      throw err;
+    } finally {
+      _isLoading = false;
+      if (globalMenu?.length) {
+        localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+        recordMenuCacheTimestamp();
+      }
+      notifySubscribers();
+      dispatchMenuEvent(globalMenu ?? []);
+    }
+  })();
+
+  loadPromise = currentPromise;
+
+  try {
+    await currentPromise;
+  } catch {
+    // Error already handled inside the promise; clear loadPromise below
+  } finally {
+    // Only clear if this promise is still the current one (prevents race)
+    if (loadPromise === currentPromise) {
+      loadPromise = null;
+    }
+  }
+}
+
+export function useGlobalMenuSync() {
+  const [menu, setMenu] = useState(() => {
+    if (globalMenu) return globalMenu;
+    const saved = localStorage.getItem(getStorageKey());
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    // Determine initial loading state
+    if (globalMenu && globalMenu.length > 0) return false;
+    return _isLoading;
+  });
+  const [error, setError] = useState(_loadError);
+  const [syncProgress, setSyncProgress] = useState(_syncProgress);
+
+  useEffect(() => {
+    const handleUpdate = ({ menu: newMenu, loading: isLoading, error: err, syncProgress: progress }) => {
+      setMenu(newMenu ?? []);
+      setLoading(isLoading);
+      setError(err);
+      setSyncProgress(progress ?? null);
+    };
+
+    subscribers.add(handleUpdate);
+    // Notify immediately on mount in case it changed
+    handleUpdate({
+      menu: globalMenu,
+      loading: _isLoading,
+      error: _loadError,
+      syncProgress: _syncProgress,
+    });
+
+    loadInitialMenu();
+
+    return () => {
+      subscribers.delete(handleUpdate);
+    };
+  }, []);
+
+  const setGlobalMenu = useCallback((updater) => {
+    const nextMenu =
+      typeof updater === "function"
+        ? updater(globalMenu || menu || [])
+        : updater;
+
+    globalMenu = nextMenu;
+    _isLoading = false;
+    _loadError = null;
+    localStorage.setItem(getStorageKey(), JSON.stringify(nextMenu));
+    recordMenuCacheTimestamp();
+
+    setMenu(nextMenu);
+    notifySubscribers();
+    dispatchMenuEvent(nextMenu);
+  }, [menu]);
+
+  const refreshMenu = useCallback(async () => {
+    _isLoading = true;
+    _loadError = null;
+    notifySubscribers();
+
+    try {
+      const apiItems = await fetchMenuFromBackend();
+
+      // ── Empty-response protection on refresh too
+      if (apiItems.length === 0 && globalMenu && globalMenu.length > 0) {
+        console.warn('[MenuSync] Refresh returned empty menu — keeping cached menu');
+        _isLoading = false;
+        notifySubscribers();
+        return globalMenu;
+      }
+
+      globalMenu = apiItems;
+      _loadError = null;
+
+      localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+      recordMenuCacheTimestamp();
+      setMenu(globalMenu);
+      notifySubscribers();
+      dispatchMenuEvent(globalMenu);
+
+      return apiItems;
+    } catch (err) {
+      _loadError = err?.message || "Menu refresh failed";
+      notifySubscribers();
+      throw err;
+    } finally {
+      _isLoading = false;
+      notifySubscribers();
+    }
+  }, [menu]);
+
+  // Sync menu changes across different browser tabs
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === getStorageKey() && e.newValue) {
+        try {
+          const newMenu = JSON.parse(e.newValue);
+          globalMenu = newMenu;
+          setMenu(newMenu);
+          notifySubscribers();
+        } catch (err) {
+          console.error("Failed to parse menu from storage", err);
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
+
+  // Listen for socket menu update events from admin panel
+  useEffect(() => {
+    let debounceTimer = null;
+    const handleMenuUpdate = (event) => {
+      console.log("[MenuSync] Received menu-item-updated event:", event);
+      const payload = event.detail;
+      // Optimistic update: if payload has itemId + updatedItem, patch in memory immediately
+      if (payload && payload.itemId && payload.updatedItem && globalMenu) {
+        const updated = payload.updatedItem;
+        const action = payload.action;
+        if (action === 'created' && !globalMenu.some(i => i.id === payload.itemId)) {
+          // New item: add to globalMenu immediately
+          const defaultVariant = updated.variants?.find(v => v.isDefault) ?? updated.variants?.[0];
+          const newItem = {
+            id: updated.id,
+            n: updated.name,
+            p: Math.round(Number(defaultVariant?.price ?? updated.price ?? 0)),
+            c: updated.category?.name ?? updated.category ?? '',
+            t: updated.isVeg ? 'veg' : 'non',
+            img: updated.imageUrl || '',
+            desc: updated.description || '',
+            menuType: (updated.menuType || 'FOOD').toUpperCase(),
+            isAvailable: updated.isAvailable !== false,
+            variants: updated.variants || [],
+            venuePrices: updated.venuePrices || {},
+            venueAvailabilities: updated.venueAvailabilities || {},
+            isSpecial: updated.isSpecial === true,
+            specialChannel: updated.specialChannel || 'BOTH',
+            active: updated.specialActive !== false,
+            expiresAt: updated.specialExpiresAt ? new Date(updated.specialExpiresAt).getTime() : null,
+          };
+          globalMenu = [...globalMenu, newItem];
+        } else {
+          const patched = globalMenu.map(item =>
+            item.id === payload.itemId
+              ? {
+                  ...item,
+                  n: updated.name ?? item.n,
+                  p: updated.price ?? item.p,
+                  t: updated.isVeg != null ? (updated.isVeg ? 'veg' : 'non') : item.t,
+                  c: updated.category?.name ?? updated.category ?? item.c,
+                  imageUrl: updated.imageUrl ?? item.imageUrl,
+                  isAvailable: updated.isAvailable !== undefined ? updated.isAvailable : item.isAvailable,
+                  menuType: updated.menuType ?? item.menuType,
+                  gstEnabled: updated.gstEnabled !== undefined ? updated.gstEnabled : item.gstEnabled,
+                  venueAvailabilities: updated.venueAvailabilities
+                    ? { ...(item.venueAvailabilities || {}), ...updated.venueAvailabilities }
+                    : item.venueAvailabilities,
+                  isSpecial: updated.isSpecial !== undefined ? updated.isSpecial === true : item.isSpecial,
+                  specialChannel: updated.specialChannel ?? item.specialChannel,
+                  active: updated.specialActive !== undefined ? updated.specialActive !== false : item.active,
+                  expiresAt: updated.specialExpiresAt !== undefined ? (updated.specialExpiresAt ? new Date(updated.specialExpiresAt).getTime() : null) : item.expiresAt,
+                }
+              : item
+          );
+          globalMenu = patched;
+        }
+        localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+        recordMenuCacheTimestamp();
+        notifySubscribers();
+        dispatchMenuEvent(globalMenu);
+      }
+      // Then debounced full refresh for correctness
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        refreshMenu().catch(err => {
+          console.error("[MenuSync] Failed to refresh menu after socket event:", err);
+        });
+      }, 800);
+    };
+
+    // Listen for custom event from socket wrapper
+    window.addEventListener("menu-item-updated", handleMenuUpdate);
+
+    return () => {
+      window.removeEventListener("menu-item-updated", handleMenuUpdate);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [refreshMenu]);
+
+  // ── Compute MenuSnapshot state for UI display ─────────────────────────────
+  const snapshot = useMemo(() => {
+    const hasMenu = menu && menu.length > 0;
+    const cacheAge = getMenuCacheAgeMs();
+    const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+    // If sync is in progress, show a syncing state with progress percentage
+    if (syncProgress && !hasMenu) {
+      const pct = syncProgress.percent ?? 0;
+      const entity = syncProgress.entity || 'config';
+      return createSnapshot(MENU_SNAPSHOT_STATES.LOADING, `Syncing ${entity}… ${pct}%`);
+    }
+    if (loading && !hasMenu) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.LOADING, 'Loading menu from bridge...');
+    }
+    if (error && !hasMenu) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.UNAVAILABLE, error);
+    }
+    if (error && hasMenu) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.STALE, `Using cached menu (${error})`, menu, Date.now() - cacheAge);
+    }
+    if (!hasMenu && !loading) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.EMPTY, 'No menu items synced to this bridge');
+    }
+    if (hasMenu && cacheAge > STALE_THRESHOLD_MS) {
+      return createSnapshot(MENU_SNAPSHOT_STATES.STALE, 'Menu cache is older than 30 minutes', menu, Date.now() - cacheAge);
+    }
+    return createSnapshot(MENU_SNAPSHOT_STATES.READY, null, menu, Date.now() - cacheAge);
+  }, [menu, loading, error, syncProgress]);
+
+  return {
+    globalMenu: menu || [],
+    isLoadingMenu: loading,
+    loadError: error,
+    setGlobalMenu,
+    refreshMenu,
+    snapshot,
+    syncProgress,
+  };
+}
+

@@ -1,0 +1,44 @@
+{
+  "id": "cafe",
+  "name": "Cafe",
+  "description": "Coffee, tea, sandwiches, pastries — quick service cafe menu",
+  "categories": [
+    {
+      "name": "Coffee",
+      "sortOrder": 1,
+      "items": [
+        { "name": "Espresso", "basePrice": 80, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Cappuccino", "basePrice": 120, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Cold Coffee", "basePrice": 140, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Latte", "basePrice": 130, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Tea",
+      "sortOrder": 2,
+      "items": [
+        { "name": "Masala Chai", "basePrice": 40, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Green Tea", "basePrice": 50, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Lemon Tea", "basePrice": 45, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Sandwiches",
+      "sortOrder": 3,
+      "items": [
+        { "name": "Veg Sandwich", "basePrice": 120, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Club Sandwich", "basePrice": 180, "isVeg": false, "menuType": "FOOD" },
+        { "name": "Grilled Cheese", "basePrice": 140, "isVeg": true, "menuType": "FOOD" }
+      ]
+    },
+    {
+      "name": "Pastries",
+      "sortOrder": 4,
+      "items": [
+        { "name": "Chocolate Pastry", "basePrice": 90, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Black Forest", "basePrice": 100, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Brownie", "basePrice": 110, "isVeg": true, "menuType": "FOOD" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.env
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# Capacitor generated platforms
+android/
+
+# Android signing keystore
+softshape-release.keystore
+
+# Tauri signing keys
+*.key
+*.key.pub
+.tauri/
+.vercel
+.env*
+
+# Rust/Tauri build artifacts
+apps/cashier-desktop/src-tauri/target/
+apps/cashier-desktop/src-tauri/gen/
+apps/cashier-desktop/src-tauri/edge-server.exe
+apps/admin-desktop/src-tauri/target/
+apps/admin-desktop/src-tauri/gen/
+apps/captain-android/src-tauri/target/
+apps/captain-android/src-tauri/gen/
+
+# Local junction to print-agent repo (CI checks it out directly)
+/softshape-print-agent

@@ -1,0 +1,989 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// EdgeSetupScreen — Link cashier desktop to an existing cloud restaurant
+// ─────────────────────────────────────────────────────────────────────────────
+// Path A flow: the restaurant was already created via the cloud onboarding
+// wizard (OnboardingWizard.jsx). Now the cashier desktop app needs to:
+//   1. Wait for the edge server (Bun sidecar) to start
+//   2. Collect backend URL + restaurant code + setup token from the owner
+//   3. Register the edge server with the cloud backend
+//   4. Download the full restaurant config into local SQLite
+//   5. Redirect to cashier login — ready to bill
+//
+// The setup token is generated from Admin → Printers → "Generate Setup Token"
+// on the web dashboard. It's valid for 15 minutes.
+//
+// DEPRECATED: Offline onboarding (QuickOnboarding / Path B) is retired.
+// All restaurants must register via the 13-step web wizard first, then link
+// the desktop app via this EdgeSetupScreen.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { isEdgeAvailable, edgeFetch, resetEdgeCache, setStoredEdgeApiKey, setStoredEdgeRuntimeToken } from '../services/edgeHealth.js';
+import { API_BASE } from '../services/apiConfig.js';
+import { getDeviceId } from '../utils/deviceId.js';
+import {
+  CheckCircle2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
+  Cloud, Database, Link2, Server, Utensils, LayoutGrid, Users,
+  RefreshCw, Wifi, Store,
+} from 'lucide-react';
+
+// ── Poll intervals ────────────────────────────────────────────────────────────
+const EDGE_START_POLL_MS = 2000;
+const STATUS_POLL_MS = 2000;
+const EDGE_START_TIMEOUT_MS = 40_000;
+
+function isRunningInsideDesktopApp() {
+  return typeof window !== 'undefined' && !!(window.__TAURI__ || window.__TAURI_INTERNALS__);
+}
+
+function getTauriInvoke() {
+  return window.__TAURI__?.core?.invoke
+    || window.__TAURI__?.invoke
+    || window.__TAURI_INTERNALS__?.invoke
+    || null;
+}
+
+// ── Decode a JWT payload without verifying it (UX helpers only) ───────────────
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token).split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(base64);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function extractRestaurantCodeFromToken(token) {
+  const payload = decodeJwtPayload(token);
+  return payload?.restaurantCode || null;
+}
+
+// ── Steps ─────────────────────────────────────────────────────────────────────
+const STEPS = [
+  { id: 'edge-start',   label: 'Starting edge server',     icon: Server },
+  { id: 'collect-info', label: 'Enter setup details',       icon: Link2 },
+  { id: 'register',     label: 'Registering with cloud',    icon: Cloud },
+  { id: 'config-sync',  label: 'Downloading restaurant data', icon: Database },
+  { id: 'ready',        label: 'Ready to bill',             icon: CheckCircle2 },
+];
+
+export default function EdgeSetupScreen() {
+  const navigate = useNavigate();
+
+  // ── Phase state ──────────────────────────────────────────────────────────────
+  const [phase, setPhase] = useState('edge-start'); // edge-start | collect-info | register | config-sync | ready
+  const [edgeOnline, setEdgeOnline] = useState(false);
+  const [edgeChecking, setEdgeChecking] = useState(() => isRunningInsideDesktopApp());
+
+  // ── Form state ───────────────────────────────────────────────────────────────
+  const [backendUrl, setBackendUrl] = useState(API_BASE);
+  const [restaurantCode, setRestaurantCode] = useState('');
+  const [setupToken, setSetupToken] = useState('');
+  const [restaurantName, setRestaurantName] = useState('');
+
+  // ── Registration state ──────────────────────────────────────────────────────
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState(null);
+
+  // ── Config sync state ───────────────────────────────────────────────────────
+  const [configSyncing, setConfigSyncing] = useState(false);
+  const [configError, setConfigError] = useState(null);
+  const [configStats, setConfigStats] = useState({ tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0 });
+  const [configRowsLoaded, setConfigRowsLoaded] = useState(0);
+  const [verificationWarning, setVerificationWarning] = useState(null);
+  const verificationWarningRef = useRef(null);
+
+  // ── General ─────────────────────────────────────────────────────────────────
+  const [error, setError] = useState(() =>
+    isRunningInsideDesktopApp()
+      ? null
+      : 'Link Existing Restaurant must be opened inside the SoftShape Cashier desktop app. ' +
+        'Open Cashier from the installed desktop application, then choose Link Existing Restaurant again.'
+  );
+  const [edgeDiagnostics, setEdgeDiagnostics] = useState(null);
+  const [diagCopied, setDiagCopied] = useState(false);
+  const [startErrorCount, setStartErrorCount] = useState(0);
+  const pollRef = useRef(null);
+  const edgeStartTimerRef = useRef(null);
+
+  const copyEdgeDiagnostics = useCallback(async () => {
+    const text = edgeDiagnostics
+      || error
+      || 'No edge-server diagnostics available. Restart SoftShape Cashier and retry.';
+    try {
+      await navigator.clipboard.writeText(text);
+      setDiagCopied(true);
+      setTimeout(() => setDiagCopied(false), 2000);
+    } catch {
+      // Fallback for environments without clipboard permission
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setDiagCopied(true);
+        setTimeout(() => setDiagCopied(false), 2000);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [edgeDiagnostics, error]);
+
+  // ── Poll edge server status during config sync ──────────────────────────────
+  const startStatusPolling = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+
+    let pollCount = 0;
+    const maxPolls = 90; // 180 seconds max — sync can take up to 150s for large configs
+    // Track latest stats inside the closure so the timeout branch sees fresh values
+    // (configStats from useState would be stale here due to useCallback([]) deps).
+    let latestStats = { tables: 0, menuItems: 0, activeOrders: 0, pendingSync: 0, configSyncCompleted: false };
+
+    pollRef.current = setInterval(async () => {
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        // Polling timed out — only proceed if we actually have data (menu AND tables).
+        // Otherwise surface an error instead of silently forcing "ready".
+        if (latestStats.menuItems > 0 && latestStats.tables > 0) {
+          setPhase('ready');
+        } else if (latestStats.configSyncCompleted) {
+          // Sync completed but this outlet has no direct data (e.g. new outlet with no menus yet)
+          setPhase('ready');
+        } else {
+          setConfigError(
+            'Config download timed out. ' +
+            `Loaded ${latestStats.menuItems} menu items and ${latestStats.tables} tables. ` +
+            'Check your network connection and retry.'
+          );
+        }
+        return;
+      }
+
+      try {
+        const status = await edgeFetch('/api/edge/status');
+        if (status.localStats) {
+          latestStats = {
+            tables: status.localStats.tables || 0,
+            menuItems: status.localStats.menuItems || 0,
+            activeOrders: status.localStats.activeOrders || 0,
+            pendingSync: status.localStats.pendingSyncRecords || 0,
+            configSyncCompleted: status.configSyncCompleted === true,
+          };
+          setConfigStats(latestStats);
+        }
+
+        // If we have menu items and tables, config is loaded
+        // But don't auto-transition if a verification warning is shown —
+        // let the user review and choose to proceed.
+        const hasData = status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0;
+        const syncCompleted = status.configSyncCompleted === true;
+        if (hasData || syncCompleted) {
+          if (verificationWarningRef.current) {
+            // Stop polling — the user needs to review the warning and decide
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            return;
+          }
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          setPhase('ready');
+        }
+      } catch {
+        // Edge might be busy — keep polling
+      }
+    }, STATUS_POLL_MS);
+  }, []);
+
+  // ── Step 3: Trigger config sync ─────────────────────────────────────────────
+  const triggerConfigSync = useCallback(async () => {
+    setConfigSyncing(true);
+    setConfigError(null);
+    setVerificationWarning(null);
+
+    // Start polling BEFORE the sync request so the UI shows progress
+    // during the download. Without this, the checklist appears frozen
+    // for up to 150 seconds while the sync request is in-flight.
+    startStatusPolling();
+
+    try {
+      const result = await edgeFetch('/api/edge/config/sync', { method: 'POST', timeoutMs: 150_000 });
+      if (result.success) {
+        setConfigRowsLoaded(result.tablesLoaded || 0);
+
+        // Stop polling — the sync POST has returned with the final result.
+        // Don't rely on polling to transition, because polling may have
+        // already timed out (especially on large configs that take >60s).
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+
+        // Clear any stale timeout error from the polling phase.
+        setConfigError(null);
+
+        // If verification failed, show a warning but let the user proceed.
+        // The data is committed to SQLite — blocking onboarding over a few
+        // missing rows is worse than proceeding with slightly incomplete data.
+        if (result.verified === false && result.warnings?.length > 0) {
+          const warningText = result.warnings.join('\n');
+          verificationWarningRef.current = warningText;
+          setVerificationWarning(warningText);
+        }
+
+        // Directly transition to ready — the sync succeeded and data is committed.
+        setPhase('ready');
+      } else if (result.error === 'Sync already in progress') {
+        // Another sync is already running (e.g. from a retry timer).
+        // Polling is already running — it will pick up the result.
+      } else {
+        setConfigError(result.error || 'Config sync failed');
+      }
+    } catch (err) {
+      if (err.status === 401) {
+        const msg = (err.message || '').toLowerCase();
+        if (msg.includes('session') || msg.includes('register')) {
+          setConfigError(
+            'Edge server session is invalid or expired. Please go back and re-link your restaurant ' +
+            'with a fresh setup token to establish a new session.'
+          );
+        } else {
+          setConfigError(
+            'Edge API key missing or rejected. The edge server requires a valid API key ' +
+            'to download config. Please go back and re-link your restaurant to get a fresh key.'
+          );
+        }
+      } else {
+        setConfigError(err.message || 'Failed to download config from cloud');
+      }
+    } finally {
+      setConfigSyncing(false);
+    }
+  }, [startStatusPolling]);
+
+  // ── Step 2: Submit registration ─────────────────────────────────────────────
+  const handleRegister = useCallback(async () => {
+    if (!backendUrl.trim()) {
+      setRegisterError('Backend URL is required');
+      return;
+    }
+    if (!restaurantCode.trim()) {
+      setRegisterError('Restaurant code is required');
+      return;
+    }
+    if (!setupToken.trim()) {
+      setRegisterError('Setup token is required');
+      return;
+    }
+
+    setRegistering(true);
+    setRegisterError(null);
+    setPhase('register');
+
+    try {
+      const result = await edgeFetch('/api/edge/register', {
+        method: 'POST',
+        timeoutMs: 90_000,
+        body: JSON.stringify({
+          setupToken: setupToken.trim(),
+          restaurantCode: restaurantCode.trim(),
+          deviceId: getDeviceId(),
+          backendUrl: backendUrl.trim(),
+        }),
+      });
+
+      if (result.success) {
+        // Save the edge API key immediately so that subsequent edgeFetch()
+        // calls (including config sync) include the X-Edge-Key header.
+        // Without this, the edge server rejects config sync with 401.
+        if (result.edgeApiKey) {
+          setStoredEdgeApiKey(result.edgeApiKey);
+        }
+        // Save the runtime token so that edgeFetch() can send it as
+        // Authorization: Bearer header. After config sync completes,
+        // isLocalReady() returns true and the edge server enforces runtime
+        // token auth on all non-public routes. Without this token, every
+        // edge API call (menu, tables, orders, status) gets 401.
+        if (result.runtimeToken) {
+          setStoredEdgeRuntimeToken(result.runtimeToken);
+        }
+        // Registration succeeded — trigger config download
+        setRestaurantName(result.restaurantName || '');
+        setPhase('config-sync');
+        setConfigSyncing(true);
+        // If config was already downloaded during registration, check status
+        if (result.configDownloaded && result.tablesLoaded > 0) {
+          setConfigRowsLoaded(result.tablesLoaded);
+          // Still poll to get final stats
+          startStatusPolling();
+        } else {
+          // Trigger explicit config sync
+          await triggerConfigSync();
+        }
+      } else {
+        setRegisterError(result.error || 'Registration failed');
+        setPhase('collect-info');
+      }
+    } catch (err) {
+      const message = err.message || 'Failed to connect to cloud backend';
+      setRegisterError(
+        message === 'Restaurant not found'
+          ? 'This setup token belongs to a restaurant that was not found on this backend. Generate a new token from Admin → Printers and make sure the Backend URL is the same cloud account where the restaurant was created.'
+          : message.includes('Setup token') || message.includes('Invalid or expired')
+            ? `${message}. Generate a fresh setup token from Admin → Printers; tokens expire after 15 minutes.`
+            : message
+      );
+      setPhase('collect-info');
+    } finally {
+      setRegistering(false);
+    }
+  }, [backendUrl, restaurantCode, setupToken, startStatusPolling, triggerConfigSync]);
+
+  // ── Step 1: Wait for edge server to come online ─────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const startTime = Date.now();
+
+    if (!isRunningInsideDesktopApp()) {
+      return () => { cancelled = true; };
+    }
+
+    const fetchEdgeDiagnostics = async () => {
+      if (!(window.__TAURI__ || window.__TAURI_INTERNALS__)) return null;
+      try {
+        const invoke = getTauriInvoke();
+        if (!invoke) return null;
+        const status = await invoke('get_edge_server_status');
+        if (!status) return null;
+        const parts = [
+          `app_version=${status.app_version || 'unknown'}`,
+          `running=${!!status.running}`,
+          status.error ? `error=${status.error}` : null,
+          status.diagnostics || null,
+        ].filter(Boolean);
+        return { text: parts.join('\n'), status };
+      } catch (e) {
+        console.warn('[EdgeSetup] get_edge_server_status failed:', e);
+        return null;
+      }
+    };
+
+    const checkEdge = async () => {
+      if (cancelled) return;
+      resetEdgeCache();
+      const available = await isEdgeAvailable();
+      if (cancelled) return;
+
+      if (available) {
+        setEdgeOnline(true);
+        setEdgeChecking(false);
+
+        // Check if already registered with a valid session
+        try {
+          const status = await edgeFetch('/api/edge/status');
+          if (status.registered && status.sessionValid) {
+            // Already registered — check if config is loaded (both menu AND tables, same as startStatusPolling)
+            if (status.localStats && status.localStats.menuItems > 0 && status.localStats.tables > 0) {
+              setPhase('ready');
+              return;
+            }
+            // Registered but no config yet — trigger sync
+            setPhase('config-sync');
+            triggerConfigSync();
+            return;
+          }
+        } catch { /* not registered yet */ }
+
+        // Not registered — show form
+        setPhase('collect-info');
+      } else if (Date.now() - startTime > EDGE_START_TIMEOUT_MS) {
+        setEdgeChecking(false);
+        const inDesktop = isRunningInsideDesktopApp();
+        const diagResult = inDesktop ? await fetchEdgeDiagnostics() : null;
+        const diag = diagResult?.text ?? null;
+        if (diag) setEdgeDiagnostics(diag);
+        if (diag && /not found/i.test(diag)) {
+          setError(
+            'Bundled edge-server.exe was not found. This usually means the desktop app was not built with the edge server binary. Please reinstall SoftShape Cashier, or copy diagnostic info for support.'
+          );
+          return;
+        }
+        if (diag && /legacy_standalone_detected/i.test(diag)) {
+          setError(
+            'A legacy standalone edge-server.exe is already running on port 3101. ' +
+            'Close it from Task Manager (look for edge-server.exe), then click Retry. ' +
+            'The app will not automatically kill foreign processes.'
+          );
+          return;
+        }
+        const state = diagResult?.status?.state;
+        const stateMessage = state === 'binary_missing'
+          ? 'The bundled edge-server.exe is missing. Reinstall the packaged Cashier build.'
+          : state === 'port_conflict'
+            ? 'Port 3101 is already owned by another process. Close the identified legacy standalone edge-server or other conflicting application.'
+            : state === 'health_timeout'
+              ? 'The edge process is running but /health is not responding. The process may be blocked or the database may be unavailable.'
+              : state === 'database_error'
+                ? 'The local edge database could not start. Check database permissions or recovery diagnostics.'
+                : state === 'exited'
+                  ? 'The edge server process exited unexpectedly. Use Retry to restart it.'
+                  : 'The edge server did not become ready within 40 seconds.';
+        setError(
+          inDesktop
+            ? `${stateMessage} Use Retry to restart the managed service, or copy diagnostic info for support.`
+            : 'Edge server not found. This page must be opened inside the SoftShape Cashier desktop app. ' +
+              'If the app is already running, close this browser tab and use the Cashier app window instead.'
+        );
+      } else {
+        // Retry
+        edgeStartTimerRef.current = setTimeout(checkEdge, EDGE_START_POLL_MS);
+      }
+    };
+
+    checkEdge();
+
+    return () => {
+      cancelled = true;
+      if (edgeStartTimerRef.current) clearTimeout(edgeStartTimerRef.current);
+    };
+  }, [startErrorCount, triggerConfigSync]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  // ── Navigate to cashier login ───────────────────────────────────────────────
+  const handleGoToCashier = () => navigate('/cashier');
+
+  // ── Skip to offline onboarding (Path B) — DEPRECATED ─────────────────────
+  // Offline onboarding (QuickOnboarding) is deprecated. Users must register via
+  // the 13-step web wizard at /onboarding/legacy, then link via /edge-setup.
+  // const handleSkipToOffline = () => navigate('/onboarding');
+
+  // ── Go back to the previous step ───────────────────────────────────────────
+  const handleBack = useCallback(() => {
+    if (phase === 'register' || phase === 'config-sync') {
+      setRegisterError(null);
+      setConfigError(null);
+      setConfigSyncing(false);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setPhase('collect-info');
+      return;
+    }
+    if (phase === 'collect-info') {
+      setRegisterError(null);
+      setPhase('edge-start');
+      return;
+    }
+    if (phase === 'ready') {
+      setPhase('config-sync');
+    }
+  }, [phase]);
+
+  const handleEdgeRetry = async () => {
+    const invoke = getTauriInvoke();
+    try {
+      if (invoke) await invoke('restart_edge_server');
+    } catch (err) {
+      setError(`Failed to restart edge server: ${err?.message || String(err)}`);
+      return;
+    }
+    setError(null);
+    setEdgeDiagnostics(null);
+    setDiagCopied(false);
+    setEdgeChecking(true);
+    setStartErrorCount(c => c + 1);
+  };
+
+  // ── Retry config sync ───────────────────────────────────────────────────────
+  const handleRetrySync = () => {
+    setConfigError(null);
+    verificationWarningRef.current = null;
+    setVerificationWarning(null);
+    triggerConfigSync();
+  };
+
+  // ── Proceed with downloaded data despite verification warning ───────────────
+  const handleProceedWithWarning = () => {
+    verificationWarningRef.current = null;
+    setVerificationWarning(null);
+    setPhase('ready');
+  };
+  const currentStepIndex = STEPS.findIndex(s => s.id === phase);
+
+  // ── Config download checklist items ─────────────────────────────────────────
+  const configChecklist = [
+    { label: 'Outlet settings',     done: configStats.menuItems > 0 || configRowsLoaded > 0, icon: Store },
+    { label: 'Venues & floors',     done: configStats.tables > 0,     icon: LayoutGrid },
+    { label: 'Sections & tables',   done: configStats.tables > 0,     icon: LayoutGrid },
+    { label: 'Menu & categories',   done: configStats.menuItems > 0,  icon: Utensils },
+    { label: 'Staff users',         done: configRowsLoaded > 10,      icon: Users },
+  ];
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════════════════════════════════════
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-orange-50 flex items-center justify-center p-4 font-sans">
+      <div className="w-full max-w-2xl">
+
+        {/* ── Header ──────────────────────────────────────────────────────────── */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 text-white shadow-lg mb-4">
+            <Cloud size={28} />
+          </div>
+          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Link to Cloud</h1>
+          <p className="text-sm text-gray-500 mt-1 font-medium">
+            Connect this billing PC to your existing SoftShape restaurant
+          </p>
+        </div>
+
+        {/* ── Progress Steps ──────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-8 px-2">
+          {STEPS.map((step, idx) => {
+            const Icon = step.icon;
+            const isDone = idx < currentStepIndex;
+            const isActive = idx === currentStepIndex;
+
+            return (
+              <React.Fragment key={step.id}>
+                <div className="flex flex-col items-center gap-1.5 shrink-0">
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${
+                      isDone ? 'bg-green-500 text-white' :
+                      isActive ? 'bg-rose-500 text-white scale-110 shadow-lg shadow-rose-200' :
+                      'bg-gray-100 text-gray-400'
+                    }`}
+                  >
+                    {isDone ? <CheckCircle2 size={18} /> : <Icon size={18} />}
+                  </div>
+                  <span className={`text-[9px] font-bold uppercase tracking-wide text-center w-16 leading-tight ${
+                    isActive ? 'text-rose-600' : isDone ? 'text-green-600' : 'text-gray-400'
+                  }`}>
+                    {step.label}
+                  </span>
+                </div>
+                {idx < STEPS.length - 1 && (
+                  <div className={`flex-1 h-0.5 mx-1 rounded-full transition-all duration-500 ${
+                    isDone ? 'bg-green-500' : 'bg-gray-200'
+                  }`} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* ── Card ────────────────────────────────────────────────────────────── */}
+        <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
+
+          {/* ── Phase: edge-start ──────────────────────────────────────────────── */}
+          {phase === 'edge-start' && (
+            <div className="p-10 text-center min-h-[320px] flex flex-col items-center justify-center">
+              {edgeChecking && (
+                <>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
+                    className="w-16 h-16 rounded-full border-4 border-rose-100 border-t-rose-500 mb-6"
+                  />
+                  <h2 className="text-lg font-bold text-gray-900 mb-2">Starting edge server…</h2>
+                  <p className="text-sm text-gray-500 max-w-sm">
+                    The local SQLite engine is launching on port 3101. This usually takes 2–3 seconds.
+                  </p>
+                </>
+              )}
+              {error && (
+                <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 max-w-sm text-left">
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    <AlertCircle size={16} /> Error
+                  </div>
+                  <p className="mb-3">{error}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={handleEdgeRetry}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-bold text-red-800 transition-colors"
+                    >
+                      <RefreshCw size={12} /> Retry
+                    </button>
+                    {edgeDiagnostics && (
+                      <button
+                        onClick={copyEdgeDiagnostics}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 hover:bg-red-50 rounded-lg text-xs font-bold text-red-800 transition-colors"
+                      >
+                        {diagCopied ? 'Copied!' : 'Copy diagnostic info'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={handleGoToCashier}
+                className="mt-6 inline-flex items-center gap-1.5 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <ArrowLeft size={14} /> Back to Cashier Login
+              </button>
+            </div>
+          )}
+
+          {/* ── Phase: collect-info ───────────────────────────────────────────── */}
+          {phase === 'collect-info' && (
+            <div className="p-8 min-h-[320px]">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key="collect-form"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <button
+                      onClick={handleBack}
+                      className="p-2 -ml-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                      title="Go back"
+                    >
+                      <ArrowLeft size={18} />
+                    </button>
+                    <h2 className="text-xl font-bold text-gray-900">Enter setup details</h2>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Generate a setup token from <span className="font-semibold">Admin → Printers</span> on your web dashboard.
+                  </p>
+
+                  <div className="space-y-5">
+                    {/* Backend URL */}
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                        Backend URL
+                      </label>
+                      <input
+                        type="url"
+                        value={backendUrl}
+                        onChange={e => { setBackendUrl(e.target.value); setRegisterError(null); }}
+                        placeholder="https://api.softshape.in"
+                        className="w-full h-12 px-4 rounded-xl border-2 border-gray-100 bg-gray-50 text-sm font-medium outline-none focus:border-rose-400 focus:bg-white transition-all"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">The cloud server URL where your restaurant was onboarded</p>
+                    </div>
+
+                    {/* Restaurant Code */}
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                        Restaurant Code
+                      </label>
+                      <input
+                        type="text"
+                        value={restaurantCode}
+                        onChange={e => { setRestaurantCode(e.target.value.toUpperCase()); setRegisterError(null); }}
+                        placeholder="e.g. ABCD12"
+                        maxLength={8}
+                        className="w-full h-12 px-4 rounded-xl border-2 border-gray-100 bg-gray-50 text-sm font-bold tracking-wider outline-none focus:border-rose-400 focus:bg-white transition-all uppercase"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">The 6-character code from your onboarding confirmation</p>
+                    </div>
+
+                    {/* Setup Token */}
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                        Setup Token
+                      </label>
+                      <input
+                        type="text"
+                        value={setupToken}
+                        onChange={e => {
+                          const value = e.target.value;
+                          setSetupToken(value);
+                          setRegisterError(null);
+                          if (value.trim() && !restaurantCode.trim()) {
+                            const code = extractRestaurantCodeFromToken(value);
+                            if (code) setRestaurantCode(String(code).toUpperCase());
+                          }
+                        }}
+                        placeholder="Paste the token from Admin → Printers"
+                        className="w-full h-12 px-4 rounded-xl border-2 border-gray-100 bg-gray-50 text-sm font-mono outline-none focus:border-rose-400 focus:bg-white transition-all"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">Valid for 15 minutes after generation</p>
+                    </div>
+                  </div>
+
+                  {registerError && (
+                    <div className="mt-5 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2">
+                      <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                      <span>{registerError}</span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="mt-7 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleBack}
+                        className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        <ArrowLeft size={14} /> Back
+                      </button>
+                      {/* "Set up offline" button — DEPRECATED (QuickOnboarding retired) */}
+                    </div>
+                    <button
+                      onClick={handleRegister}
+                      disabled={registering || !backendUrl.trim() || !restaurantCode.trim() || !setupToken.trim()}
+                      className="flex items-center gap-2 px-6 py-3 bg-rose-500 text-white rounded-xl font-bold text-sm hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-rose-100 active:scale-95"
+                    >
+                      {registering ? <Loader2 size={18} className="animate-spin" /> : <Link2 size={18} />}
+                      {registering ? 'Linking…' : 'Link Restaurant'}
+                    </button>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* ── Phase: register ───────────────────────────────────────────────── */}
+          {phase === 'register' && (
+            <div className="p-10 text-center min-h-[320px] flex flex-col items-center justify-center">
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+                className="w-16 h-16 rounded-full bg-rose-100 flex items-center justify-center mb-6"
+              >
+                <Cloud size={28} className="text-rose-500" />
+              </motion.div>
+              <h2 className="text-lg font-bold text-gray-900 mb-2">Registering with cloud…</h2>
+              <p className="text-sm text-gray-500 max-w-sm">
+                Verifying setup token and linking this device to your restaurant on the cloud backend.
+              </p>
+              <button
+                onClick={handleBack}
+                className="mt-6 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <ArrowLeft size={14} /> Go back
+              </button>
+            </div>
+          )}
+
+          {/* ── Phase: config-sync ────────────────────────────────────────────── */}
+          {phase === 'config-sync' && (
+            <div className="p-8 min-h-[320px]">
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Downloading restaurant data</h2>
+                  {restaurantName && (
+                    <p className="text-sm font-medium text-rose-600">{restaurantName}</p>
+                  )}
+                </div>
+                <button
+                  onClick={handleBack}
+                  className="shrink-0 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Go back to change setup token"
+                >
+                  <ArrowLeft size={14} /> Back
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-6">
+                Copying your menu, tables, staff, and settings from cloud to this device's local database.
+              </p>
+
+              {/* Config checklist */}
+              <div className="space-y-3 mb-6">
+                {configChecklist.map((item, idx) => {
+                  const Icon = item.icon;
+                  return (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                        item.done ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                        item.done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
+                      }`}>
+                        {item.done ? <CheckCircle2 size={16} /> : configSyncing ? <Loader2 size={16} className="animate-spin" /> : <Icon size={16} />}
+                      </div>
+                      <span className={`text-sm font-medium ${item.done ? 'text-green-700' : 'text-gray-500'}`}>
+                        {item.label}
+                      </span>
+                      {item.done && (
+                        <span className="ml-auto text-xs font-bold text-green-600">Done</span>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {/* Stats */}
+              {(configStats.tables > 0 || configStats.menuItems > 0) && (
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  <div className="text-center p-3 bg-rose-50 rounded-xl">
+                    <div className="text-2xl font-black text-rose-600">{configStats.tables}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-rose-400">Tables</div>
+                  </div>
+                  <div className="text-center p-3 bg-orange-50 rounded-xl">
+                    <div className="text-2xl font-black text-orange-600">{configStats.menuItems}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Menu Items</div>
+                  </div>
+                  <div className="text-center p-3 bg-blue-50 rounded-xl">
+                    <div className="text-2xl font-black text-blue-600">{configRowsLoaded}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-blue-400">Total Rows</div>
+                  </div>
+                </div>
+              )}
+
+              {configError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p>{configError}</p>
+                    <div className="mt-2 flex items-center gap-4">
+                      <button
+                        onClick={handleRetrySync}
+                        className="flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-800"
+                      >
+                        <RefreshCw size={12} /> Retry download
+                      </button>
+                      <button
+                        onClick={handleBack}
+                        className="flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-700"
+                      >
+                        <ArrowLeft size={12} /> Change token
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {verificationWarning && !configSyncing && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm text-amber-800">
+                  <div className="flex items-start gap-2 mb-3">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-600" />
+                    <div className="flex-1">
+                      <p className="font-bold mb-1">Some data may be incomplete</p>
+                      <p className="text-xs text-amber-700 mb-2">
+                        Your restaurant data has been downloaded, but a few items didn't sync completely.
+                        You can still start billing — the missing items will sync automatically in the background.
+                      </p>
+                      <div className="text-[11px] font-mono text-amber-600 bg-amber-100 rounded-lg p-2 mb-3 max-h-24 overflow-y-auto">
+                        {verificationWarning}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleProceedWithWarning}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg font-bold text-xs hover:bg-amber-600 transition-all shadow-sm active:scale-95"
+                    >
+                      <CheckCircle2 size={14} /> Proceed with this data
+                    </button>
+                    <button
+                      onClick={handleRetrySync}
+                      className="flex items-center gap-1 text-xs font-bold text-amber-700 hover:text-amber-900"
+                    >
+                      <RefreshCw size={12} /> Retry download
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {configSyncing && (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 size={16} className="animate-spin text-rose-500" />
+                  Syncing from cloud…
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Phase: ready ──────────────────────────────────────────────────── */}
+          {phase === 'ready' && (
+            <div className="p-10 text-center min-h-[320px] flex flex-col items-center justify-center">
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                className="w-20 h-20 rounded-full bg-green-500 flex items-center justify-center mb-6 shadow-lg shadow-green-200"
+              >
+                <CheckCircle2 size={40} className="text-white" />
+              </motion.div>
+
+              <h2 className="text-2xl font-black text-gray-900 mb-1">Ready to bill!</h2>
+              {restaurantName && (
+                <p className="text-base font-bold text-rose-600 mb-2">{restaurantName}</p>
+              )}
+              <p className="text-sm text-gray-500 max-w-sm mb-6">
+                Your restaurant data is synced to this device. You can start billing immediately —
+                even without internet. Orders will sync to the cloud automatically.
+              </p>
+
+              {/* Quick stats */}
+              <div className="grid grid-cols-3 gap-3 w-full max-w-sm mb-8">
+                <div className="text-center p-3 bg-gray-50 rounded-xl">
+                  <div className="text-xl font-black text-gray-900">{configStats.tables}</div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Tables</div>
+                </div>
+                <div className="text-center p-3 bg-gray-50 rounded-xl">
+                  <div className="text-xl font-black text-gray-900">{configStats.menuItems}</div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Items</div>
+                </div>
+                <div className="text-center p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center justify-center gap-1">
+                    <Wifi size={14} className="text-green-500" />
+                  </div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mt-1">Offline Ready</div>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-center gap-3">
+                <button
+                  onClick={handleGoToCashier}
+                  className="flex items-center gap-2 px-8 py-4 bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-wider hover:bg-rose-600 transition-all shadow-xl shadow-rose-100 active:scale-95"
+                >
+                  Go to Cashier Login
+                  <ArrowRight size={18} />
+                </button>
+                <button
+                  onClick={handleBack}
+                  className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <ArrowLeft size={14} /> Back to sync
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Footer ──────────────────────────────────────────────────────────── */}
+        <div className="mt-6 flex items-center justify-between px-2">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <ArrowLeft size={14} /> Back to portal
+          </button>
+
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <div className={`w-2 h-2 rounded-full ${edgeOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="font-medium">
+              {edgeOnline ? 'Edge server online' : edgeChecking ? 'Edge starting…' : 'Edge offline'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

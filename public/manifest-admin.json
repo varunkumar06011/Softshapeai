@@ -1,0 +1,19 @@
+{
+  "name": "Softshape Admin",
+  "short_name": "Admin",
+  "description": "Softshape POS — Admin Dashboard (Offline-ready)",
+  "start_url": "/admin/dashboard",
+  "scope": "/admin",
+  "display": "standalone",
+  "background_color": "#FFF5F5",
+  "theme_color": "#E53935",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "192x192 512x512",
+      "type": "image/x-icon",
+      "purpose": "any maskable"
+    }
+  ]
+}

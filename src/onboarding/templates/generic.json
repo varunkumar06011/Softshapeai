@@ -1,0 +1,16 @@
+{
+  "id": "generic",
+  "name": "Generic / Custom",
+  "description": "Minimal starter menu — one category with placeholder items. Edit after onboarding.",
+  "categories": [
+    {
+      "name": "Menu Items",
+      "sortOrder": 1,
+      "items": [
+        { "name": "Item 1", "basePrice": 100, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Item 2", "basePrice": 150, "isVeg": true, "menuType": "FOOD" },
+        { "name": "Item 3", "basePrice": 200, "isVeg": false, "menuType": "FOOD" }
+      ]
+    }
+  ]
+}

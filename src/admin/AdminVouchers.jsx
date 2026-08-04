@@ -1,0 +1,389 @@
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Wallet,
+  Search,
+  Loader2,
+  Check,
+  X,
+  Filter,
+  Download,
+  Plus,
+} from 'lucide-react';
+import { apiFetch } from '../services/apiConfig';
+
+export default function AdminVouchers() {
+  const today = new Date().toISOString().split('T')[0];
+  const [vouchers, setVouchers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    startDate: today,
+    endDate: today,
+    status: '',
+    type: '',
+  });
+  const [actionLoading, setActionLoading] = useState({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ paidToName: '', paidToType: 'MISCELLANEOUS', amount: '', narration: '', voucherDate: today });
+  const [creating, setCreating] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  const loadVouchers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('startDate', filters.startDate || today);
+      params.set('endDate', filters.endDate || today);
+      if (filters.status) params.set('status', filters.status);
+      if (filters.type) {
+        if (filters.type === 'STAFF') params.set('paidToType', 'STAFF');
+        else params.set('category', filters.type);
+      }
+      params.set('limit', '500');
+      const data = await apiFetch(`/api/vouchers?${params.toString()}`);
+      setVouchers(data || []);
+    } catch (err) {
+      console.error('[AdminVouchers] Load failed:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters, today]);
+
+  useEffect(() => {
+    loadVouchers();
+  }, [loadVouchers]);
+
+  const handleAction = async (id, action) => {
+    setActionLoading((prev) => ({ ...prev, [id]: true }));
+    setActionError('');
+    try {
+      await apiFetch(`/api/vouchers/${id}/${action}`, { method: 'POST' });
+      loadVouchers();
+    } catch (err) {
+      console.error(`[AdminVouchers] ${action} failed:`, err);
+      setActionError(err.message || `${action} failed`);
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const handleExport = () => {
+    const headers = ['Voucher No', 'Date', 'Paid To', 'Type', 'Category', 'Amount', 'Narration', 'Approved By', 'Status'];
+    const rows = vouchers.map((v) => [
+      v.voucherNo,
+      v.voucherDate,
+      v.paidToName,
+      v.paidToType,
+      v.category || '',
+      Number(v.amount).toFixed(2),
+      v.narration || '',
+      v.approvedByName || v.approvedBy?.name || '',
+      v.status,
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vouchers_${filters.startDate || 'all'}_to_${filters.endDate || 'all'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const totalAmount = vouchers
+    .filter((v) => v.status !== 'VOIDED')
+    .reduce((sum, v) => sum + Number(v.amount), 0);
+
+  const handleCreate = async () => {
+    if (!createForm.paidToName.trim() || !createForm.amount) return;
+    setCreating(true);
+    try {
+      await apiFetch('/api/vouchers', {
+        method: 'POST',
+        body: JSON.stringify({
+          paidToName: createForm.paidToName.trim(),
+          paidToType: createForm.paidToType,
+          amount: parseFloat(createForm.amount),
+          narration: createForm.narration.trim(),
+          voucherDate: createForm.voucherDate,
+          category: createForm.paidToType,
+        }),
+      });
+      setCreateForm({ paidToName: '', paidToType: 'MISCELLANEOUS', amount: '', narration: '', voucherDate: today });
+      setShowCreateModal(false);
+      loadVouchers();
+    } catch (err) {
+      console.error('[AdminVouchers] Create failed:', err);
+      alert(err.message || 'Failed to create expenditure entry');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {actionError && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+          <span className="text-xs font-bold text-red-700">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-red-400 hover:text-red-600">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+          <Wallet size={22} className="text-[#E53935]" />
+          Expenditure
+        </h2>
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-2 bg-gray-100 text-gray-700 rounded-lg px-3 py-2 text-xs font-black uppercase hover:bg-gray-200"
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl border border-gray-200 p-3">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Entries</p>
+          <p className="text-xl font-black text-gray-900">{vouchers.length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-3">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Amount</p>
+          <p className="text-xl font-black text-[#E53935]">₹{totalAmount.toLocaleString()}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-3">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Voided</p>
+          <p className="text-xl font-black text-red-600">{vouchers.filter((v) => v.status === 'VOIDED').length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-center justify-center">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 text-xs font-black uppercase text-[#E53935] hover:text-[#C62828]"
+          >
+            <Plus size={16} /> New Entry
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3 flex-wrap">
+        <Filter size={16} className="text-gray-400" />
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-gray-500">From</span>
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))}
+            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+          />
+          <span className="text-xs font-bold text-gray-500">to</span>
+          <input
+            type="date"
+            value={filters.endDate}
+            min={filters.startDate}
+            onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))}
+            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+          />
+        </div>
+        <select
+          value={filters.status}
+          onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+          className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+        >
+          <option value="">All Status</option>
+          <option value="UNVERIFIED">Unverified</option>
+          <option value="VERIFIED">Verified</option>
+          <option value="VOIDED">Voided</option>
+        </select>
+        <select
+          value={filters.type}
+          onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+          className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+        >
+          <option value="">All Types</option>
+          <option value="STAFF">Staff</option>
+          <option value="MISCELLANEOUS">Miscellaneous</option>
+          <option value="MAINTENANCE">Maintenance</option>
+          <option value="KITCHEN">Kitchen</option>
+          <option value="ENTERTAINMENT">Entertainment</option>
+          <option value="OTHER">Other</option>
+        </select>
+        {(filters.startDate !== today || filters.endDate !== today || filters.status || filters.type) && (
+          <button
+            onClick={() => setFilters({ startDate: today, endDate: today, status: '', type: '' })}
+            className="text-xs font-bold text-gray-400 hover:text-gray-700"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={24} className="animate-spin text-gray-400" />
+          </div>
+        ) : vouchers.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-sm font-bold text-gray-400">No vouchers found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Voucher No</th>
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Date</th>
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Paid To</th>
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Type</th>
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Category</th>
+                  <th className="text-right px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Amount</th>
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Narration</th>
+                  <th className="text-left px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Approved By</th>
+                  <th className="text-center px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Status</th>
+                  <th className="text-center px-4 py-3 text-[10px] font-black uppercase text-gray-400 tracking-widest">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {vouchers.map((v) => (
+                  <tr key={v.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-black text-gray-900">#{v.voucherNo}</td>
+                    <td className="px-4 py-3 font-bold text-gray-700">{v.voucherDate}</td>
+                    <td className="px-4 py-3 font-bold text-gray-900">{v.paidToName}</td>
+                    <td className="px-4 py-3 font-bold text-gray-500 text-xs">{v.paidToType}</td>
+                    <td className="px-4 py-3 font-bold text-gray-500 text-xs">{v.category || '—'}</td>
+                    <td className="px-4 py-3 text-right font-black text-[#E53935]">₹{Number(v.amount).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[200px] truncate">{v.narration || '—'}</td>
+                    <td className="px-4 py-3 text-xs font-bold text-gray-600">{v.approvedByName || v.approvedBy?.name || '—'}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${
+                        v.status === 'VERIFIED' ? 'bg-green-100 text-green-700' :
+                        v.status === 'VOIDED' ? 'bg-red-100 text-red-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {v.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1">
+                        {v.status === 'UNVERIFIED' && (
+                          <button
+                            onClick={() => handleAction(v.id, 'verify')}
+                            disabled={actionLoading[v.id]}
+                            title="Verify"
+                            className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50"
+                          >
+                            {actionLoading[v.id] ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                          </button>
+                        )}
+                        {v.status !== 'VOIDED' && (
+                          <button
+                            onClick={() => handleAction(v.id, 'void')}
+                            disabled={actionLoading[v.id]}
+                            title="Void"
+                            className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Create Expenditure Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-gray-900">New Expenditure</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-700">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-500">Paid To</label>
+                <input
+                  type="text"
+                  value={createForm.paidToName}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, paidToName: e.target.value }))}
+                  placeholder="Recipient name"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Category</label>
+                <select
+                  value={createForm.paidToType}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, paidToType: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                >
+                  <option value="MISCELLANEOUS">Miscellaneous</option>
+                  <option value="MAINTENANCE">Maintenance</option>
+                  <option value="KITCHEN">Kitchen</option>
+                  <option value="ENTERTAINMENT">Entertainment</option>
+                  <option value="STAFF">Staff</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Amount (₹)</label>
+                <input
+                  type="number"
+                  value={createForm.amount}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, amount: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Date</label>
+                <input
+                  type="date"
+                  value={createForm.voucherDate}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, voucherDate: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Narration</label>
+                <textarea
+                  value={createForm.narration}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, narration: e.target.value }))}
+                  placeholder="Optional notes"
+                  rows={2}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#E53935]"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={creating || !createForm.paidToName.trim() || !createForm.amount}
+                className="px-4 py-2 rounded-lg bg-[#E53935] text-white text-sm font-black hover:bg-[#C62828] disabled:opacity-50"
+              >
+                {creating ? <Loader2 size={16} className="animate-spin" /> : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
