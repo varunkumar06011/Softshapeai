@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB ESC/POS printer device filter -->
+    <!-- Common vendor/product IDs for thermal printers -->
+    <usb-device vendor-id="1137" product-id="85" />   <!-- Epson -->
+    <usb-device vendor-id="1046" product-id="20497" /> <!-- Star Micronics -->
+    <usb-device vendor-id="26528" product-id="8455" /> <!-- Bixolon -->
+    <usb-device vendor-id="6790" product-id="30084" /> <!-- Xprinter -->
+</resources>
