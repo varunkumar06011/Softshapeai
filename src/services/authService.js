@@ -135,7 +135,7 @@ export const authService = {
       const edgeApiKey = getStoredEdgeApiKey();
       const runtimeToken = getStoredEdgeRuntimeToken();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(`${EDGE_URL}/api/edge/auth/pin`, {
         method: 'POST',
         headers: {
