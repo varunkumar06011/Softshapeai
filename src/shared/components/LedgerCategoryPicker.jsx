@@ -14,10 +14,18 @@ export default function LedgerCategoryPicker({ entryType = 'EXPENSE', value, onC
   const loadCategories = useCallback(async () => {
     setLoading(true);
     try {
-      const edgeLocal = isEdgeLocalAuth();
-      const data = edgeLocal
-        ? await edgeFetch(`/api/edge/ledger-categories?entryType=${entryType}`)
-        : await apiFetch(`/api/ledger-categories?entryType=${entryType}`);
+      const edgeLocal = isEdgeLocalAuth() || await isEdgeAvailable();
+      let data;
+      if (edgeLocal) {
+        try {
+          data = await edgeFetch(`/api/edge/ledger-categories?entryType=${entryType}`);
+        } catch (edgeErr) {
+          if (isEdgeLocalAuth()) throw edgeErr;
+          data = await apiFetch(`/api/ledger-categories?entryType=${entryType}`);
+        }
+      } else {
+        data = await apiFetch(`/api/ledger-categories?entryType=${entryType}`);
+      }
       setCategories(data || []);
     } catch (err) {
       console.error('[LedgerCategoryPicker] Load failed:', err);
@@ -61,17 +69,28 @@ export default function LedgerCategoryPicker({ entryType = 'EXPENSE', value, onC
     if (!trimmed) return;
     setCreating(true);
     try {
-      const edgeLocal = isEdgeLocalAuth();
-      const created = edgeLocal
-        ? await edgeFetch('/api/edge/ledger-categories', {
+      const edgeLocal = isEdgeLocalAuth() || await isEdgeAvailable();
+      let created;
+      if (edgeLocal) {
+        try {
+          created = await edgeFetch('/api/edge/ledger-categories', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: trimmed, entryType }),
-          })
-        : await apiFetch('/api/ledger-categories', {
+          });
+        } catch (edgeErr) {
+          if (isEdgeLocalAuth()) throw edgeErr;
+          created = await apiFetch('/api/ledger-categories', {
             method: 'POST',
             body: JSON.stringify({ name: trimmed, entryType }),
           });
+        }
+      } else {
+        created = await apiFetch('/api/ledger-categories', {
+          method: 'POST',
+          body: JSON.stringify({ name: trimmed, entryType }),
+        });
+      }
       setCategories((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       handleSelect(created);
     } catch (err) {

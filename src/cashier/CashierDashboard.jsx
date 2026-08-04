@@ -1226,14 +1226,17 @@ const CashierDashboard = ({ onLogout }) => {
       setExpenditureSummary({ totalAmount: 0, count: 0 });
       return;
     }
-    if (isEdgeLocalAuth()) {
+    if (isEdgeLocalAuth() || await isEdgeAvailable()) {
       try {
         const summary = await edgeFetch(`/api/edge/expenditures/today-summary?date=${dateParam}`);
         setExpenditureSummary(summary || { totalAmount: 0, count: 0 });
-      } catch {
-        setExpenditureSummary({ totalAmount: 0, count: 0 });
+        return;
+      } catch (err) {
+        if (isEdgeLocalAuth()) {
+          setExpenditureSummary({ totalAmount: 0, count: 0 });
+          return;
+        }
       }
-      return;
     }
     try {
       const summary = await apiFetch(`/api/expenditures/today-summary?date=${dateParam}`);
@@ -2442,8 +2445,8 @@ const CashierDashboard = ({ onLogout }) => {
   // Uses GET /api/orders/table/:tableId which returns the active order directly.
   const fetchFreshOrderData = async (tableBackendId) => {
     try {
-      // For edge-local (PIN) auth, use edge server — cloud will reject the fake token
-      if (isEdgeLocalAuth()) {
+      // Edge-first: use edge server, fall back to cloud if edge unavailable
+      if (isEdgeLocalAuth() || await isEdgeAvailable()) {
         try {
           const allTables = await edgeFetch('/api/edge/tables');
           if (Array.isArray(allTables)) {
@@ -2879,8 +2882,9 @@ const CashierDashboard = ({ onLogout }) => {
       const rid = getCurrentRestaurantId();
 
       // For edge-local (PIN) auth, cloud will reject the fake token.
-      // Fetch all transactions from edge server and filter client-side.
-      if (isEdgeLocalAuth()) {
+      // Edge-first: fetch all transactions from edge server and filter client-side.
+      // Falls back to cloud if edge is unreachable.
+      if (isEdgeLocalAuth() || await isEdgeAvailable()) {
         const allTxns = await fetchTransactions(rid, 0, billFinderDate);
         const filtered = (Array.isArray(allTxns) ? allTxns : []).filter(txn => {
           let matches = true;
@@ -3180,11 +3184,20 @@ const CashierDashboard = ({ onLogout }) => {
           }));
           if (!isOffline) {
             try {
-              if (isEdgeLocalAuth()) {
-                await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
-                  method: 'PATCH',
-                  body: JSON.stringify({ discount: discountPercent }),
-                });
+              if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+                try {
+                  await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ discount: discountPercent }),
+                  });
+                } catch (edgeErr) {
+                  if (isEdgeLocalAuth()) throw edgeErr;
+                  await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                    body: JSON.stringify({ discount: discountPercent })
+                  }, { retries: 1 });
+                }
               } else {
                 await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
                   method: 'PATCH',
@@ -3836,11 +3849,20 @@ const CashierDashboard = ({ onLogout }) => {
         // so even if this PATCH fails the bill will still print with the correct discount.
         if (!selectedTable.isExtra && selectedTable.backendId) {
           try {
-            if (isEdgeLocalAuth()) {
-              await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ discount: discountPercent }),
-              });
+            if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+              try {
+                await edgeFetch(`/api/edge/admin/table/${selectedTable.backendId}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ discount: discountPercent }),
+                });
+              } catch (edgeErr) {
+                if (isEdgeLocalAuth()) throw edgeErr;
+                await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                  body: JSON.stringify({ discount: discountPercent }),
+                }, { retries: 1 });
+              }
             } else {
               await httpFetch(`${API_BASE}/api/tables/${selectedTable.backendId}`, {
                 method: 'PATCH',

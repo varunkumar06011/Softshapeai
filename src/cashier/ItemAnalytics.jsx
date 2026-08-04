@@ -158,24 +158,28 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
     try {
       const { startDate, endDate } = getDateRange();
       const outletType = outlet === 'bar' ? 'bar' : outlet === 'restaurant' ? 'restaurant' : null;
-      const edgeLocal = isEdgeLocalAuth();
+      const edgeLocal = isEdgeLocalAuth() || await isEdgeAvailable();
       const outletParam = outletType ? `&outletType=${outletType}` : '';
 
       const fetchOpts = edgeLocal
         ? { headers: { 'Content-Type': 'application/json' }, cache: 'no-store' }
         : { headers: getAuthHeaders(), cache: 'no-store' };
 
-      // In edge-local (PIN) auth mode, fetch from the edge server's local SQLite
-      // so items appear instantly after settlement — no waiting for cloud sync.
+      // Edge-first: fetch from the edge server's local SQLite so items appear
+      // instantly after settlement — no waiting for cloud sync.
       const useEdge = edgeLocal;
       const fetchItemsSold = async (extraParams = '') => {
         if (useEdge) {
-          const qs = new URLSearchParams();
-          qs.set('startDate', startDate);
-          qs.set('endDate', endDate);
-          if (outletType) qs.set('outletType', outletType);
-          if (extraParams) qs.set('sectionName', extraParams);
-          return await edgeFetch(`/api/edge/analytics/items-sold?${qs}`);
+          try {
+            const qs = new URLSearchParams();
+            qs.set('startDate', startDate);
+            qs.set('endDate', endDate);
+            if (outletType) qs.set('outletType', outletType);
+            if (extraParams) qs.set('sectionName', extraParams);
+            return await edgeFetch(`/api/edge/analytics/items-sold?${qs}`);
+          } catch (edgeErr) {
+            if (isEdgeLocalAuth()) throw edgeErr;
+          }
         }
         const url = `${API_BASE}/api/analytics/items-sold?restaurantId=${getCurrentRestaurantId()}&startDate=${startDate}&endDate=${endDate}${outletParam}${extraParams ? `&sectionName=${encodeURIComponent(extraParams)}` : ''}`;
         const response = await fetch(url, fetchOpts);

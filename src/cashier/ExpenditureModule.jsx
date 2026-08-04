@@ -56,13 +56,23 @@ export default function ExpenditureModule() {
   const loadData = useCallback(async (date = summaryDate) => {
     setError('');
     const errors = [];
-    const edgeLocal = isEdgeLocalAuth();
+    const edgeLocal = isEdgeLocalAuth() || await isEdgeAvailable();
 
     const load = async (label, url, setter) => {
       try {
         const data = edgeLocal ? await edgeFetch(url) : await apiFetch(url, { timeout: 60000 });
         setter(data);
       } catch (err) {
+        if (edgeLocal && !isEdgeLocalAuth()) {
+          try {
+            const cloudUrl = url.replace('/api/edge/expenditures', '/api/expenditures');
+            const data = await apiFetch(cloudUrl, { timeout: 60000 });
+            setter(data);
+            return;
+          } catch (cloudErr) {
+            console.error(`[ExpenditureModule] ${label} cloud fallback failed:`, cloudErr);
+          }
+        }
         console.error(`[ExpenditureModule] ${label} failed:`, err);
         errors.push(`${label}: ${err.message || 'failed'}`);
       }
@@ -197,15 +207,22 @@ export default function ExpenditureModule() {
         expenditureDate: summaryDate,
       };
 
-      const edgeLocal = isEdgeLocalAuth();
+      const useEdge = isEdgeLocalAuth() || await isEdgeAvailable();
       let result;
-      if (edgeLocal) {
-        result = await edgeFetch(`/api/edge/expenditures`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        // Edge server already prints on save — no separate print call needed
+      if (useEdge) {
+        try {
+          result = await edgeFetch(`/api/edge/expenditures`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+        } catch (edgeErr) {
+          if (isEdgeLocalAuth()) throw edgeErr;
+          result = await apiFetch('/api/expenditures', {
+            method: 'POST',
+            body: JSON.stringify(body),
+          });
+        }
       } else {
         result = await apiFetch('/api/expenditures', {
           method: 'POST',

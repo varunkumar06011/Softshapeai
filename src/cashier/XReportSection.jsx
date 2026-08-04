@@ -84,16 +84,21 @@ export default function XReportSection() {
     setLoading(true);
     setError(null);
     try {
-      const edgeLocal = isEdgeLocalAuth();
+      const edgeLocal = isEdgeLocalAuth() || await isEdgeAvailable();
       let data, exps;
       if (edgeLocal) {
-        const [reportData, expData] = await Promise.all([
-          edgeFetch(`/api/edge/x-report?date=${date}`),
-          edgeFetch(`/api/edge/expenditures?date=${date}`),
-        ]);
-        data = reportData;
-        exps = expData;
-      } else {
+        try {
+          const [reportData, expData] = await Promise.all([
+            edgeFetch(`/api/edge/x-report?date=${date}`),
+            edgeFetch(`/api/edge/expenditures?date=${date}`),
+          ]);
+          data = reportData;
+          exps = expData;
+        } catch (edgeErr) {
+          if (isEdgeLocalAuth()) throw edgeErr;
+        }
+      }
+      if (!data) {
         const [reportData, expData] = await Promise.all([
           apiFetch(`/api/xreports/${date}`, { timeout: 60000 }),
           apiFetch(`/api/expenditures?date=${date}&outletId=${restaurantId}`, { timeout: 60000 }),
@@ -131,11 +136,16 @@ export default function XReportSection() {
 
   const handleRefreshTotalSales = useCallback(async () => {
     try {
-      const edgeLocal = isEdgeLocalAuth();
+      const edgeLocal = isEdgeLocalAuth() || await isEdgeAvailable();
       let data;
       if (edgeLocal) {
-        data = await edgeFetch(`/api/edge/x-report?date=${reportDate}`);
-      } else {
+        try {
+          data = await edgeFetch(`/api/edge/x-report?date=${reportDate}`);
+        } catch (edgeErr) {
+          if (isEdgeLocalAuth()) throw edgeErr;
+        }
+      }
+      if (!data) {
         data = await apiFetch(`/api/xreports/${reportDate}/refresh-sales`);
       }
       const freshCardAmount = Number(data.cardAmount) || 0;
@@ -215,14 +225,21 @@ export default function XReportSection() {
         payload.cardAmount = Number(report.cardAmount || 0);
       }
 
-      if (isEdgeLocalAuth()) {
-        // Edge-local (PIN) users: persist overrides to the edge server's local
-        // SQLite via edge_config so card amount + denominations survive reload.
-        await edgeFetch('/api/edge/x-report', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+      const useEdge = isEdgeLocalAuth() || await isEdgeAvailable();
+      if (useEdge) {
+        try {
+          await edgeFetch('/api/edge/x-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        } catch (edgeErr) {
+          if (isEdgeLocalAuth()) throw edgeErr;
+          await apiFetch('/api/xreports', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+        }
       } else {
         await apiFetch('/api/xreports', {
           method: 'POST',
@@ -320,9 +337,9 @@ export default function XReportSection() {
     const ok = await handleSave();
     if (!ok) return;
 
-    const edgeLocal = isEdgeLocalAuth();
+    const edgeLocal = isEdgeLocalAuth() || await isEdgeAvailable();
 
-    // For edge-local (PIN) users, route print through edge server's durable print queue.
+    // For edge-available users, route print through edge server's durable print queue.
     // The edge server builds ESC/POS via buildXReport() and creates a print job that
     // gets dispatched through the same pipeline as KOTs and bills — instant, with retry.
     if (edgeLocal) {
@@ -361,8 +378,11 @@ export default function XReportSection() {
         }
         return;
       } catch (err) {
-        setError('Print failed: ' + err.message);
-        return;
+        if (isEdgeLocalAuth()) {
+          setError('Print failed: ' + err.message);
+          return;
+        }
+        // Edge failed and not edge-local — fall through to cloud print path
       }
     }
 
