@@ -14,7 +14,7 @@ const EDGE_RUNTIME_TOKEN_STORAGE_KEY = "softshape_edge_runtime_token";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 const EDGE_DISCOVERED_URL_STORAGE_KEY = "softshape_edge_url_discovered";
 
-const DEFAULT_EDGE_URL = 'http://127.0.0.1:3101';
+const DEFAULT_EDGE_URL = 'http://localhost:3101';
 const EDGE_CHECK_TIMEOUT_MS = 3000;
 const EDGE_CHECK_INTERVAL_MS = 30_000;
 const LAN_DISCOVERY_TIMEOUT_MS = 1500;

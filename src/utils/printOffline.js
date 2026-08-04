@@ -308,7 +308,7 @@ async function discoverPrintAgentUrls() {
   } catch { /* ignore */ }
 
   // 4. Edge server on localhost (port 3101) — LAN print path via WebSocket
-  add('http://127.0.0.1:3101');
+  add('http://localhost:3101');
 
   _cachedAgentUrls = urls;
   _lastDiscoveryTime = Date.now();
@@ -386,7 +386,7 @@ async function tryPrintAgentUrls(body, jobType) {
     console.log(`[printOffline] ${queued ? 'Queued' : 'Printed'} [${jobType}] via Print Agent at ${workingUrl}`);
     try {
       localStorage.setItem('last_working_print_agent_url', workingUrl);
-      if (workingUrl !== 'http://127.0.0.1:3101') {
+      if (workingUrl !== 'http://localhost:3101') {
         await setPrintAgentUrl(workingUrl);
       }
     } catch { /* ignore */ }
