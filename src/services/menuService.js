@@ -210,24 +210,32 @@ async function fetchPosViewMenu(restaurantId = getCurrentRestaurantId()) {
   return mapPosViewToMenuItems(categories);
 }
 
-/** Offline-first menu fetch: load from IndexedDB first, then sync in background */
-export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId()) {
+/** Offline-first menu fetch: load from IndexedDB first, then sync in background.
+ *  Pass { bypassCache: true } to skip the IndexedDB fast-path — used when a
+ *  config-change notification arrives so the refresh returns fresh edge/cloud
+ *  data instead of stale cached items (e.g. newly added today specials). */
+export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId(), options = {}) {
+  const { bypassCache = false } = options;
   if (!restaurantId || restaurantId === 'null' || restaurantId === 'undefined') {
     console.warn("[MenuService] No valid restaurantId provided, skipping backend fetch.");
     return readStoredMenu();
   }
 
   // ── Path 0: IndexedDB cache (instant render) ───────────────────────────────
-  try {
-    const cachedMenu = await getCachedMenu(restaurantId);
-    if (cachedMenu && cachedMenu.length > 0) {
-      console.log(`[MenuService] Loaded ${cachedMenu.length} items from IndexedDB cache`);
-      // Trigger background sync without blocking UI
-      syncMenuInBackground(restaurantId);
-      return cachedMenu;
+  // Skipped when bypassCache is set (e.g. after a config.changed event) so we
+  // always read fresh data from the edge server / cloud.
+  if (!bypassCache) {
+    try {
+      const cachedMenu = await getCachedMenu(restaurantId);
+      if (cachedMenu && cachedMenu.length > 0) {
+        console.log(`[MenuService] Loaded ${cachedMenu.length} items from IndexedDB cache`);
+        // Trigger background sync without blocking UI
+        syncMenuInBackground(restaurantId);
+        return cachedMenu;
+      }
+    } catch (err) {
+      console.warn("[MenuService] IndexedDB cache read failed:", err.message);
     }
-  } catch (err) {
-    console.warn("[MenuService] IndexedDB cache read failed:", err.message);
   }
 
   // ── Path 1: Edge server (local SQLite) — primary path ──────────────────────

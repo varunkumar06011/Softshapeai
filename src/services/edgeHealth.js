@@ -1057,6 +1057,14 @@ export function startRuntimeEventBus() {
                 try { cb({ type: 'config_sync.progress', data: msg.data }); } catch { /* ignore */ }
               }
               break;
+            case 'config.changed':
+              // Edge server applied a config change (menu item, category, etc.)
+              // to local SQLite. Notify listeners so they can refresh their
+              // menu cache immediately instead of waiting for the next poll.
+              for (const cb of _runtimeEventListeners) {
+                try { cb({ type: 'config.changed', data: msg.data }); } catch { /* ignore */ }
+              }
+              break;
           }
         }
       } catch { /* ignore malformed messages */ }

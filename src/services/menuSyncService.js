@@ -265,13 +265,14 @@ export function useGlobalMenuSync() {
     dispatchMenuEvent(nextMenu);
   }, [menu]);
 
-  const refreshMenu = useCallback(async () => {
+  const refreshMenu = useCallback(async (opts = {}) => {
+    const { bypassCache = false } = opts;
     _isLoading = true;
     _loadError = null;
     notifySubscribers();
 
     try {
-      const apiItems = await fetchMenuFromBackend();
+      const apiItems = await fetchMenuFromBackend(getCurrentRestaurantId(), { bypassCache });
 
       // ── Empty-response protection on refresh too
       if (apiItems.length === 0 && globalMenu && globalMenu.length > 0) {
@@ -395,6 +396,35 @@ export function useGlobalMenuSync() {
 
     return () => {
       window.removeEventListener("menu-item-updated", handleMenuUpdate);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [refreshMenu]);
+
+  // ── Edge server config-change listener ─────────────────────────────────────
+  // When the edge server applies a menu-related config change (e.g. admin adds
+  // a today special on the cloud → edge socket sync updates local SQLite), it
+  // emits a config.changed runtime event. We trigger a cache-bypassing refresh
+  // so the cashier/captain see the new special immediately. This complements
+  // the cloud socket `menu-item-updated` path, which edge-local clients (whose
+  // Socket.IO targets the edge server, not the cloud) never receive.
+  useEffect(() => {
+    let debounceTimer = null;
+    const unsubscribe = onRuntimeStateChange((event) => {
+      if (event?.type !== 'config.changed') return;
+      const tables = event?.data?.tables;
+      if (!Array.isArray(tables) || tables.length === 0) return;
+      // Bypass the IndexedDB cache so we read the freshly-updated edge SQLite
+      // instead of returning stale cached items.
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        console.log('[MenuSync] config.changed received — refreshing menu (bypassCache)', tables);
+        refreshMenu({ bypassCache: true }).catch((err) => {
+          console.error('[MenuSync] Failed to refresh menu after config.changed:', err);
+        });
+      }, 500);
+    });
+    return () => {
+      unsubscribe();
       if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, [refreshMenu]);
