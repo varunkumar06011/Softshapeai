@@ -359,10 +359,11 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null, captainId = null) {
   const body = { items: toOrderItems(items) };
   if (requestId) body.requestId = requestId;
   if (captainName) body.captainName = captainName;
+  if (captainId) body.captainId = captainId;
   if (isExtraTable) { body.isExtraTable = true; }
   if (tableNumber) { body.tableNumber = tableNumber; }
   if (lastUpdatedAt) { body.lastUpdatedAt = lastUpdatedAt; }
@@ -386,6 +387,7 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         tableId,
         items: body.items,
         captainName,
+        captainId: captainId || undefined,
         requestId: requestId || generateRequestId(),
         orderByRole: authService.getUserRole?.() || undefined,
         preReservedKotNumber: typeof preReservedKotNumber === 'number' && preReservedKotNumber > 0 ? preReservedKotNumber : null,
