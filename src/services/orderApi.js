@@ -108,10 +108,11 @@ export async function reserveKotNumber(requestId = null) {
   }
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
+  if (captainId) orderData.captainId = captainId;
   if (isExtraTable) { orderData.isExtraTable = true; }
   if (sectionTag) { orderData.sectionTag = sectionTag; }
   if (platform) { orderData.platform = platform; }
@@ -132,6 +133,8 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         tableId,
         items: orderData.items,
         captainName,
+        captainId: captainId || undefined,
+        createdByUserId: authService.getUserId?.() || undefined,
         requestId: requestId || generateRequestId(),
         platform,
         orderByRole: authService.getUserRole?.() || undefined,
@@ -818,6 +821,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
         requestId: settleRequestId,
         removedItemIds: removedItemIds || [],
         removedBy,
+        captainId: extraSettleData.captainId || undefined,
         ...extraSettleData,
       };
       console.log('[settleOrder] Sending to edge:', { orderId, requestId: settleRequestId, paymentMethod: extraSettleData.paymentMethod });
