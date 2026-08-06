@@ -529,7 +529,7 @@ function IngredientAvatar({ name }) {
 
 
 
-export function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, dashboardScope }) {
+export function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, dashboardScope, selectedDate, onDateChange }) {
 
   const { tables } = useTableSync();
   const { restaurant } = useAuth();
@@ -547,6 +547,8 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
   // DataDashboard widget 1 but sourced from /api/expenditures/today-summary
   // instead of the cashier's local SQLite expenditure records.
   const [expenditureSummary, setExpenditureSummary] = useState({ totalAmount: 0, count: 0 });
+
+  const activeDate = selectedDate || getKolkataDateString();
 
 
 
@@ -568,19 +570,17 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       try {
 
-        const now = new Date();
+        const end = new Date(`${activeDate}T00:00:00+05:30`);
 
-        const istNow = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+        const start = new Date(end);
 
-        const sevenDaysAgo = new Date(istNow);
-
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        start.setDate(start.getDate() - 6);
 
 
 
-        const startISO = sevenDaysAgo.toISOString().slice(0, 10);
+        const startISO = getKolkataDateString(start);
 
-        const endISO = istNow.toISOString().slice(0, 10);
+        const endISO = getKolkataDateString(end);
 
 
 
@@ -673,7 +673,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
     };
 
-  }, [dashboardScope, restaurant?.id]);
+  }, [dashboardScope, restaurant?.id, activeDate]);
 
 
 
@@ -735,9 +735,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       try {
 
-        const today = getKolkataDateString();
-
-        const data = await apiFetch(`/api/expenditures/today-summary?date=${today}`);
+        const data = await apiFetch(`/api/expenditures/today-summary?date=${activeDate}`);
 
         if (cancelled) return;
 
@@ -769,11 +767,24 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
     };
 
-  }, []);
+  }, [activeDate]);
 
 
 
   return <div className="space-y-4 font-sans">
+
+    <div className="flex items-center justify-between">
+      <h2 className="text-base md:text-lg font-black text-gray-900">Dashboard</h2>
+      <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+        <Calendar size={16} className="text-gray-400" />
+        <input
+          type="date"
+          value={activeDate}
+          onChange={(e) => onDateChange?.(e.target.value)}
+          className="bg-transparent text-sm font-semibold text-gray-800 outline-none"
+        />
+      </div>
+    </div>
 
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
 
@@ -858,7 +869,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
         </div>
 
         <div className="mt-4 pt-4 border-t border-gray-100">
-          <TopItemsWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+          <TopItemsWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
         </div>
 
       </div>
@@ -868,17 +879,17 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
           <StarIcon size={18} className="text-amber-500 fill-amber-500" />
           Today Specials Sold
         </h3>
-        <TodaySpecialsSoldWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+        <TodaySpecialsSoldWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
       </div>
 
     </div>
 
     {/* ── Cashier DataDashboard widgets (admin synced data) ─────────────────── */}
     {/* Widget 4: Today Special Captain Leader — /api/analytics/today-specials-by-staff */}
-    <CaptainLeaderWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+    <CaptainLeaderWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
 
     {/* Widget 5: Category Breakdown — /api/reports/categorywise-sales + itemwise-sales */}
-    <CategoryBreakdownWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+    <CategoryBreakdownWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
 
   </div>;
 
@@ -886,7 +897,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-function TopItemsWidget({ dashboardScope, restaurantId }) {
+function TopItemsWidget({ dashboardScope, restaurantId, selectedDate }) {
   const [topItems, setTopItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const socket = useSocket(restaurantId);
@@ -898,7 +909,8 @@ function TopItemsWidget({ dashboardScope, restaurantId }) {
       try {
         if (!hasDataRef.current) setLoading(true);
         const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity`, {
+        const date = selectedDate || getKolkataDateString();
+        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity&startDate=${date}&endDate=${date}`, {
           headers: { ...getAuthHeaders() },
         });
         if (!res.ok) throw new Error('Failed to fetch top items');
@@ -920,21 +932,22 @@ function TopItemsWidget({ dashboardScope, restaurantId }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [dashboardScope, restaurantId]);
+  }, [dashboardScope, restaurantId, selectedDate]);
 
   useEffect(() => {
     if (!socket) return;
     const loadTopItems = async () => {
       try {
         const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity`, {
+        const date = selectedDate || getKolkataDateString();
+        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity&startDate=${date}&endDate=${date}`, {
           headers: { ...getAuthHeaders() },
         });
         if (!res.ok) throw new Error('Failed to fetch top items');
         const data = await res.json();
         setTopItems(data.items || []);
       } catch (err) {
-        console.warn('[TopItemsWidget] Failed to load top items:', err.message);
+        console.warn('[TopItemsWidget] Failed to fetch top items:', err.message);
       }
     };
     const onOrderPaid = () => loadTopItems();
@@ -942,7 +955,7 @@ function TopItemsWidget({ dashboardScope, restaurantId }) {
     return () => {
       socket.off('order:paid', onOrderPaid);
     };
-  }, [socket, dashboardScope, restaurantId]);
+  }, [socket, dashboardScope, restaurantId, selectedDate]);
 
   if (loading) {
     return (
@@ -979,7 +992,7 @@ function TopItemsWidget({ dashboardScope, restaurantId }) {
 
 
 
-function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
+function TodaySpecialsSoldWidget({ dashboardScope, restaurantId, selectedDate }) {
   const [specials, setSpecials] = useState([]);
   const [loading, setLoading] = useState(true);
   const socket = useSocket(restaurantId);
@@ -989,7 +1002,8 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
     try {
       if (!hasDataRef.current) setLoading(true);
       const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-      const res = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${outletId}`, {
+      const date = selectedDate || getKolkataDateString();
+      const res = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${outletId}&startDate=${date}&endDate=${date}`, {
         headers: { ...getAuthHeaders() },
       });
       if (!res.ok) throw new Error('Failed to fetch today specials sold');
@@ -1001,7 +1015,7 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
     } finally {
       setLoading(false);
     }
-  }, [dashboardScope, restaurantId]);
+  }, [dashboardScope, restaurantId, selectedDate]);
 
   useEffect(() => {
     loadSpecials();
@@ -1027,7 +1041,7 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
   }
 
   if (specials.length === 0) {
-    return <p className="text-xs text-gray-400 font-bold">No specials sold today</p>;
+    return <p className="text-xs text-gray-400 font-bold">No specials sold</p>;
   }
 
   return (
@@ -1063,7 +1077,7 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
 // cashier's local data. Shows the full captain roster (including zero-sale
 // captains) so the admin sees the complete picture, not just today's winners.
 // Refreshes on socket 'order:paid' events for real-time updates.
-function CaptainLeaderWidget({ dashboardScope, restaurantId }) {
+function CaptainLeaderWidget({ dashboardScope, restaurantId, selectedDate }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1080,11 +1094,11 @@ function CaptainLeaderWidget({ dashboardScope, restaurantId }) {
     let willRetry = false;
     try {
       const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-      const today = getKolkataDateString();
+      const date = selectedDate || getKolkataDateString();
       const params = new URLSearchParams();
       if (outletId && outletId !== 'all') params.set('outletId', outletId);
-      params.set('startDate', today);
-      params.set('endDate', today);
+      params.set('startDate', date);
+      params.set('endDate', date);
       const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff?${params}`, {
         headers: { ...getAuthHeaders() },
         cache: 'no-store',
@@ -1113,7 +1127,7 @@ function CaptainLeaderWidget({ dashboardScope, restaurantId }) {
         setLoading(false);
       }
     }
-  }, [dashboardScope, restaurantId]);
+  }, [dashboardScope, restaurantId, selectedDate]);
 
   useEffect(() => {
     load();
@@ -1241,7 +1255,7 @@ const CATEGORY_COLORS = { Food: '#B71C1C', Liquor: '#E53935', Beverages: '#1565C
 const FALLBACK_COLOR = '#EF9A9A';
 const CATEGORY_TO_OUTLET_TYPE = { Food: 'food', Liquor: 'liquor', Beverages: 'beverages' };
 
-function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
+function CategoryBreakdownWidget({ dashboardScope, restaurantId, selectedDate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1254,7 +1268,7 @@ function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
   const hasDataRef = useRef(false);
 
   const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-  const today = getKolkataDateString();
+  const date = selectedDate || getKolkataDateString();
 
   const load = useCallback(async (retryCount = 0) => {
     if (retryCount === 0) {
@@ -1263,7 +1277,7 @@ function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
     }
     let willRetry = false;
     try {
-      const res = await fetchReportCategorywise(today, today, outletId || 'all');
+      const res = await fetchReportCategorywise(date, date, outletId || 'all');
       setData(res);
       hasDataRef.current = true;
     } catch (err) {
@@ -1281,7 +1295,7 @@ function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
         setLoading(false);
       }
     }
-  }, [outletId, today]);
+  }, [outletId, date]);
 
   useEffect(() => {
     load();
@@ -1305,7 +1319,7 @@ function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
     setDrillError(null);
     setDrillLoading(true);
     try {
-      const res = await fetchReportItemwise(today, today, outletType, outletId || 'all');
+      const res = await fetchReportItemwise(date, date, outletType, outletId || 'all');
       const items = (res.items || []).filter((it) => it.reportCategory === catName);
       setDrillItems(items);
     } catch (err) {
@@ -1313,7 +1327,7 @@ function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
     } finally {
       setDrillLoading(false);
     }
-  }, [today, outletId]);
+  }, [date, outletId]);
 
   const closeCategory = () => setSelectedCategory(null);
 
@@ -1347,7 +1361,7 @@ function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
           </button>
         </div>
       ) : categories.length === 0 ? (
-        <p className="text-xs text-gray-400 font-bold">No sales today</p>
+        <p className="text-xs text-gray-400 font-bold">No sales for selected date</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="h-[240px] w-full">

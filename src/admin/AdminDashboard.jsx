@@ -43,6 +43,7 @@ import { apiFetch } from '../services/apiConfig';
 import AIDishCreationModal from './AIDishCreationModal';
 import { useSocket } from '../hooks/useSocket';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 import { useTableSync } from '../services/tableSyncService';
 import { authService } from '../services/authService';
@@ -150,6 +151,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
   const [activityLog, setActivityLog] = useState([]);
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
   const [dashboardScope, setDashboardScope] = useState('current'); // 'current' | 'all'
+  const [selectedDate, setSelectedDate] = useState(() => getKolkataDateString());
 
   const { setTables } = useTableSync();
   const { user, restaurant, setRestaurant, setAuth } = useAuth();
@@ -194,11 +196,9 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
 
   const loadStats = useCallback(async () => {
     try {
-      const now = new Date();
-      const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-      const todayISO = istDate.toISOString().slice(0, 10);
+      const date = selectedDate || getKolkataDateString();
       const outletId = dashboardScope === 'all' ? 'all' : restaurant?.id;
-      const data = await apiFetch(`/api/reports/daily-sales?startDate=${todayISO}&endDate=${todayISO}&outletId=${outletId}`);
+      const data = await apiFetch(`/api/reports/daily-sales?startDate=${date}&endDate=${date}&outletId=${outletId}`);
       setRevenue(Math.round(data.summary?.totalRevenue ?? 0));
       setTotalSales(Math.round(data.summary?.totalSales ?? data.summary?.totalSubtotal ?? 0));
       setNetSales(Math.round(data.summary?.netSales ?? 0));
@@ -209,7 +209,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
     } finally {
       setStatsLoading(false);
     }
-  }, [dashboardScope, restaurant?.id]);
+  }, [dashboardScope, restaurant?.id, selectedDate]);
 
   useEffect(() => {
     const pushLog = (text, type = "info") => {
@@ -310,12 +310,12 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
   // Built once per render, consumed by routes that declare a props function.
   const routeCtx = useMemo(() => ({
     revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading,
-    activeOutlet, loadStats, dashboardScope, role,
+    activeOutlet, loadStats, dashboardScope, selectedDate, setSelectedDate, role,
     onAddDish: () => setDishModalOpen(true),
     goToSection,
     mUpload, setMUpload, mUploadRef, mGenerated, setMGenerated, mPosted, setMPosted,
   }), [revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading, activeOutlet, loadStats,
-       goToSection, mUpload, mGenerated, mPosted, dashboardScope, role]);
+       goToSection, mUpload, mGenerated, mPosted, dashboardScope, selectedDate, setSelectedDate, role]);
 
   const handleQuickSwitch = async (outletId) => {
     setShowOutletSwitcher(false);
