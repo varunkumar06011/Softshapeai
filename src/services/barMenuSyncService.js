@@ -20,6 +20,7 @@ import {
   writeBarMenuCache,
   repairBarMenuCloudinaryUrls,
 } from "./barMenuService";
+import { onRuntimeStateChange } from "./edgeHealth";
 
 // Singleton state — shared across all components
 let barGlobalMenu = null;
@@ -50,7 +51,7 @@ function notifySubscribers() {
   subscribers.forEach((cb) => cb({ menu: barGlobalMenu ?? [], loading: _isLoading, error: _loadError }));
 }
 
-async function loadBarMenu({ skipRepair = false } = {}) {
+async function loadBarMenu({ skipRepair = false, bypassCache = false } = {}) {
   if (loadPromise) return loadPromise;
 
   // Skip authenticated fetch if no token is available (e.g. during onboarding).
@@ -69,7 +70,7 @@ async function loadBarMenu({ skipRepair = false } = {}) {
     _loadError = null;
     notifySubscribers();
     try {
-      const fetched = await fetchBarMenuFromBackend();
+      const fetched = await fetchBarMenuFromBackend({ bypassCache });
       // ── Empty-response protection: never replace a valid cached bar menu
       // with an empty response. Prevents blank bar menu when bridge is half-synced.
       if (fetched.length === 0 && barGlobalMenu && barGlobalMenu.length > 0) {
@@ -158,10 +159,11 @@ export function useBarMenuSync() {
     return () => subscribers.delete(cb);
   }, []);
 
-  const refreshMenu = () => {
+  const refreshMenu = (opts = {}) => {
+    const { bypassCache = false } = opts;
     loadPromise = null;
     barGlobalMenu = null;
-    loadBarMenu({ skipRepair: true });
+    loadBarMenu({ skipRepair: true, bypassCache });
   };
 
   // Listen for socket menu update events from admin panel
@@ -180,6 +182,29 @@ export function useBarMenuSync() {
 
     return () => {
       window.removeEventListener("menu-item-updated", handleMenuUpdate);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, []);
+
+  // ── Edge server config-change listener ─────────────────────────────────────
+  // Same as menuSyncService: when the edge server applies a menu-related config
+  // change (e.g. admin syncs a today special to all outlets including bar), it
+  // emits a config.changed runtime event. We trigger a cache-bypassing refresh
+  // so the bar cashier/captain see the new special immediately.
+  useEffect(() => {
+    let debounceTimer = null;
+    const unsubscribe = onRuntimeStateChange((event) => {
+      if (event?.type !== 'config.changed') return;
+      const tables = event?.data?.tables;
+      if (!Array.isArray(tables) || tables.length === 0) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        console.log('[BarMenuSync] config.changed received — refreshing bar menu (bypassCache)', tables);
+        refreshMenu({ bypassCache: true });
+      }, 500);
+    });
+    return () => {
+      unsubscribe();
       if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, []);

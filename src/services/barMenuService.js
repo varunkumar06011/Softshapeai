@@ -305,6 +305,13 @@ export function mapBarMenuItems(items, restaurantItems = []) {
       gstEnabled: (item.menuType === 'LIQUOR' || item.menuType === 'BAR')
         ? false
         : item.gstEnabled !== false,
+      // Today specials fields — needed so bar cashier/captain can filter/display specials
+      isSpecial: item.isSpecial === true || item.is_special === true,
+      specialChannel: item.specialChannel || item.special_channel || "BOTH",
+      active: item.specialActive !== undefined ? item.specialActive !== false : (item.special_active !== undefined ? item.special_active !== false : true),
+      expiresAt: (item.specialExpiresAt || item.special_expires_at)
+        ? new Date(item.specialExpiresAt || item.special_expires_at).getTime()
+        : null,
     };
   });
 }
@@ -347,20 +354,25 @@ async function fetchRestaurantItemsRaw() {
   return res.json();
 }
 
-export async function fetchBarMenuFromBackend() {
+export async function fetchBarMenuFromBackend(options = {}) {
+  const { bypassCache = false } = options;
   const restaurantId = getMenuStorageKey().split('_').pop() || 'default';
 
   // ── Path 0: IndexedDB cache (instant render) ───────────────────────────────
-  try {
-    const cachedMenu = await getCachedMenu(restaurantId);
-    if (cachedMenu && cachedMenu.length > 0) {
-      console.log(`[BarMenu] Loaded ${cachedMenu.length} items from IndexedDB cache`);
-      // Trigger background sync without blocking UI
-      syncBarMenuInBackground(restaurantId);
-      return mapBarMenuItems(cachedMenu, cachedMenu);
+  // Skipped when bypassCache is set (e.g. after a config.changed event) so we
+  // always read fresh data from the edge server / cloud.
+  if (!bypassCache) {
+    try {
+      const cachedMenu = await getCachedMenu(restaurantId);
+      if (cachedMenu && cachedMenu.length > 0) {
+        console.log(`[BarMenu] Loaded ${cachedMenu.length} items from IndexedDB cache`);
+        // Trigger background sync without blocking UI
+        syncBarMenuInBackground(restaurantId);
+        return mapBarMenuItems(cachedMenu, cachedMenu);
+      }
+    } catch (err) {
+      console.warn('[BarMenu] IndexedDB cache read failed:', err.message);
     }
-  } catch (err) {
-    console.warn('[BarMenu] IndexedDB cache read failed:', err.message);
   }
 
   // ── Path 1: Edge server (local SQLite) — primary path for offline ───────────

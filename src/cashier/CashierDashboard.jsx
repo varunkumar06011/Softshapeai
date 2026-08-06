@@ -5984,8 +5984,12 @@ const CashierDashboard = ({ onLogout }) => {
                             })
                             .map((table, i) => {
                               const hasItems = (table.kotHistory?.length > 0) || (table.activeOrder?.items?.length > 0) || Number(table.currentBill ?? 0) > 0;
-                              const isWaitingBill = table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED' || table.status === 'BILLING';
-                              const isPreparing = table.status === 'Preparing' && hasItems;
+                              // Primary source of truth: billPrintedTableIds (bill printed, not yet settled)
+                              // then socket/refetch status. This prevents the card from reverting to red
+                              // (Occupied) after a refetch if the bill was printed but settlement is pending.
+                              const isBillPrinted = billPrintedTableIds.has(table.backendId) && !settledTableIds.has(table.backendId);
+                              const isWaitingBill = isBillPrinted || table.status === 'Waiting Bill' || table.status === 'BILLING_REQUESTED' || table.status === 'BILLING';
+                              const isPreparing = !isBillPrinted && table.status === 'Preparing' && hasItems;
                               const isOccupied = hasItems && !isWaitingBill && !isPreparing;
                               const bill = calculateTableBill(table, restaurantConfig);
                               const billAmt = bill?.subtotal > 0

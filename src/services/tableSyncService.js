@@ -169,9 +169,19 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     console.warn('[TableSync] Normalizing ghost table to Free (no session data) for table', row.number, row.workflowStatus || row.status);
   }
   const isFreeWorkflow = row.status === 'Free' || dbStatus === 'AVAILABLE' || (row.workflowStatus === 'Free' && hasNoSession) || isGhost;
+  // Map billing-requested states to 'Waiting Bill' so a refetch doesn't revert a
+  // bill-printed table back to 'Occupied' (red). The backend persists
+  // status=BILLING_REQUESTED / workflowStatus="Waiting Bill" after print-bill, but
+  // without this mapping the refetch collapses every non-Free state to 'Occupied'.
+  // Also preserve an existing 'Waiting Bill' status when the incoming row is not
+  // explicitly Free — this covers the race where the optimistic 'Waiting Bill'
+  // state is set locally before the backend has persisted the billing request.
+  const incomingIsWaitingBill = row.workflowStatus === 'Waiting Bill'
+    || dbStatus === 'BILLING_REQUESTED' || dbStatus === 'BILLING'
+    || row.status === 'BILLING_REQUESTED' || row.status === 'BILLING';
   const persistedStatus = isStale && existing
-    ? (existing.status === 'Free' ? 'Free' : 'Occupied')
-    : (isFreeWorkflow ? 'Free' : 'Occupied');
+    ? (existing.status === 'Free' ? 'Free' : (existing.status === 'Waiting Bill' ? 'Waiting Bill' : (incomingIsWaitingBill ? 'Waiting Bill' : 'Occupied')))
+    : (isFreeWorkflow ? 'Free' : (incomingIsWaitingBill ? 'Waiting Bill' : (existing?.status === 'Waiting Bill' ? 'Waiting Bill' : 'Occupied')));
   // Defensive: an order can only belong to this table if its tableId matches the row id.
   const incomingOrder = rawIncomingOrder && rawIncomingOrder.tableId === row.id ? rawIncomingOrder : null;
   const existingOrder = existing?.activeOrder;
