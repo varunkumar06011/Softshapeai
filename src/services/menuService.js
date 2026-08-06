@@ -412,6 +412,132 @@ export async function deleteMenuItem(id) {
   return parseMenuResponse(res, 'Delete menu item');
 }
 
+// ── Edge-aware menu CRUD (cashier/captain local-first writes) ────────────────
+// These wrappers try the edge server first (local SQLite + instant LAN push to
+// captains + background cloud sync). If the edge is unavailable, they fall back
+// to the direct cloud endpoints above. Auth is handled by the edge server's
+// middleware (edge API key + runtime token headers, sent automatically by
+// edgeFetch). isEdgeAvailable, edgeFetch, and getAuthHeaders are already
+// imported at the top of this file.
+
+function getEdgeAuthPayload() {
+  // Include userId if available — the edge server may use it for audit logging.
+  // No PIN required (auth is via edge API key + runtime token headers).
+  try {
+    const userStr = localStorage.getItem('ss_user') || localStorage.getItem('user');
+    if (userStr) {
+      const u = JSON.parse(userStr);
+      return { userId: u.id };
+    }
+  } catch { /* ignore */ }
+  return {};
+}
+
+export async function updateMenuItemEdge(id, data) {
+  if (await isEdgeAvailable()) {
+    try {
+      const body = { ...data, ...getEdgeAuthPayload() };
+      const res = await edgeFetch(`/api/edge/menu/items/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      // Edge returned an error response — fall through to cloud
+      console.warn('[menuService] Edge update failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge update error, falling back to cloud:', err.message);
+    }
+  }
+  return updateMenuItem(id, data);
+}
+
+export async function createMenuItemEdge(data) {
+  if (await isEdgeAvailable()) {
+    try {
+      const body = { ...data, ...getEdgeAuthPayload() };
+      const res = await edgeFetch(`/api/edge/menu/items`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      console.warn('[menuService] Edge create failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge create error, falling back to cloud:', err.message);
+    }
+  }
+  return createMenuItem(data);
+}
+
+export async function deleteMenuItemEdge(id) {
+  if (await isEdgeAvailable()) {
+    try {
+      const body = { ...getEdgeAuthPayload() };
+      const res = await edgeFetch(`/api/edge/menu/items/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify(body),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      console.warn('[menuService] Edge delete failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge delete error, falling back to cloud:', err.message);
+    }
+  }
+  return deleteMenuItem(id);
+}
+
+export async function toggleAvailabilityEdge(id) {
+  if (await isEdgeAvailable()) {
+    try {
+      const body = { ...getEdgeAuthPayload() };
+      const res = await edgeFetch(`/api/edge/menu/items/${id}/availability`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      console.warn('[menuService] Edge availability toggle failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge availability toggle error, falling back to cloud:', err.message);
+    }
+  }
+  // Cloud fallback
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}/availability`), {
+    method: 'PATCH',
+    headers: { ...getAuthHeaders() },
+  });
+  return parseMenuResponse(res, 'Toggle availability');
+}
+
+export async function toggleMenuTypeEdge(id, printerTarget) {
+  if (await isEdgeAvailable()) {
+    try {
+      const body = { ...getEdgeAuthPayload(), ...(printerTarget ? { printerTarget } : {}) };
+      const res = await edgeFetch(`/api/edge/menu/items/${id}/menu-type`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      console.warn('[menuService] Edge menu-type toggle failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge menu-type toggle error, falling back to cloud:', err.message);
+    }
+  }
+  // Cloud fallback — the cloud /menu-type endpoint toggles FOOD↔LIQUOR based on
+  // the existing row's current menuType (it ignores any menuType in the body),
+  // so we only forward printerTarget. Sending a hardcoded menuType here would
+  // be misleading and would not influence the cloud behavior.
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}/menu-type`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(printerTarget ? { printerTarget } : {}),
+  });
+  return parseMenuResponse(res, 'Toggle menu type');
+}
+
 export function persistMenu(menuItems, restaurantId = getCurrentRestaurantId()) {
   localStorage.setItem(getMenuStorageKey(restaurantId), JSON.stringify(menuItems));
   window.dispatchEvent(

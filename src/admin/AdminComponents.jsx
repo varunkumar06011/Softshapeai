@@ -18817,7 +18817,7 @@ export function StaffManagement({ role }) {
 
   const [editing, setEditing] = useState(null);
 
-  const [form, setForm] = useState({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
+  const [form, setForm] = useState({ name: '', role: 'WORKER', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
   const [saving, setSaving] = useState(false);
 
@@ -18867,7 +18867,7 @@ export function StaffManagement({ role }) {
 
   const resetForm = () => {
 
-    setForm({ name: '', role: 'CAPTAIN', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
+    setForm({ name: '', role: 'WORKER', designation: '', pin: '', email: '', password: '', baseSalary: '', permissions: {} });
 
     setEditing(null);
 
@@ -18894,7 +18894,7 @@ export function StaffManagement({ role }) {
   const handleSave = async () => {
 
     if (!form.name.trim()) return;
-    if (form.role !== 'OWNER' && form.pin && form.pin.length !== 4) return;
+    if (form.role !== 'OWNER' && form.role !== 'WORKER' && form.pin && form.pin.length !== 4) return;
     if (form.role === 'OWNER' && form.email?.trim() && !form.password?.trim()) return;
 
     setSaving(true);
@@ -19130,7 +19130,7 @@ export function StaffManagement({ role }) {
 
                 <td className="px-4 py-3 text-gray-600">
 
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : member.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${member.role === 'CAPTAIN' ? 'bg-blue-100 text-blue-700' : member.role === 'OWNER' ? 'bg-purple-100 text-purple-700' : member.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' : member.role === 'WORKER' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
 
                     {member.designation || member.role}
 
@@ -19265,6 +19265,8 @@ export function StaffManagement({ role }) {
 
                 >
 
+                  <option value="WORKER">Worker</option>
+
                   <option value="CAPTAIN">Captain</option>
 
                   <option value="CASHIER">Cashier</option>
@@ -19320,7 +19322,7 @@ export function StaffManagement({ role }) {
               </>
             )}
 
-            {(!editing ? form.role !== 'OWNER' : true) && (
+            {(!editing ? (form.role !== 'OWNER' && form.role !== 'WORKER') : true) && (
             <div>
 
               <label className="text-[10px] font-bold text-gray-500 uppercase">{editing ? 'New PIN (4 digits)' : 'PIN (4 digits)'}</label>
@@ -19374,7 +19376,7 @@ export function StaffManagement({ role }) {
 
                 onClick={handleSave}
 
-                disabled={saving || !form.name.trim() || (form.role !== 'OWNER' && form.pin.length > 0 && form.pin.length !== 4) || (form.role === 'OWNER' && form.email?.trim() && !form.password?.trim())}
+                disabled={saving || !form.name.trim() || (form.role !== 'OWNER' && form.role !== 'WORKER' && form.pin.length > 0 && form.pin.length !== 4) || (form.role === 'OWNER' && form.email?.trim() && !form.password?.trim())}
 
                 className="flex-1 py-2 bg-[#E53935] text-white rounded-xl text-[12px] font-bold hover:bg-red-700 disabled:opacity-50 transition"
 
