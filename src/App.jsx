@@ -375,10 +375,7 @@ function AdminDashboardWrapper() {
   }
   const role = user?.role || 'admin';
   return (
-    <>
-      <SyncStatusIndicator />
-      <AdminDashboard role={role} onLogout={() => { logout(); navigate('/admin'); }} />
-    </>
+    <AdminDashboard role={role} onLogout={() => { logout(); navigate('/admin'); }} />
   );
 }
 

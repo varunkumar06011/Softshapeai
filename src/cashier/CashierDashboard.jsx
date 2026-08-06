@@ -30,11 +30,12 @@ import {
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
   Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle,
-  DatabaseBackup, RefreshCw
+  DatabaseBackup, RefreshCw, Edit2, Plus as PlusIcon
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
-import { bulkImportSpecials } from '../services/menuService';
+import { bulkImportSpecials, updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvailabilityEdge, toggleMenuTypeEdge } from '../services/menuService';
+import EditMenuItemModal from '../shared/components/EditMenuItemModal';
 import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
@@ -340,6 +341,10 @@ const CashierDashboard = ({ onLogout }) => {
     localStorage.setItem(getTenantScopedKey('cashier_active_outlet'), activeOutlet);
   }, [activeOutlet]);
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem(getTenantScopedKey('cashier_active_tab')) || 'dashboard');
+  // ── Edit Menu state (cashier edge-edit feature) ──
+  const [editingMenuItem, setEditingMenuItem] = useState(null);
+  const [menuEditSearch, setMenuEditSearch] = useState('');
+  const [menuEditSaving, setMenuEditSaving] = useState(false);
   const [tableSubCategory, setTableSubCategory] = useState(() => {
     const saved = localStorage.getItem(getTenantScopedKey('softshape_selected_subcategory'));
     if (saved) return saved;
@@ -763,7 +768,7 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   // ── Moved up: these must be declared before activeTablesRef ──
-  const { menuItems, categories, loading: restaurantMenuLoading, refreshMenu } = useMenu();
+  const { menuItems, categories, loading: restaurantMenuLoading, refreshMenu, setGlobalMenu } = useMenu();
 
   // FREEZE: skip table updates when bill is printed (not yet settled) or during KOT submission
   const shouldSkipSyncUpdate = useCallback((t) => {
@@ -4704,6 +4709,76 @@ const CashierDashboard = ({ onLogout }) => {
     return ['All', ...new Set(cats)];
   }, [activeOutlet, categories, menuItems, barMenuItems]);
 
+  // ── Edit Menu: derive venues + categories for the shared modal ──
+  const editMenuVenues = useMemo(() => {
+    const seen = new Map();
+    for (const s of fetchedSections) {
+      const vid = s.venueId || s.venue?.id;
+      if (vid && !seen.has(vid)) {
+        seen.set(vid, { id: vid, label: s.venue?.name || s.name });
+      }
+    }
+    return Array.from(seen.values());
+  }, [fetchedSections]);
+
+  const editMenuCategories = useMemo(() => {
+    // categories from useMenu is an array of strings (names); map to {id, name}
+    return (categories || []).filter(c => c !== 'All').map(name => ({ id: name, name }));
+  }, [categories]);
+
+  // Items for the edit menu list (combine restaurant + bar based on outlet)
+  const editMenuItems = useMemo(() => {
+    const items = activeOutlet === 'bar' ? barMenuItems
+      : activeOutlet === 'both' ? [...menuItems, ...barMenuItems]
+      : menuItems;
+    if (!menuEditSearch) return items;
+    const q = menuEditSearch.toLowerCase();
+    return items.filter(i =>
+      (i.n || i.name || '').toLowerCase().includes(q) ||
+      (i.c || i.category || '').toLowerCase().includes(q)
+    );
+  }, [activeOutlet, menuItems, barMenuItems, menuEditSearch]);
+
+  // ── Save handler for the edit menu modal (edge-first with cloud fallback) ──
+  const handleSaveMenuItem = useCallback(async (payload) => {
+    setMenuEditSaving(true);
+    try {
+      const result = await updateMenuItemEdge(payload.id, payload);
+      // updateMenuItemEdge returns { success: false, error } without throwing when
+      // both edge and cloud fallback fail — gate the optimistic update + toast on
+      // an explicit success so we don't mutate the POS menu or claim success for a
+      // failed write.
+      if (!result || !result.success) {
+        const msg = result?.error || 'Could not save menu item';
+        addNotification('Update Failed', msg, 'error');
+        return { success: false, error: msg };
+      }
+      // Optimistically update the in-memory menu so the POS reflects the change
+      // immediately. The config.changed event from edge will trigger a full
+      // refresh via menuSyncService, so we don't call refreshMenu() here.
+      setGlobalMenu(prev => prev.map(i => i.id === payload.id ? {
+        ...i,
+        n: payload.name,
+        c: payload.category,
+        t: payload.isVeg ? 'veg' : 'non',
+        p: Number(payload.price),
+        menuType: payload.menuType,
+        gstEnabled: payload.gstEnabled,
+        printerTarget: payload.printerTarget,
+        printerName: payload.printerName,
+        isAvailable: payload.isAvailable,
+        venuePrices: payload.venuePrices,
+      } : i));
+      addNotification('Menu Updated', `${payload.name} saved (synced to edge)`, 'success');
+      return { success: true, id: payload.id };
+    } catch (err) {
+      addNotification('Update Failed', err.message || 'Could not save menu item', 'error');
+      return { success: false, error: err.message };
+    } finally {
+      setMenuEditSaving(false);
+    }
+  }, [addNotification, setGlobalMenu]);
+
   const menuTypeSubcategories = useMemo(() => {
     const items = activeOutlet === 'restaurant'
       ? menuItems.filter(i => i.isAvailable !== false)
@@ -5763,6 +5838,7 @@ const CashierDashboard = ({ onLogout }) => {
             { id: 'vouchers', label: 'Expenditures', icon: Receipt },
             { id: 'xreport', label: 'X Report', icon: FileText },
             { id: 'billfinder', label: 'Bill Finder', icon: Search },
+            { id: 'menuedit', label: 'Edit Menu', icon: Edit2 },
           ].filter(item => {
             return true;
           }).map((item) => (
@@ -7035,8 +7111,8 @@ const CashierDashboard = ({ onLogout }) => {
                         </AnimatePresence>
                       </div>
                       <div className="flex flex-col gap-2 py-1">
-                        {/* Row 1 — Large Menu Type Tabs + Diet Filter */}
-                        <div className="flex items-center justify-between gap-4">
+                        {/* Row 1 — Large Menu Type Tabs + Diet Filter (hidden in UI) */}
+                        <div className="hidden flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3 flex-grow">
                             {[
                               ...((activeOutlet === 'bar' || activeOutlet === 'both')
@@ -7485,6 +7561,85 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               )}
 
+
+                    {/* ── EDIT MENU TAB ── */}
+                    {activeTab === 'menuedit' && (
+                      <div className="flex flex-col h-full p-4 gap-4 overflow-hidden">
+                        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h2 className="text-xl font-black text-gray-900 uppercase tracking-wider">Edit Menu</h2>
+                              <p className="text-xs text-gray-500 mt-1">Edits save to the edge server instantly and sync to the cloud + captains automatically.</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="relative">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search items..."
+                                  value={menuEditSearch}
+                                  onChange={(e) => setMenuEditSearch(e.target.value)}
+                                  className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm font-bold outline-none focus:border-[#1E3A8A] w-56"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="overflow-y-auto max-h-[calc(100vh-280px)] -mx-1 px-1">
+                            {editMenuItems.length === 0 ? (
+                              <p className="text-center text-gray-400 py-12 font-bold">No menu items found.</p>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {editMenuItems.map((item) => {
+                                  const name = item.n || item.name;
+                                  const cat = item.c || item.category;
+                                  const price = item.p ?? item.price ?? 0;
+                                  const isLiquor = (item.menuType || 'FOOD') === 'LIQUOR';
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:border-[#1E3A8A]/40 hover:shadow-sm transition-all bg-white"
+                                    >
+                                      <div className={`w-2 h-10 rounded-full shrink-0 ${item.isAvailable === false ? 'bg-gray-300' : isLiquor ? 'bg-purple-500' : item.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                      <div className="flex-grow min-w-0">
+                                        <p className="text-sm font-black text-gray-900 truncate">{name}</p>
+                                        <p className="text-xs text-gray-500 font-bold truncate">
+                                          {cat} · ₹{Number(price).toFixed(0)}
+                                          {isLiquor && <span className="text-purple-600 ml-1">· BAR</span>}
+                                          {item.isAvailable === false && <span className="text-gray-400 ml-1">· UNAVAIL</span>}
+                                        </p>
+                                      </div>
+                                      <button
+                                        onClick={() => setEditingMenuItem(item)}
+                                        className="p-2 rounded-lg bg-[#1E3A8A]/10 text-[#1E3A8A] hover:bg-[#1E3A8A] hover:text-white transition-all shrink-0"
+                                        title="Edit item"
+                                      >
+                                        <Edit2 size={16} />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── EDIT MENU MODAL ── */}
+                    {editingMenuItem && (
+                      <EditMenuItemModal
+                        item={editingMenuItem}
+                        categories={editMenuCategories}
+                        venues={editMenuVenues}
+                        activeVenueId={editMenuVenues[0]?.id}
+                        printerOptions={[]}
+                        showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
+                        onClose={() => setEditingMenuItem(null)}
+                        onSave={handleSaveMenuItem}
+                        showRecipe={false}
+                      />
+                    )}
 
             </>
         </main>
