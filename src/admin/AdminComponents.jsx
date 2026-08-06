@@ -116,14 +116,35 @@ import {
 
   Loader,
 
-  Activity
+  Activity,
+
+  Flame,
+
+  Crown,
+
+  Medal,
+
+  Award,
+
+  Wallet,
+
+  Tag,
+
+  Receipt,
+
+  Banknote,
+
+  ArrowUpRight,
+
+  Loader2
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 
-import { 
+import {
 
-  Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid
+  Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
+  PieChart, Pie, Cell,
 
 } from 'recharts';
 
@@ -150,6 +171,12 @@ import { useBarTableSync } from '../services/barTableSyncService';
 import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '../services/barMenuSyncService';
 
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
+
+import { fetchReportCategorywise, fetchReportItemwise } from '../services/reportsApi';
+
+import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat';
+
+import { motion, AnimatePresence } from 'framer-motion';
 
 import { fetchVenues } from '../services/tableApi';
 
@@ -515,6 +542,12 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
   const [staffTotal, setStaffTotal] = useState(0);
 
+  // Expenditure summary from cloud (admin synced data) — used for the
+  // Expenditures + Final Amount summary tiles, matching the cashier's
+  // DataDashboard widget 1 but sourced from /api/expenditures/today-summary
+  // instead of the cashier's local SQLite expenditure records.
+  const [expenditureSummary, setExpenditureSummary] = useState({ totalAmount: 0, count: 0 });
+
 
 
   const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
@@ -690,9 +723,59 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
+  // ── Expenditure summary from cloud (admin synced data) ──────────────────
+  // Mirrors the cashier's DataDashboard widget 1 expenditure tile, but reads
+  // from /api/expenditures/today-summary (Postgres) instead of the cashier's
+  // local SQLite expenditure records. Falls back gracefully on error.
+  useEffect(() => {
+
+    let cancelled = false;
+
+    const loadExpenditure = async () => {
+
+      try {
+
+        const today = getKolkataDateString();
+
+        const data = await apiFetch(`/api/expenditures/today-summary?date=${today}`);
+
+        if (cancelled) return;
+
+        setExpenditureSummary({
+
+          totalAmount: Math.round(Number(data?.totalAmount || 0) * 100) / 100,
+
+          count: Number(data?.count || 0),
+
+        });
+
+      } catch (err) {
+
+        console.warn('[Dashboard] Failed to load expenditure summary:', err.message);
+
+      }
+
+    };
+
+    loadExpenditure();
+
+    const interval = setInterval(loadExpenditure, 300000); // 5 minutes
+
+    return () => {
+
+      cancelled = true;
+
+      clearInterval(interval);
+
+    };
+
+  }, []);
+
+
+
   return <div className="space-y-4 font-sans">
 
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
 
       {[
 
@@ -703,6 +786,10 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
         { label: "Discount", value: `₹${(totalDiscount ?? 0).toLocaleString()}`, sub: `${ordersCount || 0} txns`, color: "text-[#C62828]" },
 
         { label: "Tables Occupied", value: `${occupiedCount}/${totalTables}`, sub: "active", color: "text-[#1A1A1A]" },
+
+        { label: "Expenditures", value: `₹${(expenditureSummary.totalAmount ?? 0).toLocaleString()}`, sub: `${expenditureSummary.count || 0} expenditures`, color: "text-[#E65100]" },
+
+        { label: "Final Amount", value: `₹${((totalSales ?? 0) - (expenditureSummary.totalAmount ?? 0)).toLocaleString()}`, sub: "Sales − Expenditures", color: "text-[#2E7D32]" },
 
       ].map((x) => (
 
@@ -776,65 +863,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
       </div>
 
-      
-
-      <div className={card + " p-0 overflow-hidden flex flex-col h-[320px] lg:h-auto animate-chart-in-delay-1"}>
-
-        <div className="p-4 border-b border-[#FFCDD2] bg-gray-50 flex items-center justify-between">
-
-          <h3 className="font-bold text-sm md:text-base flex items-center gap-2">
-
-            <ClipboardList size={18} className="text-[#E53935]" />
-
-            Live Activity
-
-          </h3>
-
-          <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-
-        </div>
-
-        <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar">
-
-          {activityLog.length === 0 ? (
-
-            <p className="text-sm text-gray-400 text-center py-6">No live activity yet</p>
-
-          ) : (
-
-            activityLog.map((log) => (
-
-              <div key={log.id} className="flex gap-3 animate-slide-in">
-
-                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${
-
-                  log.type === "success" ? "bg-green-500" : 
-
-                  log.type === "info" ? "bg-blue-500" : 
-
-                  log.type === "tip" ? "bg-amber-500" : "bg-red-500"
-
-                }`} />
-
-                <div className="flex-grow min-w-0">
-
-                  <p className="text-xs font-medium text-[#1A1A1A] leading-relaxed">{log.text}</p>
-
-                  <p className="text-[10px] text-[#6B6B6B] mt-1">{log.time}</p>
-
-                </div>
-
-              </div>
-
-            ))
-
-          )}
-
-        </div>
-
-      </div>
-
-      <div className={card + " p-4 flex flex-col animate-chart-in-delay-2"}>
+      <div className={card + " p-4 flex flex-col animate-chart-in-delay-1"}>
         <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
           <StarIcon size={18} className="text-amber-500 fill-amber-500" />
           Today Specials Sold
@@ -843,6 +872,13 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
       </div>
 
     </div>
+
+    {/* ── Cashier DataDashboard widgets (admin synced data) ─────────────────── */}
+    {/* Widget 4: Today Special Captain Leader — /api/analytics/today-specials-by-staff */}
+    <CaptainLeaderWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
+
+    {/* Widget 5: Category Breakdown — /api/reports/categorywise-sales + itemwise-sales */}
+    <CategoryBreakdownWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} />
 
   </div>;
 
@@ -854,19 +890,23 @@ function TopItemsWidget({ dashboardScope, restaurantId }) {
   const [topItems, setTopItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const socket = useSocket(restaurantId);
+  const hasDataRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     const loadTopItems = async () => {
       try {
-        setLoading(true);
+        if (!hasDataRef.current) setLoading(true);
         const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
         const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity`, {
           headers: { ...getAuthHeaders() },
         });
         if (!res.ok) throw new Error('Failed to fetch top items');
         const data = await res.json();
-        if (!cancelled) setTopItems(data.items || []);
+        if (!cancelled) {
+          setTopItems(data.items || []);
+          hasDataRef.current = true;
+        }
       } catch (err) {
         console.warn('[TopItemsWidget] Failed to load top items:', err.message);
       } finally {
@@ -943,10 +983,11 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
   const [specials, setSpecials] = useState([]);
   const [loading, setLoading] = useState(true);
   const socket = useSocket(restaurantId);
+  const hasDataRef = useRef(false);
 
   const loadSpecials = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasDataRef.current) setLoading(true);
       const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
       const res = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${outletId}`, {
         headers: { ...getAuthHeaders() },
@@ -954,6 +995,7 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
       if (!res.ok) throw new Error('Failed to fetch today specials sold');
       const data = await res.json();
       setSpecials(data.specials || []);
+      hasDataRef.current = true;
     } catch (err) {
       console.warn('[TodaySpecialsSoldWidget] Failed to load:', err.message);
     } finally {
@@ -1007,6 +1049,470 @@ function TodaySpecialsSoldWidget({ dashboardScope, restaurantId }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CaptainLeaderWidget — Today Special Captain Leader (admin synced data)
+// ─────────────────────────────────────────────────────────────────────────────
+// Mirrors the cashier's DataDashboard widget 4, but reads from the cloud
+// /api/analytics/today-specials-by-staff endpoint (Postgres) instead of the
+// cashier's local data. Shows the full captain roster (including zero-sale
+// captains) so the admin sees the complete picture, not just today's winners.
+// Refreshes on socket 'order:paid' events for real-time updates.
+function CaptainLeaderWidget({ dashboardScope, restaurantId }) {
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const socket = useSocket(restaurantId);
+  const retryTimerRef = useRef(null);
+  const hasDataRef = useRef(false);
+
+  const load = useCallback(async (retryCount = 0) => {
+    if (retryCount === 0) {
+      if (!hasDataRef.current) setLoading(true);
+      setError(null);
+    }
+    let willRetry = false;
+    try {
+      const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
+      const today = getKolkataDateString();
+      const params = new URLSearchParams();
+      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      params.set('startDate', today);
+      params.set('endDate', today);
+      const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff?${params}`, {
+        headers: { ...getAuthHeaders() },
+        cache: 'no-store',
+      });
+      if (res.status === 429 && retryCount < 5) {
+        // Rate limited — keep showing loading spinner (not error) and
+        // poll every 12s until the per-minute budget recovers.
+        willRetry = true;
+        retryTimerRef.current = setTimeout(() => load(retryCount + 1), 12000);
+        return;
+      }
+      if (!res.ok) {
+        let serverMsg = 'Failed to fetch captain leaderboard';
+        try { const body = await res.json(); if (body?.error) serverMsg = body.error; } catch {}
+        throw new Error(serverMsg);
+      }
+      const data = await res.json();
+      // Admin view shows the full captain roster (including zero-sale captains),
+      // unlike the cashier view which filters to soldCount > 0 only.
+      setStaff((data.staff || []).filter((s) => s.role === 'CAPTAIN'));
+      hasDataRef.current = true;
+    } catch (err) {
+      setError(err.message || 'Failed to load');
+    } finally {
+      if (!willRetry) {
+        setLoading(false);
+      }
+    }
+  }, [dashboardScope, restaurantId]);
+
+  useEffect(() => {
+    load();
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onOrderPaid = () => load();
+    socket.on('order:paid', onOrderPaid);
+    return () => { socket.off('order:paid', onOrderPaid); };
+  }, [socket, load]);
+
+  const rankIcon = (idx) => {
+    if (idx === 0) return <Crown size={14} className="text-amber-500" />;
+    if (idx === 1) return <Medal size={14} className="text-gray-500" />;
+    if (idx === 2) return <Award size={14} className="text-orange-500" />;
+    return null;
+  };
+
+  const sortedStaff = [...staff].sort((a, b) => Number(b.soldCount) - Number(a.soldCount));
+
+  return (
+    <div className={card + " p-4 flex flex-col animate-chart-in-delay-2"}>
+      <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
+        <Users size={18} className="text-[#E53935]" />
+        Today Special Captain Leader
+      </h3>
+      {loading ? (
+        <div className="space-y-2 animate-pulse">
+          {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-2 py-6">
+          <p className="text-xs text-gray-400 font-bold text-center">{error}</p>
+          <button
+            onClick={() => load()}
+            className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C] bg-red-50 px-3 py-1.5 rounded-lg border border-red-100"
+          >
+            Retry
+          </button>
+        </div>
+      ) : sortedStaff.length === 0 ? (
+        <p className="text-xs text-gray-400 font-bold">No captains found</p>
+      ) : (
+        <div className="space-y-2 max-h-[280px] overflow-y-auto custom-scrollbar">
+          {sortedStaff.map((s, idx) => (
+            <div
+              key={s.userId}
+              className={`rounded-xl border overflow-hidden ${
+                idx === 0 ? 'bg-amber-50 border-amber-200' :
+                idx === 1 ? 'bg-gray-50 border-gray-200' :
+                idx === 2 ? 'bg-orange-50 border-orange-200' :
+                'bg-gray-50 border-transparent'
+              }`}
+            >
+              <div
+                className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-opacity-80 transition-colors"
+                onClick={() => setExpanded(expanded === s.userId ? null : s.userId)}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${
+                    idx === 0 ? 'bg-amber-500 text-white' :
+                    idx === 1 ? 'bg-gray-500 text-white' :
+                    idx === 2 ? 'bg-orange-500 text-white' :
+                    'bg-white border border-gray-200 text-gray-700'
+                  }`}>
+                    {idx + 1}
+                  </span>
+                  {rankIcon(idx)}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-bold text-gray-900 truncate">{s.name || s.userId}</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      {s.revenue > 0 ? `₹${Math.round(s.revenue).toLocaleString('en-IN')}` : 'No revenue'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="text-right">
+                    <span className="text-sm font-black text-[#E53935]">{s.soldCount}</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
+                  </div>
+                  <span className="text-gray-400 text-xs">{expanded === s.userId ? '▲' : '▼'}</span>
+                </div>
+              </div>
+              {expanded === s.userId && (
+                <div className="px-3 pb-2.5 pt-1 space-y-1 border-t border-gray-200/50">
+                  {s.items && s.items.length > 0 ? (
+                    s.items.map((it, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] py-1">
+                        <span className="font-bold text-gray-700 truncate pr-2">{it.name}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-black text-[#E53935]">{it.soldCount}x</span>
+                          {it.revenue > 0 && <span className="font-bold text-gray-400">₹{Math.round(it.revenue).toLocaleString('en-IN')}</span>}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-2 text-center">
+                      <span className="text-[11px] font-bold text-gray-400">No specials sold</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CategoryBreakdownWidget — Food / Liquor / Beverages revenue pie + table
+// ─────────────────────────────────────────────────────────────────────────────
+// Mirrors the cashier's DataDashboard widget 5, but reads from cloud report
+// endpoints (fetchReportCategorywise + fetchReportItemwise) instead of the
+// cashier's local data. Clicking a category opens a popup listing every item
+// sold in that category with qty + revenue. Refreshes on socket 'order:paid'.
+const CATEGORY_COLORS = { Food: '#B71C1C', Liquor: '#E53935', Beverages: '#1565C0' };
+const FALLBACK_COLOR = '#EF9A9A';
+const CATEGORY_TO_OUTLET_TYPE = { Food: 'food', Liquor: 'liquor', Beverages: 'beverages' };
+
+function CategoryBreakdownWidget({ dashboardScope, restaurantId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [drillItems, setDrillItems] = useState([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillError, setDrillError] = useState(null);
+  const socket = useSocket(restaurantId);
+  const retryTimerRef = useRef(null);
+  const hasDataRef = useRef(false);
+
+  const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
+  const today = getKolkataDateString();
+
+  const load = useCallback(async (retryCount = 0) => {
+    if (retryCount === 0) {
+      if (!hasDataRef.current) setLoading(true);
+      setError(null);
+    }
+    let willRetry = false;
+    try {
+      const res = await fetchReportCategorywise(today, today, outletId || 'all');
+      setData(res);
+      hasDataRef.current = true;
+    } catch (err) {
+      const msg = err.message || '';
+      // Rate limited — keep showing loading spinner (not error) and
+      // poll every 12s until the per-minute budget recovers.
+      if (/too many|rate/i.test(msg) && retryCount < 5) {
+        willRetry = true;
+        retryTimerRef.current = setTimeout(() => load(retryCount + 1), 12000);
+        return;
+      }
+      setError(msg || 'Failed to load');
+    } finally {
+      if (!willRetry) {
+        setLoading(false);
+      }
+    }
+  }, [outletId, today]);
+
+  useEffect(() => {
+    load();
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onOrderPaid = () => load();
+    socket.on('order:paid', onOrderPaid);
+    return () => { socket.off('order:paid', onOrderPaid); };
+  }, [socket, load]);
+
+  const openCategory = useCallback(async (catName) => {
+    const outletType = CATEGORY_TO_OUTLET_TYPE[catName];
+    if (!outletType) return;
+    setSelectedCategory(catName);
+    setDrillItems([]);
+    setDrillError(null);
+    setDrillLoading(true);
+    try {
+      const res = await fetchReportItemwise(today, today, outletType, outletId || 'all');
+      const items = (res.items || []).filter((it) => it.reportCategory === catName);
+      setDrillItems(items);
+    } catch (err) {
+      setDrillError(err.message || 'Failed to load items');
+    } finally {
+      setDrillLoading(false);
+    }
+  }, [today, outletId]);
+
+  const closeCategory = () => setSelectedCategory(null);
+
+  const categories = data?.categories || [];
+  const totalRevenue = data?.summary?.totalRevenue || 0;
+
+  const pieData = categories.map((c) => ({ name: c.name, value: c.totalRevenue }));
+  const colors = pieData.map((c) => CATEGORY_COLORS[c.name] || FALLBACK_COLOR);
+
+  return (
+    <div className={card + " p-4 flex flex-col animate-chart-in"}>
+      <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
+        <Package size={18} className="text-[#E53935]" />
+        Category Breakdown
+        <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">
+          ₹{Number(totalRevenue).toLocaleString('en-IN')} total
+        </span>
+      </h3>
+      {loading ? (
+        <div className="space-y-2 animate-pulse">
+          {[1, 2, 3].map((i) => <div key={i} className="h-8 bg-gray-100 rounded-lg" />)}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-2 py-6">
+          <p className="text-xs text-gray-400 font-bold text-center">{error}</p>
+          <button
+            onClick={() => load()}
+            className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C] bg-red-50 px-3 py-1.5 rounded-lg border border-red-100"
+          >
+            Retry
+          </button>
+        </div>
+      ) : categories.length === 0 ? (
+        <p className="text-xs text-gray-400 font-bold">No sales today</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="h-[240px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={85}
+                  paddingAngle={4}
+                  stroke="none"
+                  isAnimationActive
+                  animationDuration={800}
+                >
+                  {pieData.map((_e, i) => <Cell key={i} fill={colors[i]} />)}
+                </Pie>
+                <Tooltip formatter={(v) => [`₹${Number(v).toLocaleString('en-IN')}`, 'Revenue']} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-2 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
+                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Items</th>
+                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Qty</th>
+                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
+                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((c) => (
+                  <tr
+                    key={c.name}
+                    onClick={() => openCategory(c.name)}
+                    className="border-b border-gray-100 hover:bg-red-50/50 cursor-pointer transition-colors"
+                    title={`Click to view all ${c.name} items sold`}
+                  >
+                    <td className="px-2 py-2.5 font-bold text-gray-900 flex items-center gap-1.5">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR }}
+                      />
+                      {c.name}
+                      <ArrowUpRight size={12} className="text-gray-300" />
+                    </td>
+                    <td className="px-2 py-2.5 text-right text-gray-700">{c.itemCount}</td>
+                    <td className="px-2 py-2.5 text-right text-gray-700">{c.totalQuantity}</td>
+                    <td className="px-2 py-2.5 text-right font-bold text-gray-900">₹{Number(c.totalRevenue).toLocaleString('en-IN')}</td>
+                    <td className="px-2 py-2.5 text-right">
+                      <div className="w-16 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(c.revenuePercent, 100)}%`,
+                            background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR,
+                          }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-gray-500 font-bold">{c.revenuePercent}%</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-[10px] text-gray-400 font-bold mt-2">Click a category to see item-wise sales</p>
+          </div>
+        </div>
+      )}
+
+      {/* Item drill-in popup */}
+      <AnimatePresence>
+        {selectedCategory && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeCategory}
+          >
+            <motion.div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                <h3 className="text-sm font-black uppercase tracking-widest text-gray-800 flex items-center gap-2">
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ background: CATEGORY_COLORS[selectedCategory] || FALLBACK_COLOR }}
+                  />
+                  {selectedCategory} — Item-wise Sales
+                  <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">({today})</span>
+                </h3>
+                <button
+                  onClick={closeCategory}
+                  className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-500"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="overflow-y-auto custom-scrollbar flex-grow">
+                {drillLoading ? (
+                  <div className="flex items-center justify-center py-10 text-gray-400">
+                    <Loader2 size={20} className="animate-spin mr-2" />
+                    <span className="text-xs font-bold uppercase tracking-widest">Loading items…</span>
+                  </div>
+                ) : drillError ? (
+                  <div className="flex items-center justify-center py-10 text-gray-400">
+                    <span className="text-xs font-bold uppercase tracking-widest">{drillError}</span>
+                  </div>
+                ) : drillItems.length === 0 ? (
+                  <div className="flex items-center justify-center py-10 text-gray-300">
+                    <span className="text-xs font-bold uppercase tracking-widest">No {selectedCategory} items sold</span>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Item</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Qty Sold</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Unit Price</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Orders</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drillItems.map((it) => (
+                        <tr key={it.id || it.name} className="border-b border-gray-100 hover:bg-red-50/40">
+                          <td className="px-4 py-3 font-bold text-gray-900">{it.name}</td>
+                          <td className="px-4 py-3 text-right font-black text-[#E53935]">{it.quantitySold}</td>
+                          <td className="px-4 py-3 text-right text-gray-600">₹{Number(it.unitPrice).toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-bold text-gray-900">₹{Number(it.totalRevenue).toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right text-gray-500">{it.orderCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-50 font-black">
+                        <td className="px-4 py-3 text-gray-800">Total</td>
+                        <td className="px-4 py-3 text-right text-gray-800">
+                          {drillItems.reduce((s, it) => s + Number(it.quantitySold || 0), 0)}
+                        </td>
+                        <td className="px-4 py-3" />
+                        <td className="px-4 py-3 text-right text-gray-900">
+                          ₹{Number(drillItems.reduce((s, it) => s + Number(it.totalRevenue || 0), 0)).toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3" />
+                      </tr>
+                    </tfoot>
+                  </table>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
