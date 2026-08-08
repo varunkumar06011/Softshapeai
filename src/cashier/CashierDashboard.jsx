@@ -30,11 +30,13 @@ import {
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
   Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle,
-  DatabaseBackup, RefreshCw, Edit2, Plus as PlusIcon
+  DatabaseBackup, RefreshCw, Edit2, Plus as PlusIcon, Pause, Save
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
-import { bulkImportSpecials, updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvailabilityEdge, toggleMenuTypeEdge } from '../services/menuService';
+import { useVenueSections } from '../hooks/useVenueSections';
+import { updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvailabilityEdge, toggleMenuTypeEdge } from '../services/menuService';
+import { createMenuItem, updateMenuItem, deleteMenuItem } from '../services/adminApi';
 import EditMenuItemModal from '../shared/components/EditMenuItemModal';
 import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
@@ -658,9 +660,15 @@ const CashierDashboard = ({ onLogout }) => {
   const [confirmCardInput, setConfirmCardInput] = useState('');
   const [confirmTipInput, setConfirmTipInput] = useState('');
   const [showSpecialsModal, setShowSpecialsModal] = useState(false);
-  const [specialsRows, setSpecialsRows] = useState([{ name: '', price: '', category: 'Main Course', isVeg: true }]);
+  const [specialsView, setSpecialsView] = useState('list'); // 'list' | 'form'
   const [specialsSaving, setSpecialsSaving] = useState(false);
   const [specialsError, setSpecialsError] = useState(null);
+  const [specialsForm, setSpecialsForm] = useState({
+    id: null, n: '', c: 'Main Course', p: '', t: 'veg', active: true,
+    specialChannel: 'BOTH', duration: '1 Day', expiresAt: null,
+    gstEnabled: true, printerTarget: '', printerName: '', venuePrices: {},
+    menuType: 'FOOD', unit: '',
+  });
   const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
   const [bulkConfirmProgress, setBulkConfirmProgress] = useState({ current: 0, total: 0 });
   const [bulkConfirmResults, setBulkConfirmResults] = useState(null);
@@ -803,6 +811,18 @@ const CashierDashboard = ({ onLogout }) => {
         }
       : setTables;
   const activeRestaurantId = getCurrentRestaurantId();
+  // Venue sections for special venue-specific pricing (restaurant outlet only —
+  // LIQUOR items cannot be specials, so bar venues are irrelevant here).
+  const { venueColumns: specialVenueColumns } = useVenueSections('restaurant');
+  // Printer options from restaurant config — used for KOT destination in special form
+  const specialPrinterOptions = useMemo(() => {
+    const printers = restaurant?.printerConfig?.printers || [];
+    const map = new Map();
+    printers.forEach(p => {
+      if (p.name) map.set(p.name, { name: p.name, type: p.type || '' });
+    });
+    return Array.from(map.values());
+  }, [restaurant]);
   const [configVersion, setConfigVersion] = useState(0);
   useEffect(() => {
     const handler = () => setConfigVersion(v => v + 1);
@@ -1620,69 +1640,173 @@ const CashierDashboard = ({ onLogout }) => {
     setConfirmTipInput('');
   }, []);
 
+  const resetSpecialsForm = useCallback(() => {
+    setSpecialsForm({
+      id: null, n: '', c: 'Main Course', p: '', t: 'veg', active: true,
+      specialChannel: 'BOTH', duration: '1 Day', expiresAt: null,
+      gstEnabled: true, printerTarget: '', printerName: '', venuePrices: {},
+      menuType: 'FOOD', unit: '',
+    });
+    setSpecialsError(null);
+  }, []);
+
   const handleOpenSpecialsModal = useCallback(() => {
     setShowSpecialsModal(true);
+    setSpecialsView('list');
     setSpecialsError(null);
-    setSpecialsRows([{ name: '', price: '', category: 'Main Course', isVeg: true }]);
   }, []);
 
   const handleCloseSpecialsModal = useCallback(() => {
     setShowSpecialsModal(false);
+    setSpecialsView('list');
     setSpecialsError(null);
-    setSpecialsRows([{ name: '', price: '', category: 'Main Course', isVeg: true }]);
+    resetSpecialsForm();
+  }, [resetSpecialsForm]);
+
+  const handleOpenSpecialForm = useCallback(() => {
+    resetSpecialsForm();
+    setSpecialsView('form');
+  }, [resetSpecialsForm]);
+
+  const handleEditSpecial = useCallback((special) => {
+    const now = Date.now();
+    const hasExpiry = special.expiresAt && special.expiresAt > now;
+    let duration = 'No Expiry';
+    if (hasExpiry) {
+      const diffMs = special.expiresAt - now;
+      const oneDay = 24 * 60 * 60 * 1000;
+      if (diffMs <= oneDay + 60000) duration = '1 Day';
+      else if (diffMs <= 7 * oneDay + 60000) duration = '1 Week';
+      else if (diffMs <= 30 * oneDay + 60000) duration = '1 Month';
+    }
+    setSpecialsForm({
+      id: special.id,
+      n: special.n || '',
+      c: special.c || 'Main Course',
+      p: String(special.p ?? ''),
+      t: special.t === 'veg' ? 'veg' : 'non',
+      active: special.active !== false,
+      specialChannel: special.specialChannel || 'BOTH',
+      duration,
+      expiresAt: special.expiresAt || null,
+      gstEnabled: special.gstEnabled !== false,
+      printerTarget: special.printerTarget || '',
+      printerName: special.printerName || '',
+      venuePrices: { ...(special.venuePrices || {}) },
+      menuType: special.menuType || 'FOOD',
+      unit: special.unit || '',
+    });
+    setSpecialsError(null);
+    setSpecialsView('form');
   }, []);
 
-  const handleSpecialRowChange = useCallback((index, field, value) => {
-    setSpecialsRows(prev => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
-  }, []);
+  const buildSpecialPayload = useCallback(() => {
+    const price = Number(specialsForm.p);
+    if (!specialsForm.n.trim() || !price || price <= 0) return null;
+    const now = Date.now();
+    let expiresAt = null;
+    if (specialsForm.duration === '1 Day') expiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+    else if (specialsForm.duration === '1 Week') expiresAt = new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
+    else if (specialsForm.duration === '1 Month') expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString();
+    // 'No Expiry' → null
 
-  const handleAddSpecialRow = useCallback(() => {
-    setSpecialsRows(prev => [...prev, { name: '', price: '', category: 'Main Course', isVeg: true }]);
-  }, []);
+    const venuePrices = Object.fromEntries(
+      Object.entries(specialsForm.venuePrices || {})
+        .filter(([, v]) => v !== '' && v != null)
+        .map(([k, v]) => [k, Number(v)])
+    );
 
-  const handleRemoveSpecialRow = useCallback((index) => {
-    setSpecialsRows(prev => prev.filter((_, i) => i !== index));
-  }, []);
+    return {
+      name: specialsForm.n.trim(),
+      category: specialsForm.c.trim() || 'Main Course',
+      price,
+      isVeg: specialsForm.t === 'veg',
+      menuType: 'FOOD',
+      isSpecial: true,
+      specialChannel: ['CASHIER', 'CAPTAIN', 'BOTH'].includes(specialsForm.specialChannel) ? specialsForm.specialChannel : 'BOTH',
+      specialActive: specialsForm.active !== false,
+      specialExpiresAt: expiresAt,
+      gstEnabled: specialsForm.gstEnabled !== false,
+      printerTarget: specialsForm.printerTarget || null,
+      printerName: specialsForm.printerName || null,
+      isAvailable: true,
+      ...(Object.keys(venuePrices).length > 0 ? { venuePrices } : {}),
+      ...(specialsForm.unit ? { unit: specialsForm.unit } : {}),
+      // CRITICAL: do NOT send syncToAllOutlets or targetOutletId — cashier only
+      // sets specials for their own outlet. The backend defaults to the
+      // cashier's restaurantId when neither is provided.
+    };
+  }, [specialsForm]);
 
-  const handleSaveSpecials = useCallback(async () => {
-    const validRows = specialsRows.filter(row => row.name.trim() && Number(row.price) > 0);
-    if (validRows.length === 0) {
-      setSpecialsError('Please add at least one valid special with name and price.');
+  const handleSaveSpecial = useCallback(async () => {
+    const payload = buildSpecialPayload();
+    if (!payload) {
+      setSpecialsError('Please enter a valid name and price.');
       return;
     }
-
-    const names = validRows.map(row => row.name.trim().toLowerCase());
-    const duplicates = names.filter((name, i) => names.indexOf(name) !== i);
-    if (duplicates.length > 0) {
-      setSpecialsError(`Duplicate names found: ${[...new Set(duplicates)].join(', ')}`);
-      return;
-    }
-
     setSpecialsSaving(true);
     setSpecialsError(null);
-
     try {
-      const payload = validRows.map(row => ({
-        name: row.name.trim(),
-        category: row.category.trim() || 'Main Course',
-        price: Number(row.price),
-        isVeg: row.isVeg,
-        menuType: 'FOOD',
-        specialChannel: 'BOTH',
-      }));
-
-      await bulkImportSpecials(payload, true);
-      addNotification('Today Specials Saved', `${payload.length} item(s) added and synced to all outlets.`, 'success');
-      handleCloseSpecialsModal();
+      if (specialsForm.id) {
+        await updateMenuItem(specialsForm.id, payload);
+        addNotification('Special Updated', `${payload.name} updated for this outlet.`, 'success');
+      } else {
+        await createMenuItem(payload);
+        addNotification('Special Created', `${payload.name} added for this outlet.`, 'success');
+      }
       if (refreshMenu) await refreshMenu();
+      resetSpecialsForm();
+      setSpecialsView('list');
     } catch (err) {
-      console.error('[SaveSpecials] error:', err);
-      setSpecialsError(err.message || 'Failed to save Today Specials.');
-      addNotification('Save Failed', err.message || 'Could not save Today Specials.', 'error');
+      console.error('[SaveSpecial] error:', err);
+      setSpecialsError(err.message || 'Failed to save Today Special.');
+      addNotification('Save Failed', err.message || 'Could not save Today Special.', 'error');
     } finally {
       setSpecialsSaving(false);
     }
-  }, [specialsRows, refreshMenu, addNotification, handleCloseSpecialsModal]);
+  }, [buildSpecialPayload, specialsForm.id, refreshMenu, addNotification, resetSpecialsForm]);
+
+  const handleDeleteSpecial = useCallback(async (id, name) => {
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+      await deleteMenuItem(id, { syncToAllOutlets: false });
+      addNotification('Special Deleted', `${name} removed.`, 'success');
+      if (refreshMenu) await refreshMenu();
+    } catch (err) {
+      console.error('[DeleteSpecial] error:', err);
+      addNotification('Delete Failed', err.message || 'Could not delete special.', 'error');
+    }
+  }, [refreshMenu, addNotification]);
+
+  const handleToggleSpecialActive = useCallback(async (special) => {
+    const now = Date.now();
+    const newActive = !special.active;
+    const newExpiry = (special.expiresAt && special.expiresAt > now)
+      ? new Date(special.expiresAt).toISOString()
+      : (newActive ? new Date(now + 24 * 60 * 60 * 1000).toISOString() : null);
+    try {
+      await updateMenuItem(special.id, {
+        specialActive: newActive,
+        specialExpiresAt: newExpiry,
+      });
+      if (refreshMenu) await refreshMenu();
+    } catch (err) {
+      console.error('[ToggleSpecial] error:', err);
+      addNotification('Update Failed', err.message || 'Could not toggle special.', 'error');
+    }
+  }, [refreshMenu, addNotification]);
+
+  // All specials for this outlet (active + inactive + expired) — used in the
+  // management modal list view. menuItems from useMenu are already scoped to
+  // the current outlet.
+  const outletSpecials = useMemo(() => {
+    const source = activeOutlet === 'restaurant' ? menuItems
+      : activeOutlet === 'both' ? [...menuItems, ...barMenuItems]
+      : barMenuItems;
+    return (source || [])
+      .filter(i => i.isSpecial)
+      .sort((a, b) => (a.n || '').toLowerCase().localeCompare((b.n || '').toLowerCase()));
+  }, [menuItems, barMenuItems, activeOutlet]);
 
   const handleBackfillTransactions = useCallback(async () => {
     if (backfillLoading) return;
@@ -7552,6 +7676,14 @@ const CashierDashboard = ({ onLogout }) => {
                     </div>
 
                     <div className="p-4 sm:p-4.5 border-t border-gray-100 bg-gray-50/50 space-y-3 shrink-0">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[11px] font-black uppercase text-gray-500 tracking-wider">
+                          Total <span className="text-gray-400 font-bold normal-case">(incl. GST)</span>
+                        </span>
+                        <span className="text-base font-black text-gray-900">
+                          ₹{activeGrandTotal || 0}
+                        </span>
+                      </div>
                       <div className="pt-0.5">
                         {(isWalkinMode || (activeOutlet === 'restaurant' && fetchedSections.some(s => {
                           const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
@@ -8944,11 +9076,14 @@ const CashierDashboard = ({ onLogout }) => {
       {showSpecialsModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl border border-gray-200 animate-slide-in">
-            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center sticky top-0">
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center sticky top-0 z-10">
               <div>
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Cashier</p>
                 <p className="text-xl font-black text-gray-900 mt-1 flex items-center gap-2">
                   <Sparkles size={22} className="text-amber-500" /> Manage Today Specials
+                </p>
+                <p className="text-[10px] font-bold text-gray-500 mt-1">
+                  This outlet only · syncs to Captain app & Admin
                 </p>
               </div>
               <button
@@ -8960,115 +9095,298 @@ const CashierDashboard = ({ onLogout }) => {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-gray-600">
-                Add food items that will be published as Today Specials. These will be available to Cashier and Captain for 24 hours and sync to all outlets.
-              </p>
+            {specialsError && (
+              <div className="mx-6 mt-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm font-bold text-red-700">
+                {specialsError}
+              </div>
+            )}
 
-              {specialsError && (
-                <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm font-bold text-red-700">
-                  {specialsError}
+            {/* ── LIST VIEW ── */}
+            {specialsView === 'list' && (
+              <>
+                <div className="p-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">
+                      {outletSpecials.length} special{outletSpecials.length === 1 ? '' : 's'} for this outlet
+                    </p>
+                    <button
+                      onClick={handleOpenSpecialForm}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#E53935] text-white text-xs font-black uppercase tracking-wider hover:bg-red-700 transition-colors"
+                    >
+                      <Plus size={14} /> New Special
+                    </button>
+                  </div>
+
+                  {outletSpecials.length === 0 ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-center border-2 border-dashed border-gray-200 rounded-xl">
+                      <Sparkles size={32} className="text-gray-300 mb-3" />
+                      <p className="text-sm font-black text-gray-900">No Specials Yet</p>
+                      <p className="text-xs font-bold text-gray-500 mt-1">Create today's specials to push to Captain app.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {outletSpecials.map(special => {
+                        const now = Date.now();
+                        const isExpired = special.expiresAt && special.expiresAt < now;
+                        const isActive = special.active && !isExpired;
+                        return (
+                          <div key={special.id} className={`flex items-center gap-3 bg-gray-50 border rounded-xl px-4 py-3 ${isActive ? 'border-amber-200' : 'border-gray-200 opacity-70'}`}>
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-black text-gray-900 truncate">{special.n}</span>
+                                <span className={`w-3.5 h-3.5 rounded-sm border shrink-0 flex items-center justify-center ${special.t === 'veg' ? 'border-green-500' : 'border-red-500'}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${special.t === 'veg' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs font-bold text-[#E53935]">₹{special.p}</span>
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{special.c}</span>
+                                {special.specialChannel && special.specialChannel !== 'BOTH' && (
+                                  <span className="text-[9px] font-black uppercase tracking-wider text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{special.specialChannel}</span>
+                                )}
+                                <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${isActive ? 'text-green-600 bg-green-50' : isExpired ? 'text-red-500 bg-red-50' : 'text-gray-500 bg-gray-100'}`}>
+                                  {isActive ? 'Active' : isExpired ? 'Expired' : 'Inactive'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                onClick={() => handleToggleSpecialActive(special)}
+                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${isActive ? 'bg-gray-200 text-gray-600 hover:bg-gray-300' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                              >
+                                {isActive ? <><Pause size={10} className="inline mr-1" />Pause</> : 'Activate'}
+                              </button>
+                              <button
+                                onClick={() => handleEditSpecial(special)}
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSpecial(special.id, special.n)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
+                <div className="p-6 border-t border-gray-100 bg-gray-50 sticky bottom-0">
+                  <button
+                    onClick={handleCloseSpecialsModal}
+                    className="w-full py-3 px-4 rounded-xl border-2 border-gray-200 text-gray-600 font-black uppercase text-sm hover:bg-gray-100 transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            )}
 
-              <div className="space-y-3">
-                {specialsRows.map((row, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-3 items-start bg-gray-50 p-3 rounded-xl">
-                    <div className="col-span-5">
+            {/* ── FORM VIEW (create / edit) ── */}
+            {specialsView === 'form' && (
+              <>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-7">
                       <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Item Name</label>
                       <input
                         type="text"
-                        value={row.name}
-                        onChange={(e) => handleSpecialRowChange(index, 'name', e.target.value)}
+                        value={specialsForm.n}
+                        onChange={e => setSpecialsForm({ ...specialsForm, n: e.target.value })}
                         placeholder="e.g. Paneer Tikka"
                         className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
                       />
                     </div>
-                    <div className="col-span-3">
+                    <div className="col-span-5">
                       <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Price (₹)</label>
                       <input
                         type="number"
-                        value={row.price}
-                        onChange={(e) => handleSpecialRowChange(index, 'price', e.target.value)}
+                        value={specialsForm.p}
+                        onChange={e => setSpecialsForm({ ...specialsForm, p: e.target.value })}
                         placeholder="0"
                         min="0"
                         className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
                       />
                     </div>
-                    <div className="col-span-3">
+                  </div>
+
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-7">
                       <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Category</label>
                       <input
                         type="text"
-                        value={row.category}
-                        onChange={(e) => handleSpecialRowChange(index, 'category', e.target.value)}
+                        value={specialsForm.c}
+                        onChange={e => setSpecialsForm({ ...specialsForm, c: e.target.value })}
                         placeholder="Main Course"
                         className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
                       />
                     </div>
-                    <div className="col-span-1 pt-5">
-                      {specialsRows.length > 1 && (
-                        <button
-                          onClick={() => handleRemoveSpecialRow(index)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Type</label>
+                      <div className="flex items-center gap-4 h-[38px]">
+                        <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={specialsForm.t === 'veg'}
+                            onChange={() => setSpecialsForm({ ...specialsForm, t: 'veg' })}
+                            className="accent-green-600"
+                          />
+                          Veg
+                        </label>
+                        <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={specialsForm.t === 'non'}
+                            onChange={() => setSpecialsForm({ ...specialsForm, t: 'non' })}
+                            className="accent-red-600"
+                          />
+                          Non-Veg
+                        </label>
+                      </div>
                     </div>
-                    <div className="col-span-12 flex items-center gap-4 mt-1">
-                      <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer">
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Channel</label>
+                      <select
+                        value={specialsForm.specialChannel}
+                        onChange={e => setSpecialsForm({ ...specialsForm, specialChannel: e.target.value })}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                      >
+                        <option value="BOTH">Both (Cashier + Captain)</option>
+                        <option value="CASHIER">Cashier Only</option>
+                        <option value="CAPTAIN">Captain Only</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Status</label>
+                      <label className="flex items-center gap-2 h-[38px] cursor-pointer">
                         <input
-                          type="radio"
-                          checked={row.isVeg}
-                          onChange={() => handleSpecialRowChange(index, 'isVeg', true)}
-                          className="accent-green-600"
+                          type="checkbox"
+                          checked={specialsForm.active !== false}
+                          onChange={e => setSpecialsForm({ ...specialsForm, active: e.target.checked })}
+                          className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
                         />
-                        Veg
-                      </label>
-                      <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer">
-                        <input
-                          type="radio"
-                          checked={!row.isVeg}
-                          onChange={() => handleSpecialRowChange(index, 'isVeg', false)}
-                          className="accent-red-600"
-                        />
-                        Non-Veg
+                        <span className="text-sm font-bold text-gray-700">Active</span>
                       </label>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <button
-                onClick={handleAddSpecialRow}
-                disabled={specialsSaving}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-gray-300 text-gray-600 font-black text-xs uppercase tracking-wider hover:border-[#E53935] hover:text-[#E53935] transition-colors w-full justify-center"
-              >
-                <Plus size={16} /> Add Another Item
-              </button>
-            </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">Duration</label>
+                    <div className="flex gap-2">
+                      {['No Expiry', '1 Day', '1 Week', '1 Month'].map(d => (
+                        <button
+                          key={d}
+                          onClick={() => setSpecialsForm({ ...specialsForm, duration: d })}
+                          className={`flex-1 py-2 rounded-lg border text-[10px] font-black uppercase tracking-wider transition-all ${specialsForm.duration === d ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-            <div className="p-6 border-t border-gray-100 bg-gray-50 flex gap-3 sticky bottom-0">
-              <button
-                onClick={handleCloseSpecialsModal}
-                disabled={specialsSaving}
-                className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 text-gray-600 font-black uppercase text-sm hover:bg-gray-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveSpecials}
-                disabled={specialsSaving}
-                className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors flex items-center justify-center gap-2 ${
-                  specialsSaving
-                    ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                    : 'bg-[#E53935] text-white hover:bg-red-700'
-                }`}
-              >
-                {specialsSaving && <Loader2 size={16} className="animate-spin" />}
-                {specialsSaving ? 'Saving...' : 'Publish Specials'}
-              </button>
-            </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={specialsForm.gstEnabled !== false}
+                      onChange={e => setSpecialsForm({ ...specialsForm, gstEnabled: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 text-[#E53935] focus:ring-[#E53935]"
+                    />
+                    <span className="text-sm font-bold text-gray-700">GST Applicable</span>
+                  </label>
+
+                  {specialPrinterOptions.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-gray-500 mb-1 flex items-center gap-1">
+                          <Printer size={10} /> KOT Destination
+                        </label>
+                        <select
+                          value={specialsForm.printerTarget || ''}
+                          onChange={e => setSpecialsForm({ ...specialsForm, printerTarget: e.target.value || '' })}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                        >
+                          <option value="">Default (auto-resolve)</option>
+                          {specialPrinterOptions.map(opt => (
+                            <option key={opt.name} value={opt.name}>
+                              {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Physical Printer</label>
+                        <select
+                          value={specialsForm.printerName || ''}
+                          onChange={e => setSpecialsForm({ ...specialsForm, printerName: e.target.value || '' })}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                        >
+                          <option value="">Default</option>
+                          {specialPrinterOptions.map(opt => (
+                            <option key={opt.name} value={opt.name}>
+                              {opt.name}{opt.type ? ` (${opt.type})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {specialVenueColumns.length > 1 && (
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">Venue-specific Prices</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {specialVenueColumns.map(venue => (
+                          <div key={venue.id}>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">{venue.label}</span>
+                            <input
+                              type="number"
+                              placeholder="0.00"
+                              value={specialsForm.venuePrices?.[venue.id] ?? ''}
+                              onChange={e => setSpecialsForm({
+                                ...specialsForm,
+                                venuePrices: { ...(specialsForm.venuePrices || {}), [venue.id]: e.target.value },
+                              })}
+                              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-[#E53935]"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-6 border-t border-gray-100 bg-gray-50 flex gap-3 sticky bottom-0">
+                  <button
+                    onClick={() => { setSpecialsView('list'); setSpecialsError(null); }}
+                    disabled={specialsSaving}
+                    className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 text-gray-600 font-black uppercase text-sm hover:bg-gray-100 transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleSaveSpecial}
+                    disabled={specialsSaving}
+                    className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-sm transition-colors flex items-center justify-center gap-2 ${
+                      specialsSaving
+                        ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                        : 'bg-[#E53935] text-white hover:bg-red-700'
+                    }`}
+                  >
+                    {specialsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                    {specialsSaving ? 'Saving...' : specialsForm.id ? 'Update Special' : 'Create Special'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

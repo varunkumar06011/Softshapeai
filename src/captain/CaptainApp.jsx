@@ -502,34 +502,37 @@ function EmergencyOverlay({ call, currentCaptain, onAccept, onDismiss }) {
 
 }
 
-function ItemCard({ item, onAdd, children, className }) {
-  const lp = useLongPress(() => onAdd(item));
+function ItemCard({ item, onAdd, onDirectAdd, children, className }) {
+  // Long-press (400ms) → opens quantity picker (onAdd).
+  // Short tap → adds qty 1 directly (onDirectAdd), bypassing the picker.
+  const lp = useLongPress(() => onAdd(null, item));
+  const handleClick = () => {
+    if (lp.wasLongPress()) return; // suppress tap if long-press already fired
+    onDirectAdd(item);
+  };
   return (
-    <div {...lp.handlers} className={className} style={{ touchAction: 'pan-y', userSelect: 'none' }}>
+    <div {...lp.handlers} onClick={handleClick} className={className} style={{ touchAction: 'pan-y', userSelect: 'none' }}>
       {children}
     </div>
   );
 }
 
-const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOutlet, onAdd, onMinus }) {
+const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOutlet, onAdd, onDirectAdd, onMinus }) {
   const isVeg = item.t === 'veg';
-  const className = `cursor-pointer rounded-2xl p-3.5 flex gap-4 items-center group transition-all duration-300 active:scale-[0.98] relative overflow-hidden ${
+  const className = `cursor-pointer rounded-2xl p-2.5 sm:p-3.5 flex items-center group transition-all duration-300 active:scale-[0.98] relative overflow-hidden ${
     item.isSpecial
       ? 'bg-gradient-to-br from-amber-50 to-white border border-amber-300 hover:border-amber-500 hover:shadow-[0_12px_30px_rgba(245,158,11,0.12)] shadow-[0_4px_20px_rgba(245,158,11,0.05)]'
       : 'bg-white border border-gray-100 hover:border-[#E53935]/40 hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] shadow-[0_4px_20px_rgba(0,0,0,0.015)]'
   }`;
   return (
-    <ItemCard item={item} onAdd={onAdd} className={className}>
+    <ItemCard item={item} onAdd={onAdd} onDirectAdd={onDirectAdd} className={className}>
+      {/* Veg/non-veg left strip */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
       {item.isSpecial && (
         <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-orange-500 text-white text-[7px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm flex items-center gap-0.5 z-10">
           <Flame size={7} className="fill-white" /> Special
         </div>
       )}
-      <div className="w-8 h-8 shrink-0 flex items-center justify-center">
-        <div className={`w-5 h-5 rounded-[4px] border-2 flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
-          <div className={`w-2.5 h-2.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
-        </div>
-      </div>
       <div className="flex-grow min-w-0 py-0.5 flex flex-col justify-between h-full">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -575,11 +578,11 @@ const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOu
           </div>
           <div onClick={(e) => e.stopPropagation()}>
             {totalQty > 0 ? (
-              <div className="flex items-center gap-1 bg-red-50/80 rounded-full p-0.5 border border-red-100 shadow-sm">
+              <div className="flex items-center gap-1 bg-gray-50 rounded-full p-0.5 border border-gray-200 shadow-sm">
                 {item.variants && item.variants.length > 0 ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); onAdd(e, item); }}
-                    className="px-3 py-1 text-[9px] font-black text-[#E53935] uppercase tracking-wider"
+                    className="px-3 py-1 text-[9px] font-black text-gray-700 uppercase tracking-wider"
                   >
                     {totalQty} Added
                   </button>
@@ -587,30 +590,17 @@ const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOu
                   <>
                     <button
                       onClick={(e) => { e.stopPropagation(); onMinus(item.n, -1); }}
-                      className="w-6.5 h-6.5 rounded-full bg-white text-[#E53935] flex items-center justify-center hover:bg-gray-50 active:scale-90 transition-all shadow-sm border border-red-100"
+                      className="w-6.5 h-6.5 rounded-full bg-white text-gray-700 flex items-center justify-center hover:bg-gray-50 active:scale-90 transition-all shadow-sm border border-gray-200"
                     >
                       <Minus size={10} strokeWidth={3.5} />
                     </button>
                     <span className="text-xs font-black w-4 text-center text-gray-900">
                       {totalQty}
                     </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onAdd(e, item); }}
-                      className="w-6.5 h-6.5 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"
-                    >
-                      <Plus size={10} strokeWidth={3.5} />
-                    </button>
                   </>
                 )}
               </div>
-            ) : (
-              <button
-                onClick={(e) => { e.stopPropagation(); onAdd(e, item); }}
-                className="px-4 py-1.5 rounded-full bg-white border border-red-100 text-[9px] font-black uppercase tracking-widest text-[#E53935] hover:bg-[#E53935] hover:text-white hover:border-[#E53935] transition-all shadow-sm active:scale-95 duration-200"
-              >
-                Add
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -1165,6 +1155,10 @@ export default function CaptainApp({ onLogout }) {
 
   const [todayRevenue, setTodayRevenue] = useState(0);
 
+  // Today's specials sold by this captain (count + revenue), shown glowing
+  // in the Today's Target view so the captain sees special-sales earnings live.
+  const [captainSpecials, setCaptainSpecials] = useState({ soldCount: 0, revenue: 0, items: [] });
+
 
 
   const [activeBarMenu, setActiveBarMenu] = useState(() => localStorage.getItem(getTenantScopedKey('captain_activeBarMenu')) || 'food');
@@ -1452,6 +1446,31 @@ export default function CaptainApp({ onLogout }) {
       console.warn('[CaptainApp] Failed to load captain revenue:', err.message);
     }
 
+  }, []);
+
+  // Fetch today's specials sold by this captain from the same backend endpoint
+  // the admin leaderboard uses (today-specials-by-staff). Picks this captain's
+  // row so the captain sees their own special-sales count + revenue live.
+  const loadCaptainSpecials = useCallback(async (captainId) => {
+    if (!captainId) return;
+    try {
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff?startDate=${todayISO}&endDate=${todayISO}&_cb=${Date.now()}`, {
+        headers: { ...getAuthHeaders() },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const me = (data.staff || []).find(s => s.userId === captainId);
+      setCaptainSpecials({
+        soldCount: me ? Number(me.soldCount || 0) : 0,
+        revenue: me ? Math.round(Number(me.revenue || 0)) : 0,
+        items: me ? (me.items || []) : [],
+      });
+    } catch (err) {
+      console.warn('[CaptainApp] Failed to load captain specials:', err.message);
+    }
   }, []);
 
 
@@ -2070,6 +2089,13 @@ export default function CaptainApp({ onLogout }) {
       );
       setActiveTables(clearTable);
 
+      // Refresh this captain's specials + revenue so the glowing specials
+      // card and total sales update the moment a bill settles.
+      if (currentCaptain?.id) {
+        loadCaptainRevenue(currentCaptain.id);
+        loadCaptainSpecials(currentCaptain.id);
+      }
+
       if (activeTableIdRef.current && String(tableId) === String(activeTableIdRef.current)) {
         const settledId = activeTableIdRef.current;
         setTableCarts(prev => {
@@ -2360,6 +2386,8 @@ export default function CaptainApp({ onLogout }) {
 
     loadCaptainRevenue(currentCaptain.id);
 
+    loadCaptainSpecials(currentCaptain.id);
+
 
 
     // Poll every 3 minutes so captain sees new assignments without refresh
@@ -2371,13 +2399,15 @@ export default function CaptainApp({ onLogout }) {
 
       loadCaptainRevenue(currentCaptain.id);
 
+      loadCaptainSpecials(currentCaptain.id);
+
     }, 180000);
 
 
 
     return () => clearInterval(interval);
 
-  }, [currentCaptain, loadAssignment, loadCaptainRevenue]);
+  }, [currentCaptain, loadAssignment, loadCaptainRevenue, loadCaptainSpecials]);
 
 
 
@@ -2877,6 +2907,12 @@ export default function CaptainApp({ onLogout }) {
     setIsCartMinimized(window.innerWidth < 1024);
   };
 
+  // Long-press on an occupied table tile → open session with cart expanded directly.
+  const openTableSessionToCart = (table) => {
+    openTableSession(table);
+    setIsCartMinimized(false);
+  };
+
 
 
   // INVARIANT: Adding items to the cart NEVER changes table status or persists anything to backend.
@@ -2893,7 +2929,7 @@ export default function CaptainApp({ onLogout }) {
     const itemKey = String(item.id || item.n || '');
     const now = Date.now();
     const lastAdd = addItemCooldownRef.current[itemKey] || 0;
-    if (now - lastAdd < 900) return; // 900ms cooldown per item
+    if (now - lastAdd < 1000) return; // 1s cooldown per item
     addItemCooldownRef.current[itemKey] = now;
 
     const finalPrice = item.p;
@@ -3021,6 +3057,8 @@ export default function CaptainApp({ onLogout }) {
   handleItemClickRef.current = handleItemClick;
   const updateDraftQtyRef = useRef(updateDraftQty);
   updateDraftQtyRef.current = updateDraftQty;
+  const addItemToSessionRef = useRef(addItemToSession);
+  addItemToSessionRef.current = addItemToSession;
 
   const stableUpdateDraftQty = useCallback((name, delta) => {
     updateDraftQtyRef.current(name, delta);
@@ -3029,6 +3067,11 @@ export default function CaptainApp({ onLogout }) {
   const stableCardOnAdd = useCallback((e, item) => {
     if (e && e.stopPropagation) e.stopPropagation();
     handleItemClickRef.current(e || { stopPropagation: () => {} }, item);
+  }, []);
+
+  // Direct add (qty 1) — used by card tap. Bypasses the quantity picker.
+  const stableCardDirectAdd = useCallback((item) => {
+    addItemToSessionRef.current(item, 1);
   }, []);
 
 
@@ -4548,6 +4591,73 @@ export default function CaptainApp({ onLogout }) {
 
   console.log('[CaptainApp] rendering dashboard. tables:', tables?.length, 'menu:', restaurantMenu?.length);
 
+  // Glowing amber card showing today's specials sold by this captain.
+  // Defined once so it renders in both the no-assignment and assignment states.
+  const captainSpecialsCard = (
+    <div
+      className={`rounded-2xl p-5 border shadow-sm transition-all ${
+        captainSpecials.soldCount > 0
+          ? 'bg-gradient-to-br from-amber-50 to-white border-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.25)]'
+          : 'bg-white border-gray-100'
+      }`}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${captainSpecials.soldCount > 0 ? 'bg-amber-100' : 'bg-gray-100'}`}>
+            <Flame size={14} className={captainSpecials.soldCount > 0 ? 'text-amber-500 animate-pulse' : 'text-gray-300'} />
+          </div>
+          <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Today's Specials Sold</span>
+        </div>
+        {captainSpecials.soldCount > 0 && (
+          <span className="text-[9px] font-black uppercase tracking-widest text-amber-600 bg-amber-100 px-2 py-1 rounded-xl animate-pulse">
+            Live
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Items Sold</p>
+          <p className="text-2xl font-black tracking-tight tabular-nums">
+            {captainSpecials.soldCount > 0 ? (
+              <span className="fire-number-wrap">
+                <span className="fire-number">{captainSpecials.soldCount}</span>
+              </span>
+            ) : (
+              <span className="text-gray-900">{captainSpecials.soldCount}</span>
+            )}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Special Revenue</p>
+          <p className="text-2xl font-black tracking-tight tabular-nums">
+            {captainSpecials.revenue > 0 ? (
+              <span className="fire-number-wrap">
+                <span className="fire-number">₹{captainSpecials.revenue.toLocaleString('en-IN')}</span>
+              </span>
+            ) : (
+              <span className="text-gray-900">₹{captainSpecials.revenue.toLocaleString('en-IN')}</span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {captainSpecials.items.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-amber-100 space-y-1.5">
+          {captainSpecials.items.map((it, i) => (
+            <div key={i} className="flex items-center justify-between text-[11px]">
+              <span className="font-bold text-gray-700 truncate pr-2">{it.name}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="font-black text-amber-600">{it.soldCount}x</span>
+                {it.revenue > 0 && <span className="font-bold text-gray-400">₹{Math.round(it.revenue).toLocaleString('en-IN')}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
       className="flex flex-col bg-[#F8FAFC] overflow-hidden font-['Inter',sans-serif] text-[#111827]"
@@ -4894,6 +5004,8 @@ export default function CaptainApp({ onLogout }) {
 
               </p>
 
+              <div className="w-full max-w-lg mt-6 text-left">{captainSpecialsCard}</div>
+
             </div>
 
           ) : (
@@ -5044,6 +5156,11 @@ export default function CaptainApp({ onLogout }) {
 
 
 
+              {/* Today's Specials Sold — glowing amber card, live on bill settle */}
+              {captainSpecialsCard}
+
+
+
               {/* Discount Auth */}
 
               <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
@@ -5142,6 +5259,7 @@ export default function CaptainApp({ onLogout }) {
           myTablesCount={myTablesCount}
           allTablesCount={allTablesCount}
           onTableSelect={openTableSession}
+          onTableLongPress={openTableSessionToCart}
           selectedPDRRoom={selectedPDRRoom}
           setSelectedPDRRoom={setSelectedPDRRoom}
           captainId={currentCaptain?.id}
@@ -5728,7 +5846,7 @@ export default function CaptainApp({ onLogout }) {
                       </button>
                     </div>
                   ) : menuLoading ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-6">
                       {[1, 2, 3, 4, 5, 6].map(i => (
                         <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 flex gap-4 items-center">
                           <div className="w-16 h-16 bg-gray-200 animate-pulse rounded-lg shrink-0" />
@@ -5802,87 +5920,31 @@ export default function CaptainApp({ onLogout }) {
 
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-4">
 
             {related.slice(0, 12).map((item, idx) => {
 
               const totalQty = itemQtyMap.get(item.n) || 0;
 
-              const isVeg = item.t === 'veg';
-
               return (
 
-                <div
+                <MemoMenuCard
 
-                  key={idx}
+                  key={item.id || idx}
 
-                  className="bg-white border border-gray-100 hover:border-[#E53935]/40 rounded-2xl p-3.5 flex gap-4 items-center group hover:shadow-[0_12px_30px_rgba(229,57,53,0.07)] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.015)] active:scale-[0.98] relative overflow-hidden"
+                  item={item}
 
-                >
+                  totalQty={totalQty}
 
-                  <div className="w-8 h-8 shrink-0 flex items-center justify-center">
+                  activeOutlet={activeOutlet}
 
-                    <div className={`w-5 h-5 rounded-[4px] border-2 flex items-center justify-center ${isVeg ? 'border-emerald-600' : 'border-red-600'}`}>
+                  onAdd={stableCardOnAdd}
 
-                      <div className={`w-2.5 h-2.5 rounded-full ${isVeg ? 'bg-emerald-600' : 'bg-red-600'}`} />
+                  onDirectAdd={stableCardDirectAdd}
 
-                    </div>
+                  onMinus={stableUpdateDraftQty}
 
-                  </div>
-
-                  <div className="flex-grow min-w-0 py-0.5 flex flex-col justify-between h-full">
-
-                    <div>
-
-                      <div className="flex items-center gap-2 mb-1">
-
-                        <span className="text-[9px] font-black text-red-500/80 uppercase tracking-widest truncate">{item.c || 'Dish'}</span>
-
-                      </div>
-
-                      <h3 className="captain-item-title font-extrabold text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 truncate group-hover:text-red-600">{item.n}</h3>
-
-                      {item.desc && <p className="text-[10px] text-gray-400 font-medium line-clamp-1">{item.desc}</p>}
-
-                    </div>
-
-                    <div className="flex items-center justify-between mt-2.5">
-
-                      <div className="flex items-baseline">
-
-                        <span className="text-[11px] font-bold text-[#E53935] mr-0.5">₹</span>
-
-                        <span className="text-sm sm:text-base font-black text-gray-900 tracking-tight">{item.p}</span>
-
-                      </div>
-
-                      <div onClick={(e) => e.stopPropagation()}>
-
-                        {totalQty > 0 ? (
-
-                          <div className="flex items-center gap-1 bg-red-50/80 rounded-full p-0.5 border border-red-100 shadow-sm">
-
-                            <button onClick={(e) => { e.stopPropagation(); updateDraftQty(item.n, -1); }} className="w-6 h-6 rounded-full bg-white text-[#E53935] flex items-center justify-center hover:bg-gray-50 active:scale-90 transition-all shadow-sm border border-red-100"><Minus size={10} strokeWidth={3.5} /></button>
-
-                            <span className="text-xs font-black w-4 text-center text-gray-900">{totalQty}</span>
-
-                            <button onClick={(e) => { e.stopPropagation(); handleItemClick(e, item); }} className="w-6 h-6 rounded-full bg-[#E53935] text-white flex items-center justify-center hover:bg-[#d32f2f] active:scale-90 transition-all shadow-sm"><Plus size={10} strokeWidth={3.5} /></button>
-
-                          </div>
-
-                        ) : (
-
-                          <button onClick={(e) => { e.stopPropagation(); handleItemClick(e, item); }} className="px-4 py-1.5 rounded-full bg-white border border-red-100 text-[9px] font-black uppercase tracking-widest text-[#E53935] hover:bg-[#E53935] hover:text-white hover:border-[#E53935] transition-all shadow-sm active:scale-95 duration-200">Add</button>
-
-                        )}
-
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                </div>
+                />
 
               );
 
@@ -5900,7 +5962,7 @@ export default function CaptainApp({ onLogout }) {
 
 })() : (
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
 
                       {filteredMenu.map((item, idx) => {
 
@@ -5919,6 +5981,8 @@ export default function CaptainApp({ onLogout }) {
                             activeOutlet={activeOutlet}
 
                             onAdd={stableCardOnAdd}
+
+                            onDirectAdd={stableCardDirectAdd}
 
                             onMinus={stableUpdateDraftQty}
 

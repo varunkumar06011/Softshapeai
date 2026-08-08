@@ -27,6 +27,7 @@ export default function FloorOverview({
   myTablesCount,
   allTablesCount,
   onTableSelect,
+  onTableLongPress,
   selectedPDRRoom,
   setSelectedPDRRoom,
   captainId,
@@ -242,6 +243,7 @@ export default function FloorOverview({
                   key={table.backendId || table.id}
                   table={table}
                   onSelect={onTableSelect}
+                  onLongPress={onTableLongPress}
                 />
               ))
             )}

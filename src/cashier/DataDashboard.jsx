@@ -33,7 +33,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { API_BASE, getAuthHeaders } from '../services/apiConfig';
+import { edgeAwareJsonFetch } from '../services/edgeHealth';
 import { fetchReportDailySales, fetchReportCategorywise, fetchReportItemwise } from '../services/reportsApi';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat';
 
@@ -206,12 +206,11 @@ function TodaySpecialsSold({ outletId, date }) {
       if (outletId && outletId !== 'all') params.set('outletId', outletId);
       params.set('startDate', date);
       params.set('endDate', date);
-      const res = await fetch(`${API_BASE}/api/analytics/today-specials-sold?${params}`, {
-        headers: { ...getAuthHeaders() },
-        cache: 'no-store',
-      });
-      if (!res.ok) throw new Error('Failed to fetch specials sold');
-      const data = await res.json();
+      const qsStr = params.toString();
+      const data = await edgeAwareJsonFetch(
+        `/api/edge/analytics/today-specials-sold?${qsStr}`,
+        `/api/analytics/today-specials-sold?${qsStr}`,
+      );
       if (gen !== genRef.current) return;
       setSpecials(data.specials || []);
     } catch (err) {
@@ -288,12 +287,11 @@ function CaptainLeader({ outletId, date }) {
       if (outletId && outletId !== 'all') params.set('outletId', outletId);
       params.set('startDate', date);
       params.set('endDate', date);
-      const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff?${params}`, {
-        headers: { ...getAuthHeaders() },
-        cache: 'no-store',
-      });
-      if (!res.ok) throw new Error('Failed to fetch captain leaderboard');
-      const data = await res.json();
+      const qsStr = params.toString();
+      const data = await edgeAwareJsonFetch(
+        `/api/edge/analytics/today-specials-by-staff?${qsStr}`,
+        `/api/analytics/today-specials-by-staff?${qsStr}`,
+      );
       if (gen !== genRef.current) return;
       // Show only captains who actually sold at least one special today — keeps the
       // cashier leaderboard focused on the day's competition rather than every

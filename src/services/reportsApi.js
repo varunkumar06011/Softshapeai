@@ -16,6 +16,7 @@
 
 import { apiUrl } from "./apiConfig";
 import { authService } from "./authService";
+import { edgeAwareJsonFetch } from "./edgeHealth";
 
 export function isOfflineError(err) {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
@@ -46,29 +47,29 @@ async function parseResponse(res) {
 
 export async function fetchReportDailySales(startDate, endDate, outletId = 'all') {
   const qs = new URLSearchParams({ startDate, endDate, outletId });
-  const res = await fetch(apiUrl(`/api/reports/daily-sales?${qs}`), {
-    cache: 'no-store',
-    headers: { ...authService.getAuthHeader() },
-  });
-  return parseResponse(res);
+  const qsStr = qs.toString();
+  return edgeAwareJsonFetch(
+    `/api/edge/reports/daily-sales?${qsStr}`,
+    `/api/reports/daily-sales?${qsStr}`,
+  );
 }
 
 export async function fetchReportItemwise(startDate, endDate, outletType = 'all', outletId = 'all') {
   const qs = new URLSearchParams({ startDate, endDate, outletType, outletId });
-  const res = await fetch(apiUrl(`/api/reports/itemwise-sales?${qs}`), {
-    cache: 'no-store',
-    headers: { ...authService.getAuthHeader() },
-  });
-  return parseResponse(res);
+  const qsStr = qs.toString();
+  return edgeAwareJsonFetch(
+    `/api/edge/reports/itemwise-sales?${qsStr}`,
+    `/api/reports/itemwise-sales?${qsStr}`,
+  );
 }
 
 export async function fetchReportCategorywise(startDate, endDate, outletId = 'all') {
   const qs = new URLSearchParams({ startDate, endDate, outletId });
-  const res = await fetch(apiUrl(`/api/reports/categorywise-sales?${qs}`), {
-    cache: 'no-store',
-    headers: { ...authService.getAuthHeader() },
-  });
-  return parseResponse(res);
+  const qsStr = qs.toString();
+  return edgeAwareJsonFetch(
+    `/api/edge/reports/categorywise-sales?${qsStr}`,
+    `/api/reports/categorywise-sales?${qsStr}`,
+  );
 }
 
 export async function fetchReportPaymentMethods(startDate, endDate, outletId = 'all') {

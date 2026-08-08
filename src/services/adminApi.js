@@ -17,14 +17,18 @@ import { generateRequestId } from '../utils/requestId.js';
 // ── Menu item operations (local-first) ───────────────────────────────────────
 
 export async function createMenuItem(item) {
-  // Today specials need cloud handling: the local edge admin menu-item endpoint
-  // does not yet persist isSpecial, specialChannel, specialActive, or expiry.
-  // Writing through the cloud keeps the special flags intact and lets the cloud
-  // push the full item (with variants) to all edge/POS clients.
-  const shouldUseCloud = item.isSpecial === true;
-  if (!shouldUseCloud && await isEdgeAvailable()) {
+  // When syncToAllOutlets is true (admin panel creating a cross-outlet special),
+  // go directly to the cloud — the edge server's sync push only affects the
+  // local outlet and doesn't fan out to sibling outlets.
+  // Otherwise, route through the edge server's /api/edge/menu/items endpoint
+  // which uses menuService.ts — it persists all fields including special flags
+  // to local SQLite and enqueues a sync push to the cloud. This works for
+  // PIN-logged-in cashiers (edge-local token) since the edge server accepts
+  // the runtime token.
+  const needsCrossOutletSync = item.syncToAllOutlets === true;
+  if (!needsCrossOutletSync && await isEdgeAvailable()) {
     try {
-      return await edgeFetch('/api/edge/admin/menu-item', {
+      return await edgeFetch('/api/edge/menu/items', {
         method: 'POST',
         body: JSON.stringify(item),
       });
@@ -39,15 +43,14 @@ export async function createMenuItem(item) {
 }
 
 export async function updateMenuItem(id, updates) {
-  // Today special edits must go to the cloud so the special flags/variants sync.
-  const shouldUseCloud =
-    updates.isSpecial === true ||
-    updates.specialActive !== undefined ||
-    updates.specialChannel !== undefined ||
-    updates.specialExpiresAt !== undefined;
-  if (!shouldUseCloud && await isEdgeAvailable()) {
+  // When syncToAllOutlets is true (admin panel updating across all outlets),
+  // go directly to the cloud — the edge server's sync push only affects the
+  // local outlet. Otherwise, route through the edge server which persists
+  // special flags and syncs to the cloud.
+  const needsCrossOutletSync = updates.syncToAllOutlets === true;
+  if (!needsCrossOutletSync && await isEdgeAvailable()) {
     try {
-      return await edgeFetch(`/api/edge/admin/menu-item/${id}`, {
+      return await edgeFetch(`/api/edge/menu/items/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(updates),
       });
@@ -61,13 +64,20 @@ export async function updateMenuItem(id, updates) {
   return res.json();
 }
 
-export async function deleteMenuItem(id) {
-  if (await isEdgeAvailable()) {
+export async function deleteMenuItem(id, options = {}) {
+  // Only route through the edge when the caller explicitly requests local-only
+  // behavior (syncToAllOutlets === false, as the cashier does). For the admin
+  // panel (which passes no options), fall through to the cloud to preserve
+  // the default cross-outlet sync behavior for special deletes.
+  const wantsLocalOnly = options.syncToAllOutlets === false;
+  if (wantsLocalOnly && await isEdgeAvailable()) {
     try {
-      return await edgeFetch(`/api/edge/admin/menu-item/${id}`, { method: 'DELETE' });
+      return await edgeFetch(`/api/edge/menu/items/${id}`, { method: 'DELETE' });
     } catch { /* fall through to cloud */ }
   }
-  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}`), {
+  // Cloud path — pass syncToAllOutlets=false if specified
+  const query = options.syncToAllOutlets === false ? '?syncToAllOutlets=false' : '';
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}${query}`), {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });

@@ -339,3 +339,108 @@ input[type="number"] {
 
 .duration-200 { animation-duration: 200ms; }
 .duration-300 { animation-duration: 300ms; }
+
+/* === Fire number effect — number appears to be on fire === */
+/* Used in captain panel for today's specials sold count + revenue. */
+/* Pure CSS: animated fire gradient flowing upward through the text, */
+/* flicker, 3D breathing scale, and a pulsing radial glow halo behind. */
+/* Perf: each animated element is promoted to its own GPU layer so the */
+/* per-frame paint from background-position is isolated and never */
+/* triggers a full card repaint. No drop-shadow on animated text (that */
+/* forces re-rasterization every frame). Repaint contained via `contain`. */
+
+@keyframes fireFlow {
+  0%   { background-position: 0% 100%; }
+  100% { background-position: 0% -150%; }
+}
+
+@keyframes fireFlicker {
+  0%, 100% { opacity: 1; }
+  20%      { opacity: 0.90; }
+  40%      { opacity: 0.96; }
+  60%      { opacity: 0.88; }
+  80%      { opacity: 0.94; }
+}
+
+@keyframes fireBreath {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50%      { transform: scale(1.06) translateY(-1px); }
+}
+
+@keyframes fireGlowPulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.18); }
+}
+
+.fire-number-wrap {
+  position: relative;
+  display: inline-block;
+  /* Contain repaint to this element so the flowing gradient never causes
+     the surrounding card/layout to repaint. */
+  contain: layout paint;
+  /* Promote to a compositor layer so children paint in isolation. */
+  transform: translateZ(0);
+}
+
+/* Radial glow halo behind the number — pulsing like firelight.
+   Own GPU layer; blur kept modest to limit GPU memory on budget Android. */
+.fire-number-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -25% -15% -35% -15%;
+  background: radial-gradient(ellipse at 50% 70%,
+    rgba(249, 115, 22, 0.55) 0%,
+    rgba(239, 68, 68, 0.35) 30%,
+    transparent 70%);
+  border-radius: 50%;
+  filter: blur(8px);
+  z-index: -1;
+  animation: fireGlowPulse 1.2s ease-in-out infinite;
+  pointer-events: none;
+  /* Isolate the blur cost on its own layer; only opacity + transform animate
+     here, both compositor-only properties — no per-frame paint. */
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* The number text itself — fire gradient flowing upward.
+   No drop-shadow filter: that would re-rasterize the text every frame
+   alongside the background-position paint. The ::before halo already
+   provides the firelight radiance. */
+.fire-number {
+  background: linear-gradient(0deg,
+    #b91c1c 0%,
+    #ef4444 15%,
+    #f97316 35%,
+    #fbbf24 60%,
+    #fef3c7 85%,
+    #ffffff 100%);
+  background-size: 100% 250%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  display: inline-block;
+  animation:
+    fireFlow 1.2s linear infinite,
+    fireFlicker 0.15s ease-in-out infinite,
+    fireBreath 1.8s ease-in-out infinite;
+  /* Own layer: the background-position paint stays isolated here and
+     never bubbles up to repaint the card or the scroll container. */
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fire-number,
+  .fire-number-wrap::before {
+    animation: none;
+    will-change: auto;
+  }
+  .fire-number {
+    background: linear-gradient(0deg, #b91c1c, #f97316, #fbbf24);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}

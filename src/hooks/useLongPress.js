@@ -67,5 +67,9 @@ export function useLongPress(onLongPress, ms = 400) {
     [start, end, move]
   );
 
-  return { handlers };
+  // Returns true if the most recent gesture was a long-press (not a tap).
+  // Callers use this in onClick handlers to suppress the tap after a long-press.
+  const wasLongPress = useCallback(() => isLongPressRef.current, []);
+
+  return { handlers, wasLongPress };
 }

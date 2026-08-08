@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { UtensilsCrossed } from 'lucide-react';
+import { useLongPress } from '../../hooks/useLongPress';
 
 const STATUS_CONFIG = {
   'Free': { color: '#22C55E', bg: 'bg-white', icon: UtensilsCrossed, label: 'Free' },
@@ -7,15 +8,29 @@ const STATUS_CONFIG = {
   'Waiting Bill': { color: '#EAB308', bg: 'bg-yellow-50/60', icon: UtensilsCrossed, label: 'Waiting Bill', pulse: true },
 };
 
-const TableCard = memo(function TableCard({ table, onSelect, isSelected }) {
+const TableCard = memo(function TableCard({ table, onSelect, onLongPress, isSelected }) {
   const status = table.status || 'Free';
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG['Free'];
   const Icon = cfg.icon;
   const bill = table.currentBill || table.bill;
 
+  // Long-press (2s) → show cart directly. Only for occupied tables.
+  const isOccupied = status !== 'Free';
+  const lp = useLongPress(
+    () => { if (isOccupied && onLongPress) onLongPress(table); },
+    2000
+  );
+
+  const handleClick = () => {
+    if (lp.wasLongPress()) return; // suppress tap if long-press already fired
+    onSelect(table);
+  };
+
   return (
     <button
-      onClick={() => onSelect(table)}
+      onClick={handleClick}
+      {...lp.handlers}
+      style={{ touchAction: 'pan-y' }}
       className={`relative aspect-square rounded-2xl border p-1.5 sm:p-3 flex flex-col items-center justify-center transition-all duration-150 hover:scale-[1.02] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 ${
         cfg.bg
       } ${cfg.pulse ? 'animate-table-breathing' : ''} ${isSelected ? 'ring-2 ring-[#EF4444] ring-offset-1' : 'border-gray-200 shadow-sm'}`}

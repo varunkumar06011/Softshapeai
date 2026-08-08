@@ -6,7 +6,7 @@
 // if the local edge server (Bun sidecar) is running.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { API_BASE, getAuthHeaders } from "./apiConfig";
+import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import secureStorage from "../utils/secureStorage";
 
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
@@ -1168,4 +1168,47 @@ function handleConnectionStateChanged(data) {
   for (const cb of _runtimeEventListeners) {
     try { cb({ type: 'connection.state_changed', data }); } catch { /* ignore */ }
   }
+}
+
+// ── Edge-aware JSON fetch for analytics/reports ──────────────────────────────
+// Cashier/captain devices that logged in via PIN have an edge-local token,
+// not a cloud JWT. Direct calls to /api/analytics or /api/reports get 401.
+// This helper tries the edge server's proxy routes first (which forward to
+// the cloud with the agent session token), and falls back to a direct cloud
+// fetch (which works for JWT-logged-in devices like the admin panel).
+//
+// Usage:
+//   const data = await edgeAwareJsonFetch(
+//     '/api/edge/analytics/today-specials-sold?startDate=...',
+//     '/api/analytics/today-specials-sold?startDate=...',
+//   );
+export async function edgeAwareJsonFetch(edgePath, cloudPath, options = {}) {
+  // Try edge server first (works for PIN-logged-in devices)
+  if (await isEdgeAvailable()) {
+    try {
+      const res = await edgeFetch(edgePath, { ...options, method: 'GET' });
+      if (res.ok) return await res.json();
+      // If edge returned a non-transient error, don't fall back — surface it
+      if (res.status !== 401 && res.status !== 502 && res.status !== 503) {
+        let message = `Request failed (${res.status})`;
+        try { const body = await res.json(); if (body?.error) message = body.error; } catch { /* ignore */ }
+        throw new Error(message);
+      }
+    } catch (err) {
+      // Edge failed (unreachable, timeout, etc.) — fall through to cloud
+    }
+  }
+  // Fall back to direct cloud fetch (works for JWT-logged-in devices)
+  const res = await fetch(apiUrl(cloudPath), {
+    ...options,
+    method: 'GET',
+    headers: { ...getAuthHeaders(), ...(options.headers || {}) },
+  });
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try { const body = await res.json(); if (body?.error) message = body.error; } catch { /* ignore */ }
+    throw new Error(message);
+  }
+  if (res.status === 204) return null;
+  return await res.json();
 }
