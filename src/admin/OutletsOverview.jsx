@@ -97,6 +97,7 @@ const OutletsOverview = () => {
       await apiFetch('/api/restaurant/add-outlet', {
         method: 'POST',
         body: JSON.stringify(payload),
+        timeout: 120_000,
       });
       setShowAddModal(false);
       setNewOutlet({ name: '', restaurantType: 'DINE_IN', address: '', phone: '', email: '', copyFromOutletId: '' });
@@ -452,7 +453,7 @@ const OutletsOverview = () => {
                 disabled={adding}
                 className="flex-1 py-2.5 bg-[#E53935] hover:bg-[#B71C1C] text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2"
               >
-                {adding ? <Loader2 size={16} className="animate-spin" /> : 'Add Outlet'}
+                {adding ? <><Loader2 size={16} className="animate-spin" /> {newOutlet.copyFromOutletId ? 'Cloning…' : 'Adding…'}</> : 'Add Outlet'}
               </button>
             </div>
           </div>

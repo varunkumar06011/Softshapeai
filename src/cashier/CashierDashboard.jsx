@@ -5664,6 +5664,32 @@ const CashierDashboard = ({ onLogout }) => {
         }
       }
 
+      // Surface edge-server KOT print failures so the cashier knows the printer
+      // did not fire even though the items were committed and are now on the table.
+      const kotPrintResults = orderResponse?.printResults || [];
+      if (kotPrintResults.length > 0) {
+        const kotHasFailures = kotPrintResults.some(r => r.ok === false);
+        const kotAllPrinted = kotPrintResults.every(r => r.ok === true);
+        const kotPending = kotPrintResults.some(r => r.ok === null || r.pending);
+        if (kotHasFailures) {
+          const failedPrinters = kotPrintResults
+            .filter(r => r.ok === false)
+            .map(r => r.error || r.printerName || 'unknown printer')
+            .join(', ');
+          addNotification(
+            'KOT Print Failed',
+            `KOT created but print failed: ${failedPrinters}. Use KOT Reprint to retry.`,
+            'warning'
+          );
+        } else if (kotPending && !kotAllPrinted) {
+          addNotification(
+            'KOT Print Queued',
+            'KOT sent to print queue — will print automatically when the printer is ready.',
+            'info'
+          );
+        }
+      }
+
       if (orderResponse || !selectedTable?.backendId) {
         setCart([]);
         kotRequestIdRef.current = null;
@@ -9362,6 +9388,28 @@ const CashierDashboard = ({ onLogout }) => {
                 const newBill = billableItems.reduce((sum, i) => sum + (Number(i.p ?? i.price ?? 0) * Number(i.q ?? i.quantity ?? 1)), 0);
                 return { ...t, activeOrder: updatedOrder, currentBill: newBill };
               }));
+
+              // Surface cancel slip print failures from the edge server response.
+              const cancelPrintResults = cancelResult?.results || [];
+              const hasCancelPrintFailure = cancelPrintResults.some(r => r.printResult?.ok === false);
+              const hasCancelPrintPending = cancelPrintResults.some(r => r.printResult?.ok === null || r.printResult?.pending);
+              if (hasCancelPrintFailure) {
+                const failedPrinters = cancelPrintResults
+                  .filter(r => r.printResult?.ok === false)
+                  .map(r => r.printResult.error || r.printResult.printerName || 'unknown printer')
+                  .join(', ');
+                addNotification(
+                  'Cancel Slip Not Printed',
+                  `Items cancelled but cancel slip failed: ${failedPrinters}. Use reprint to retry.`,
+                  'warning'
+                );
+              } else if (hasCancelPrintPending) {
+                addNotification(
+                  'Cancel Slip Queued',
+                  'Cancel slip sent to print queue — will print automatically when the printer is ready.',
+                  'info'
+                );
+              }
 
               const entries = Object.values(cancelSelected);
               const firstName = entries[0]?.item ? (entries[0].item.n ?? entries[0].item.name ?? 'Item') : 'Item';

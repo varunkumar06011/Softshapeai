@@ -19,6 +19,22 @@ const EDGE_CHECK_TIMEOUT_MS = 3000;
 const EDGE_CHECK_INTERVAL_MS = 30_000;
 const LAN_DISCOVERY_TIMEOUT_MS = 1500;
 
+/**
+ * Returns true when the page is served over HTTPS in a browser (not Tauri
+ * or Capacitor native). In this context, all edge server HTTP fetches are
+ * blocked by the browser as mixed active content — the edge server runs on
+ * HTTP (port 3101) on the LAN and can never be reached from an HTTPS page.
+ * Tauri and Capacitor apps are exempt because their webviews don't enforce
+ * mixed-content blocking the same way browser tabs do.
+ */
+function isHttpsBrowserContext() {
+  if (typeof window === 'undefined' || !window.location) return false;
+  if (window.location.protocol !== 'https:') return false;
+  if (window.__TAURI__) return false;
+  if (window.Capacitor?.isNativePlatform?.()) return false;
+  return true;
+}
+
 let _edgeAvailable = false;
 let _edgeLastCheck = 0;
 let _discoveredEdgeUrl = null;
@@ -194,6 +210,7 @@ export function getEdgeDiscoveryFailReason() {
  * data fetch doesn't pay the health check latency.
  */
 export function prewarmEdgeHealth() {
+  if (isHttpsBrowserContext()) return;
   isEdgeAvailable().catch(() => {});
 }
 
@@ -245,6 +262,9 @@ export async function waitForEdgeReady(timeoutMs = 15_000, intervalMs = 1_000) {
  * cashier PC itself).
  */
 export async function discoverEdgeUrlFromBackend() {
+  // On an HTTPS browser page, the discovered HTTP edge URL would be blocked
+  // as mixed content on every subsequent health check. Skip discovery entirely.
+  if (isHttpsBrowserContext()) return null;
   try {
     // Don't overwrite a user-configured URL
     const stored = localStorage.getItem(EDGE_URL_STORAGE_KEY);
@@ -338,6 +358,9 @@ export function isEdgeLocalAuth() {
  * Returns the discovered edge URL or null.
  */
 export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId } = {}) {
+  // On an HTTPS browser page, HTTP LAN probes are blocked as mixed content.
+  if (isHttpsBrowserContext()) return null;
+
   if (_discoveryInProgress) {
     // A filtered scan must always run fresh — an in-flight unfiltered scan
     // could return the wrong outlet's edge server. Wait for it to drain,
@@ -553,6 +576,10 @@ export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId } 
 }
 
 export async function isEdgeAvailable() {
+  // On an HTTPS browser page, edge HTTP fetches are blocked as mixed content.
+  // Short-circuit to avoid spawning dozens of blocked fetch requests.
+  if (isHttpsBrowserContext()) return false;
+
   const now = Date.now();
   if (now - _edgeLastCheck < EDGE_CHECK_INTERVAL_MS) return _edgeAvailable;
   _edgeLastCheck = now;
@@ -1011,6 +1038,11 @@ export function onRuntimeStateChange(callback) {
 export function startRuntimeEventBus() {
   if (_runtimeWsStarted) return;
   _runtimeWsStarted = true;
+
+  // On an HTTPS browser page, ws:// connections to the edge server are blocked
+  // as mixed content. Skip the event bus entirely — it would just spin in
+  // reconnect loops with no chance of connecting.
+  if (isHttpsBrowserContext()) return;
 
   const connect = () => {
     const edgeUrl = getEdgeUrl();

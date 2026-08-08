@@ -31,6 +31,7 @@ import {
   setSyncMeta,
   getSyncMeta,
   markOfflineTransactionSynced,
+  getOfflineTransactions,
   setOrderIdMapping,
   getRealOrderId,
   getAllOrderIdMappings,
@@ -91,6 +92,8 @@ export async function shouldDeferSyncOnBattery() {
 // ── Status tracking ──────────────────────────────────────────────────────────
 
 let syncing = false;
+let syncStartedAt = null;
+const SYNC_STUCK_TIMEOUT_MS = 5 * 60 * 1000; // reset syncing flag after 5 min
 let syncStatus = 'idle'; // idle | syncing | error | paused
 let pendingCount = 0;
 let lastSyncAt = null;
@@ -363,6 +366,7 @@ async function replayActionsToEdge(actions) {
         tableId: body.tableId,
         items: body.items || [],
         captainName: body.captainName || null,
+        captainId: body.captainId || null,
         requestId: action.requestId,
         platform: body.platform || 'DINE_IN',
         orderByRole: body.orderByRole || undefined,
@@ -486,7 +490,18 @@ async function verifyEdgeSyncedActions(actions) {
 // ── Main sync function ───────────────────────────────────────────────────────
 
 export async function syncPendingActions() {
-  if (syncing) return;
+  if (syncing) {
+    // Guard against permanent stuck state: if a previous sync cycle crashed
+    // without hitting the finally block, the syncing flag stays true and all
+    // future cycles are silently skipped. Reset after 5 minutes.
+    if (syncStartedAt && Date.now() - syncStartedAt > SYNC_STUCK_TIMEOUT_MS) {
+      console.warn('[SyncEngine] Sync stuck for >5min — resetting syncing flag');
+      syncing = false;
+      syncStartedAt = null;
+    } else {
+      return;
+    }
+  }
   if (!isBackendReachable()) {
     // Even if cloud is unreachable, try edge replay if the edge server is up.
     // This handles the case where the captain's device can reach the edge server
@@ -527,6 +542,7 @@ export async function syncPendingActions() {
   }
 
   syncing = true;
+  syncStartedAt = Date.now();
   setSyncStatus('syncing');
 
   // Flush queued print jobs FIRST — printing is time-sensitive (KOTs, bills)
@@ -610,14 +626,33 @@ export async function syncPendingActions() {
       if (action.edgeSynced && !action.edgeSyncFailed) {
         continue;
       }
-      // Skip settle-order actions — these target the edge server's
-      // /api/edge/order/settle endpoint, not the cloud's offline-sync.
-      // They are retried exclusively by drainSettlementQueue() in
-      // orderApi.js. If sent to cloud offline-sync, the cloud returns
-      // "skipped" (unknown actionType) and the sync engine removes the
-      // action from IndexedDB — permanently losing the settlement.
+      // settle-order actions target the edge server's /api/edge/order/settle
+      // endpoint, not the cloud's offline-sync. When the edge is up, they are
+      // retried exclusively by drainSettlementQueue() in orderApi.js. But when
+      // the edge is down, drainSettlementQueue can't help — and it only runs
+      // from the cashier dashboard. Convert them to 'settle' type so the cloud's
+      // offline-sync endpoint can process them. This ensures settlements reach
+      // the cloud even if the cashier navigated away from the dashboard.
       if (action.actionType === 'settle-order') {
-        continue;
+        const edgeUp = isEdgeLocalAuth() || await isEdgeAvailable();
+        if (edgeUp) {
+          continue; // drainSettlementQueue will handle it via edge
+        }
+        if (!isBackendReachable()) {
+          continue; // neither edge nor cloud is up — can't do anything yet
+        }
+        const orderId = action.body?.orderId || action.entityId;
+        if (!orderId || String(orderId).startsWith('offline-')) {
+          continue; // parent order hasn't synced yet
+        }
+        // Convert to 'settle' so the cloud's offline-sync endpoint processes it
+        await updatePendingAction(action.id, {
+          actionType: 'settle',
+          url: `/api/orders/${orderId}/settle`,
+        });
+        action.actionType = 'settle';
+        action.url = `/api/orders/${orderId}/settle`;
+        console.log(`[SyncEngine] Converted settle-order → settle for cloud sync (orderId=${orderId})`);
       }
       if (action.dependsOnOrderId && String(action.dependsOnOrderId).startsWith('offline-')) {
         if (resolvedOfflineIds.has(action.dependsOnOrderId)) {
@@ -636,6 +671,25 @@ export async function syncPendingActions() {
           readyActions.push(action);
         } else {
           blockedActions.push(action);
+        }
+      } else if (action.dependsOnTransactionId && String(action.dependsOnTransactionId).startsWith('offline-txn-')) {
+        // Block confirm-payment while any save-transaction is still pending
+        // (not in a terminal error state). The backend's confirm-payment
+        // handler checks if the transaction exists and returns a clear 404,
+        // so this is an optimization to avoid wasteful retry cycles. Once
+        // the save-transaction succeeds, the success handler updates this
+        // action's entityId to the cloud transaction ID and clears the
+        // dependency. If the save-transaction fails permanently, we let
+        // the confirm-payment through so it can also fail with a clear error.
+        const pendingSaveTxn = allActions.some(a =>
+          a.actionType === 'save-transaction' &&
+          a.status !== 'failed-permanent' &&
+          a.status !== 'conflict'
+        );
+        if (pendingSaveTxn) {
+          blockedActions.push(action);
+        } else {
+          readyActions.push(action);
         }
       } else {
         readyActions.push(action);
@@ -710,24 +764,80 @@ export async function syncPendingActions() {
             markOfflineTransactionSynced(action.body.localTxnId, result.data || {}).catch(() => {});
           }
         }
+        // Fix #7: After a successful save-transaction, mark the offline
+        // transaction as synced and update any pending confirm-payment actions
+        // to use the cloud transaction ID instead of the offline localId.
+        if (action.actionType === 'save-transaction') {
+          const cloudTxnId = result.data?.transaction?.id;
+          if (cloudTxnId) {
+            // Look up the offline transaction by requestId to get the localId
+            try {
+              const offlineTxns = await getOfflineTransactions();
+              const offlineTxn = offlineTxns.find(t => t.requestId === action.requestId);
+              if (offlineTxn) {
+                await markOfflineTransactionSynced(offlineTxn.localId, result.data || {});
+                // Update any pending confirm-payment actions that reference
+                // this offline transaction localId
+                const allPending = await getPendingActions();
+                for (const pending of allPending) {
+                  if (pending.dependsOnTransactionId === offlineTxn.localId) {
+                    await updatePendingAction(pending.id, {
+                      entityId: cloudTxnId,
+                      url: `/api/transactions/${cloudTxnId}/confirm-payment`,
+                      dependsOnTransactionId: null,
+                    });
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('[SyncEngine] Failed to update transaction ID mapping:', e.message);
+            }
+          }
+        }
         if (action.actionType === 'create-order' || action.actionType === 'update-items') {
           markKitchenItemsSynced(action.body?.tableId || action.entityId, action.requestId).catch(() => {});
         }
         // Fix A: After a successful create-order, store the offline→real ID mapping
         // and update all child actions that were blocked on this offline ID.
-        // Fix #1: If realId cannot be extracted from the response, surface a warning
-        // and mark the action for retry so child actions don't stay blocked forever.
+        // Fix #1: If realId cannot be extracted from the response, try multiple
+        // recovery strategies before giving up so child actions don't stay blocked.
         if (action.actionType === 'create-order' && action.offlineOrderId) {
-          const realId = result.data?.order?.id || result.data?.id;
+          let realId = result.data?.order?.id || result.data?.id || result.data?.orderId;
           if (realId) {
             await setOrderIdMapping(action.offlineOrderId, realId);
             await updatePendingActionEntityIds(action.offlineOrderId, realId);
             console.log(`[SyncEngine] Mapped ${action.offlineOrderId} → ${realId}, updated child actions`);
           } else {
-            // Bug E: Auto-recover after 3 failed attempts — re-fetch the order from
-            // the backend using the tableId to find the real order ID.
+            // ID not in response — try recovery strategies immediately on every
+            // attempt rather than waiting for 3 failures. The order exists on the
+            // server, we just need to find its ID.
             const newAttempts = (action.attempts || 0) + 1;
-            if (newAttempts >= 3 && action.body?.tableId) {
+
+            // Strategy 1: Look up by requestId in ProcessedRequest table
+            try {
+              const prRes = await httpFetch(
+                `${API_BASE}/api/orders/by-request/${encodeURIComponent(action.requestId)}`,
+                { headers: getAuthHeaders() },
+                { timeoutMs: 10_000, retries: 1 }
+              );
+              if (prRes.ok) {
+                const prData = await prRes.json().catch(() => null);
+                const prOrderId = prData?.orderId || prData?.result?.order?.id || prData?.result?.id;
+                if (prOrderId) {
+                  await setOrderIdMapping(action.offlineOrderId, prOrderId);
+                  await updatePendingActionEntityIds(action.offlineOrderId, prOrderId);
+                  console.log(`[SyncEngine] Auto-recovered: mapped ${action.offlineOrderId} → ${prOrderId} via requestId lookup`);
+                  await removePendingAction(action.id);
+                  succeeded++;
+                  continue;
+                }
+              }
+            } catch (recoverErr) {
+              console.warn(`[SyncEngine] requestId lookup failed for ${action.offlineOrderId}:`, recoverErr.message);
+            }
+
+            // Strategy 2: Look up by tableId (finds active orders only)
+            if (action.body?.tableId) {
               try {
                 const recoverRes = await httpFetch(
                   `${API_BASE}/api/orders/table/${action.body.tableId}`,
@@ -747,17 +857,21 @@ export async function syncPendingActions() {
                   }
                 }
               } catch (recoverErr) {
-                console.warn(`[SyncEngine] Auto-recover lookup failed for ${action.offlineOrderId}:`, recoverErr.message);
+                console.warn(`[SyncEngine] table lookup failed for ${action.offlineOrderId}:`, recoverErr.message);
               }
             }
+
+            // All recovery strategies failed — mark as error but keep retrying.
+            // The next sync cycle will try again. Child actions stay blocked but
+            // will be unblocked once the mapping is eventually found.
             console.error(
-              `[SyncEngine] create-order succeeded but no real ID found in response for ${action.offlineOrderId}. ` +
+              `[SyncEngine] create-order succeeded but no real ID found for ${action.offlineOrderId} (attempt ${newAttempts}). ` +
               `Response keys: ${JSON.stringify(Object.keys(result.data || {}))}. ` +
-              `Child actions will remain blocked. Requesting manual review.`
+              `Will retry recovery on next cycle.`
             );
             await updatePendingAction(action.id, {
               status: 'error',
-              lastError: 'Order created on server but ID mapping failed — child actions blocked. Manual review needed.',
+              lastError: `Order created on server but ID mapping failed (attempt ${newAttempts}). Will auto-retry.`,
               attempts: newAttempts,
             });
           }
@@ -1053,6 +1167,53 @@ export async function syncPendingActions() {
       }
     }
 
+    // ── Auto-recovery for stuck actions ──────────────────────────────────────
+    // Reset actions that have been stuck in terminal/transient states for too
+    // long, so they get retried instead of sitting forever:
+    //   - conflict:          reset after 10 minutes (gives user time to review)
+    //   - auth_error (non-edge): reset after 5 minutes (retry token refresh)
+    //   - failed-permanent:  reset after 1 hour (transient issues may resolve)
+    try {
+      const allRemaining = await getPendingActions();
+      const now = Date.now();
+      const CONFLICT_RESET_MS = 10 * 60 * 1000;
+      const AUTH_ERROR_RESET_MS = 5 * 60 * 1000;
+      const PERMANENT_RESET_MS = 60 * 60 * 1000;
+
+      let resetConflicts = 0, resetAuthErrors = 0, resetPermanents = 0;
+
+      for (const a of allRemaining) {
+        if (a.status === 'conflict' && a.createdAt < now - CONFLICT_RESET_MS) {
+          await updatePendingAction(a.id, { status: 'pending', lastError: null });
+          clearConflict(a.id);
+          resetConflicts++;
+        } else if (a.status === 'auth_error' && !isEdgeLocalAuth() && a.createdAt < now - AUTH_ERROR_RESET_MS) {
+          // For non-edge auth: try a silent refresh, and reset to pending
+          // regardless so the next cycle retries with whatever token is available.
+          await updatePendingAction(a.id, { status: 'pending', lastError: null });
+          resetAuthErrors++;
+        } else if (a.status === 'failed-permanent' && a.createdAt < now - PERMANENT_RESET_MS) {
+          await updatePendingAction(a.id, { status: 'pending', lastError: null, attempts: 0 });
+          resetPermanents++;
+        }
+      }
+
+      if (resetConflicts > 0) {
+        console.log(`[SyncEngine] Auto-reset ${resetConflicts} conflict action(s) to pending (10+ min old)`);
+        // Trigger a token refresh attempt for auth_error resets
+        if (resetAuthErrors > 0) silentTokenRefresh().catch(() => {});
+      }
+      if (resetAuthErrors > 0) {
+        console.log(`[SyncEngine] Auto-reset ${resetAuthErrors} auth_error action(s) to pending (5+ min old)`);
+        silentTokenRefresh().catch(() => {});
+      }
+      if (resetPermanents > 0) {
+        console.log(`[SyncEngine] Auto-reset ${resetPermanents} failed-permanent action(s) to pending (1+ hour old)`);
+      }
+    } catch (e) {
+      console.warn('[SyncEngine] Auto-recovery reset failed:', e.message);
+    }
+
     // Fix #2: Prune old acknowledged conflict audit entries (30 days)
     await pruneConflictAuditLog().catch(() => {});
 
@@ -1063,6 +1224,7 @@ export async function syncPendingActions() {
     setSyncStatus('error');
   } finally {
     syncing = false;
+    syncStartedAt = null;
     await refreshPendingCount();
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "softshape-demo",
   "private": true,
-  "version": "23.12.11",
+  "version": "23.12.12",
   "type": "module",
   "scripts": {
     "dev": "vite",

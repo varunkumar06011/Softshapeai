@@ -34,6 +34,7 @@ import {
   getNextOfflineKotNumber,
   getPendingActionsByType,
   removePendingAction,
+  updatePendingAction,
 } from "../utils/offlineDB";
 import { queueKitchenItems } from "../utils/kitchenQueue";
 import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, resetEdgeCache } from "./edgeHealth.js";
@@ -865,6 +866,7 @@ export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier'
       },
       createdAt: Date.now(),
       status: 'pending',
+      dependsOnOrderId: String(orderId).startsWith('offline-') ? orderId : null,
     });
     return { success: false, error: 'Edge server unreachable — settlement queued for retry', offline: true, queued: true };
   } catch (queueErr) {
@@ -883,7 +885,35 @@ export async function drainSettlementQueue() {
   if (actions.length === 0) return { drained: 0, remaining: 0 };
 
   const edgeUp = isEdgeLocalAuth() || await isEdgeAvailable();
-  if (!edgeUp) return { drained: 0, remaining: actions.length };
+  if (!edgeUp) {
+    // Edge is down — fall back to cloud sync so settlements are not stuck
+    // forever. Convert settle-order actions to settle type so the sync
+    // engine can push them through the cloud's /api/orders/offline-sync
+    // endpoint, which already handles the 'settle' actionType.
+    if (!isBackendReachable()) {
+      return { drained: 0, remaining: actions.length };
+    }
+    let converted = 0;
+    for (const action of actions) {
+      if (action.status === 'synced') continue;
+      const orderId = action.body?.orderId || action.entityId;
+      if (!orderId) continue;
+      // Skip orders that haven't been synced to cloud yet — the sync engine
+      // will handle them once the parent create-order action completes.
+      if (String(orderId).startsWith('offline-')) continue;
+      await updatePendingAction(action.id, {
+        actionType: 'settle',
+        url: `/api/orders/${orderId}/settle`,
+      });
+      converted++;
+    }
+    if (converted > 0) {
+      console.log(`[settleQueue] Edge down — converted ${converted} settlement(s) to cloud sync`);
+      const { syncPendingActions } = await import('../utils/syncEngine');
+      await syncPendingActions();
+    }
+    return { drained: 0, remaining: actions.length, convertedToCloud: converted };
+  }
 
   let drained = 0;
   for (const action of actions) {
@@ -1519,6 +1549,7 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
           url: `/api/transactions/${transactionId}/confirm-payment`,
           method: 'POST',
           body: { ...body, requestId },
+          dependsOnTransactionId: String(transactionId).startsWith('offline-txn-') ? transactionId : null,
         });
         return { offline: true };
       }
@@ -1538,6 +1569,7 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
       url: `/api/transactions/${transactionId}/confirm-payment`,
       method: 'POST',
       body: { ...body, requestId },
+      dependsOnTransactionId: String(transactionId).startsWith('offline-txn-') ? transactionId : null,
     });
     return { offline: true };
   }
@@ -1564,6 +1596,7 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
         url: `/api/transactions/${transactionId}/confirm-payment`,
         method: 'POST',
         body: { ...body, requestId },
+        dependsOnTransactionId: String(transactionId).startsWith('offline-txn-') ? transactionId : null,
       });
       return { offline: true };
     }

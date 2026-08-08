@@ -120,6 +120,9 @@ export const authService = {
       if (data.restaurant) {
         localStorage.setItem('ss_restaurant', JSON.stringify(data.restaurant));
       }
+      if (data.accessibleOutlets) {
+        localStorage.setItem('ss_accessible_outlets', JSON.stringify(data.accessibleOutlets));
+      }
       return { token: data.token, user: data.user, restaurant: data.restaurant };
     } catch (err) {
       if (err.name === 'AbortError') {

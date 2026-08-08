@@ -112,6 +112,7 @@ export default function TodaySpecials() {
   const ingredientSearchRef = useRef(null);
   const [staffSold, setStaffSold] = useState([]);
   const [specialsSold, setSpecialsSold] = useState([]);
+  const [tableMetrics, setTableMetrics] = useState({ totalTables: 0, tablesWithSpecials: 0, conversionRate: 0, totalSpecialsSold: 0 });
   const [outletStats, setOutletStats] = useState([]);
   const [outlets, setOutlets] = useState([]);
   const [selectedOutletId, setSelectedOutletId] = useState('all');
@@ -137,6 +138,10 @@ export default function TodaySpecials() {
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
     if (period === 'Today') return { startDate: today, endDate: today };
+    if (period === 'Yesterday') {
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      return { startDate: yesterday, endDate: yesterday };
+    }
     if (period === 'Weekly') {
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       return { startDate: weekAgo.toISOString().slice(0, 10), endDate: today };
@@ -229,6 +234,7 @@ export default function TodaySpecials() {
         // even with 0 sales — just exclude non-captain staff (CASHIER/MANAGER).
         setStaffSold((staffData.staff || []).filter(s => s.role === 'CAPTAIN'));
         setSpecialsSold(soldData.specials || []);
+        setTableMetrics(soldData.tableMetrics || { totalTables: 0, tablesWithSpecials: 0, conversionRate: 0, totalSpecialsSold: 0 });
       } catch (err) {
         console.error('[TodaySpecials] Failed to load sold analytics:', err);
       }
@@ -736,6 +742,33 @@ export default function TodaySpecials() {
         </div>
       </div>
 
+      {/* TABLE METRICS */}
+      {tableMetrics.totalTables > 0 && (
+        <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
+            <Zap size={16} className="text-amber-500" /> Specials Penetration
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-amber-50 rounded-xl px-4 py-3 border border-amber-100">
+              <span className="text-2xl font-black text-amber-600">{tableMetrics.tablesWithSpecials}</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase block mt-0.5">Tables with Specials</span>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+              <span className="text-2xl font-black text-gray-700">{tableMetrics.totalTables}</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase block mt-0.5">Total Tables</span>
+            </div>
+            <div className="bg-green-50 rounded-xl px-4 py-3 border border-green-100">
+              <span className="text-2xl font-black text-green-600">{tableMetrics.conversionRate}%</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase block mt-0.5">Conversion Rate</span>
+            </div>
+            <div className="bg-red-50 rounded-xl px-4 py-3 border border-red-100">
+              <span className="text-2xl font-black text-[#E53935]">{tableMetrics.totalSpecialsSold}</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase block mt-0.5">Total Specials Sold</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* STAFF LEADERBOARD */}
       <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
@@ -747,7 +780,7 @@ export default function TodaySpecials() {
               {selectedOutletId === 'all' ? 'All Outlets' : outlets.find(o => o.id === selectedOutletId)?.name || 'Selected Outlet'}
             </span>
             <div className="flex bg-[#F4F4F5] p-1 rounded-xl">
-              {['Today', 'Weekly', 'Monthly', 'All Time', 'Custom'].map(p => (
+              {['Today', 'Yesterday', 'Weekly', 'Monthly', 'All Time', 'Custom'].map(p => (
                 <button
                   key={p}
                   onClick={() => setLeaderboardPeriod(p)}

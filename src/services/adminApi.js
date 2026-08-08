@@ -17,7 +17,12 @@ import { generateRequestId } from '../utils/requestId.js';
 // ── Menu item operations (local-first) ───────────────────────────────────────
 
 export async function createMenuItem(item) {
-  if (await isEdgeAvailable()) {
+  // Today specials need cloud handling: the local edge admin menu-item endpoint
+  // does not yet persist isSpecial, specialChannel, specialActive, or expiry.
+  // Writing through the cloud keeps the special flags intact and lets the cloud
+  // push the full item (with variants) to all edge/POS clients.
+  const shouldUseCloud = item.isSpecial === true;
+  if (!shouldUseCloud && await isEdgeAvailable()) {
     try {
       return await edgeFetch('/api/edge/admin/menu-item', {
         method: 'POST',
@@ -34,7 +39,13 @@ export async function createMenuItem(item) {
 }
 
 export async function updateMenuItem(id, updates) {
-  if (await isEdgeAvailable()) {
+  // Today special edits must go to the cloud so the special flags/variants sync.
+  const shouldUseCloud =
+    updates.isSpecial === true ||
+    updates.specialActive !== undefined ||
+    updates.specialChannel !== undefined ||
+    updates.specialExpiresAt !== undefined;
+  if (!shouldUseCloud && await isEdgeAvailable()) {
     try {
       return await edgeFetch(`/api/edge/admin/menu-item/${id}`, {
         method: 'PATCH',

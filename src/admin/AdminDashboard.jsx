@@ -133,7 +133,35 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       spireMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [spireMessages, spireLoading]);
-  const accessibleOutlets = authService.getAccessibleOutlets();
+  const [accessibleOutlets, setAccessibleOutlets] = useState(() => {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+
+  const refreshAccessibleOutlets = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/auth/accessible-outlets');
+      const list = (data?.accessibleOutlets || []).map((o) => ({
+        id: o.id,
+        name: o.name,
+        restaurantCode: o.restaurantCode,
+      }));
+      setAccessibleOutlets(list);
+      localStorage.setItem('ss_accessible_outlets', JSON.stringify(list));
+    } catch { /* ignore — keep cached value */ }
+  }, []);
+
+  useEffect(() => {
+    refreshAccessibleOutlets();
+  }, [refreshAccessibleOutlets]);
+
+  useEffect(() => {
+    if (showOutletSwitcher) {
+      refreshAccessibleOutlets();
+    }
+  }, [showOutletSwitcher, refreshAccessibleOutlets]);
 
   // Marketing AI State
   const [mUpload, setMUpload] = useState(null);
