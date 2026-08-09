@@ -6,7 +6,7 @@
 // if the local edge server (Bun sidecar) is running.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
+import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from "./apiConfig";
 import secureStorage from "../utils/secureStorage";
 
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
@@ -1198,17 +1198,11 @@ export async function edgeAwareJsonFetch(edgePath, cloudPath, options = {}) {
       // Edge failed (unreachable, timeout, etc.) — fall through to cloud
     }
   }
-  // Fall back to direct cloud fetch (works for JWT-logged-in devices)
-  const res = await fetch(apiUrl(cloudPath), {
+  // Fall back to the shared cloud client. It refreshes expired user JWTs and
+  // deliberately rejects edge-local PIN session markers instead of sending
+  // them to the cloud, where they would be reported as invalid tokens.
+  return apiFetch(cloudPath, {
     ...options,
     method: 'GET',
-    headers: { ...getAuthHeaders(), ...(options.headers || {}) },
   });
-  if (!res.ok) {
-    let message = `Request failed (${res.status})`;
-    try { const body = await res.json(); if (body?.error) message = body.error; } catch { /* ignore */ }
-    throw new Error(message);
-  }
-  if (res.status === 204) return null;
-  return await res.json();
 }

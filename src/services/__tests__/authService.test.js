@@ -60,6 +60,7 @@ describe('authService', () => {
     // Clear store
     for (const k of Object.keys(store)) delete store[k];
     vi.clearAllMocks();
+    global.fetch = vi.fn().mockResolvedValue({ ok: true });
     // Re-import to get fresh module
     vi.resetModules();
     vi.stubEnv('VITE_API_URL', 'http://localhost:3000');

@@ -33,7 +33,6 @@ import UserMenuApp from "./user-menu/UserMenuApp";
 import RepresentativeMenuLanding from "./user-menu/RepresentativeMenuLanding";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
-import QuickOnboarding from "./onboarding/QuickOnboarding";
 import EdgeSetupScreen from "./onboarding/EdgeSetupScreen";
 import SyncStatusIndicator from "./shared/components/SyncStatusIndicator";
 import AppUpdateBanner from "./shared/components/AppUpdateBanner";
@@ -57,8 +56,9 @@ function isTokenValid(token) {
   if (token.startsWith('edge-local-')) return true;
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
-    if (!payload.exp) return true;
-    return Date.now() < payload.exp * 1000;
+    // Keep expired but structurally valid JWTs long enough for apiFetch to
+    // refresh them instead of redirecting the user before the request runs.
+    return true;
   } catch {
     return false;
   }

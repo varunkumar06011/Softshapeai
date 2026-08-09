@@ -39,8 +39,9 @@ function isTokenValid(token) {
   if (token.startsWith('edge-local-')) return true;
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
-    if (!payload.exp) return true;
-    return Date.now() < payload.exp * 1000;
+    // Keep expired but structurally valid JWTs long enough for apiFetch to
+    // refresh them instead of redirecting before the first request.
+    return true;
   } catch {
     return false;
   }

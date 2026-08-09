@@ -39,7 +39,7 @@ import { updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvail
 import { createMenuItem, updateMenuItem, deleteMenuItem } from '../services/adminApi';
 import EditMenuItemModal from '../shared/components/EditMenuItemModal';
 import { useTableSync, clearTerminatedTable } from '../services/tableSyncService';
-import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
+import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, printWalkinBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 import { setLocalPrinterMapping } from '../utils/offlineDB';
@@ -1035,6 +1035,7 @@ const CashierDashboard = ({ onLogout }) => {
   const prevDiscountTableIdRef = useRef(null);
   const [walkinTableNumber, setWalkinTableNumber] = useState(null); // 1-20 when active
   const [isWalkinMode, setIsWalkinMode] = useState(false);
+  const walkinBillNumberRef = useRef(null); // bill number from edge/cloud print, passed to saveTransaction
 
   const [isCartMinimized, setIsCartMinimized] = useState(true);
   const [isCartExpanded, setIsCartExpanded] = useState(false);
@@ -3695,6 +3696,9 @@ const CashierDashboard = ({ onLogout }) => {
     if (isPrintingBillRef.current) return;
     isPrintingBillRef.current = true;
 
+    // Reset walk-in bill number ref before each print
+    walkinBillNumberRef.current = null;
+
     const tableLabel = selectedTable?.id || 'Walk-in';
     // Use calculateOrderTotal so walk-in GST matches the printed receipt exactly
     const walkinCalc = calculateOrderTotal(
@@ -3711,138 +3715,51 @@ const CashierDashboard = ({ onLogout }) => {
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
+    // Resolve parcel/takeaway section tag (same logic as settlement branch)
+    const walkinSectionTag = (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel';
+    const walkinSectionName = fetchedSections.find(s => s.venue?.kotEnabled === false)?.name || 'Walk-in';
+
+    const walkinItems = cart.map(i => ({
+      name: i.n || i.name,
+      quantity: i.q,
+      price: Number(i.p),
+      menuType: i.menuType || 'FOOD',
+      notes: i.notes || null,
+    }));
+
     try {
       setIsPrintingBill(true);
 
-      if (isOffline || isEdgeLocal) {
-        // Offline: queue the walk-in bill action for sync
-        const { addPendingAction, addOfflineTransaction } = await import('../utils/offlineDB');
-        await addPendingAction({
-          requestId,
-          entityId: `walkin-${tableLabel}`,
-          entityType: 'walkin',
-          actionType: 'walkin-final-bill',
-          url: '/api/print/final-bill-emit',
-          method: 'POST',
-          body: {
-            restaurantId: activeRestaurantId,
-            billData: {
-              tableNumber: tableLabel,
-              items: cart.map(i => ({
-                name: i.n || i.name,
-                quantity: i.q,
-                price: Number(i.p),
-                menuType: i.menuType || 'FOOD',
-                notes: i.notes || null
-              })),
-              subtotal: subtotalAmt,
-              grandTotal: grandTotalAmt,
-              cgst: cgstAmt,
-              sgst: sgstAmt,
-              discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-              captain: 'Walk-in',
-              sectionTag: (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel',
-              requestId
-            }
-          },
-        });
-        // Store local transaction record
-        await addOfflineTransaction({
-          localId: `offline-walkin-${Date.now()}`,
-          requestId,
-          tableLabel,
-          grandTotal: grandTotalAmt,
-          method: null,
-          synced: false,
-          createdAt: Date.now(),
-        });
-        addNotification('Offline', `Walk-in bill queued — will sync when online. Ref: OFFLINE-${requestId.slice(0, 8).toUpperCase()}`, 'warning');
-        // Attempt local printing immediately
-        try {
-          const { printLocal } = await import('../utils/printOffline');
-          const result = await printLocal({
-            jobType: 'FINAL_BILL',
-            data: {
-              tableNumber: tableLabel,
-              items: cart.map(i => ({
-                name: i.n || i.name,
-                quantity: i.q,
-                price: Number(i.p),
-                menuType: i.menuType || 'FOOD',
-                notes: i.notes || null
-              })),
-              subtotal: subtotalAmt,
-              discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-              cgst: cgstAmt,
-              sgst: sgstAmt,
-              grandTotal: grandTotalAmt,
-              billNumber: `OFFLINE-${requestId.slice(0, 8).toUpperCase()}`,
-            },
-          });
-          if (result.printed) {
-            addNotification('Local Print', 'Walk-in bill printed to local printer.', 'success');
-          } else if (result.queued) {
-            addNotification('Print Queued', `No local printer: ${result.error || 'queued'}. Click "Retry prints" in the offline bar.`, 'warning');
-          }
-        } catch (printErr) {
-          console.warn('[handleWalkinFinalBill] Local print failed:', printErr.message);
-        }
-        setShowSettleConfirm(true);
-        return;
+      // ── Edge-first path (mirrors dine-in handleFinalBill) ────────────────────
+      // No isOffline short-circuit — dine-in doesn't have one either. When cloud
+      // is down but edge is up, edge handles the print. When both are down, the
+      // local print attempt still produces a physical receipt, and printWalkinBill
+      // returns an error the user can retry (same as dine-in).
+      // Check edge availability — if edge is reachable, skip local print and let
+      // edge assign the bill number + print via durable queue (same as dine-in).
+      let edgeReachable = isEdgeLocalAuth();
+      if (!edgeReachable) {
+        try { edgeReachable = await isEdgeAvailable(); } catch { edgeReachable = false; }
       }
 
-      // Step 1: Try local print first (same pattern as handleFinalBill)
+      // If edge is NOT reachable, try local print first (same pattern as handleFinalBill)
       let localPrinted = false;
       const walkinBillEventId = `walkin-${requestId}-bill`;
-      try {
-        const { printLocal } = await import('../utils/printOffline');
-        const walkinItems = cart.map(i => ({
-          name: i.n || i.name,
-          quantity: i.q,
-          price: Number(i.p),
-          amount: Number(i.p) * i.q,
-          menuType: i.menuType || 'FOOD',
-          notes: i.notes || null,
-        }));
-        const walkinEscpos = buildBillEscpos({
-          billNumber: 'PENDING',
-          tableNumber: tableLabel,
-          items: walkinItems,
-          subtotal: subtotalAmt,
-          discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-          tax: (cgstAmt || sgstAmt) ? { cgst: cgstAmt, sgst: sgstAmt, total: (cgstAmt || 0) + (sgstAmt || 0) } : null,
-          roundOff: Math.round((Math.round(grandTotalAmt) - grandTotalAmt) * 100) / 100,
-          grandTotal: grandTotalAmt,
-          itemCount: walkinItems.length,
-          qtyCount: walkinItems.reduce((s, i) => s + i.quantity, 0),
-          section: 'Walk-in',
-          restaurant: {
-            name: restaurant?.name || undefined,
-            receiptHeader: restaurant?.receiptHeader || undefined,
-            receiptSubHeader: restaurant?.receiptSubHeader || undefined,
-            address: restaurant?.address || undefined,
-            phone: restaurant?.phone || undefined,
-          },
-        });
-        const result = await printLocal({
-          type: 'FINAL_BILL',
-          escposData: walkinEscpos,
-          eventId: walkinBillEventId,
-          data: {
+      if (!edgeReachable) {
+        try {
+          const { printLocal } = await import('../utils/printOffline');
+          const walkinEscpos = buildBillEscpos({
+            billNumber: 'PENDING',
             tableNumber: tableLabel,
-            items: cart.map(i => ({
-              name: i.n || i.name,
-              quantity: i.q,
-              price: Number(i.p),
-              menuType: i.menuType || 'FOOD',
-              notes: i.notes || null
-            })),
+            items: walkinItems.map(i => ({ ...i, amount: i.price * i.quantity })),
             subtotal: subtotalAmt,
             discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-            cgst: cgstAmt,
-            sgst: sgstAmt,
+            tax: (cgstAmt || sgstAmt) ? { cgst: cgstAmt, sgst: sgstAmt, total: (cgstAmt || 0) + (sgstAmt || 0) } : null,
+            roundOff: Math.round((Math.round(grandTotalAmt) - grandTotalAmt) * 100) / 100,
             grandTotal: grandTotalAmt,
-            billNumber: 'PENDING',
+            itemCount: walkinItems.length,
+            qtyCount: walkinItems.reduce((s, i) => s + i.quantity, 0),
+            section: 'Walk-in',
             restaurant: {
               name: restaurant?.name || undefined,
               receiptHeader: restaurant?.receiptHeader || undefined,
@@ -3850,43 +3767,61 @@ const CashierDashboard = ({ onLogout }) => {
               address: restaurant?.address || undefined,
               phone: restaurant?.phone || undefined,
             },
-          },
-        });
-        localPrinted = result?.printed || false;
-      } catch (printErr) {
-        console.warn('[handleWalkinFinalBill] Local print failed:', printErr.message);
+          });
+          const result = await printLocal({
+            type: 'FINAL_BILL',
+            escposData: walkinEscpos,
+            eventId: walkinBillEventId,
+            data: {
+              tableNumber: tableLabel,
+              items: walkinItems,
+              subtotal: subtotalAmt,
+              discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
+              cgst: cgstAmt,
+              sgst: sgstAmt,
+              grandTotal: grandTotalAmt,
+              billNumber: 'PENDING',
+              restaurant: {
+                name: restaurant?.name || undefined,
+                receiptHeader: restaurant?.receiptHeader || undefined,
+                receiptSubHeader: restaurant?.receiptSubHeader || undefined,
+                address: restaurant?.address || undefined,
+                phone: restaurant?.phone || undefined,
+              },
+            },
+          });
+          localPrinted = result?.printed || false;
+        } catch (printErr) {
+          console.warn('[handleWalkinFinalBill] Local print failed:', printErr.message);
+        }
       }
 
-      // Step 2: Call backend with localPrinted flag and shared billEventId
-      const response = await httpFetch(`${API_BASE}/api/print/final-bill-emit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({
-          restaurantId: activeRestaurantId,
-          billEventId: walkinBillEventId,
-          billData: {
-            tableNumber: tableLabel,
-            items: cart.map(i => ({
-              name: i.n || i.name,
-              quantity: i.q,
-              price: Number(i.p),
-              menuType: i.menuType || 'FOOD'
-            })),
-            subtotal: subtotalAmt,
-            grandTotal: grandTotalAmt,
-            cgst: cgstAmt,
-            sgst: sgstAmt,
-            discount: discountPercent > 0 ? { percent: discountPercent, amount: discountAmt } : null,
-            captain: 'Walk-in',
-            sectionTag: (fetchedSections.find(s => s.venue?.kotEnabled === false)?.sectionTag) || 'venue-restaurant-parcel',
-            requestId
-          }
-        })
-      }, { retries: 1 });
+      // Call printWalkinBill — edge-first, cloud fallback (mirrors dine-in printBill)
+      const result = await printWalkinBill({
+        restaurantId: activeRestaurantId,
+        tableNumber: tableLabel,
+        items: walkinItems,
+        subtotal: subtotalAmt,
+        grandTotal: grandTotalAmt,
+        cgst: cgstAmt,
+        sgst: sgstAmt,
+        discountPercent: discountPercent > 0 ? discountPercent : undefined,
+        discountAmount: discountAmt > 0 ? discountAmt : undefined,
+        sectionTag: walkinSectionTag,
+        sectionName: walkinSectionName,
+        captain: 'Walk-in',
+        billEventId: walkinBillEventId,
+        localPrinted,
+        requestId,
+      });
 
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.error || `Server returned ${response.status}`);
+      if (!result.success) {
+        throw new Error(result.error || 'Walk-in bill print failed');
+      }
+
+      // Capture bill number for saveTransaction
+      if (result.billNumber) {
+        walkinBillNumberRef.current = result.billNumber;
       }
 
       addNotification('Walk-in Bill Printed', `${tableLabel} — ₹${grandTotalAmt.toFixed(2)}`, 'success');
@@ -4521,7 +4456,7 @@ const CashierDashboard = ({ onLogout }) => {
             tipAmount: Number(tipAmount) || 0,
             sectionId: walkinSectionId,
             sectionTag: walkinSectionTag,
-            billNumber: null,
+            billNumber: walkinBillNumberRef.current || null,
             platform: 'CASHIER',
           });
 
@@ -5953,6 +5888,24 @@ const CashierDashboard = ({ onLogout }) => {
     return breakdown;
   }, [completedTransactions]);
 
+  // Venue-wise sales breakdown — groups completed transactions by venue name.
+  // Resolves venue from the transaction's sectionTag → fetchedSections → venue.name.
+  // Transactions with no resolvable venue are grouped under "Unassigned".
+  const venueSalesBreakdown = useMemo(() => {
+    const map = new Map(); // venueName → { total, count }
+    for (const txn of completedTransactions) {
+      const section = fetchedSections.find(s => s.sectionTag === txn.sectionTag);
+      const venueName = section?.venue?.name || 'Unassigned';
+      const entry = map.get(venueName) || { total: 0, count: 0 };
+      entry.total += Number(txn.grandTotal ?? txn.amount ?? 0);
+      entry.count += 1;
+      map.set(venueName, entry);
+    }
+    return Array.from(map.entries())
+      .map(([name, { total, count }]) => ({ name, total, count }))
+      .sort((a, b) => b.total - a.total);
+  }, [completedTransactions, fetchedSections]);
+
   const stats = [
     { label: "Total Sales", value: `₹${Number(dashboardTotalSales).toFixed(2)}`, change: `${completedTransactions.length} txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Wallet, color: "text-green-600", bg: "bg-green-50" },
     { label: "Discounts", value: `₹${Number(dashboardTotalDiscounts).toFixed(2)}`, change: `${completedTransactions.filter(t => Number(t.discountAmount ?? 0) > 0).length} discounted txns ${dashboardDate ? `(${dashboardDate})` : '(Today)'}`, icon: Tag, color: "text-blue-600", bg: "bg-blue-50" },
@@ -6162,6 +6115,28 @@ const CashierDashboard = ({ onLogout }) => {
                             <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest mb-1">Other</p>
                             <p className="text-lg font-black text-orange-700 tabular-nums">₹{settlementBreakdown.OTHER.toFixed(2)}</p>
                           </div>
+                        </div>
+                      </div>
+                    )}
+                    {/* Venue-wise Sales Breakdown */}
+                    {venueSalesBreakdown.length > 0 && (
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 mb-3 flex items-center gap-2">
+                          <LayoutGrid size={16} className="text-[#1E3A8A]" />
+                          Venue-wise Sales
+                          <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">{venueSalesBreakdown.reduce((s, v) => s + v.count, 0)} transactions</span>
+                        </h3>
+                        <div className="space-y-2">
+                          {venueSalesBreakdown.map(venue => (
+                            <div key={venue.name} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-2 h-2 rounded-full bg-[#1E3A8A] shrink-0" />
+                                <span className="text-sm font-bold text-gray-700 truncate">{venue.name}</span>
+                                <span className="text-[10px] font-bold text-gray-400 shrink-0">{venue.count} txn{venue.count !== 1 ? 's' : ''}</span>
+                              </div>
+                              <span className="text-sm font-black font-mono text-green-600 tabular-nums shrink-0">₹{venue.total.toFixed(2)}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

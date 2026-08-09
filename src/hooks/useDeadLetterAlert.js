@@ -60,6 +60,25 @@ export function useDeadLetterAlert() {
     }
   }, [fetchDeadLetters]);
 
+  const backfillTransactions = useCallback(async () => {
+    const edgeUrl = getEdgeUrl();
+    const apiKey = getStoredEdgeApiKey();
+    const runtimeToken = getStoredEdgeRuntimeToken();
+    if (!edgeUrl || !apiKey) return;
+    try {
+      await fetch(`${edgeUrl}/api/edge/sync/backfill`, {
+        method: "POST",
+        headers: {
+          "x-edge-api-key": apiKey,
+          ...(runtimeToken ? { 'Authorization': `Bearer ${runtimeToken}` } : {}),
+        },
+      });
+      await fetchDeadLetters();
+    } catch (err) {
+      console.error("[DeadLetter] Transaction backfill failed:", err);
+    }
+  }, [fetchDeadLetters]);
+
   const retryOne = useCallback(async (queueId) => {
     const edgeUrl = getEdgeUrl();
     const apiKey = getStoredEdgeApiKey();
@@ -104,6 +123,7 @@ export function useDeadLetterAlert() {
     loading,
     refetch: fetchDeadLetters,
     retryAll,
+    backfillTransactions,
     retryOne,
     discardOne,
   };

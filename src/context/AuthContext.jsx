@@ -8,9 +8,9 @@
 //   - logout(): clears token and user from state + localStorage
 //
 // Token validation:
-//   - Client-side expiry check (UX only — NOT security validation)
+//   - Client-side token structure check (UX only — NOT security validation)
 //   - Backend always verifies JWT signature on every request
-//   - This check prevents showing logged-in UI with an obviously expired token
+//   - Expired but structurally valid JWTs remain available for one refresh attempt
 //
 // Usage: Wrap app in <AuthProvider>, then useAuth() in any component.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,10 +25,10 @@ import secureStorage from '../utils/secureStorage';
 const AuthContext = createContext(null);
 
 /**
- * Client-side token expiry check — UX only, NOT security validation.
- * A malicious token with a forged expiry could pass this check.
- * The backend always verifies the signature; this just prevents showing
- * a logged-in UI with an obviously expired token.
+ * Client-side token structure check — UX only, NOT security validation.
+ * A malicious token with a forged payload could pass this check.
+ * The backend always verifies the signature; expired JWTs are retained briefly
+ * so the API client can refresh the session before redirecting.
  */
 function isTokenValid(token) {
   if (!token) return false;
@@ -44,10 +44,20 @@ function isTokenValid(token) {
   }
 }
 
+function isTokenRefreshable(token) {
+  if (!token || token.startsWith('edge-local-')) return false;
+  try {
+    JSON.parse(atob(token.split('.')[1]));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => {
     const saved = secureStorage.getItem('ss_token');
-    if (!isTokenValid(saved)) {
+    if (!isTokenValid(saved) && !isTokenRefreshable(saved)) {
       secureStorage.removeItem('ss_token');
       secureStorage.removeItem('ss_preauth_token');
       localStorage.removeItem('ss_user');

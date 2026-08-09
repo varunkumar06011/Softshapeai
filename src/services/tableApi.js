@@ -358,20 +358,20 @@ export async function deleteAllTables(requestId = null) {
 
 // ── Venue CRUD ──────────────────────────────────────────────────────────────
 
-export async function createVenue({ name, venueType, kotEnabled, sortOrder }) {
+export async function createVenue({ name, venueType, kotEnabled, sortOrder, kotPrinterName, billPrinterName }) {
   const res = await fetchWithRetry(apiUrl("/api/venues"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder }),
+    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder, kotPrinterName, billPrinterName }),
   });
   return parseResponse(res);
 }
 
-export async function updateVenue(id, { name, venueType, kotEnabled, sortOrder, isActive }) {
+export async function updateVenue(id, { name, venueType, kotEnabled, sortOrder, isActive, kotPrinterName, billPrinterName }) {
   const res = await fetchWithRetry(apiUrl(`/api/venues/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder, isActive }),
+    body: JSON.stringify({ name, venueType, kotEnabled, sortOrder, isActive, kotPrinterName, billPrinterName }),
   });
   return parseResponse(res);
 }

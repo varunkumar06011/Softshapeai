@@ -3016,6 +3016,30 @@ export function MenuPage({ onAddDish }) {
 
 
 
+  const handleCategoryPrinterChange = async (id, printerTarget) => {
+    setCatSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/admin/categories/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ printerTarget: printerTarget || null }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update category printer');
+      }
+      // Optimistic: update local state immediately
+      setDbCategories(prev => prev.map(c => c.id === id ? { ...c, printerTarget: printerTarget || null } : c));
+    } catch (err) {
+      alert(err.message);
+      await fetchCategories();
+    } finally {
+      setCatSaving(false);
+    }
+  };
+
+
+
   const handleEdit = async (item) => {
 
     setEditingItem({
@@ -3221,12 +3245,6 @@ export function MenuPage({ onAddDish }) {
         ...(editingItem.printerName !== undefined
 
           ? { printerName: editingItem.printerName || null }
-
-          : {}),
-
-        ...(editingItem.categoryPrinterTarget !== undefined
-
-          ? { categoryPrinterTarget: editingItem.categoryPrinterTarget }
 
           : {}),
 
@@ -4151,6 +4169,22 @@ export function MenuPage({ onAddDish }) {
 
                 )}
 
+                <select
+                  value={cat.printerTarget || ''}
+                  onChange={(e) => handleCategoryPrinterChange(cat.id, e.target.value)}
+                  disabled={catSaving}
+                  title="Printer for all items in this category (item-level override wins over this)"
+                  className="text-[11px] px-1.5 py-1 border border-gray-200 rounded bg-white text-gray-600 focus:outline-none focus:border-[#E53935] max-w-[140px]"
+                >
+                  <option value="">Default (auto)</option>
+                  {allPrinterOptions.map(opt => (
+                    <option key={opt.name} value={opt.name}>
+                      {opt.name}
+                      {opt.source === 'agent-live' ? ' (Live)' : opt.type ? ` (${opt.type})` : ''}
+                    </option>
+                  ))}
+                </select>
+
                 <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
 
                   {categoryItemCounts[cat.name] || 0}
@@ -4697,18 +4731,17 @@ export function MenuPage({ onAddDish }) {
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Print To</label>
 
                 <select
-                  value={editingItem.printerTarget || editingItem.categoryPrinterTarget || ''}
+                  value={editingItem.printerTarget || ''}
                   onChange={(e) => {
                     const val = e.target.value || null;
                     setEditingItem({
                       ...editingItem,
                       printerTarget: val,
-                      categoryPrinterTarget: val,
                     });
                   }}
                   className={input + ' w-full bg-gray-50'}
                 >
-                  <option value="">Default (auto-resolve)</option>
+                  <option value="">Default ({editingItem.categoryPrinterTarget ? `follows category: ${editingItem.categoryPrinterTarget}` : 'auto-resolve'})</option>
                   {allPrinterOptions.map(opt => (
                     <option key={opt.name} value={opt.name}>
                       {opt.name}
@@ -5167,18 +5200,17 @@ export function MenuPage({ onAddDish }) {
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Print To</label>
 
                   <select
-                      value={addingItem.printerTarget || addingItem.categoryPrinterTarget || ''}
+                      value={addingItem.printerTarget || ''}
                       onChange={(e) => {
                         const val = e.target.value || null;
                         setAddingItem({
                           ...addingItem,
                           printerTarget: val,
-                          categoryPrinterTarget: val,
                         });
                       }}
                       className={input + ' w-full bg-gray-50'}
                     >
-                      <option value="">Default (auto-resolve)</option>
+                      <option value="">Default ({addingItem.categoryPrinterTarget ? `follows category: ${addingItem.categoryPrinterTarget}` : 'auto-resolve'})</option>
                       {allPrinterOptions.map(opt => (
                         <option key={opt.name} value={opt.name}>
                           {opt.name}

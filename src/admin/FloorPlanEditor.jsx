@@ -341,6 +341,10 @@ function SectionRow({
   };
 
   const handleDelete = () => {
+    if (section.isDefault) {
+      alert(`"${section.name}" is a default section and cannot be deleted.`);
+      return;
+    }
     if (tables.length > 0) {
       alert(`"${section.name}" has ${tables.length} table(s). Move or delete them first.`);
       return;
@@ -391,7 +395,9 @@ function SectionRow({
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           <button onClick={() => { setEditing(true); setNameInput(section.name); }} className="p-1 text-gray-400 hover:text-[#E53935] rounded-lg hover:bg-gray-100"><Pencil size={12} /></button>
-          <button onClick={handleDelete} className="p-1 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100"><Trash2 size={12} /></button>
+          {!section.isDefault && (
+            <button onClick={handleDelete} className="p-1 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100"><Trash2 size={12} /></button>
+          )}
         </div>
       </div>
 

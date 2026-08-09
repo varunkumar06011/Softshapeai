@@ -1659,6 +1659,92 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
   }
 }
 
+// ── printWalkinBill — edge-first walk-in/takeaway bill print (mirrors printBill) ─
+// Tries edge first (assigns sequential bill number + prints via durable queue),
+// falls back to cloud /api/print/final-bill-emit if edge is unavailable.
+// Returns { success, billNumber } so the caller can pass billNumber to saveTransaction.
+export async function printWalkinBill({
+  restaurantId,
+  tableNumber,
+  items,
+  subtotal,
+  grandTotal,
+  cgst,
+  sgst,
+  discountPercent,
+  discountAmount,
+  sectionTag,
+  sectionName,
+  captain,
+  billEventId,
+  localPrinted = false,
+  requestId = null,
+}) {
+  const printRequestId = requestId || generateRequestId();
+  const body = {
+    restaurantId,
+    tableNumber,
+    items,
+    subtotal,
+    grandTotal,
+    cgst,
+    sgst,
+    discountPercent,
+    discountAmount,
+    sectionTag,
+    sectionName,
+    captain,
+    billEventId,
+    localPrinted,
+    requestId: printRequestId,
+  };
+
+  // ── Edge server first (local SQLite, assigns real bill number + prints) ──────
+  resetEdgeCache();
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (useEdgeDirect || await isEdgeAvailable()) {
+    try {
+      console.log('[printWalkinBill] Sending to edge:', { tableNumber, restaurantId });
+      const edgeResult = await edgeFetch('/api/edge/print/walkin-bill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (edgeResult && edgeResult.success) {
+        return edgeResult;
+      }
+      return { success: false, error: edgeResult?.error || 'Walk-in bill print failed on edge' };
+    } catch (edgeErr) {
+      if (edgeErr?.status && [400, 409].includes(edgeErr.status)) {
+        console.warn('[Edge] printWalkinBill edge rejected:', edgeErr.status, edgeErr.message);
+        return { success: false, error: edgeErr.message };
+      }
+      console.warn('[Edge] printWalkinBill edge error, falling through to cloud:', edgeErr.message);
+    }
+  }
+
+  // ── Cloud fallback: assign bill number + emit print via socket ──────────────
+  if (!isBackendReachable()) {
+    return { success: false, error: 'Edge server and cloud both unreachable — check your network.' };
+  }
+  try {
+    const res = await fetch(apiUrl('/api/print/final-bill-emit'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ restaurantId, billEventId, billData: { ...body } }),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      return { success: false, error: errBody.error || `Server returned ${res.status}` };
+    }
+    const data = await res.json();
+    return { success: true, billNumber: data.billNumber || null };
+  } catch (cloudErr) {
+    console.warn('[printWalkinBill] Cloud fallback failed:', cloudErr.message);
+    return { success: false, error: cloudErr.message || 'Walk-in bill print failed' };
+  }
+}
+
 export { generateRequestId };
 
 export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber, requestId = null, isExtraTable = false) {

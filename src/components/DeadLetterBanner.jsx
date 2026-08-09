@@ -4,7 +4,7 @@ import { useDeadLetterAlert } from "../hooks/useDeadLetterAlert";
 // Banner shown on the cashier dashboard when dead-lettered sync records exist.
 // Provides retry-all, per-record retry, and per-record discard actions.
 export function DeadLetterBanner() {
-  const { deadLetterCount, records, retryAll, retryOne, discardOne } = useDeadLetterAlert();
+  const { deadLetterCount, records, retryAll, backfillTransactions, retryOne, discardOne } = useDeadLetterAlert();
   const [expanded, setExpanded] = useState(false);
 
   if (deadLetterCount === 0) return null;
@@ -48,6 +48,20 @@ export function DeadLetterBanner() {
             }}
           >
             {expanded ? "Hide" : "Details"}
+          </button>
+          <button
+            onClick={backfillTransactions}
+            style={{
+              padding: "4px 12px",
+              border: "1px solid #2563eb",
+              borderRadius: "4px",
+              background: "#2563eb",
+              color: "white",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            Recover Sales
           </button>
           <button
             onClick={retryAll}

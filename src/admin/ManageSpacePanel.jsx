@@ -10,6 +10,8 @@ import {
   createSection, updateSection, deleteSection,
   createTable, bulkCreateTables, updateTable, deleteTable, deleteAllTables,
 } from '../services/tableApi';
+import { apiUrl, getAuthHeaders } from '../services/apiConfig.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 const cls = {
   input: 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#E53935] focus:ring-1 focus:ring-red-100 bg-white transition',
@@ -114,6 +116,7 @@ export default function ManageSpacePanel({ onBack }) {
 }
 
 function SpaceEditor({ onBack }) {
+  const { restaurant } = useAuth();
   const [venues, setVenues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -121,6 +124,7 @@ function SpaceEditor({ onBack }) {
   const [expandedSections, setExpandedSections] = useState(new Set());
   const [successMsg, setSuccessMsg] = useState('');
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [availablePrinters, setAvailablePrinters] = useState([]);
 
   const totalTables = venues.reduce((acc, v) => {
     const secs = [...(v.sections || []), ...((v.floors || []).flatMap(f => f.sections || []))];
@@ -142,6 +146,26 @@ function SpaceEditor({ onBack }) {
 
   useEffect(() => { loadVenues(); }, [loadVenues]);
 
+  // Fetch available printer names from the print agent status + outlet printer config
+  useEffect(() => {
+    const fetchPrinters = async () => {
+      try {
+        const res = await fetch(apiUrl('/api/print/agent-status'), {
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const agentPrinters = data?.availablePrinters || [];
+          const configPrinters = (restaurant?.printerConfig?.printers || [])
+            .map(p => p?.name).filter(Boolean);
+          const merged = [...new Set([...agentPrinters, ...configPrinters])];
+          setAvailablePrinters(merged);
+        }
+      } catch { /* non-fatal — dropdowns will just be empty */ }
+    };
+    fetchPrinters();
+  }, [restaurant?.printerConfig?.printers]);
+
   const toggleVenue = id => setExpandedVenues(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSection = id => setExpandedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -157,12 +181,12 @@ function SpaceEditor({ onBack }) {
     return nums.length > 0 ? Math.max(...nums) + 1 : 1;
   };
 
-  const handleAddVenue = async (name, venueType, kotEnabled) => {
-    try { await createVenue({ name, venueType, kotEnabled }); await loadVenues(); showSuccess(`Venue "${name}" created`); }
+  const handleAddVenue = async (name, venueType, kotEnabled, kotPrinterName, billPrinterName) => {
+    try { await createVenue({ name, venueType, kotEnabled, kotPrinterName, billPrinterName }); await loadVenues(); showSuccess(`Venue "${name}" created`); }
     catch (err) { setError(err.message); }
   };
-  const handleRenameVenue = async (id, name, venueType, kotEnabled) => {
-    try { await updateVenue(id, { name, venueType, kotEnabled }); await loadVenues(); showSuccess('Venue updated'); }
+  const handleRenameVenue = async (id, name, venueType, kotEnabled, kotPrinterName, billPrinterName) => {
+    try { await updateVenue(id, { name, venueType, kotEnabled, kotPrinterName, billPrinterName }); await loadVenues(); showSuccess('Venue updated'); }
     catch (err) { setError(err.message); }
   };
   const handleDeleteVenue = async (id, name, sectionsCount) => {
@@ -302,6 +326,7 @@ function SpaceEditor({ onBack }) {
                 onDeleteTable={handleDeleteTable}
                 allSections={allSections}
                 nextTableNum={nextTableNumForVenue(venue)}
+                availablePrinters={availablePrinters}
               />
             ))}
           </div>
@@ -340,18 +365,31 @@ function AddVenueInline({ onAdd }) {
   );
 }
 
-function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSection, onRenameVenue, onDeleteVenue, onAddSection, onRenameSection, onDeleteSection, onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum }) {
+function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSection, onRenameVenue, onDeleteVenue, onAddSection, onRenameSection, onDeleteSection, onAddTable, onBulkAddTable, onUpdateTable, onDeleteTable, allSections, nextTableNum, availablePrinters }) {
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(venue.name);
   const [typeInput, setTypeInput] = useState(venue.venueType || 'DINE_IN');
   const [kotInput, setKotInput] = useState(venue.kotEnabled !== false);
+  const [kotPrinterInput, setKotPrinterInput] = useState(venue.kotPrinterName || '');
+  const [billPrinterInput, setBillPrinterInput] = useState(venue.billPrinterName || '');
   const [addingSection, setAddingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
 
   const sections = [...(venue.sections || []), ...((venue.floors || []).flatMap(f => f.sections || []))];
   const totalTables = sections.reduce((a, s) => a + (s.tables?.length || 0), 0);
 
-  const saveVenue = () => { if (nameInput.trim()) onRenameVenue(venue.id, nameInput.trim(), typeInput, kotInput); setEditing(false); };
+  const saveVenue = () => {
+    if (nameInput.trim()) onRenameVenue(venue.id, nameInput.trim(), typeInput, kotInput, kotPrinterInput || null, billPrinterInput || null);
+    setEditing(false);
+  };
+  const cancelEdit = () => {
+    setEditing(false);
+    setNameInput(venue.name);
+    setTypeInput(venue.venueType || 'DINE_IN');
+    setKotInput(venue.kotEnabled !== false);
+    setKotPrinterInput(venue.kotPrinterName || '');
+    setBillPrinterInput(venue.billPrinterName || '');
+  };
   const addSection = () => { if (newSectionName.trim()) { onAddSection(newSectionName.trim(), venue.id); setNewSectionName(''); setAddingSection(false); } };
 
   return (
@@ -361,20 +399,30 @@ function VenueCard({ venue, expanded, onToggle, expandedSections, onToggleSectio
         <MapPin size={15} className="text-[#E53935] flex-shrink-0" />
         {editing ? (
           <div className="flex items-center gap-2 flex-1 flex-wrap">
-            <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveVenue(); if (e.key === 'Escape') { setEditing(false); setNameInput(venue.name); } }} className={cls.input + ' max-w-[160px]'} />
+            <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveVenue(); if (e.key === 'Escape') cancelEdit(); }} className={cls.input + ' max-w-[160px]'} />
             <select value={typeInput} onChange={e => setTypeInput(e.target.value)} className={cls.input + ' max-w-[120px]'}>{VENUE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
             <button type="button" onClick={() => setKotInput(v => !v)} className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${kotInput ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={kotInput ? 'KOT ON' : 'KOT OFF — direct bill only'}>
               <span className={`w-2 h-2 rounded-full ${kotInput ? 'bg-green-500' : 'bg-gray-400'}`} />
               KOT: {kotInput ? 'ON' : 'OFF'}
             </button>
+            <select value={kotPrinterInput} onChange={e => setKotPrinterInput(e.target.value)} className={cls.input + ' max-w-[140px]'} title="KOT printer for this venue">
+              <option value="">KOT: Default</option>
+              {availablePrinters.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={billPrinterInput} onChange={e => setBillPrinterInput(e.target.value)} className={cls.input + ' max-w-[140px]'} title="Bill printer for this venue">
+              <option value="">Bill: Default</option>
+              {availablePrinters.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
             <button onClick={saveVenue} className="p-1.5 bg-[#E53935] text-white rounded-lg hover:bg-[#B71C1C]"><Check size={13} /></button>
-            <button onClick={() => { setEditing(false); setNameInput(venue.name); setTypeInput(venue.venueType || 'DINE_IN'); setKotInput(venue.kotEnabled !== false); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
+            <button onClick={cancelEdit} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={13} /></button>
           </div>
         ) : (
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="font-bold text-sm text-gray-900 truncate">{venue.name}</span>
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0 ${venueTypeColor(venue.venueType)}`}>{venueTypeLabel(venue.venueType)}</span>
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0 ${venue.kotEnabled !== false ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`} title={venue.kotEnabled !== false ? 'KOT printing enabled' : 'KOT printing disabled — direct bill only'}>KOT: {venue.kotEnabled !== false ? 'ON' : 'OFF'}</span>
+            {venue.kotPrinterName && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 bg-amber-100 text-amber-700" title="KOT printer">🍳 {venue.kotPrinterName}</span>}
+            {venue.billPrinterName && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 bg-blue-100 text-blue-700" title="Bill printer">🧾 {venue.billPrinterName}</span>}
             <span className="text-[10px] text-gray-400 flex-shrink-0">{sections.length} section{sections.length !== 1 ? 's' : ''} · {totalTables} table{totalTables !== 1 ? 's' : ''}</span>
           </div>
         )}
@@ -452,7 +500,9 @@ function SectionCard({ section, expanded, onToggle, onRename, onDelete, onAddTab
         {!editing && (
           <div className="flex items-center gap-0.5 flex-shrink-0">
             <button onClick={() => setEditing(true)} className={cls.iconBtn + ' text-gray-400 hover:text-[#E53935] hover:bg-red-50'} title="Rename section"><Pencil size={12} /></button>
-            <button onClick={() => onDelete(section.id, section.name, tables.length)} className={cls.iconBtn + ' text-gray-400 hover:text-red-500 hover:bg-red-50'} title="Delete section"><Trash2 size={12} /></button>
+            {!section.isDefault && (
+              <button onClick={() => onDelete(section.id, section.name, tables.length)} className={cls.iconBtn + ' text-gray-400 hover:text-red-500 hover:bg-red-50'} title="Delete section"><Trash2 size={12} /></button>
+            )}
           </div>
         )}
       </div>
