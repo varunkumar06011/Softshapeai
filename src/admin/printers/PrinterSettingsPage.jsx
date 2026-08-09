@@ -125,10 +125,18 @@ export default function PrinterSettingsPage() {
     }
   }, [setupToken, API_BASE, fetchEdgeStatus]);
 
+  const lastInitRestaurantId = useRef(null);
   useEffect(() => {
+    // Only (re)initialize from backend data on first load or when the outlet
+    // actually changes (switch-outlet). Without this guard, any update to the
+    // `restaurant` context object (e.g. AdminDashboard's /api/restaurant/me
+    // refetch) overwrites the user's in-progress edits with stale data.
+    const rid = restaurant?.id;
+    if (rid === lastInitRestaurantId.current) return;
+    lastInitRestaurantId.current = rid;
     const printers = restaurant?.printerConfig?.printers || [];
     setPrintersConfig(Array.isArray(printers) ? printers : Object.values(printers));
-  }, [restaurant?.printerConfig?.printers]);
+  }, [restaurant?.id, restaurant?.printerConfig?.printers]);
 
   useEffect(() => {
     fetchStatus();
@@ -218,8 +226,12 @@ export default function PrinterSettingsPage() {
       const validPrinters = printersConfig
         .map((p) => ({ name: String(p.name || '').trim(), type: String(p.type || '').trim().toUpperCase() }))
         .filter((p) => p.name);
+      // Only send the `printers` field — do NOT spread the existing printerConfig
+      // because it may contain stale agent identity (agentMapping, lastAgentId,
+      // availablePrinters) that would re-pollute the backend and undo a
+      // hub-deactivate reset. The backend PATCH merges this into the existing
+      // config, preserving agent fields that are managed by the print agent.
       const mergedConfig = {
-        ...(restaurant?.printerConfig || {}),
         printers: validPrinters,
       };
       const res = await fetch(apiUrl('/api/restaurant/profile'), {
@@ -229,7 +241,9 @@ export default function PrinterSettingsPage() {
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
       if (restaurant) {
-        setRestaurant({ ...restaurant, printerConfig: mergedConfig });
+        // Merge only the printers field into the existing printerConfig so we
+        // don't wipe agent identity fields from the local cache.
+        setRestaurant({ ...restaurant, printerConfig: { ...restaurant.printerConfig, printers: validPrinters } });
       }
       setConfigMessage({ type: 'success', text: 'Printer config saved.' });
     } catch (err) {
