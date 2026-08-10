@@ -799,58 +799,73 @@ export default function CaptainApp({ onLogout }) {
   // Fetch sections dynamically - edge-first with cloud fallback.
   // Re-runs when edge reconnects (edgeReconnectTrigger) so sections switch
   // from cloud to edge as soon as the edge server is discovered on LAN.
+  // Also re-runs when the user clicks the retry button (sectionsRetryKey).
   const [fetchedSections, setFetchedSections] = useState([]);
+  const [sectionsFetchFailed, setSectionsFetchFailed] = useState(false);
+  const [sectionsRetryKey, setSectionsRetryKey] = useState(0);
   useEffect(() => {
-    const fetchSections = async () => {
+    let cancelled = false;
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    const attemptFetch = async () => {
       // Edge-first: try edge server first, fall back to cloud
       const useEdgeDirect = isEdgeLocalAuth();
       if (useEdgeDirect || await isEdgeAvailable()) {
         try {
           const data = await edgeFetch('/api/edge/sections', { timeoutMs: EDGE_READ_TIMEOUT_MS });
           const rawSections = Array.isArray(data) ? data : data?.sections || [];
-          setFetchedSections(rawSections);
+          if (!cancelled) {
+            setFetchedSections(rawSections);
+            setSectionsFetchFailed(false);
+          }
+          return true;
         } catch (err) {
           console.warn('[fetchedSections] edge fetch failed, trying cloud:', err.message);
-          // Fall back to cloud if edge fails
-          try {
-            const r = await fetch(`${API_BASE}/api/venue/sections`, {
-              credentials: 'include',
-              headers: getAuthHeaders(),
-            });
-            if (!r.ok) {
-              console.error('[fetchedSections] cloud API error:', r.status, r.statusText);
-              setFetchedSections([]);
-              return;
-            }
-            const data = await r.json();
-            setFetchedSections(Array.isArray(data) ? data : data.sections || []);
-          } catch (err) {
-            console.error('[fetchedSections] cloud fetch failed:', err);
-            setFetchedSections([]);
-          }
         }
-        return;
       }
-      // Edge unavailable: use cloud directly
+      // Cloud fallback (also used directly when edge unavailable)
       try {
         const r = await fetch(`${API_BASE}/api/venue/sections`, {
           credentials: 'include',
           headers: getAuthHeaders(),
         });
         if (!r.ok) {
-          console.error('[fetchedSections] API error:', r.status, r.statusText);
-          setFetchedSections([]);
-          return;
+          console.error('[fetchedSections] cloud API error:', r.status, r.statusText);
+          return false;
         }
         const data = await r.json();
-        setFetchedSections(Array.isArray(data) ? data : data.sections || []);
+        if (!cancelled) {
+          setFetchedSections(Array.isArray(data) ? data : data.sections || []);
+          setSectionsFetchFailed(false);
+        }
+        return true;
       } catch (err) {
-        console.error('[fetchedSections] fetch failed:', err);
-        setFetchedSections([]);
+        console.error('[fetchedSections] cloud fetch failed:', err);
+        return false;
       }
     };
-    fetchSections();
-  }, [edgeReconnectTrigger]);
+
+    const fetchSectionsWithRetry = async () => {
+      const MAX_RETRIES = 3;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (cancelled) return;
+        const ok = await attemptFetch();
+        if (ok) return;
+        if (attempt < MAX_RETRIES) {
+          await sleep(2000 * (attempt + 1)); // 2s, 4s, 6s backoff
+        }
+      }
+      if (!cancelled) {
+        setFetchedSections([]);
+        setSectionsFetchFailed(true);
+      }
+    };
+
+    setSectionsFetchFailed(false);
+    fetchSectionsWithRetry();
+    return () => { cancelled = true; };
+  }, [edgeReconnectTrigger, sectionsRetryKey]);
 
   // Refs needed by table sync guards — declared early so they're available to useTableSync/useBarTableSync
   const isSubmittingKotRef = useRef(false);
@@ -863,6 +878,32 @@ export default function CaptainApp({ onLogout }) {
   const { tables, setTables, isSyncing: tablesLoading, refetch: refetchRestaurantTables } = useTableSync({
     shouldSkipTableUpdate: (t) => isSubmittingKotRef.current && String(t.id) === String(activeTableIdRef.current),
   });
+
+  // Derive sections from loaded tables as a fallback when the sections fetch
+  // fails or returns empty. Tables already carry a `section` object (id, name,
+  // venueId, venue), so we can reconstruct the section list without another
+  // network call. This prevents the "Loading sections..." spinner from getting
+  // stuck indefinitely when tables are present but the sections endpoint fails.
+  const derivedSections = useMemo(() => {
+    if (fetchedSections.length > 0) return [];
+    const seen = new Map();
+    for (const t of [...(tables || []), ...(barTables || [])]) {
+      const sec = t?.section;
+      if (!sec || !sec.id) continue;
+      if (seen.has(sec.id)) continue;
+      seen.set(sec.id, {
+        id: sec.id,
+        name: sec.name,
+        venueId: sec.venueId,
+        venue: sec.venue,
+        sectionTag: sec.sectionTag || (sec.venueId ? `venue-${sec.venueId}` : sec.name),
+      });
+    }
+    return Array.from(seen.values());
+  }, [fetchedSections, tables, barTables]);
+
+  // Effective sections: fetched from API, or derived from tables as fallback.
+  const effectiveSections = fetchedSections.length > 0 ? fetchedSections : derivedSections;
 
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading, refreshMenu } = useMenuSync();
 
@@ -1552,8 +1593,8 @@ export default function CaptainApp({ onLogout }) {
     // Resolve currentVenueId from the active table's section → venue relationship
     let currentVenueId = activeTable?.section?.venueId || activeTable?.section?.venue?.id || null;
     if (!currentVenueId) {
-      // Look up section from fetchedSections by subcategory
-      const section = fetchedSections.find(s => {
+      // Look up section from effectiveSections by subcategory
+      const section = effectiveSections.find(s => {
         const sourceKey = s.sectionTag?.startsWith('venue-') ? s.sectionTag.slice(6) : s.sectionTag;
         return sourceKey === tableSubCategory || s.name === tableSubCategory;
       });
@@ -1563,7 +1604,7 @@ export default function CaptainApp({ onLogout }) {
       if (!currentVenueId) {
         // Fallback: find by matching table section name
         for (const t of activeTables) {
-          const tSection = fetchedSections.find(s => s.name === (t.sectionName || t.section?.name));
+          const tSection = effectiveSections.find(s => s.name === (t.sectionName || t.section?.name));
           if (tSection) {
             const sourceKey = tSection.sectionTag?.startsWith('venue-') ? tSection.sectionTag.slice(6) : tSection.sectionTag;
             if (sourceKey === tableSubCategory) {
@@ -1614,7 +1655,7 @@ export default function CaptainApp({ onLogout }) {
 
       return { ...item, p: finalPrice, variants: remappedVariants };
     }).filter(item => Number(item.p) > 0);
-  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, activeTable, activeTables, fetchedSections]);
+  }, [activeOutlet, barMenu, restaurantMenu, tableSubCategory, activeTable, activeTables, effectiveSections]);
 
 
 
@@ -1716,20 +1757,20 @@ export default function CaptainApp({ onLogout }) {
 
   // Determine which table array is actually being displayed based on subcategory
 
-  // Build dynamic set of venue subcategory source keys from fetchedSections
+  // Build dynamic set of venue subcategory source keys from effectiveSections
   const venueSubcategories = useMemo(() => {
     const set = new Set();
-    for (const section of fetchedSections) {
+    for (const section of effectiveSections) {
       const sourceKey = section.sectionTag?.startsWith('venue-') ? section.sectionTag.slice(6) : section.sectionTag;
       if (sourceKey) set.add(sourceKey);
     }
     return set;
-  }, [fetchedSections]);
+  }, [effectiveSections]);
 
-  // Build dynamic sectionTagToSource map from fetchedSections
+  // Build dynamic sectionTagToSource map from effectiveSections
   const sectionTagToSource = useMemo(() => {
     const map = {};
-    for (const section of fetchedSections) {
+    for (const section of effectiveSections) {
       if (section.sectionTag) {
         const sourceKey = section.sectionTag.startsWith('venue-')
           ? section.sectionTag.slice(6)
@@ -1738,14 +1779,14 @@ export default function CaptainApp({ onLogout }) {
       }
     }
     return map;
-  }, [fetchedSections]);
+  }, [effectiveSections]);
 
   const displayTables = useMemo(() => {
     if (!tableSubCategory) return activeTables;
 
     // Find the fetched section that matches tableSubCategory
     // Try: stripped sectionTag, raw sectionTag, or section name
-    const matchedSection = fetchedSections.find(s => {
+    const matchedSection = effectiveSections.find(s => {
       const rawTag = s.sectionTag;
       const strippedTag = rawTag?.startsWith('venue-') ? rawTag.slice(6) : rawTag;
       return strippedTag === tableSubCategory ||
@@ -1755,7 +1796,7 @@ export default function CaptainApp({ onLogout }) {
 
     if (!matchedSection) {
       console.warn('[displayTables] No section found for tableSubCategory:', tableSubCategory,
-        '| Available sections:', fetchedSections.map(s => ({ name: s.name, tag: s.sectionTag, id: s.id })));
+        '| Available sections:', effectiveSections.map(s => ({ name: s.name, tag: s.sectionTag, id: s.id })));
       return activeTables;
     }
 
@@ -1776,7 +1817,7 @@ export default function CaptainApp({ onLogout }) {
     });
 
     return filtered;
-  }, [activeTables, tableSubCategory, fetchedSections]);
+  }, [activeTables, tableSubCategory, effectiveSections]);
 
 
 
@@ -2439,11 +2480,11 @@ export default function CaptainApp({ onLogout }) {
 
   // Reset tableSubCategory when switching outlets — use first fetched section
   useEffect(() => {
-    const matchingSection = fetchedSections.find(s => {
+    const matchingSection = effectiveSections.find(s => {
       const sectionOutlet = isBarLikeVenue(s.venue?.venueType) ? 'bar' : 'restaurant';
       if (activeOutlet === 'both') return true;
       return sectionOutlet === activeOutlet;
-    }) || fetchedSections[0];
+    }) || effectiveSections[0];
     if (matchingSection) {
       const sourceKey = sectionTagToSource[matchingSection.sectionTag] || matchingSection.name;
       setTableSubCategory(sourceKey);
@@ -2477,7 +2518,7 @@ export default function CaptainApp({ onLogout }) {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
 
-  }, [activeOutlet, fetchedSections, sectionTagToSource]);
+  }, [activeOutlet, effectiveSections, sectionTagToSource]);
 
 
 
@@ -5249,7 +5290,7 @@ export default function CaptainApp({ onLogout }) {
       {activeSection === 'floor' && activeView === 'tables' && view === 'tables' && (
         <FloorOverview
           tables={displayTables}
-          sections={fetchedSections}
+          sections={effectiveSections}
           tableSubCategory={tableSubCategory}
           setTableSubCategory={setTableSubCategory}
           tableFilter={tableFilter}
@@ -5330,8 +5371,8 @@ export default function CaptainApp({ onLogout }) {
               {/* VENUE SUBCATEGORY PILLS — dynamically from fetched sections */}
               {enabledModules.tables !== false && (
                 <div className="flex gap-2 flex-wrap mb-4">
-                  {fetchedSections.length > 0
-                    ? fetchedSections
+                  {effectiveSections.length > 0
+                    ? effectiveSections
                         .filter(section => {
                           // Show all sections from backend (onboarding/admin) without venue type filtering
                           // Sections should display exactly as configured in the system
@@ -5353,7 +5394,17 @@ export default function CaptainApp({ onLogout }) {
                           </button>
                         );
                       })
-                    : (
+                    : sectionsFetchFailed ? (
+                      <div className="flex items-center gap-3 py-4">
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Sections unavailable</p>
+                        <button
+                          onClick={() => setSectionsRetryKey(k => k + 1)}
+                          className="px-4 py-2 rounded-lg bg-[#E53935] text-white text-xs font-black uppercase tracking-widest hover:bg-red-600 transition-colors"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    ) : (
                       <div className="flex items-center gap-3 py-4">
                         <div className="inline-block w-6 h-6 border-2 border-gray-200 border-t-[#E53935] rounded-full animate-spin"></div>
                         <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Loading sections...</p>
@@ -5419,7 +5470,7 @@ export default function CaptainApp({ onLogout }) {
                   <VenueSectionView
 
                     venueId={(() => {
-                      const section = fetchedSections.find(s => {
+                      const section = effectiveSections.find(s => {
                         const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
                         return sourceKey === tableSubCategory;
                       });
@@ -5427,7 +5478,7 @@ export default function CaptainApp({ onLogout }) {
                     })()}
 
                     sectionName={(() => {
-                      const section = fetchedSections.find(s => {
+                      const section = effectiveSections.find(s => {
                         const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
                         return sourceKey === tableSubCategory;
                       });
@@ -5435,7 +5486,7 @@ export default function CaptainApp({ onLogout }) {
                     })()}
 
                     sectionId={(() => {
-                      const section = fetchedSections.find(s => {
+                      const section = effectiveSections.find(s => {
                         const sourceKey = sectionTagToSource[s.sectionTag] || s.name;
                         return sourceKey === tableSubCategory;
                       });
