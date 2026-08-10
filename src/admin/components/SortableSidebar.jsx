@@ -38,7 +38,7 @@ function SortableItem({ route, activePage, onNavigate }) {
       ref={setNodeRef}
       style={style}
       className={`flex items-center gap-1 rounded-md ${
-        activePage === route.key ? 'bg-white text-[#B71C1C]' : 'text-white hover:bg-white/10'
+        activePage === route.key ? 'bg-white text-[#B71C1C]' : 'text-[#B71C1C] hover:bg-[#B71C1C]/10'
       }`}
     >
       <button
@@ -52,7 +52,7 @@ function SortableItem({ route, activePage, onNavigate }) {
         className={`ml-1 p-1.5 rounded-md cursor-grab active:cursor-grabbing transition-colors ${
           activePage === route.key
             ? 'bg-[#B71C1C]/10 text-[#B71C1C]/70 hover:text-[#B71C1C] hover:bg-[#B71C1C]/20'
-            : 'bg-white/10 text-white/70 hover:text-white hover:bg-white/25'
+            : 'bg-[#B71C1C]/10 text-[#B71C1C]/70 hover:text-[#B71C1C] hover:bg-[#B71C1C]/25'
         }`}
         {...attributes}
         {...listeners}
@@ -115,13 +115,13 @@ function SortableGroup({
     <div
       ref={setNodeRef}
       style={style}
-      className={`rounded-md ${isActive ? 'bg-white/10' : ''}`}
+      className={`rounded-md ${isActive ? 'bg-[#B71C1C]/10' : ''}`}
     >
       <div className="flex items-center gap-1">
         <button
           onClick={onToggle}
           className={`flex flex-1 items-center gap-2 px-3 py-2 text-sm min-w-0 ${
-            isActive ? 'text-white' : 'text-white hover:bg-white/10'
+            isActive ? 'text-[#B71C1C]' : 'text-[#B71C1C] hover:bg-[#B71C1C]/10'
           }`}
         >
           <GroupIcon size={16} />
@@ -132,7 +132,7 @@ function SortableGroup({
           />
         </button>
         <button
-          className="ml-1 p-1.5 rounded-md bg-white/10 text-white/70 hover:text-white hover:bg-white/25 cursor-grab active:cursor-grabbing transition-colors"
+          className="ml-1 p-1.5 rounded-md bg-[#B71C1C]/10 text-[#B71C1C]/70 hover:text-[#B71C1C] hover:bg-[#B71C1C]/25 cursor-grab active:cursor-grabbing transition-colors"
           {...attributes}
           {...listeners}
           aria-label={`Reorder ${groupLabel} section`}
@@ -431,7 +431,7 @@ export default function SortableSidebar({
       {hasCustomOrder && (
         <button
           onClick={resetOrder}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-black uppercase tracking-wider text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-black uppercase tracking-wider text-[#B71C1C]/70 hover:bg-[#B71C1C]/10 hover:text-[#B71C1C] transition-colors"
           aria-label="Reset sidebar order"
         >
           <RotateCcw size={14} />

@@ -108,6 +108,14 @@ const PortalSelection = ({ onSelect }) => {
         {/* Hero content */}
         <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 px-6 pb-24 pt-12 lg:grid-cols-2 lg:px-16 lg:pb-32 lg:pt-20">
           <div className="max-w-xl">
+            {/* Announcement scroll */}
+            <div className="mb-5 overflow-hidden rounded-lg border border-[#E53935]/30 bg-[#E53935]/10 py-2">
+              <div className="flex whitespace-nowrap animate-[scroll_20s_linear_infinite]">
+                <span className="px-4 text-sm font-semibold text-[#E53935]">
+                  🎉 Softshape POS is <span className="font-bold">FREE for the first 200 users</span> — Sign up today! 🎉 Softshape POS is <span className="font-bold">FREE for the first 200 users</span> — Sign up today! 🎉 Softshape POS is <span className="font-bold">FREE for the first 200 users</span> — Sign up today!
+                </span>
+              </div>
+            </div>
             <h1 className="text-balance text-[2.5rem] font-bold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">
               Run your restaurant{' '}
               <span className="text-[#E53935]">smarter</span>, faster, and more profitably.
@@ -153,7 +161,7 @@ const PortalSelection = ({ onSelect }) => {
                 {/* Screen bezel */}
                 <div className="relative overflow-hidden rounded-lg bg-[#0f131a]">
                   <video
-                    src="/Red_chef_hat_zips_screen_202607151152.mp4"
+                    src="/no_not_like_this_let_me_give_y.mp4"
                     autoPlay
                     muted
                     loop
@@ -231,21 +239,26 @@ const PortalSelection = ({ onSelect }) => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-3">
             {[
-              { src: '/image 2.png', alt: 'Insightful Data Dashboard' },
-              { src: '/image 3.png', alt: 'Customer Support' },
-              { src: '/image 4.png', alt: 'Free POS for Restaurant Owners' },
+              { src: '/Challenge post.png', alt: 'Challenge Post' },
+              { src: '/menu setup in minutes.png', alt: 'Menu Setup in Minutes' },
+              { src: '/restaurant management software poster.png', alt: 'Restaurant Management Software' },
+              { src: '/Restaurant operating system advertisement.png', alt: 'Restaurant Operating System' },
+              { src: '/Smart kitchen & bar printing system.png', alt: 'Smart Kitchen & Bar Printing' },
+              { src: '/Works Even Without Internet post.png', alt: 'Works Even Without Internet' },
             ].map((img, idx) => (
               <div
                 key={idx}
                 className="group relative overflow-hidden rounded-2xl border border-white/10 shadow-lg transition-all duration-300 hover:-translate-y-2 hover:border-[#E53935]/30 hover:shadow-xl"
               >
-                <img
-                  src={img.src}
-                  alt={img.alt}
-                  className="block h-auto w-full transition-transform duration-500 group-hover:scale-[1.02]"
-                />
+                <div className="flex w-full items-center justify-center overflow-hidden rounded-2xl bg-[#11151f] h-44 sm:h-auto">
+                  <img
+                    src={img.src}
+                    alt={img.alt}
+                    className="block h-full w-full object-contain transition-transform duration-500 group-hover:scale-[1.02]"
+                  />
+                </div>
               </div>
             ))}
           </div>

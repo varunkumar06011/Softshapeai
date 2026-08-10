@@ -504,21 +504,21 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#B71C1C] text-white transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:!translate-x-0`}
+        className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#FDE7EA] text-[#B71C1C] transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:!translate-x-0`}
         style={{ width: sidebarWidth }}
       >
         <div className="flex flex-col flex-grow overflow-hidden p-4">
           <div className="flex items-center justify-between flex-shrink-0 mb-2">
-            <div className="bg-white p-4 rounded-[32px] shadow-2xl border border-white/10 aspect-square w-40 flex items-center justify-center">
+            <div className="bg-white p-4 rounded-[32px] shadow-2xl border border-[#B71C1C]/10 aspect-square w-40 flex items-center justify-center">
               <img
                 src="/logo softshape.ai.png"
                 alt="Softshape"
                 className="w-full h-full object-contain"
               />
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/80 hover:text-white">✕</button>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-[#B71C1C]/80 hover:text-[#B71C1C]">✕</button>
           </div>
-          <div className="flex items-center gap-2 text-[11px] font-bold text-white/90 flex-shrink-0 mb-2 mt-4">
+          <div className="flex items-center gap-2 text-[11px] font-bold text-[#B71C1C]/90 flex-shrink-0 mb-2 mt-4">
             <span className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" />
             System Ready
           </div>
@@ -537,19 +537,19 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
           </div>
         </div>
 
-        <div className="p-4 border-t border-white/10 bg-black/5 flex-shrink-0">
-          <div className="flex items-center justify-between rounded-lg border border-white/20 p-2">
+        <div className="p-4 border-t border-[#B71C1C]/10 bg-[#B71C1C]/5 flex-shrink-0">
+          <div className="flex items-center justify-between rounded-lg border border-[#B71C1C]/20 p-2">
             <div className="flex items-center gap-2 overflow-hidden">
-              <div className="h-7 w-7 rounded-full bg-white/20 flex-shrink-0" />
+              <div className="h-7 w-7 rounded-full bg-[#B71C1C]/20 flex-shrink-0" />
               <div className="text-[10px] font-bold truncate">{role === 'manager' ? 'Manager User' : 'Admin User'}</div>
             </div>
-            <LogOut size={14} className="flex-shrink-0 cursor-pointer hover:text-[#EF9A9A]" onClick={onLogout} />
+            <LogOut size={14} className="flex-shrink-0 cursor-pointer hover:text-[#7F0000]" onClick={onLogout} />
           </div>
         </div>
 
         {/* Resize handle */}
         <div
-          className="absolute top-0 right-0 h-full w-3 cursor-col-resize z-50 hover:bg-white/20 active:bg-white/40 transition-colors hidden md:block"
+          className="absolute top-0 right-0 h-full w-3 cursor-col-resize z-50 hover:bg-[#B71C1C]/20 active:bg-[#B71C1C]/40 transition-colors hidden md:block"
           onMouseDown={() => { isResizingRef.current = true; }}
           title="Drag to resize sidebar"
         />
