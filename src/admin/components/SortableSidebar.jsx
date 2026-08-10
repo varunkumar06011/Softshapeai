@@ -43,6 +43,7 @@ function SortableItem({ route, activePage, onNavigate }) {
     >
       <button
         onClick={() => onNavigate(route.key)}
+        data-tour={`admin-nav-${route.key}`}
         className="flex flex-1 items-center gap-2 px-3 py-2 text-sm min-w-0"
       >
         <route.icon size={route.group === 'hr' || route.group === 'finance' ? 14 : 16} />

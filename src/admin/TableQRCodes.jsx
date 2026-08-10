@@ -180,7 +180,7 @@ export default function TableQRCodes() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] p-6 font-['Inter',sans-serif]">
+    <div className="min-h-screen bg-[#F8F9FA] p-6 font-['Inter',sans-serif]" data-tour="admin-tables-qr">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">

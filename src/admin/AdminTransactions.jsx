@@ -327,7 +327,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
   };
 
   return (
-    <div className="flex-grow p-4 overflow-y-auto custom-scrollbar bg-gray-50/50">
+    <div className="flex-grow p-4 overflow-y-auto custom-scrollbar bg-gray-50/50" data-tour="admin-transactions">
       <div className="max-w-6xl mx-auto space-y-3">
         <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">Transactions</h2>
 
@@ -499,7 +499,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
             </div>
           )}
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" data-tour="admin-transactions-list">
             <table className="w-full text-left">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>

@@ -49,6 +49,7 @@ import { useTableSync } from '../services/tableSyncService';
 import { authService } from '../services/authService';
 import { reconnectSocket } from '../hooks/useSocket';
 import { sendSpireMessage } from '../services/spireAgent';
+import SyncStatusIndicator from '../shared/components/SyncStatusIndicator';
 
 import { adminRoutes, isRouteEnabled, isManagerTabEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
 import AdminRouteGuard from './AdminRouteGuard';
@@ -506,6 +507,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       <aside
         className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#FDE7EA] text-[#B71C1C] transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:!translate-x-0`}
         style={{ width: sidebarWidth }}
+        data-tour="admin-sidebar"
       >
         <div className="flex flex-col flex-grow overflow-hidden p-4">
           <div className="flex items-center justify-between flex-shrink-0 mb-2">
@@ -556,7 +558,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       </aside>
 
       <div className="flex flex-col h-[100dvh] overflow-hidden md:!ml-[var(--sidebar-width)]" style={{ ['--sidebar-width']: `${sidebarWidth}px` }}>
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 md:px-6 shadow-sm">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 md:px-6 shadow-sm" data-tour="admin-header">
           <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
             <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
               <LayoutDashboard size={18} />
@@ -636,7 +638,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
           </div>
         </header>
 
-        <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]">
+        <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]" data-tour="admin-content">
           <Suspense fallback={
             <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-3">
               <div className="w-8 h-8 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
@@ -671,6 +673,8 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
           </Suspense>
         </main>
       </div>
+
+      <SyncStatusIndicator />
 
       {role !== 'manager' && (
         <>

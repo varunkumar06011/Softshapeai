@@ -18,7 +18,7 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function calculateBalance(openingBalance, sales, totalExpenditures, adjustments, totalSalesOverride, totalExpendituresOverride) {
+function calculateBalance(openingBalance, sales, totalExpenditures, adjustments, totalSalesOverride, totalExpendituresOverride, nonCashExpenditures) {
   const ob = round2(openingBalance);
 
   // Cash sales (in-hand cash)
@@ -42,6 +42,12 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments,
     ? round2(totalExpendituresOverride)
     : round2(totalExpenditures);
 
+  // Non-cash expenditures are only carved out when no manual override is set
+  const nonCash = (totalExpendituresOverride == null && nonCashExpenditures != null)
+    ? round2(nonCashExpenditures)
+    : 0;
+  const cashExpenditures = round2(effectiveExpenditures - nonCash);
+
   const sorted = [...adjustments].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const minusAdjustments = sorted.filter(a => a.sign !== 'PLUS');
   const plusAdjustments = sorted.filter(a => a.sign === 'PLUS');
@@ -54,7 +60,7 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments,
     { label: '\u2212 Swiggy', amount: swiggy },
     { label: '\u2212 Zomato', amount: zomato },
     { label: '= Net Sales', amount: netSales },
-    { label: '\u2212 Expenditure', amount: effectiveExpenditures },
+    { label: '\u2212 Expenditure' + (nonCash > 0 ? ` (cash ₹${cashExpenditures})` : ''), amount: effectiveExpenditures },
   ];
 
   for (const adj of minusAdjustments) {
@@ -69,7 +75,7 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments,
   // Closing balance calculation (same logic as before)
   const afterTotalSales = round2(ob + totalSales);
   const afterAggregatorDeduction = round2(afterTotalSales - aggregatorSales);
-  const afterExpenditures = round2(afterAggregatorDeduction - effectiveExpenditures);
+  const afterExpenditures = round2(afterAggregatorDeduction - cashExpenditures);
 
   let running = afterExpenditures;
   for (const adj of sorted) {
@@ -78,7 +84,7 @@ function calculateBalance(openingBalance, sales, totalExpenditures, adjustments,
     else running = round2(running - amt);
   }
 
-  return { afterSales: afterAggregatorDeduction, afterExpenditures, closingBalance: running, steps, effectiveExpenditures, netSales, totalSales, otherIncome };
+  return { afterSales: afterAggregatorDeduction, afterExpenditures, closingBalance: running, steps, effectiveExpenditures, cashExpenditures, nonCashExpenditures: nonCash, netSales, totalSales, otherIncome };
 }
 
 // ── Helper: get today's date in IST ───────────────────────────────────────────
@@ -559,14 +565,15 @@ export default function AdminDailyBalanceSheet() {
     : computedTotalSales;
 
   const totalExpenditures = Number(sheet?.totalExpenditures) || 0;
+  const nonCashExpenditures = Number(sheet?.nonCashExpenditures) || 0;
   const effectiveTotalExpenditures = overrides.totalExpendituresOverride != null
     ? round2(overrides.totalExpendituresOverride)
     : round2(totalExpenditures);
 
   // ── Live balance calculation ───────────────────────────────────────────────
   const balanceCalc = useMemo(() => {
-    return calculateBalance(overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride);
-  }, [overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride]);
+    return calculateBalance(overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride, nonCashExpenditures);
+  }, [overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride, nonCashExpenditures]);
 
   // ── Manual save ────────────────────────────────────────────────────────────
   const doSave = useCallback(async () => {
@@ -1041,26 +1048,30 @@ export default function AdminDailyBalanceSheet() {
               url: fileUri.uri,
               dialogTitle: 'Share via',
             });
-          } else if (navigator.share && navigator.canShare({ files: [file] })) {
-            // Web: use Web Share API with file
-            await navigator.share({
-              title: 'Daily Balance Sheet',
-              text: message,
-              files: [file],
-            });
           } else {
-            // Fallback: download PNG and open WhatsApp with text
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = file.name;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            // Web: check if mobile or desktop
+            const isMobileWeb = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            if (isMobileWeb && navigator.share && navigator.canShare({ files: [file] })) {
+              // Mobile Web: use Web Share API with file
+              await navigator.share({
+                title: 'Daily Balance Sheet',
+                text: message,
+                files: [file],
+              });
+            } else {
+              // Desktop: download PNG and open WhatsApp Web
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = file.name;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
 
-            const whatsappUrl = `https://wa.me/${ADMIN_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-            window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+              const whatsappUrl = `https://web.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+              window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+            }
           }
         }, 'image/png');
       } catch (err) {
@@ -1401,6 +1412,23 @@ export default function AdminDailyBalanceSheet() {
             onChange={(v) => handleFieldChange('totalExpendituresOverride', v)}
           />
         </div>
+
+        {balanceCalc.nonCashExpenditures > 0 && (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-amber-700">
+                Non-Cash Expenditures (Unpaid AP + Bank/UPI/Cheque)
+              </span>
+              <span className="font-black text-amber-700">
+                ₹{balanceCalc.nonCashExpenditures.toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[10px] text-amber-600">
+              <span>Cash Expenditures (deducted from closing balance)</span>
+              <span className="font-bold">₹{balanceCalc.cashExpenditures.toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Today's Ledger Activity (read-only informational panel) ──────── */}

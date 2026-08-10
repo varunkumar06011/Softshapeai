@@ -5930,7 +5930,7 @@ const CashierDashboard = ({ onLogout }) => {
           </div>
         </div>
 
-        <nav className="flex-1 sm:flex-grow flex sm:flex-col items-center sm:items-stretch overflow-x-auto sm:overflow-visible p-3 sm:space-y-1.5 sm:mt-4 gap-3 sm:gap-0 scrollbar-hide px-3">
+        <nav data-tour="cashier-tabs" className="flex-1 sm:flex-grow flex sm:flex-col items-center sm:items-stretch overflow-x-auto sm:overflow-visible p-3 sm:space-y-1.5 sm:mt-4 gap-3 sm:gap-0 scrollbar-hide px-3">
           {[
             { id: 'datadashboard', label: 'Data Dashboard', icon: TrendingUp },
             { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -5948,6 +5948,7 @@ const CashierDashboard = ({ onLogout }) => {
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); localStorage.setItem(getTenantScopedKey('cashier_active_tab'), item.id); }}
+              data-tour={`cashier-tab-${item.id}`}
               className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1.5 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl transition-all duration-150 group relative shrink-0 min-w-[80px] sm:min-w-0 hover:scale-[1.02] active:scale-98 text-center sm:text-left ${activeTab === item.id
                 ? 'bg-[#F59E0B] text-[#1E293B] font-black shadow-lg shadow-[#F59E0B]/20 scale-[1.01]'
                 : 'text-white/80 hover:bg-white/10 hover:text-white'
@@ -5974,7 +5975,7 @@ const CashierDashboard = ({ onLogout }) => {
       {/* MAIN VIEW */}
       <div className="flex-grow flex flex-col min-w-0 overflow-hidden">
         {/* COMPACT TOP BAR */}
-        <header className="h-18 bg-[#1E3A8A] border-b border-white/15 px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
+        <header data-tour="cashier-header" className="h-18 bg-[#1E3A8A] border-b border-white/15 px-6 flex items-center justify-between z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
 
             <LiveClock />
@@ -6052,7 +6053,7 @@ const CashierDashboard = ({ onLogout }) => {
               )}
 
               {activeTab === 'dashboard' && (
-                <div className="flex flex-col lg:flex-row flex-grow overflow-hidden w-full">
+                <div data-tour="cashier-dashboard" className="flex flex-col lg:flex-row flex-grow overflow-hidden w-full">
                   <div className="flex-grow overflow-y-auto p-3 space-y-3 custom-scrollbar bg-gray-50">
                     {/* Calendar Bar */}
                     <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
@@ -6333,9 +6334,9 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'tables' && enabledModules.tables !== false && (
-                      <div className="space-y-4">
+                      <div data-tour="cashier-tables" className="space-y-4">
                         {/* ── SUBCATEGORY PILLS + STATUS LEGEND ── */}
-                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="flex items-start justify-between gap-4 flex-wrap" data-tour="cashier-tables-sections">
                         <div className="flex gap-2 flex-wrap">
                           {fetchedSections.length > 0
                             ? fetchedSections
@@ -6455,7 +6456,7 @@ const CashierDashboard = ({ onLogout }) => {
                     )}
 
                     {activeTab === 'history' && (
-                      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                      <div data-tour="cashier-transactions" className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
                         {/* PENDING transactions warning */}
                         {(() => {
                           const pendingTxns = pastTransactions.filter(t => (t.status || 'COMPLETED') === 'PENDING');
@@ -6674,7 +6675,7 @@ const CashierDashboard = ({ onLogout }) => {
                             className="ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-450 w-44 sm:w-52 shadow-inner transition-colors"
                           />
                         </div>
-                        <div className="overflow-x-auto scrollbar-hide relative">
+                        <div className="overflow-x-auto scrollbar-hide relative" data-tour="cashier-transactions-list">
                           {txnsLoading && !txnInitialLoaded && filteredTransactions.length > 0 && (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 rounded-xl">
                               <div className="flex flex-col items-center gap-2">
@@ -7174,7 +7175,7 @@ const CashierDashboard = ({ onLogout }) => {
                 </div>
               )}
               {activeTab === 'pos' && (
-                <div className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
+                <div data-tour="cashier-pos" className="flex-grow flex flex-col lg:flex-row overflow-hidden relative">
                   {/* COMPACT MENU */}
                   <div className={`flex-grow flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-gray-200 min-w-0 ${isCartMinimized ? 'h-full lg:h-auto' : 'h-1/2 lg:h-auto'} transition-all duration-300`}>
                     <div className="px-4 py-3.5 border-b border-gray-100 flex flex-col gap-3.5 bg-white">
@@ -7195,6 +7196,7 @@ const CashierDashboard = ({ onLogout }) => {
                         <input
                           ref={searchInputRef}
                           type="text"
+                          data-tour="cashier-pos-search"
                           placeholder="Search by name, category, price, or ID... (Press '/' to focus)"
                           className={`w-full bg-white border-2 rounded-2xl pl-14 pr-12 h-16 text-base md:text-lg font-black text-gray-900 outline-none transition-all duration-200 shadow-md placeholder:text-gray-400 ${isSearchFocused
                             ? 'border-[#1E3A8A] ring-4 ring-[#1E3A8A]/20 shadow-[#1E3A8A]/10 scale-[1.002]'
@@ -7432,7 +7434,7 @@ const CashierDashboard = ({ onLogout }) => {
                   </div>
 
                   {/* COMPACT CART */}
-                  <div className={`w-full ${isCartExpanded ? 'lg:w-[520px]' : 'lg:w-[380px]'} flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-[55vh] lg:h-auto'}`}>
+                  <div className={`w-full ${isCartExpanded ? 'lg:w-[520px]' : 'lg:w-[380px]'} flex flex-col bg-white shadow-xl z-20 shrink-0 transition-all duration-300 ${isCartMinimized ? 'h-14 lg:h-auto overflow-hidden' : 'h-[55vh] lg:h-auto'}`} data-tour="cashier-pos-cart">
                     <div
                       className="p-4.5 border-b border-gray-100 bg-gray-50/50 cursor-pointer lg:cursor-default shrink-0 flex items-center justify-between"
                       onClick={() => setIsCartMinimized(!isCartMinimized)}
@@ -7896,7 +7898,7 @@ const CashierDashboard = ({ onLogout }) => {
                     return (
                       <>
                   {/* Discount */}
-                  <div className="w-32 sm:w-36 shrink-0">
+                  <div className="w-32 sm:w-36 shrink-0" data-tour="cashier-pos-discount">
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[10px] sm:text-xs font-black uppercase text-gray-400 tracking-wider">
                         Discount
@@ -8001,6 +8003,7 @@ const CashierDashboard = ({ onLogout }) => {
                     <button
                       onClick={() => { if (isPrintingBill) return; setShowSettleConfirm(true); }}
                       disabled={isSettling}
+                      data-tour="cashier-pos-settle"
                       className="py-2.5 rounded-lg bg-[#F59E0B] border border-[#B45309] text-[#1E293B] text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 hover:bg-[#D97706] shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
                       Settlement
@@ -8036,6 +8039,7 @@ const CashierDashboard = ({ onLogout }) => {
                             <button
                               onClick={handleFinalBill}
                               disabled={isPrintingBill || (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now())}
+                              data-tour="cashier-pos-bill"
                               className={`flex-1 py-2.5 rounded-lg border text-white text-xs sm:text-sm font-black uppercase tracking-wider transition-all duration-150 shadow-md flex items-center justify-center gap-1.5 ${isPrintingBill || (billPrintCooldownRef.current.get(selectedTable?.isExtra ? selectedTable?.id : selectedTable?.backendId) > Date.now())
                                 ? 'bg-gray-400 border-gray-500 cursor-not-allowed shadow-gray-400/20'
                                 : 'bg-blue-600 border-blue-700 hover:bg-blue-700 cursor-pointer'

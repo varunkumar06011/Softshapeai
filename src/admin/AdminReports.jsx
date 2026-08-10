@@ -374,7 +374,7 @@ function CaptainPerformanceReport({ dateFilter }) {
   if (!data?.captains?.length) return <div className="text-center py-8 text-gray-400">No captain performance data for the selected range.</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="admin-reports-captain">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {data.captains.map((captain) => (
           <button
@@ -1435,7 +1435,7 @@ function GSTReport({ dateFilter, outletId, onDownloadRef }) {
   if (!data || data.summary.transactionCount === 0) return <EmptyCard />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="admin-reports-gst">
       <ReportHeader title="GST Report" subtitle="For GST Filing">
         <div className="flex items-center gap-2">
           <span className="px-2 py-1 rounded-md bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">For GST Filing</span>
@@ -1724,7 +1724,7 @@ export default function AdminReports() {
   const activeReportMeta = allReports.find((r) => r.id === activeReport);
 
   return (
-    <div className="min-h-screen bg-[#FFF5F5] font-sans">
+    <div className="min-h-screen bg-[#FFF5F5] font-sans" data-tour="admin-reports">
       {/* Sticky Top Bar */}
       <div className="sticky top-0 z-10 bg-white border-b border-[#FFCDD2] p-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -1807,7 +1807,7 @@ export default function AdminReports() {
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+        <main className="flex-1 p-4 md:p-6 overflow-y-auto" data-tour="admin-reports-sales">
           <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs font-bold text-amber-700">
             Note: Reports are under active testing. Please cross-verify figures with source data before relying on them for financial decisions.
           </div>
@@ -1902,7 +1902,7 @@ function VenueRevenueReport({ dateFilter, outletId }) {
   if (!data || !data.venues?.length) return <EmptyCard />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="admin-reports-section">
       <ReportHeader title="Venue-wise Revenue" subtitle="Performance by outlet / venue" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-[#FFCDD2] shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Revenue</p><p className="text-2xl font-black text-[#B71C1C]"><Money value={data.summary.totalRevenue} /></p></div>

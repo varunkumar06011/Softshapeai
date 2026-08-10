@@ -28,6 +28,7 @@ export default function Sidebar({
     <aside
       className="hidden lg:flex flex-col w-[240px] shrink-0 bg-[#0F172A] text-white h-full overflow-y-auto"
       aria-label="Main navigation"
+      data-tour="captain-sidebar"
     >
       {/* Nav items */}
       <nav className="flex flex-col gap-1 p-3 flex-grow" role="tablist">

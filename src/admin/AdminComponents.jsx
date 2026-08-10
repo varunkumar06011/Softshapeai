@@ -771,7 +771,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
 
 
 
-  return <div className="space-y-4 font-sans">
+  return <div className="space-y-4 font-sans" data-tour="admin-dashboard">
 
     <div className="flex items-center justify-between">
       <h2 className="text-base md:text-lg font-black text-gray-900">Dashboard</h2>
@@ -786,7 +786,7 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
       </div>
     </div>
 
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4" data-tour="admin-dashboard-stats">
 
       {[
 
@@ -885,11 +885,13 @@ export function Dashboard({ revenue, totalSales, netSales, totalDiscount, orders
     </div>
 
     {/* ── Cashier DataDashboard widgets (admin synced data) ─────────────────── */}
+    <div data-tour="admin-dashboard-activity">
     {/* Widget 4: Today Special Captain Leader — /api/analytics/today-specials-by-staff */}
     <CaptainLeaderWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
 
     {/* Widget 5: Category Breakdown — /api/reports/categorywise-sales + itemwise-sales */}
     <CategoryBreakdownWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
+    </div>
 
   </div>;
 
@@ -1941,7 +1943,7 @@ export function Tables({ onOpen }) {
 
 
 
-  return <div className="space-y-4 font-sans">
+  return <div className="space-y-4 font-sans" data-tour="admin-tables">
 
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
 
@@ -1951,7 +1953,7 @@ export function Tables({ onOpen }) {
 
       </h3>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" data-tour="admin-tables-sections">
 
         <select
 
@@ -1989,7 +1991,7 @@ export function Tables({ onOpen }) {
 
     </div>
 
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3" data-tour="admin-tables-grid">
 
       {filteredTables.map((t) => {
 
@@ -3625,7 +3627,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-  return <div className={card + " p-4 font-sans"}>
+  return <div className={card + " p-4 font-sans"} data-tour="admin-menu">
 
     {error && (
 
@@ -3633,7 +3635,7 @@ export function MenuPage({ onAddDish }) {
 
     )}
 
-    <div className="mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+    <div className="mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4" data-tour="admin-menu-categories">
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
 
@@ -3680,6 +3682,8 @@ export function MenuPage({ onAddDish }) {
         <button 
 
           className="rounded-lg bg-white border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md hover:border-gray-300 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap w-full sm:w-auto" 
+
+          data-tour="admin-menu-add-item"
 
           onClick={() => {
 
@@ -4257,7 +4261,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-    <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
+    <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar" data-tour="admin-menu-items">
 
       <table className="w-full text-left text-sm whitespace-nowrap">
 
@@ -5521,7 +5525,7 @@ export function Orders() {
 
 
 
-  return <div className="space-y-4 font-sans">
+  return <div className="space-y-4 font-sans" data-tour="admin-orders">
 
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 
@@ -5585,7 +5589,7 @@ export function Orders() {
 
     <div className="flex gap-2 overflow-x-auto pb-1">{[`Dine-In (${rows.length})`, `Billing (${rows.filter((row) => row.status === 'Waiting Bill').length})`, `Preparing (${rows.filter((row) => row.status === 'Preparing').length})`, `All (${rows.length})`].map((x, i) => <button key={x} className={`whitespace-nowrap rounded-md border px-3 py-1 text-sm ${i === 0 ? "border-[#E53935] bg-[#FFEBEE]" : "border-[#FFCDD2]"}`}>{x}</button>)}</div>
 
-    <div className={card + " overflow-x-auto"}>
+    <div className={card + " overflow-x-auto"} data-tour="admin-orders-list">
 
       <table className="w-full text-left text-sm whitespace-nowrap">
 
@@ -7180,6 +7184,13 @@ export function KitchenInventory() {
 
   const [showDeductionPanel, setShowDeductionPanel] = useState(false);
 
+  const [subView, setSubView] = useState('stock');
+  const [ledgerData, setLedgerData] = useState([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerHasMore, setLedgerHasMore] = useState(false);
+  const [ledgerCursor, setLedgerCursor] = useState(null);
+  const [ledgerFilters, setLedgerFilters] = useState({ type: '', itemId: '', startDate: '', endDate: '' });
+
   const csvImportRef = useRef(null);
 
   const restaurantId = getCurrentRestaurantId();
@@ -7246,6 +7257,68 @@ export function KitchenInventory() {
   useEffect(() => { loadItems(); }, [loadItems]);
 
   useEffect(() => { setManualConsumption({}); }, [fromDate]);
+
+  const loadLedger = useCallback(async () => {
+    setLedgerLoading(true);
+    setLedgerCursor(null);
+    try {
+      const params = new URLSearchParams();
+      if (ledgerFilters.type) params.set('type', ledgerFilters.type);
+      if (ledgerFilters.itemId) params.set('itemId', ledgerFilters.itemId);
+      if (ledgerFilters.startDate) params.set('startDate', ledgerFilters.startDate);
+      if (ledgerFilters.endDate) params.set('endDate', ledgerFilters.endDate);
+      const res = await fetch(`${API_BASE}/api/inventory/kitchen/ledger?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setLedgerData(json.data || []);
+        setLedgerHasMore(json.hasMore || false);
+        setLedgerCursor(json.nextCursor || null);
+      } else {
+        setLedgerData([]);
+        setLedgerHasMore(false);
+        setLedgerCursor(null);
+      }
+    } catch (e) {
+      console.error('Failed to load ledger:', e);
+      setLedgerData([]);
+      setLedgerHasMore(false);
+      setLedgerCursor(null);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, [ledgerFilters]);
+
+  const loadMoreLedger = useCallback(async () => {
+    if (!ledgerCursor || ledgerLoading) return;
+    setLedgerLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (ledgerFilters.type) params.set('type', ledgerFilters.type);
+      if (ledgerFilters.itemId) params.set('itemId', ledgerFilters.itemId);
+      if (ledgerFilters.startDate) params.set('startDate', ledgerFilters.startDate);
+      if (ledgerFilters.endDate) params.set('endDate', ledgerFilters.endDate);
+      params.set('cursor', ledgerCursor);
+      const res = await fetch(`${API_BASE}/api/inventory/kitchen/ledger?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setLedgerData(prev => [...prev, ...(json.data || [])]);
+        setLedgerHasMore(json.hasMore || false);
+        setLedgerCursor(json.nextCursor || null);
+      }
+    } catch (e) {
+      console.error('Failed to load more ledger:', e);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, [ledgerFilters, ledgerCursor, ledgerLoading]);
+
+  useEffect(() => {
+    if (subView === 'ledger') loadLedger();
+  }, [subView, loadLedger]);
 
 
 
@@ -7944,7 +8017,7 @@ export function KitchenInventory() {
 
   return (
 
-    <div className="space-y-6 font-sans">
+    <div className="space-y-6 font-sans" data-tour="admin-inventory">
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
 
@@ -8154,9 +8227,146 @@ export function KitchenInventory() {
 
       </div>
 
+      {/* Sub-view toggle */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setSubView('stock')}
+          className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${subView === 'stock' ? 'bg-[#B71C1C] text-white shadow-lg shadow-red-100' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+        >
+          Stock
+        </button>
+        <button
+          onClick={() => setSubView('ledger')}
+          className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${subView === 'ledger' ? 'bg-[#B71C1C] text-white shadow-lg shadow-red-100' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+        >
+          Ledger
+        </button>
+      </div>
 
+      {subView === 'ledger' && (
+        <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm p-6 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-lg font-black text-gray-900">Inventory Ledger</h3>
+            <div className="flex flex-wrap gap-2 ml-auto">
+              <select
+                value={ledgerFilters.type}
+                onChange={(e) => setLedgerFilters(f => ({ ...f, type: e.target.value }))}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+              >
+                <option value="">All Types</option>
+                <option value="PURCHASE">Purchase (Stock In)</option>
+                <option value="RECIPE_CONSUMPTION">Recipe Consumption (Stock Out)</option>
+                <option value="MANUAL_ADJUSTMENT">Manual Adjustment</option>
+                <option value="OPENING">Opening Stock</option>
+              </select>
+              <select
+                value={ledgerFilters.itemId}
+                onChange={(e) => setLedgerFilters(f => ({ ...f, itemId: e.target.value }))}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none max-w-[200px]"
+              >
+                <option value="">All Items</option>
+                {items.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={ledgerFilters.startDate}
+                onChange={(e) => setLedgerFilters(f => ({ ...f, startDate: e.target.value }))}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+              />
+              <input
+                type="date"
+                value={ledgerFilters.endDate}
+                onChange={(e) => setLedgerFilters(f => ({ ...f, endDate: e.target.value }))}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
+              />
+              <button
+                onClick={() => loadLedger()}
+                disabled={ledgerLoading}
+                className="px-4 py-2 bg-[#F4F4F5] text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 disabled:opacity-50"
+              >
+                {ledgerLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
 
-      {isRangeMode && (
+          {ledgerLoading ? (
+            <div className="text-center py-10 text-gray-400">Loading ledger...</div>
+          ) : ledgerData.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">No ledger entries found. Stock movements will appear here after purchases or order settlements.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b-2 border-gray-100 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                    <th className="text-left py-3 px-2">Date/Time</th>
+                    <th className="text-left py-3 px-2">Item</th>
+                    <th className="text-left py-3 px-2">Type</th>
+                    <th className="text-right py-3 px-2">Qty Change</th>
+                    <th className="text-right py-3 px-2">Opening</th>
+                    <th className="text-right py-3 px-2">Closing</th>
+                    <th className="text-left py-3 px-2">Source</th>
+                    <th className="text-left py-3 px-2">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledgerData.map((entry) => {
+                    const typeColors = {
+                      PURCHASE: 'text-green-600 bg-green-50',
+                      RECIPE_CONSUMPTION: 'text-red-600 bg-red-50',
+                      MANUAL_ADJUSTMENT: 'text-amber-600 bg-amber-50',
+                      OPENING: 'text-blue-600 bg-blue-50',
+                    };
+                    const typeLabels = {
+                      PURCHASE: 'Stock In',
+                      RECIPE_CONSUMPTION: 'Stock Out',
+                      MANUAL_ADJUSTMENT: 'Adjustment',
+                      OPENING: 'Opening',
+                    };
+                    return (
+                      <tr key={entry.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                        <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
+                          {new Date(entry.transactionDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                        </td>
+                        <td className="py-2 px-2 font-semibold text-gray-800">
+                          {entry.itemName} <span className="text-gray-400 text-xs">{entry.unit}</span>
+                        </td>
+                        <td className="py-2 px-2">
+                          <span className={`inline-block px-2 py-1 rounded-lg text-[10px] font-bold ${typeColors[entry.type] || 'text-gray-600 bg-gray-50'}`}>
+                            {typeLabels[entry.type] || entry.type}
+                          </span>
+                        </td>
+                        <td className={`py-2 px-2 text-right font-bold ${entry.quantityChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {entry.quantityChange > 0 ? '+' : ''}{Number(entry.quantityChange).toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-gray-600">{Number(entry.stockBefore).toFixed(2)}</td>
+                        <td className="py-2 px-2 text-right text-gray-800 font-semibold">{Number(entry.stockAfter).toFixed(2)}</td>
+                        <td className="py-2 px-2 text-gray-500 text-xs">{entry.source || '—'}</td>
+                        <td className="py-2 px-2 text-gray-400 text-xs max-w-[250px] truncate" title={entry.notes}>{entry.notes || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {ledgerHasMore && (
+            <div className="text-center pt-2">
+              <button
+                onClick={loadMoreLedger}
+                disabled={ledgerLoading}
+                className="px-6 py-2 bg-[#F4F4F5] text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 disabled:opacity-50"
+              >
+                {ledgerLoading ? 'Loading...' : 'Load More'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {subView === 'stock' && isRangeMode && (
         <InventoryRangeSummary
           restaurantId={restaurantId}
           startDate={fromDate}
@@ -8165,7 +8375,7 @@ export function KitchenInventory() {
         />
       )}
 
-      {!isRangeMode && (
+      {subView === 'stock' && !isRangeMode && (
         <>
 
       {/* Deduction Diagnostic Panel */}
@@ -8396,7 +8606,7 @@ export function KitchenInventory() {
       )}
 
       {/* Laptop Table */}
-      <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden">
+      <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden" data-tour="admin-inventory-items">
 
         <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar">
 
@@ -14168,7 +14378,7 @@ export function Inventory() {
 
   return (
 
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="admin-inventory">
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm gap-6">
 
@@ -14449,7 +14659,7 @@ export function Inventory() {
 
 
       {/* Desktop Table View */}
-      <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden mb-6">
+      <div className="hidden md:block bg-white rounded-3xl border border-[#FFCDD2] shadow-sm overflow-hidden mb-6" data-tour="admin-inventory-items">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
@@ -16848,7 +17058,7 @@ export function Pricing() {
 
   return (
 
-    <div className="py-8 px-4 font-sans">
+    <div className="py-8 px-4 font-sans" data-tour="admin-pricing">
 
       <div className="text-center mb-16">
 
@@ -19097,7 +19307,7 @@ export function StaffManagement({ role }) {
 
   return (
 
-    <div className="space-y-4 font-sans">
+    <div className="space-y-4 font-sans" data-tour="admin-staff">
 
       {error && (
 
@@ -19132,6 +19342,7 @@ export function StaffManagement({ role }) {
           </button>
           <button
             onClick={() => setModalOpen(true)}
+            data-tour="admin-staff-add"
             className={`px-3 py-1.5 text-white text-[12px] font-bold rounded-xl transition bg-[#E53935] hover:bg-red-700`}
           >
             + Add Staff
@@ -19142,7 +19353,7 @@ export function StaffManagement({ role }) {
 
 
 
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden" data-tour="admin-staff-list">
 
         <table className="w-full text-[12px]">
 

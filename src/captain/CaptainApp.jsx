@@ -5674,6 +5674,8 @@ export default function CaptainApp({ onLogout }) {
 
                           type="search"
 
+                          data-tour="captain-menu-search"
+
                           placeholder="Search fine spirits, drinks & food..."
 
                           className="w-full bg-red-50/30 border border-red-100 rounded-2xl pl-12 pr-12 py-3.5 text-base font-bold outline-none focus:bg-white focus:border-[#E53935] focus:ring-4 focus:ring-red-50 transition-all shadow-inner"
@@ -6070,7 +6072,7 @@ export default function CaptainApp({ onLogout }) {
 
 })() : (
 
-                    <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]" data-tour="captain-menu">
 
                       {filteredMenu.map((item, idx) => {
 
@@ -6298,7 +6300,7 @@ export default function CaptainApp({ onLogout }) {
 
                   {/* ACTIVE DRAFT */}
 
-                  <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
+                  <div className="space-y-2 pt-2 border-t border-dashed border-gray-100" data-tour="captain-cart">
 
                     <div className="flex items-center justify-between">
 
@@ -6592,6 +6594,8 @@ export default function CaptainApp({ onLogout }) {
                     onClick={() => setShowKotConfirm(true)}
 
                     disabled={currentSessionItems.length === 0 || sendingKOT}
+
+                    data-tour="captain-kot"
 
                     className="w-full py-5 bg-[#E53935] text-white rounded-2xl font-black text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-[0.15em] shadow-xl shadow-red-100 active:scale-98 transition-all flex items-center justify-center gap-2 sm:gap-3 disabled:opacity-20 disabled:shadow-none relative group overflow-hidden whitespace-nowrap"
 

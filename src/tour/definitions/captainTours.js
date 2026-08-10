@@ -1,0 +1,201 @@
+const captainGettingStarted = {
+  id: 'captain-getting-started',
+  name: 'Captain Getting Started',
+  description: 'Complete overview of the Captain panel',
+  version: 1,
+  portal: 'captain',
+  category: 'Getting Started',
+  roles: ['captain', 'owner', 'admin'],
+  requiredModules: [],
+  startRoute: null,
+  steps: [
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'Welcome to the Captain Panel',
+      body: 'This is your order-taking app. As a Captain (waiter), you select tables, browse the menu, add items to the cart, and send KOTs to the kitchen. The Cashier handles billing — you focus on taking orders.',
+      hint: 'The Captain app works on Android phones and tablets. It works offline too.',
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'Main Sections',
+      body: 'The Captain panel has three main sections: Floor (table grid and order taking), Menu (browse and search menu items), and Settings (app configuration). Use the sidebar or bottom navigation to switch between them.',
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="captain-floor"]',
+      title: 'Floor Overview',
+      body: 'The Floor view shows all your restaurant\'s tables with their current status. This is where you start the order-taking flow: select a table, add items, and send the KOT to the kitchen.',
+      hint: 'The complete flow: Select Table → Browse Menu → Add Items → Send KOT → Track Order.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'Your Role as Captain',
+      body: 'As a Captain, you: 1) Greet customers and seat them at a table. 2) Take their order using this app. 3) Send the KOT to the kitchen. 4) Monitor order status (preparing → ready). 5) Request billing from the Cashier when the customer is done. The Cashier handles all payment processing.',
+      placement: 'right',
+    },
+  ],
+};
+
+const captainFloor = {
+  id: 'captain-floor-tour',
+  name: 'Captain Floor & Tables Tour',
+  description: 'Understand the floor view, sections, and table management',
+  version: 1,
+  portal: 'captain',
+  category: 'Captain',
+  roles: ['captain', 'owner', 'admin'],
+  requiredModules: [],
+  startRoute: null,
+  steps: [
+    {
+      target: '[data-tour="captain-floor"]',
+      title: 'Floor View',
+      body: 'This is your restaurant\'s floor plan. Each card represents a table with its number and current status. Tap any table to open it — either to start a new order or view an existing one.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-floor"]',
+      title: 'Sections',
+      body: 'If your restaurant has multiple sections (Ground Floor, First Floor, Outdoor, Bar), use the section filter to narrow the view. This helps you find your assigned tables quickly during service.',
+      hint: 'Tap the section name to switch between sections.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-floor"]',
+      title: 'Table Status',
+      body: 'Tables are color-coded: Free (green — ready for new guests), Occupied (red — has an active order). Tap a free table to start a new order. Tap an occupied table to view or modify the existing order.',
+      hint: 'Status updates in real-time — you\'ll see tables change color as orders flow.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-floor"]',
+      title: 'Selecting a Table',
+      body: 'Tap a free table to open the menu and start taking the customer\'s order. Tap an occupied table to see what\'s been ordered, add more items, or check the order status. The table you tap becomes your active table.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-floor"]',
+      title: 'Opening an Order',
+      body: 'When you tap a table, the menu opens. Browse or search for items, add them to the cart, and when ready, send the KOT to the kitchen. The order is attached to the table and visible to the Cashier for billing.',
+      hint: 'You can send multiple KOTs to the same table if the customer orders in rounds.',
+      placement: 'bottom',
+    },
+  ],
+};
+
+const captainOrder = {
+  id: 'captain-order-tour',
+  name: 'Captain Order Creation Tour',
+  description: 'Complete order flow from menu to KOT',
+  version: 1,
+  portal: 'captain',
+  category: 'Captain',
+  roles: ['captain', 'owner', 'admin'],
+  requiredModules: [],
+  startRoute: null,
+  steps: [
+    {
+      target: '[data-tour="captain-menu"]',
+      title: 'Menu Browser',
+      body: 'This is your menu. Browse by category or use the search bar to find items quickly. Tap any item to add it to the cart. Items are organized the same way the Admin configured them.',
+      hint: 'Search is the fastest way to find an item if the customer knows what they want.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-menu-search"]',
+      title: 'Search / Browse Items',
+      body: 'Use the search bar at the top to find items by name. Or scroll through categories and tap items to add them. You can filter by dietary type (veg/non-veg) to respect customer preferences.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-menu"]',
+      title: 'Selecting Items & Quantity',
+      body: 'Tap an item to add one quantity to the cart. Tap multiple times for multiple quantities. For bar items, you may see size options (30ml, 60ml, full bottle). Select the appropriate size before adding.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-menu"]',
+      title: 'Adding Notes / Modifiers',
+      body: 'After adding an item, you can add special notes (e.g., "less spicy", "no onion", "extra cheese"). These notes are printed on the KOT so the kitchen knows the customer\'s specific requirements.',
+      hint: 'Notes are critical for customer satisfaction — always ask for special requests.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-cart"]',
+      title: 'Reviewing the Order',
+      body: 'The cart shows all items you\'ve added for this table. Review the items, quantities, and notes before sending. You can adjust quantities or remove items if the customer changes their mind.',
+      placement: 'top',
+    },
+    {
+      target: '[data-tour="captain-kot"]',
+      title: 'Sending KOT',
+      body: 'Tap "Send KOT" to send the order to the kitchen. A KOT (Kitchen Order Ticket) is generated with a unique number and printed to the kitchen printer. The kitchen starts preparing the items immediately.',
+      hint: 'Once a KOT is sent, items cannot be removed without a cancellation — double-check before sending.',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tour="captain-floor"]',
+      title: 'Tracking the Order',
+      body: 'After sending the KOT, the table status changes to "Occupied/Preparing". You can return to the table anytime to add more items (another KOT), check the order status, or request billing from the Cashier.',
+      hint: 'When the customer is ready to pay, tell the Cashier the table number or use the "Request Bill" button if available.',
+      placement: 'bottom',
+    },
+  ],
+};
+
+const captainSync = {
+  id: 'captain-sync-tour',
+  name: 'Captain Offline & Sync Tour',
+  description: 'Understand what happens when internet is unavailable',
+  version: 1,
+  portal: 'captain',
+  category: 'Cloud Sync',
+  roles: ['captain', 'owner', 'admin'],
+  requiredModules: [],
+  startRoute: null,
+  steps: [
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'Offline Operation',
+      body: 'The Captain app is designed to work offline. If your internet goes down, you can continue taking orders normally. All orders and KOTs are saved on your device and will sync automatically when the connection returns.',
+      hint: 'Don\'t stop taking orders if the internet drops — everything is saved locally.',
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'What You Can Do Offline',
+      body: 'Offline, you can: browse the menu, take orders, add items, send KOTs (they\'re queued locally), and view existing orders. The menu and table data from the last sync remain available on your device.',
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'What Gets Queued',
+      body: 'When offline, all your KOTs and order modifications are queued on your device. The queue is stored safely in the app\'s local database — it survives even if the app is closed or the phone restarts.',
+      hint: 'Never uninstall the app or clear app data while there are pending orders.',
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'When Connectivity Returns',
+      body: 'When your internet comes back, the app automatically uploads all queued orders to the cloud. The kitchen and Cashier will see your orders. You\'ll see the sync indicator turn green when everything is uploaded.',
+      hint: 'This happens automatically — you don\'t need to press any button.',
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="captain-sidebar"]',
+      title: 'How to Know Sync Is Complete',
+      body: 'Watch the sync indicator: if it shows a pending count, orders are still being uploaded. When the count reaches zero and the indicator is green, all your orders have been synced. The Cashier can now generate bills for those tables.',
+      hint: 'If sync seems stuck, try moving to an area with better internet or ask your manager for help.',
+      placement: 'right',
+    },
+  ],
+};
+
+export default [
+  captainGettingStarted,
+  captainFloor,
+  captainOrder,
+  captainSync,
+];

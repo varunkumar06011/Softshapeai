@@ -50,6 +50,7 @@ import { isEdgeAvailable, edgeFetch } from "./services/edgeHealth";
 import { getSocket } from "./hooks/useSocket";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
 import { purgeLegacyCaches } from "./utils/cacheKeys";
+import TourRoot from "./tour/TourRoot.jsx";
 
 function isTokenValid(token) {
   if (!token) return false;
@@ -277,9 +278,11 @@ function App() {
       <AuthProvider>
         <SyncStatusProvider>
         <BrowserRouter>
-          <AppUpdateBanner />
-          <ThemeInjector />
-          <AnimatedRoutes />
+          <TourRoot>
+            <AppUpdateBanner />
+            <ThemeInjector />
+            <AnimatedRoutes />
+          </TourRoot>
         </BrowserRouter>
         </SyncStatusProvider>
       </AuthProvider>

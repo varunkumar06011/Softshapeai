@@ -33,6 +33,7 @@ import { reconnectSocket } from './hooks/useSocket'
 import { ErrorBoundary } from './shared/components/ErrorBoundary'
 import { isEdgeAvailable, edgeFetch } from './services/edgeHealth'
 import * as Sentry from '@sentry/react'
+import TourRoot from './tour/TourRoot'
 
 function isTokenValid(token) {
   if (!token) return false;
@@ -196,8 +197,10 @@ function AnimatedCaptainRoutes() {
 function CaptainRoutes() {
   return (
     <BrowserRouter>
-      <AppUpdateBanner />
-      <AnimatedCaptainRoutes />
+      <TourRoot>
+        <AppUpdateBanner />
+        <AnimatedCaptainRoutes />
+      </TourRoot>
     </BrowserRouter>
   )
 }

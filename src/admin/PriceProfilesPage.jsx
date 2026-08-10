@@ -182,7 +182,7 @@ export default function PriceProfilesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="admin-pricing-profiles">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Price Profiles</h2>

@@ -474,7 +474,7 @@ const OnboardingWizard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-gray-900">
+    <div className="min-h-screen bg-[#F8F9FA] text-gray-900" data-tour="onboarding-wizard">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
@@ -483,7 +483,7 @@ const OnboardingWizard = () => {
         </div>
 
         {/* Progress Bar */}
-        <div className="mb-8">
+        <div className="mb-8" data-tour="onboarding-progress">
           <div className="flex items-start w-full">
             {steps.map((step, idx) => (
               <React.Fragment key={step.id}>
@@ -544,7 +544,7 @@ const OnboardingWizard = () => {
         </div>
 
         {/* Step Content */}
-        <div className="bg-white rounded-2xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-2xl p-8 shadow-[0_32px_64px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden" data-tour="onboarding-step-content">
           <AnimatePresence mode="wait" custom={stepDirection}>
             <motion.div
               key={currentStepId}

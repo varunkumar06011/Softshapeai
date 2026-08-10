@@ -129,7 +129,7 @@ export default function SyncStatusIndicator() {
       )}
 
       {/* Persistent status pill — bottom right corner */}
-      <div className={`fixed bottom-3 right-3 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full border ${c.bg} ${c.border} shadow-sm text-xs font-bold ${c.color}`}>
+      <div data-tour="sync-status" className={`fixed bottom-3 right-3 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full border ${c.bg} ${c.border} shadow-sm text-xs font-bold ${c.color}`}>
         <Icon size={14} className={c.spin ? 'animate-spin' : ''} />
         <span>{c.text}</span>
         {lastSync && state === 'online' && (

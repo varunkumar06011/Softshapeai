@@ -263,7 +263,7 @@ export default function PrinterSettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-2xl mx-auto space-y-5" data-tour="admin-printers">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Printer size={28} className="text-[#B71C1C]" />
@@ -476,7 +476,7 @@ export default function PrinterSettingsPage() {
       </div>
 
       {/* Printer Config Editor */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4">
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4" data-tour="admin-printers-list">
         <div className="flex items-center justify-between">
           <div>
             <div className="font-bold text-base">Configured Printers</div>
@@ -484,6 +484,7 @@ export default function PrinterSettingsPage() {
           </div>
           <button
             onClick={addPrinter}
+            data-tour="admin-printers-add"
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50"
           >
             <Plus size={14} /> Add
