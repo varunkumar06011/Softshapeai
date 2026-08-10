@@ -30,7 +30,7 @@ import {
   Printer, X, Check, Zap, ArrowRight, Filter, Layers, ArrowUpRight, Loader2, Timer,
   TrendingUp, Users, Package, Wallet, ArrowRightLeft, Activity, BarChart3, MessageSquare, Calendar,
   Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle,
-  DatabaseBackup, RefreshCw, Edit2, Plus as PlusIcon, Pause, Save
+  DatabaseBackup, RefreshCw, Edit2, Plus as PlusIcon, Pause, Save, LayoutGrid
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { useMenu } from '../context/MenuContext';
