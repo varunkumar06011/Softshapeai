@@ -148,15 +148,37 @@ function SpaceEditor({ onBack }) {
 
   // Fetch available printer names — merges all known printer sources so the
   // dropdowns are populated even when the edge agent is offline:
-  //   1. Manually configured printers (admin Printer Settings page)
+  //   1. Manually configured printers (fetched fresh from /api/restaurant/profile)
   //   2. Live agent-reported printers (from /api/print/agent-status)
   //   3. Live agent mapping values (kitchen/bar/bill → printer name)
   //   4. Cached availablePrinters from the outlet's printerConfig
   useEffect(() => {
     const fetchPrinters = async () => {
-      const configPrinters = (restaurant?.printerConfig?.printers || [])
-        .map(p => p?.name).filter(Boolean);
-      const cachedAgentPrinters = restaurant?.printerConfig?.availablePrinters || [];
+      let configPrinters = [];
+      let cachedAgentPrinters = [];
+      // Fetch the latest printerConfig directly from the backend so we don't
+      // rely on a potentially-stale auth context. This ensures printers added
+      // on the Printer Settings page show up here immediately.
+      try {
+        const profileRes = await fetch(apiUrl('/api/restaurant/profile'), {
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        });
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          const pc = profile?.printerConfig || {};
+          configPrinters = (pc.printers || []).map(p => p?.name).filter(Boolean);
+          cachedAgentPrinters = pc.availablePrinters || [];
+        }
+      } catch { /* fall back to auth context if fetch fails */ }
+      // Fallback to auth context if the profile fetch didn't return printers
+      if (configPrinters.length === 0) {
+        configPrinters = (restaurant?.printerConfig?.printers || [])
+          .map(p => p?.name).filter(Boolean);
+      }
+      if (cachedAgentPrinters.length === 0) {
+        cachedAgentPrinters = restaurant?.printerConfig?.availablePrinters || [];
+      }
+      // Fetch live agent status for connected printers
       let livePrinters = [];
       let liveMappingValues = [];
       try {
