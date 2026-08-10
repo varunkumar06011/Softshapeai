@@ -183,6 +183,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     number: row.number,
     dbStatus: row.status,
     status: isFreeWorkflow ? 'Free' : (row.workflowStatus || toFrontendTableStatus(row.status)),
+    workflowStatus: isFreeWorkflow ? 'Free' : (row.workflowStatus || toFrontendTableStatus(row.status)),
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
@@ -192,7 +193,7 @@ const mapRealtimeTablePayload = (row, existing = null) => {
     kotHistory: isFreeWorkflow ? [] : ((Array.isArray(row.kots) && row.kots.length > 0) ? normalizeKots(row.kots) : filterCancelledFromKotHistory(Array.isArray(row.kotHistory) ? row.kotHistory : [])),
     currentBill: isFreeWorkflow ? 0 : Number(row.currentBill ?? 0),
     activeOrder,
-    billNumber: isFreeWorkflow ? null : (row.orders?.[0]?.billNumber ?? row.activeOrder?.billNumber ?? null),
+    billNumber: isFreeWorkflow ? null : (row.orders?.[0]?.billNumber ?? row.activeOrder?.billNumber ?? activeOrder?.billNumber ?? existing?.billNumber ?? null),
     updatedAt: row.updatedAt || row.updated_at || existing?.updatedAt || null,
     ...(existing ? { displayName: existing.displayName, name: existing.name } : {}),
   };
@@ -345,6 +346,7 @@ const CashierDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem(getTenantScopedKey('cashier_active_tab')) || 'dashboard');
   // ── Edit Menu state (cashier edge-edit feature) ──
   const [editingMenuItem, setEditingMenuItem] = useState(null);
+  const [addingMenuItem, setAddingMenuItem] = useState(null);
   const [menuEditSearch, setMenuEditSearch] = useState('');
   const [menuEditSaving, setMenuEditSaving] = useState(false);
   const [tableSubCategory, setTableSubCategory] = useState(() => {
@@ -4838,6 +4840,51 @@ const CashierDashboard = ({ onLogout }) => {
     }
   }, [addNotification, setGlobalMenu]);
 
+  // ── Create handler for the add menu item modal (edge-first with cloud fallback) ──
+  // Mirrors handleSaveMenuItem: writes to the edge server instantly and enqueues a
+  // background cloud sync. The edge emits config.changed, which triggers a full
+  // menu refresh (restaurant + bar) via menuSyncService/barMenuSyncService, so a
+  // LIQUOR item added in bar/both mode lands in the correct store after refresh.
+  const handleCreateMenuItem = useCallback(async (payload) => {
+    setMenuEditSaving(true);
+    try {
+      const result = await createMenuItemEdge(payload);
+      if (!result || !result.success) {
+        const msg = result?.error || 'Could not add menu item';
+        addNotification('Add Failed', msg, 'error');
+        return { success: false, error: msg };
+      }
+      const newId = result.id || payload.id;
+      // Optimistically insert into the in-memory menu so the item appears instantly.
+      setGlobalMenu(prev => {
+        if (prev.some(i => i.id === newId)) return prev;
+        return [...prev, {
+          id: newId,
+          n: payload.name,
+          c: payload.category,
+          t: payload.isVeg ? 'veg' : 'non',
+          p: Number(payload.price) || 0,
+          img: payload.imageUrl || '/placeholder.svg',
+          menuType: payload.menuType || 'FOOD',
+          gstEnabled: payload.gstEnabled,
+          printerTarget: payload.printerTarget || null,
+          printerName: payload.printerName || null,
+          isAvailable: payload.isAvailable !== false,
+          venuePrices: payload.venuePrices || {},
+          isSpecial: false,
+          active: true,
+        }];
+      });
+      addNotification('Menu Item Added', `${payload.name} added (synced to edge)`, 'success');
+      return { success: true, id: newId };
+    } catch (err) {
+      addNotification('Add Failed', err.message || 'Could not add menu item', 'error');
+      return { success: false, error: err.message };
+    } finally {
+      setMenuEditSaving(false);
+    }
+  }, [addNotification, setGlobalMenu]);
+
   const menuTypeSubcategories = useMemo(() => {
     const items = activeOutlet === 'restaurant'
       ? menuItems.filter(i => i.isAvailable !== false)
@@ -6250,14 +6297,17 @@ const CashierDashboard = ({ onLogout }) => {
                                         {table.captainName}
                                       </p>
                                     )}
-                                    {isWaitingBill && table.billNumber && (
+                                    {isWaitingBill && (table.billNumber || table.activeOrder?.billNumber) && (() => {
+                                      const bn = table.billNumber || table.activeOrder?.billNumber;
+                                      return (
                                       <p className={`text-[10px] font-black uppercase tracking-wider mb-1 ${textColor}`}>
-                                        {String(table.billNumber).startsWith('OFFLINE-')
-                                          ? <span className="bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded">📱 {table.billNumber}</span>
-                                          : <>Bill #{table.billNumber}</>
+                                        {String(bn).startsWith('OFFLINE-')
+                                          ? <span className="bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded">📱 {bn}</span>
+                                          : <>Bill #{bn}</>
                                         }
                                       </p>
-                                    )}
+                                      );
+                                    })()}
                                     <p className="text-xl font-black text-gray-900">
                                       ₹{billAmt > 0 ? billAmt.toFixed(2) : '—'}
                                     </p>
@@ -7717,6 +7767,31 @@ const CashierDashboard = ({ onLogout }) => {
                                   className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm font-bold outline-none focus:border-[#1E3A8A] w-56"
                                 />
                               </div>
+                              <button
+                                onClick={() => {
+                                  const isBar = activeOutlet === 'bar';
+                                  setAddingMenuItem({
+                                    n: '',
+                                    c: editMenuCategories[0]?.name ?? '',
+                                    t: 'veg',
+                                    p: '',
+                                    img: '',
+                                    menuType: isBar ? 'LIQUOR' : 'FOOD',
+                                    gstEnabled: !isBar,
+                                    printerTarget: null,
+                                    printerName: null,
+                                    venuePrices: {},
+                                    isAvailable: true,
+                                    isSpecial: false,
+                                    specialChannel: 'BOTH',
+                                    specialActive: true,
+                                  });
+                                }}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1E3A8A] text-white text-sm font-black hover:bg-[#152C6B] transition-all shadow-sm shrink-0"
+                                title="Add a new menu item"
+                              >
+                                <Plus size={16} /> Add Item
+                              </button>
                             </div>
                           </div>
 
@@ -7776,6 +7851,23 @@ const CashierDashboard = ({ onLogout }) => {
                       />
                     )}
 
+                    {/* ── ADD MENU ITEM MODAL (edge-first, syncs to cloud) ── */}
+                    {addingMenuItem && (
+                      <EditMenuItemModal
+                        item={addingMenuItem}
+                        categories={editMenuCategories}
+                        venues={editMenuVenues}
+                        activeVenueId={editMenuVenues[0]?.id}
+                        printerOptions={[]}
+                        showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
+                        onClose={() => setAddingMenuItem(null)}
+                        onSave={handleCreateMenuItem}
+                        showRecipe={false}
+                        title="Add Item"
+                        saveLabel="Add Item"
+                      />
+                    )}
+
             </>
         </main>
       </div>
@@ -7809,14 +7901,17 @@ const CashierDashboard = ({ onLogout }) => {
                   <p className="text-base sm:text-lg font-black text-gray-900 mt-0.5 sm:mt-1">
                     {selectedTable.time ? (() => { try { const d = new Date(selectedTable.time); return isNaN(d.getTime()) ? 'Just now' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }); } catch { return 'Just now'; } })() : 'Just now'}
                   </p>
-                  {selectedTable.billNumber && (
+                  {(selectedTable.billNumber || selectedTable.activeOrder?.billNumber) && (() => {
+                    const bn = selectedTable.billNumber || selectedTable.activeOrder?.billNumber;
+                    return (
                     <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 mt-0.5">
-                      {String(selectedTable.billNumber).startsWith('OFFLINE-')
-                        ? <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">📱 {selectedTable.billNumber}</span>
-                        : <>Bill #{selectedTable.billNumber}</>
+                      {String(bn).startsWith('OFFLINE-')
+                        ? <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">📱 {bn}</span>
+                        : <>Bill #{bn}</>
                       }
                     </p>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
               <button

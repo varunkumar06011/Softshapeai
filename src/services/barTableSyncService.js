@@ -230,6 +230,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     number: row.number,
     dbStatus,
     status: (keepWorkflowStatus || _persistingCount > 0) && existing ? existing.status : persistedStatus,
+    workflowStatus: (keepWorkflowStatus || _persistingCount > 0) && existing ? existing.workflowStatus : persistedStatus,
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
@@ -245,6 +246,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     currentBill: isFreeWorkflow ? 0 : (isStale && existing ? existing.currentBill : (row.currentBill ?? existing?.currentBill ?? 0)),
     updatedAt: row.updatedAt || existing?.updatedAt || null,
     activeOrder: isFreeWorkflow ? null : activeOrder,
+    billNumber: isFreeWorkflow ? null : (activeOrder?.billNumber ?? row.orders?.[0]?.billNumber ?? existing?.billNumber ?? null),
   };
 
   return base;

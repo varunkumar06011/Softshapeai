@@ -22,6 +22,8 @@
 //   onSave          — async (updatedFields) => { success, error?, id? }
 //   showRecipe      — bool (default false)
 //   recipeRows / kitchenIngredients / recipe callbacks (optional, admin only)
+//   title           — modal header text (default 'Edit Item'; e.g. 'Add Item')
+//   saveLabel       — save button text (default 'Save Changes'; e.g. 'Add Item')
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
@@ -43,6 +45,8 @@ export default function EditMenuItemModal({
   kitchenIngredients = [],
   onRecipeRowsChange,
   onImageUpload,
+  title = 'Edit Item',
+  saveLabel = 'Save Changes',
 }) {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -116,7 +120,7 @@ export default function EditMenuItemModal({
       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
-          <h3 className="font-black text-lg text-gray-900 tracking-tight">Edit Item</h3>
+          <h3 className="font-black text-lg text-gray-900 tracking-tight">{title}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-900"><X size={18} /></button>
         </div>
 
@@ -388,7 +392,7 @@ export default function EditMenuItemModal({
             disabled={!form.n || saving}
             className="px-6 py-2 text-sm font-black text-white bg-[#E53935] hover:bg-red-700 disabled:opacity-50 rounded-lg shadow-md"
           >
-            {saving ? 'Saving…' : 'Save Changes'}
+            {saving ? 'Saving…' : saveLabel}
           </button>
         </div>
       </div>

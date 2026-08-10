@@ -404,6 +404,18 @@ const PortalSelection = ({ onSelect }) => {
             >
               Link Existing Restaurant
             </Link>
+            <Link
+              to="/terms"
+              className="text-sm font-semibold text-gray-600 hover:text-[#E53935] transition-colors"
+            >
+              Terms
+            </Link>
+            <Link
+              to="/privacy"
+              className="text-sm font-semibold text-gray-600 hover:text-[#E53935] transition-colors"
+            >
+              Privacy
+            </Link>
           </div>
         </div>
       </footer>

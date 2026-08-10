@@ -244,6 +244,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     number: row.number,
     dbStatus,
     status: (keepWorkflowStatus || _persistingCount > 0) && existing ? existing.status : persistedStatus,
+    workflowStatus: (keepWorkflowStatus || _persistingCount > 0) && existing ? existing.workflowStatus : persistedStatus,
     capacity: row.capacity,
     sectionId: row.sectionId,
     section: row.section,
@@ -256,6 +257,7 @@ function mapBackendTable(row, existing = null, { keepWorkflowStatus = false } = 
     kotHistory: mergedKotHistory,
     currentBill: isFreeWorkflow ? 0 : Math.max(row.currentBill ?? 0, activeOrder ? Number(activeOrder.totalAmount ?? 0) : 0),
     activeOrder: isFreeWorkflow ? null : activeOrder,
+    billNumber: isFreeWorkflow ? null : (activeOrder?.billNumber ?? row.orders?.[0]?.billNumber ?? existing?.billNumber ?? null),
     discount: isFreeWorkflow ? null : (row.discount != null ? Number(row.discount) : null),
     updatedAt: isStale && existing ? existing.updatedAt : (row.updatedAt || existing?.updatedAt || null),
   };
