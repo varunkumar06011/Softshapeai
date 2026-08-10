@@ -146,25 +146,35 @@ function SpaceEditor({ onBack }) {
 
   useEffect(() => { loadVenues(); }, [loadVenues]);
 
-  // Fetch available printer names from the print agent status + outlet printer config
+  // Fetch available printer names — merges all known printer sources so the
+  // dropdowns are populated even when the edge agent is offline:
+  //   1. Manually configured printers (admin Printer Settings page)
+  //   2. Live agent-reported printers (from /api/print/agent-status)
+  //   3. Live agent mapping values (kitchen/bar/bill → printer name)
+  //   4. Cached availablePrinters from the outlet's printerConfig
   useEffect(() => {
     const fetchPrinters = async () => {
+      const configPrinters = (restaurant?.printerConfig?.printers || [])
+        .map(p => p?.name).filter(Boolean);
+      const cachedAgentPrinters = restaurant?.printerConfig?.availablePrinters || [];
+      let livePrinters = [];
+      let liveMappingValues = [];
       try {
         const res = await fetch(apiUrl('/api/print/agent-status'), {
           headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         });
         if (res.ok) {
           const data = await res.json();
-          const agentPrinters = data?.availablePrinters || [];
-          const configPrinters = (restaurant?.printerConfig?.printers || [])
-            .map(p => p?.name).filter(Boolean);
-          const merged = [...new Set([...agentPrinters, ...configPrinters])];
-          setAvailablePrinters(merged);
+          livePrinters = data?.availablePrinters || [];
+          const mapping = data?.agentMapping || {};
+          liveMappingValues = Object.values(mapping).filter(v => typeof v === 'string' && v);
         }
-      } catch { /* non-fatal — dropdowns will just be empty */ }
+      } catch { /* non-fatal — use configured/cached printers only */ }
+      const merged = [...new Set([...configPrinters, ...livePrinters, ...liveMappingValues, ...cachedAgentPrinters])];
+      setAvailablePrinters(merged);
     };
     fetchPrinters();
-  }, [restaurant?.printerConfig?.printers]);
+  }, [restaurant?.printerConfig?.printers, restaurant?.printerConfig?.availablePrinters]);
 
   const toggleVenue = id => setExpandedVenues(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSection = id => setExpandedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
