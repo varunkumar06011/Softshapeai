@@ -32,7 +32,6 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   const fileInputRef = useRef(null);
   const [categorySuggestions, setCategorySuggestions] = useState(existingCategories);
   const [uploadMode, setUploadMode] = useState('standard'); // 'standard' | 'rate-card'
-  const [venueNames, setVenueNames] = useState([]);
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [selectedRows, setSelectedRows] = useState(new Set()); // for bulk category edit
   const [bulkCategory, setBulkCategory] = useState('');
