@@ -13,12 +13,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Leaf, Download, Layers } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileText, AlertCircle, CheckCircle, Loader, Leaf, Layers, Image as ImageIcon, Sparkles, X } from 'lucide-react';
 import { cloudApiUrl, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
+
 export default function MenuUpload({ onImported, onboardingMode = false, restaurantType, existingCategories = [], sessionId, targetVenueId }) {
   const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]); // for multi-image upload
   const [parsed, setParsed] = useState(null);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -31,7 +34,11 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   const [uploadMode, setUploadMode] = useState('standard'); // 'standard' | 'rate-card'
   const [venueNames, setVenueNames] = useState([]);
   const [replaceExisting, setReplaceExisting] = useState(false);
+  const [selectedRows, setSelectedRows] = useState(new Set()); // for bulk category edit
+  const [bulkCategory, setBulkCategory] = useState('');
   const isPdf = file?.name?.toLowerCase().endsWith('.pdf') || false;
+  const isImage = file ? IMAGE_EXTENSIONS.includes(file.name.toLowerCase().split('.').pop()) : false;
+  const isMultiImage = files.length > 0;
 
   // Fetch existing categories in non-onboarding mode if not provided via props
   useEffect(() => {
@@ -55,14 +62,43 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   const handleFileSelect = (selected) => {
     if (!selected) return;
     setFile(selected);
+    setFiles([]);
     setParsed(null);
     setImportResult(null);
     setEditedRows(null);
     setError('');
+    setSelectedRows(new Set());
+  };
+
+  const handleMultiImageSelect = (selectedFiles) => {
+    if (!selectedFiles || selectedFiles.length === 0) return;
+    const imageFiles = Array.from(selectedFiles).filter(f =>
+      IMAGE_EXTENSIONS.includes(f.name.toLowerCase().split('.').pop())
+    );
+    if (imageFiles.length === 0) return;
+    setFiles(imageFiles);
+    setFile(null);
+    setParsed(null);
+    setImportResult(null);
+    setEditedRows(null);
+    setError('');
+    setSelectedRows(new Set());
   };
 
   const onFileInputChange = (e) => {
-    handleFileSelect(e.target.files[0]);
+    const selected = e.target.files;
+    if (!selected || selected.length === 0) return;
+    // If multiple images are selected, use multi-image mode
+    if (selected.length > 1) {
+      handleMultiImageSelect(selected);
+    } else {
+      const ext = selected[0].name.toLowerCase().split('.').pop();
+      if (IMAGE_EXTENSIONS.includes(ext)) {
+        handleMultiImageSelect(selected);
+      } else {
+        handleFileSelect(selected[0]);
+      }
+    }
   };
 
   const onDragOver = (e) => {
@@ -78,54 +114,65 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
   const onDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-    const dropped = e.dataTransfer.files[0];
-    if (dropped) handleFileSelect(dropped);
-  };
-
-  const downloadTemplate = async () => {
-    let csv;
-    if (uploadMode === 'rate-card') {
-      // Dynamic template: fetch venue names from API
-      let venues = venueNames;
-      if (venues.length === 0 && !onboardingMode) {
-        try {
-          const res = await fetch(cloudApiUrl('/api/venues'), { headers: { ...getAuthHeaders() } });
-          if (res.ok) {
-            const data = await res.json();
-            venues = data.map(v => v.name).filter(Boolean);
-            setVenueNames(venues);
-          }
-        } catch (e) {
-          // fallback to example venue names
+    const dropped = e.dataTransfer.files;
+    if (dropped && dropped.length > 0) {
+      if (dropped.length > 1) {
+        handleMultiImageSelect(dropped);
+      } else {
+        const ext = dropped[0].name.toLowerCase().split('.').pop();
+        if (IMAGE_EXTENSIONS.includes(ext)) {
+          handleMultiImageSelect(dropped);
+        } else {
+          handleFileSelect(dropped[0]);
         }
       }
-      const venueCols = venues.length > 0 ? venues : ['Bar (AC)', 'Conference Hall', 'PDR', 'Rooms', 'Parcel'];
-      const header = ['Category', 'Subcategory', 'Item Name', 'Type', 'Unit', ...venueCols].join(',');
-      const exampleRows = [
-        ['Liquor', 'Whiskey', 'Antiquity 750ml', 'LIQUOR', '750ml', ...venueCols.map(() => '200')].join(','),
-        ['Food', 'Starters', 'Fish Fry B/L', 'FOOD', 'plate', ...venueCols.map(() => '410')].join(','),
-      ];
-      csv = [header, ...exampleRows].join('\n');
-    } else {
-      csv = 'Category,Item Name,Price,Veg\nStarters,Paneer Tikka,250,1\nStarters,Chicken Wings,320,0\nMain Course,Dal Makhani,180,1\nMain Course,Butter Chicken,380,0\nBeverages,Fresh Lime Soda,80,1\nBeverages,Masala Chai,40,1';
     }
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = uploadMode === 'rate-card' ? 'rate-card-template.csv' : 'menu-template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+  };
+
+  const removeImageFromList = (index) => {
+    const next = files.filter((_, i) => i !== index);
+    setFiles(next);
+    if (next.length === 0) {
+      setParsed(null);
+      setImportResult(null);
+    }
   };
 
   const handleParse = async () => {
-    if (!file) return;
+    if (!file && files.length === 0) return;
     setLoading(true);
     setError('');
     setParsed(null);
     setImportResult(null);
+    setSelectedRows(new Set());
 
     try {
+      // Multi-image upload uses a separate endpoint
+      if (isMultiImage && files.length > 0) {
+        const formData = new FormData();
+        for (const f of files) {
+          formData.append('files', f);
+        }
+        if (restaurantType) formData.append('restaurantType', restaurantType);
+        if (sessionId) formData.append('sessionId', sessionId);
+
+        const res = await fetch(cloudApiUrl('/api/menu/admin/upload-images'), {
+          method: 'POST',
+          headers: { ...getAuthHeaders() },
+          body: formData,
+          signal: AbortSignal.timeout(120000),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Failed to parse images');
+        }
+
+        const data = await res.json();
+        setParsed(data);
+        return;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       if (restaurantType) {
@@ -135,11 +182,12 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
         formData.append('sessionId', sessionId);
       }
 
+      const timeoutMs = isPdf || isImage ? 120000 : 60000;
       const res = await fetch(cloudApiUrl('/api/menu/admin/upload'), {
         method: 'POST',
         headers: { ...getAuthHeaders() },
         body: formData,
-        signal: AbortSignal.timeout(isPdf ? 120000 : 30000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (!res.ok) {
@@ -207,10 +255,12 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
 
   const handleReset = () => {
     setFile(null);
+    setFiles([]);
     setParsed(null);
     setImportResult(null);
     setEditedRows(null);
     setError('');
+    setSelectedRows(new Set());
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -218,6 +268,74 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
     const target = editedRows || parsed.rows;
     const next = target.map((r, i) => i === index ? { ...r, [field]: value } : r);
     setEditedRows(next);
+  };
+
+  const handleReparseWithAI = async () => {
+    if (!file && files.length === 0) return;
+    setLoading(true);
+    setError('');
+    setParsed(null);
+    setEditedRows(null);
+    setSelectedRows(new Set());
+
+    try {
+      if (isMultiImage && files.length > 0) {
+        const formData = new FormData();
+        for (const f of files) formData.append('files', f);
+        if (restaurantType) formData.append('restaurantType', restaurantType);
+        if (sessionId) formData.append('sessionId', sessionId);
+
+        const res = await fetch(cloudApiUrl('/api/menu/admin/upload-images'), {
+          method: 'POST',
+          headers: { ...getAuthHeaders() },
+          body: formData,
+          signal: AbortSignal.timeout(120000),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Failed to re-parse images');
+        }
+        setParsed(await res.json());
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      if (restaurantType) formData.append('restaurantType', restaurantType);
+      if (sessionId) formData.append('sessionId', sessionId);
+
+      const res = await fetch(cloudApiUrl('/api/menu/admin/upload-ai'), {
+        method: 'POST',
+        headers: { ...getAuthHeaders() },
+        body: formData,
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to re-parse with AI');
+      }
+      setParsed(await res.json());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleRowSelection = (index) => {
+    const next = new Set(selectedRows);
+    if (next.has(index)) next.delete(index);
+    else next.add(index);
+    setSelectedRows(next);
+  };
+
+  const applyBulkCategory = () => {
+    if (!bulkCategory.trim() || selectedRows.size === 0) return;
+    const target = editedRows || parsed.rows;
+    const next = target.map((r, i) => selectedRows.has(i) ? { ...r, category: bulkCategory.trim() } : r);
+    setEditedRows(next);
+    setSelectedRows(new Set());
+    setBulkCategory('');
   };
 
   return (
@@ -258,12 +376,13 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
         <p className="text-sm text-gray-400 mb-4">
           {uploadMode === 'rate-card'
             ? 'Supported formats: Excel (.xlsx), CSV (.csv). Rows = items, columns = venue prices.'
-            : 'Supported formats: Excel (.xlsx), CSV (.csv), PDF (.pdf)'}
+            : 'Supported formats: Excel (.xlsx), CSV (.csv), PDF (.pdf), Images (JPG, PNG, WebP). You can select multiple photos.'}
         </p>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".xlsx,.xls,.csv,.pdf"
+          accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp"
+          multiple
           onChange={onFileInputChange}
           className="hidden"
           id="menu-file-upload"
@@ -274,17 +393,28 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
         >
           Choose File
         </label>
-        <button
-          onClick={downloadTemplate}
-          className="inline-flex items-center gap-2 ml-3 px-4 py-3 text-sm text-gray-600 hover:text-[#E53935] transition-all"
-        >
-          <Download size={16} /> Download template
-        </button>
         {file && (
           <div className="mt-4 flex items-center justify-center gap-2 text-sm text-gray-600">
-            {file.name.endsWith('.pdf') ? <FileText size={16} /> : <FileSpreadsheet size={16} />}
+            {isPdf ? <FileText size={16} /> : isImage ? <ImageIcon size={16} /> : <FileSpreadsheet size={16} />}
             <span>{file.name}</span>
             <span className="text-gray-400">({(file.size / 1024).toFixed(1)} KB)</span>
+          </div>
+        )}
+        {isMultiImage && files.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm text-gray-500">{files.length} photo{files.length > 1 ? 's' : ''} selected</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg border border-gray-200 text-xs text-gray-600">
+                  <ImageIcon size={14} />
+                  <span>{f.name}</span>
+                  <span className="text-gray-400">({(f.size / 1024).toFixed(0)} KB)</span>
+                  <button onClick={() => removeImageFromList(i)} className="text-gray-400 hover:text-red-500 ml-1">
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -297,14 +427,16 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
       )}
 
       {/* Parse button */}
-      {file && !parsed && !importResult && (
+      {(file || isMultiImage) && !parsed && !importResult && (
         <button
           onClick={handleParse}
           disabled={loading}
           className="w-full py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          {loading ? <Loader size={18} className="animate-spin" /> : <FileSpreadsheet size={18} />}
-          {loading ? (isPdf ? 'AI parsing menu...' : 'Parsing...') : 'Parse File'}
+          {loading ? <Loader size={18} className="animate-spin" /> : (isPdf || isImage || isMultiImage) ? <Sparkles size={18} /> : <FileSpreadsheet size={18} />}
+          {loading
+            ? (isPdf || isImage || isMultiImage ? 'AI + OCR parsing menu...' : 'Parsing...')
+            : (isMultiImage ? `Parse ${files.length} Photos` : 'Parse File')}
         </button>
       )}
 
@@ -314,7 +446,17 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
           {parsed.confidence === 'LOW' && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2 text-yellow-800 text-sm">
               <AlertCircle size={18} />
-              Low confidence parse — please review the rows carefully before importing.
+              <span className="flex-1">Low confidence parse — please review the rows carefully before importing.</span>
+              {(file || isMultiImage) && (isPdf || isImage || isMultiImage) && (
+                <button
+                  onClick={handleReparseWithAI}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
+                >
+                  {loading ? <Loader size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  Re-parse with AI
+                </button>
+              )}
             </div>
           )}
 
@@ -355,9 +497,42 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
               <h4 className="font-semibold text-gray-900">
                 Preview ({parsed.rows.length} items)
                 {parsed.mode === 'rate-card' && <span className="ml-2 text-xs font-normal text-blue-600">Rate Card Mode</span>}
+                {parsed.source && (
+                  <span className="ml-2 text-[10px] font-bold uppercase bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">
+                    {parsed.source === 'ai+ocr' ? 'AI + OCR' : parsed.source === 'ai+text' ? 'AI + Text' : parsed.source}
+                  </span>
+                )}
               </h4>
               <span className="text-sm text-gray-400">Confidence: {parsed.confidence}</span>
             </div>
+
+            {/* Bulk category edit bar */}
+            {parsed.mode !== 'rate-card' && selectedRows.size > 0 && (
+              <div className="mb-3 flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="text-xs font-medium text-blue-700">{selectedRows.size} selected</span>
+                <input
+                  type="text"
+                  list="category-suggestions"
+                  value={bulkCategory}
+                  onChange={(e) => setBulkCategory(e.target.value)}
+                  placeholder="Set category for selected..."
+                  className="flex-1 px-2 py-1 bg-white border border-blue-200 rounded text-xs focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  onClick={applyBulkCategory}
+                  disabled={!bulkCategory.trim()}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold disabled:opacity-50"
+                >
+                  Apply
+                </button>
+                <button
+                  onClick={() => setSelectedRows(new Set())}
+                  className="px-2 py-1 text-gray-500 hover:text-gray-700 text-xs"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
             <div className="max-h-64 overflow-y-auto">
               {parsed.mode === 'rate-card' ? (
                 /* Rate card preview: show item name, category, type, base price, per-venue prices */
@@ -409,6 +584,7 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50">
                     <tr className="text-left text-gray-400">
+                      <th className="py-2 pr-1 w-8"></th>
                       <th className="py-2 pr-2">Category</th>
                       <th className="py-2 pr-2">Name</th>
                       <th className="py-2 pr-2">Price</th>
@@ -418,7 +594,15 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
                   </thead>
                   <tbody>
                     {(editedRows || parsed.rows).map((row, i) => (
-                      <tr key={i} className="border-t border-gray-100">
+                      <tr key={i} className={`border-t border-gray-100 ${row.itemConfidence === 'low' ? 'bg-yellow-50' : ''}`}>
+                        <td className="py-1.5 pr-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(i)}
+                            onChange={() => toggleRowSelection(i)}
+                            className="w-3 h-3 accent-blue-600"
+                          />
+                        </td>
                         <td className="py-1.5 pr-2">
                           <div className="flex items-center gap-1">
                             <input
@@ -429,11 +613,19 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
                               className="w-full px-2 py-1 bg-white border border-gray-200 rounded text-gray-600 text-xs focus:outline-none focus:border-[#E53935]"
                             />
                             {row.categoryInferred && (
-                              <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold bg-blue-100 text-blue-700 rounded-full whitespace-nowrap">AI</span>
+                              <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold bg-blue-100 text-blue-700 rounded-full whitespace-nowrap" title="Category inferred by AI from item name">AI</span>
                             )}
                           </div>
                         </td>
-                        <td className="py-1.5 pr-2 text-gray-900">{row.name}</td>
+                        <td className="py-1.5 pr-2 text-gray-900">
+                          {row.name}
+                          {row.itemConfidence === 'low' && (
+                            <span className="ml-1 inline-block w-1.5 h-1.5 bg-yellow-500 rounded-full" title="Low confidence — please verify" />
+                          )}
+                          {row.itemConfidence === 'medium' && (
+                            <span className="ml-1 inline-block w-1.5 h-1.5 bg-orange-400 rounded-full" title="Medium confidence" />
+                          )}
+                        </td>
                         <td className="py-1.5 pr-2">
                           {row.variants ? (
                             <span className="text-gray-500 text-xs">₹{row.price}</span>
@@ -478,17 +670,22 @@ export default function MenuUpload({ onImported, onboardingMode = false, restaur
             </datalist>
           </div>
 
-          {/* Replace existing option */}
+          {/* Import mode options */}
           {!onboardingMode && (
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={replaceExisting}
-                onChange={(e) => setReplaceExisting(e.target.checked)}
-                className="w-4 h-4 accent-[#E53935]"
-              />
-              <span>Replace existing menu (deletes all current items before import)</span>
-            </label>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">
+                <span className="font-medium text-gray-700">Smart merge</span> is enabled by default — existing items with the same name + category will be updated, new items will be added, and unmatched existing items will be left alone.
+              </p>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={replaceExisting}
+                  onChange={(e) => setReplaceExisting(e.target.checked)}
+                  className="w-4 h-4 accent-[#E53935]"
+                />
+                <span>Replace entire menu instead (deletes ALL current items before import)</span>
+              </label>
+            </div>
           )}
 
           <div className="flex gap-3">

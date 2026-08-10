@@ -109,7 +109,7 @@ export async function reserveKotNumber(requestId = null) {
   }
 }
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null, failFastOnEdgeDown = false }) {
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
   if (requestId) orderData.requestId = requestId;
   if (captainName) orderData.captainName = captainName;
@@ -174,7 +174,17 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         throw edgeErr;
       }
       if (useEdgeDirect) {
-        // Edge-local auth: queue offline instead of cloud fallback (cloud will reject fake token)
+        // Edge-local auth: cloud will reject the fake token, so the edge is the
+        // only path. If failFastOnEdgeDown is set (captain KOT flow), throw
+        // immediately so the captain sees "Edge unreachable" and fixes
+        // connectivity before retrying — no silent queueing/replay that could
+        // cause double-printing when the edge comes back.
+        if (failFastOnEdgeDown) {
+          const err = new Error('Edge server unreachable — check WiFi or cashier machine');
+          err.code = 'EDGE_UNREACHABLE';
+          throw err;
+        }
+        // Legacy behavior: queue offline for later replay
         console.warn('[Edge] createOrder edge failed, queuing offline:', edgeErr.message);
         const offlineRequestId = requestId || generateRequestId();
         const offlineOrderId = `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -206,6 +216,13 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
   // ── Path 2: Cloud backend — secondary path ─────────────────────────────────
   // Fast path: if backend is known unreachable, skip API and queue offline instantly.
   if (!isBackendReachable()) {
+    // Edge-local auth with failFast: cloud is never an option (fake token),
+    // and the edge is already down. Fail immediately instead of queueing.
+    if (useEdgeDirect && failFastOnEdgeDown) {
+      const err = new Error('Edge server unreachable — check WiFi or cashier machine');
+      err.code = 'EDGE_UNREACHABLE';
+      throw err;
+    }
     console.warn('[Offline] Backend unreachable — fast-pathing to offline queue');
     const offlineRequestId = requestId || generateRequestId();
     const offlineOrderId = `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -360,7 +377,7 @@ export async function fetchTableOrder(tableId) {
   return parseResponse(res);
 }
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null, captainId = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null, captainId = null, failFastOnEdgeDown = false) {
   const body = { items: toOrderItems(items) };
   if (requestId) body.requestId = requestId;
   if (captainName) body.captainName = captainName;
@@ -426,7 +443,15 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         throw edgeErr;
       }
       if (useEdgeDirect) {
-        // Edge-local auth: queue offline instead of cloud fallback
+        // Edge-local auth: cloud will reject the fake token, so the edge is the
+        // only path. If failFastOnEdgeDown is set (captain KOT flow), throw
+        // immediately — no silent queueing/replay that could cause double-printing.
+        if (failFastOnEdgeDown) {
+          const err = new Error('Edge server unreachable — check WiFi or cashier machine');
+          err.code = 'EDGE_UNREACHABLE';
+          throw err;
+        }
+        // Legacy behavior: queue offline instead of cloud fallback
         console.warn('[Edge] updateOrderItems edge failed, queuing offline:', edgeErr.message);
         const offlineRequestId = requestId || generateRequestId();
         body.requestId = offlineRequestId;
@@ -456,6 +481,13 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
 
   // ── Path 2: Cloud backend — secondary path ─────────────────────────────────
   if (!isBackendReachable()) {
+    // Edge-local auth with failFast: cloud is never an option (fake token),
+    // and the edge is already down. Fail immediately instead of queueing.
+    if (useEdgeDirect && failFastOnEdgeDown) {
+      const err = new Error('Edge server unreachable — check WiFi or cashier machine');
+      err.code = 'EDGE_UNREACHABLE';
+      throw err;
+    }
     console.warn('[Offline] Backend unreachable — fast-pathing update to offline queue');
     const offlineRequestId = requestId || generateRequestId();
     body.requestId = offlineRequestId;
@@ -1844,4 +1876,37 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
     }
     throw apiErr;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// reprintKot — Reprint a KOT for an order (edge server only)
+// ─────────────────────────────────────────────────────────────────────────────
+// Used by the captain's "Retry Print" button when a KOT print failed.
+// The order is already committed — this only re-dispatches the print to the
+// kitchen printer(s). Creates new print_job rows with fresh eventIds so the
+// edge server's dedup doesn't skip them.
+//
+// Returns: { success, printResults } where printResults is an array of
+// { ok, printerName, error, eventId }.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function reprintKot(orderId, { kotNumber = null } = {}) {
+  if (!orderId) throw new Error('reprintKot: orderId is required');
+
+  // Reprint is edge-server only — the edge server has the order in SQLite
+  // and the printer is connected to it.
+  const useEdgeDirect = isEdgeLocalAuth();
+  if (!useEdgeDirect && !await isEdgeAvailable()) {
+    throw new Error('Edge server unavailable — cannot reprint KOT');
+  }
+
+  const result = await edgeFetch('/api/edge/kot/reprint', {
+    method: 'POST',
+    body: JSON.stringify({ orderId, kotNumber }),
+  });
+
+  if (!result.success) {
+    throw new Error(result.error || 'Reprint failed');
+  }
+
+  return result;
 }

@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 // CaptainApp — Captain POS application for order taking and table management
 // ─────────────────────────────────────────────────────────────────────────────
 // Full-featured Captain POS (Point of Sale) application (~5700 lines):
@@ -46,7 +46,7 @@ import { useLongPress } from '../hooks/useLongPress';
 import KotConfirmModal from '../shared/components/KotConfirmModal';
 import QuantityPicker from '../shared/components/LiquorQtyPicker';
 
-import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable, reserveKotNumber } from '../services/orderApi';
+import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable, reserveKotNumber, reprintKot } from '../services/orderApi';
 
 import { calculateSessionBill, calculateOrderTotal, calculateTableBill, getTableItems, getBillableItems } from '../shared/utils/billing';
 
@@ -1334,6 +1334,16 @@ export default function CaptainApp({ onLogout }) {
 
   const [kotError, setKotError] = useState(null);
   const retryRequestIdRef = useRef(null);
+  // When the order was committed but the print failed, retry should call
+  // reprintKot(orderId) instead of re-submitting the order. This ref stores
+  // the orderId for the reprint path. When null, retry re-submits the order.
+  const retryPrintOrderIdRef = useRef(null);
+  const [retryingPrint, setRetryingPrint] = useState(false);
+  // KOTs whose print failed are marked "Print Failed" in kotHistory. This set
+  // stores their IDs so socket events (order:created/order:updated/table:updated)
+  // don't overwrite the "Print Failed" status back to "KOT Sent" — which would
+  // mislead the captain into thinking the kitchen received the order.
+  const failedPrintKotIdsRef = useRef(new Set());
 
   const [sendingKOT, setSendingKOT] = useState(false);
 
@@ -2188,6 +2198,24 @@ export default function CaptainApp({ onLogout }) {
       }));
     };
 
+    // Merge incoming kotHistory from socket events while preserving the
+    // "Print Failed" status for KOTs tracked in failedPrintKotIdsRef.
+    // Socket events from the edge server carry the committed kotHistory
+    // (with "KOT Sent" status), but if the print failed in the UI we must
+    // not let the socket overwrite "Print Failed" back to "KOT Sent" —
+    // that would mislead the captain into thinking the kitchen received it.
+    const mergeKotHistoryPreservingFailed = (incomingArr, existingArr) => {
+      const existing = Array.isArray(existingArr) ? existingArr : [];
+      const incoming = Array.isArray(incomingArr) ? incomingArr : existing;
+      if (failedPrintKotIdsRef.current.size === 0) return incoming;
+      return incoming.map(k => {
+        if (failedPrintKotIdsRef.current.has(String(k.id))) {
+          return { ...k, s: 'Print Failed', printFailed: true };
+        }
+        return k;
+      });
+    };
+
     const onTableUpdated = ({ table, requestId } = {}) => {
       if (!table?.id) return;
       if (table.restaurantId && table.restaurantId !== activeRestaurantId) return;
@@ -2243,7 +2271,10 @@ export default function CaptainApp({ onLogout }) {
         // When table is Free (settled), clear items and activeOrder to prevent ghost items
         const serverItems = isTableFree ? [] : (incomingOrder?.items ?? (t.activeOrder?.items || []));
         // Preserve existing kotHistory when incoming event has no kots data (partial update)
-        const serverKots = isTableFree ? [] : ((Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : filterCancelledFromKotHistory(Array.isArray(table.kotHistory) && table.kotHistory.length > 0 ? table.kotHistory : (t.kotHistory || [])));
+        const serverKots = isTableFree ? [] : mergeKotHistoryPreservingFailed(
+          (Array.isArray(table.kots) && table.kots.length > 0) ? normalizeKots(table.kots) : filterCancelledFromKotHistory(Array.isArray(table.kotHistory) && table.kotHistory.length > 0 ? table.kotHistory : (t.kotHistory || [])),
+          t.kotHistory
+        );
         return {
           ...t,
           status: protectedStatus,
@@ -2288,7 +2319,7 @@ export default function CaptainApp({ onLogout }) {
         const serverItems = order.items || (t.activeOrder?.items || []);
         // Preserve existing kotHistory when incoming event has no kots data (partial update)
         const incomingKotArr = Array.isArray(order.kotHistory) && order.kotHistory.length > 0 ? filterCancelledFromKotHistory(order.kotHistory) : ((Array.isArray(order.kots) && order.kots.length > 0) ? normalizeKots(order.kots) : (t.kotHistory || []));
-        return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: incomingKotArr };
+        return { ...t, activeOrder: { ...(t.activeOrder || {}), ...order, items: serverItems }, kotHistory: mergeKotHistoryPreservingFailed(incomingKotArr, t.kotHistory) };
       });
       setActiveTables(updateTables);
     };
@@ -2322,7 +2353,7 @@ export default function CaptainApp({ onLogout }) {
         return {
           ...t,
           activeOrder: { ...order, items: serverItems },
-          kotHistory: incomingKotArr,
+          kotHistory: mergeKotHistoryPreservingFailed(incomingKotArr, t.kotHistory),
           status: t.status === 'Free' ? 'Occupied' : t.status,
           workflowStatus: t.workflowStatus === 'Free' ? 'Occupied' : t.workflowStatus,
         };
@@ -3563,7 +3594,7 @@ export default function CaptainApp({ onLogout }) {
 
         try {
           if (existingOrderId) {
-            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined);
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined, true);
             savedOrder = response;
           } else {
             try {
@@ -3579,12 +3610,13 @@ export default function CaptainApp({ onLogout }) {
                 preReservedKotNumber,
                 localPrinted,
                 kotEventIds,
+                failFastOnEdgeDown: true,
               });
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
                 activeOrderIdRef.current = createErr.existingOrderId;
-                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined);
+                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined, true);
               } else {
                 throw createErr;
               }
@@ -3733,7 +3765,7 @@ export default function CaptainApp({ onLogout }) {
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3753,6 +3785,7 @@ export default function CaptainApp({ onLogout }) {
               preReservedKotNumber: edgeKotNumToSend,
               localPrinted: edgeHasPrintedIds,
               kotEventIds: edgeKotIdsToSend,
+              failFastOnEdgeDown: true,
             });
           } catch (createErr) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -3760,7 +3793,7 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3896,146 +3929,96 @@ export default function CaptainApp({ onLogout }) {
       try { localStorage.removeItem('captain_pending_kot'); } catch { /* non-fatal */ }
 
       if (savedOrder?.offline) {
-        addNotification(`KOT #${preReservedKotNumber != null ? preReservedKotNumber : newKOT.id} Queued (Offline)`, 'KOT saved locally — will sync when back online.', 'warning');
-      } else if (anyQueued) {
-        addNotification(`KOT #${realKotId || newKOT.id} Sent — printing shortly`, 'Edge server accepted KOT but printer is warming up — will print automatically.', 'warning');
-      } else {
-        addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
-      }
-
-      // Background listener for print confirmation (non-blocking)
-      // When the edge server handled printing AND all prints succeeded, it returns
-      // printResults with ok:true and we skip the cloud socket listener.
-      // If some prints failed, show the failure immediately — the cloud backend
-      // was never called for edge orders, so waiting for kot:printed would always
-      // timeout after 30s with a false "print failed" notification.
-      let _edgePrintHandled = false;
-      if (savedOrder?.edge && savedOrder?.printResults) {
+        // Order was queued offline (edge + cloud both unreachable) — the KOT
+        // was NOT printed. Show "Failed" with re-submit retry (not reprint,
+        // since the order doesn't exist at the edge yet).
+        addNotification(`KOT #${preReservedKotNumber != null ? preReservedKotNumber : newKOT.id} ⚠ Not sent`, 'Network error — kitchen did not receive this order. Tap Retry to resend.', 'error');
+        // Mark KOT as "Print Failed" in history (not removed) so the captain
+        // can see which KOT failed. Track in failedPrintKotIdsRef to protect
+        // from socket events overwriting the status.
+        const failedKotId = String(newKOT.id);
+        failedPrintKotIdsRef.current.add(failedKotId);
+        setActiveTables(prev => prev.map(t => {
+          if (t.backendId !== activeTable?.backendId) return t;
+          return { ...t, kotHistory: (t.kotHistory || []).map(k => String(k.id) === failedKotId ? { ...k, s: 'Print Failed', printFailed: true } : k) };
+        }), { skipPersist: true });
+        setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
+        retryRequestIdRef.current = requestId;
+        retryPrintOrderIdRef.current = null;
+        setKotError({
+          message: 'Network error — kitchen did not receive this order. Tap Retry to resend.',
+          retryItems: retrySnapshot,
+        });
+      } else if (savedOrder?.edge && savedOrder?.printResults) {
+        // Edge order with print results — non-optimistic: only show "Sent" if
+        // ALL prints succeeded. Any failure or pending/timeout → mark the KOT
+        // as "Print Failed" in history and show reprint retry. The order is
+        // committed to the edge DB, so retry calls reprintKot(orderId) instead
+        // of re-submitting the order.
         const printResults = savedOrder.printResults;
-        const hasFailures = printResults.length > 0 &&
-          printResults.some(r => r.ok === false);
-        const hasPending = printResults.some(r => r.ok === null || r.pending);
-        const hasSuccess = printResults.some(r => r.ok === true);
-        if (hasFailures && !hasPending) {
-          const failed = printResults.filter(r => r.ok === false);
-          const allFailed = printResults.length > 0 && printResults.every(r => r.ok === false);
-          // If ALL prints failed (not partial), attempt local print fallback
-          // via Print Agent — the edge server may not have a printer configured
-          // but the Tauri frontend's local printer mapping may have one.
-          if (allFailed && !localPrinted) {
-            console.warn('[KOT] Edge print failed for all jobs — attempting local print fallback:', failed.map(r => r.error).join('; '));
-            try {
-              const { printLocal } = await import('../utils/printOffline');
-              const fallbackKotOrderData = {
-                tableNumber: activeTable?.number ?? activeTable?.id,
-                orderId: savedOrder?.id || existingOrderId || 'pending',
-                items: itemsForPrint.map(i => ({
-                  name: i.n || i.name,
-                  quantity: i.q ?? i.quantity ?? 1,
-                  price: Number(i.p ?? i.price ?? 0),
-                  notes: i.notes || null,
-                  type: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'liquor' : 'food',
-                  menuItemId: String(i.id || i.menuItemId || ''),
-                  menuType: (i.menuType || 'FOOD').toUpperCase(),
-                  printerName: i.printerName || null,
-                  printerTarget: i.printerTarget || null,
-                  categoryPrinterTarget: i.categoryPrinterTarget || null,
-                })),
-                kotId: String(realKotId || preReservedKotNumber || newKOT?.id || ''),
-                sectionName: activeTable?.section?.name || 'Main Hall',
-                captainName: currentCaptain?.name || 'Captain',
-                sectionTag: activeTable?.sectionTag || undefined,
-                restaurantName: restaurant?.name || undefined,
-              };
-              const hasFoodItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() !== 'LIQUOR');
-              const hasLiquorItems = itemsForPrint.some(i => (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR');
-              const fallbackPromises = [];
-              if (hasFoodItems) {
-                const foodEscpos = buildFoodKOT(fallbackKotOrderData);
-                if (foodEscpos.length > 0) {
-                  fallbackPromises.push(printLocal({ type: 'KOT', escposData: foodEscpos, eventId: `${savedOrder?.id || requestId}-food-fallback`, data: fallbackKotOrderData }).catch(() => ({ printed: false })));
-                }
-              }
-              if (hasLiquorItems) {
-                const liquorEscpos = buildLiquorKOT(fallbackKotOrderData);
-                if (liquorEscpos.length > 0) {
-                  fallbackPromises.push(printLocal({ type: 'BAR_KOT', escposData: liquorEscpos, eventId: `${savedOrder?.id || requestId}-liquor-fallback`, data: fallbackKotOrderData }).catch(() => ({ printed: false })));
-                }
-              }
-              if (fallbackPromises.length > 0) {
-                const fallbackResults = await Promise.allSettled(fallbackPromises);
-                const anyPrinted = fallbackResults.some(r => r.status === 'fulfilled' && r.value?.printed);
-                if (anyPrinted) {
-                  addNotification(`KOT #${realKotId || newKOT.id} Printed via fallback`, 'Edge server printer not configured — printed via local Print Agent.', 'warning');
-                  _edgePrintHandled = true;
-                } else {
-                  addNotification(
-                    `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
-                    failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
-                    'error'
-                  );
-                  _edgePrintHandled = true;
-                }
-              } else {
-                addNotification(
-                  `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
-                  failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
-                  'error'
-                );
-                _edgePrintHandled = true;
-              }
-            } catch (fallbackErr) {
-              console.warn('[KOT] Local print fallback failed:', fallbackErr?.message);
-              addNotification(
-                `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
-                failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
-                'error'
-              );
-              _edgePrintHandled = true;
-            }
-          } else {
-            addNotification(
-              `KOT #${realKotId || newKOT.id} ⚠ Print failed`,
-              failed.map(r => r.error || r.printerName).join('; ') || 'Printer error',
-              'error'
-            );
-            _edgePrintHandled = true;
-          }
-        } else if (hasPending || hasFailures) {
-          addNotification(
-            `KOT #${realKotId || newKOT.id} Saved — printing`,
-            'Printer warming up — will print automatically.',
-            'warning'
-          );
+        const allOk = printResults.length > 0 && printResults.every(r => r.ok === true);
+        if (allOk) {
+          addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
+        } else {
+          const failed = printResults.filter(r => r.ok !== true);
+          const errorDetail = failed.map(r => r.error || r.printerName).join('; ') || 'Printer error';
+          console.warn(`[KOT] Print failed for KOT #${realKotId || newKOT.id}:`, errorDetail);
+          addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print failed`, `${errorDetail}. Tap Retry to reprint.`, 'error');
+          // Mark KOT as "Print Failed" in history (not removed) so the captain
+          // can see which KOT failed. Track in failedPrintKotIdsRef to protect
+          // from socket events overwriting the status back to "KOT Sent".
+          const failedKotId = String(newKOT.id);
+          failedPrintKotIdsRef.current.add(failedKotId);
+          setActiveTables(prev => prev.map(t => {
+            if (t.backendId !== activeTable?.backendId) return t;
+            return { ...t, kotHistory: (t.kotHistory || []).map(k => String(k.id) === failedKotId ? { ...k, s: 'Print Failed', printFailed: true } : k) };
+          }), { skipPersist: true });
+          // Order is committed — retry should reprint, not re-submit.
+          retryPrintOrderIdRef.current = savedOrder?.id || existingOrderId || null;
+          setKotError({
+            message: `KOT print failed: ${errorDetail}. Tap Retry to reprint.`,
+            isPrintRetry: true,
+          });
         }
-        // Edge handled printing (success or failure) — no cloud socket fallback
-        // needed. The cloud backend was never called for edge orders, so
-        // kot:printed will never fire.
-        _edgePrintHandled = true;
       } else if (localPrinted) {
-        // Captain already printed locally — cloud backend skips print_job emit,
-        // so kot:printed will never fire. No need to wait for socket confirmation.
-        _edgePrintHandled = true;
-      }
-      if (!_edgePrintHandled) {
-      const socket = getSocket();
-      // Issue 9: Use a local variable for this KOT's timeout so rapid KOT
-      // submissions don't overwrite each other's timeout IDs in the shared ref.
-      let printTimeoutId = null;
-      const handler = ({ requestId: ackRequestId, status }) => {
-        if (ackRequestId === requestId) {
-          socket.off('kot:printed', handler);
-          clearTimeout(printTimeoutId);
-          if (status !== 'success') {
-            addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print failed`, 'warning');
+        // Captain already printed locally — print succeeded.
+        addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
+      } else if (anyQueued) {
+        // Local print was durably queued (Print Agent accepted but printer
+        // warming up). For KOTs this is now treated as failure since the
+        // kitchen hasn't received the paper yet — the captain should retry.
+        addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print pending`, 'Printer not ready. Tap Retry to reprint.', 'error');
+        // Mark KOT as "Print Failed" in history (not removed).
+        const failedKotId = String(newKOT.id);
+        failedPrintKotIdsRef.current.add(failedKotId);
+        setActiveTables(prev => prev.map(t => {
+          if (t.backendId !== activeTable?.backendId) return t;
+          return { ...t, kotHistory: (t.kotHistory || []).map(k => String(k.id) === failedKotId ? { ...k, s: 'Print Failed', printFailed: true } : k) };
+        }), { skipPersist: true });
+        retryPrintOrderIdRef.current = savedOrder?.id || existingOrderId || null;
+        setKotError({
+          message: 'Printer not ready — tap Retry to reprint.',
+          isPrintRetry: true,
+        });
+      } else {
+        // Cloud order (no edge, no local print) — wait for socket kot:printed
+        // ack. On timeout, show "Print Failed" notification.
+        const socket = getSocket();
+        let printTimeoutId = null;
+        const handler = ({ requestId: ackRequestId, status }) => {
+          if (ackRequestId === requestId) {
+            socket.off('kot:printed', handler);
+            clearTimeout(printTimeoutId);
+            if (status !== 'success') {
+              addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print failed`, 'warning');
+            }
           }
-        }
-      };
-      socket.on('kot:printed', handler);
-      printTimeoutId = setTimeout(() => {
-        socket.off('kot:printed', handler);
-        addNotification(`KOT #${realKotId || newKOT.id} ⚠ Saved, print failed`, 'warning');
-      }, 30000);
+        };
+        socket.on('kot:printed', handler);
+        printTimeoutId = setTimeout(() => {
+          socket.off('kot:printed', handler);
+          addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print failed`, 'Kitchen did not confirm receipt. Check printer and retry.', 'error');
+        }, 30000);
       }
 
     } catch (err) {
@@ -4052,6 +4035,16 @@ export default function CaptainApp({ onLogout }) {
       // check will return the existing committed order instead of throwing
       // "Duplicate KOT detected".
       retryRequestIdRef.current = requestId;
+      // Order was not committed — retry should re-submit, not reprint.
+      retryPrintOrderIdRef.current = null;
+
+      // Edge unreachable: the captain app can't reach the edge server (which
+      // holds the SQLite DB + printer). Cloud is not an option under edge-local
+      // auth. Show a clear actionable message instead of generic network error.
+      const isEdgeDown = err.code === 'EDGE_UNREACHABLE';
+      const errMsg = isEdgeDown
+        ? 'Edge server unreachable — check WiFi or cashier machine'
+        : (err.message || 'Network error — kitchen did not receive this order.');
 
       // Fix 12A: Persist requestId to localStorage for crash recovery
       try {
@@ -4059,14 +4052,14 @@ export default function CaptainApp({ onLogout }) {
           tableId: activeTableId,
           requestId,
           items: retrySnapshot,
-          message: err.message || 'Network error — kitchen did not receive this order.',
+          message: errMsg,
           timestamp: Date.now(),
         }));
       } catch { /* localStorage write error — non-fatal */ }
 
       setKotError({
 
-        message: err.message || 'Network error — kitchen did not receive this order.',
+        message: errMsg,
 
         retryItems: retrySnapshot,
 
@@ -4089,6 +4082,70 @@ export default function CaptainApp({ onLogout }) {
 
     }
 
+  };
+
+
+
+  // ── Retry KOT print (order already committed, only the print failed) ────────
+  // Calls the edge server's reprintKot endpoint, which creates fresh print_job
+  // rows with new eventIds and dispatches them. The order is NOT re-submitted.
+  const retryKotPrint = async () => {
+    const orderId = retryPrintOrderIdRef.current;
+    if (!orderId) {
+      console.warn('[KOT] retryKotPrint: no orderId stored — falling back to re-submit');
+      const retryId = retryRequestIdRef.current;
+      retryRequestIdRef.current = null;
+      retryPrintOrderIdRef.current = null;
+      setKotError(null);
+      sendIncrementalKOT(retryId);
+      return;
+    }
+
+    setRetryingPrint(true);
+    try {
+      const result = await reprintKot(orderId);
+      const printResults = result?.printResults || [];
+      const allOk = printResults.length > 0 && printResults.every(r => r.ok === true);
+      if (allOk) {
+        addNotification(`KOT reprinted ✓`, 'success');
+        retryPrintOrderIdRef.current = null;
+        retryRequestIdRef.current = null;
+        setKotError(null);
+        // Clear "Print Failed" status — the kitchen has now received the KOT.
+        // Remove all failed KOT IDs for this table and update kotHistory.
+        const tableBackendId = activeTable?.backendId;
+        const failedIds = [...failedPrintKotIdsRef.current];
+        failedPrintKotIdsRef.current.clear();
+        if (failedIds.length > 0) {
+          setActiveTables(prev => prev.map(t => {
+            if (t.backendId !== tableBackendId) return t;
+            return { ...t, kotHistory: (t.kotHistory || []).map(k => {
+              if (failedIds.includes(String(k.id))) {
+                return { ...k, s: 'KOT Sent', printFailed: false };
+              }
+              return k;
+            }) };
+          }), { skipPersist: true });
+        }
+      } else {
+        const failed = printResults.filter(r => r.ok !== true);
+        const errorDetail = failed.map(r => r.error || r.printerName).join('; ') || 'Printer error';
+        addNotification(`KOT ⚠ Reprint failed`, `${errorDetail}. Tap Retry to try again.`, 'error');
+        setKotError({
+          message: `Reprint failed: ${errorDetail}. Tap Retry to try again.`,
+          isPrintRetry: true,
+        });
+      }
+    } catch (err) {
+      console.error('[KOT] Reprint failed:', err.message);
+      addNotification(`KOT ⚠ Reprint failed`, `${err.message}. Tap Retry to try again.`, 'error');
+      setKotError({
+        message: `${err.message}. Tap Retry to try again.`,
+        isPrintRetry: true,
+      });
+    } finally {
+      setRetryingPrint(false);
+    }
   };
 
 
@@ -6768,7 +6825,7 @@ export default function CaptainApp({ onLogout }) {
 
             <div className="min-w-0">
 
-              <p className="text-[12px] font-black uppercase tracking-wider leading-none">KOT Failed — Kitchen Did Not Receive This Order</p>
+              <p className="text-[12px] font-black uppercase tracking-wider leading-none">{kotError.isPrintRetry ? 'KOT Print Failed — Kitchen Did Not Receive This KOT' : 'KOT Failed — Kitchen Did Not Receive This Order'}</p>
 
               <p className="text-[10px] font-bold text-white/75 mt-0.5 truncate">{kotError.message}</p>
 
@@ -6788,6 +6845,7 @@ export default function CaptainApp({ onLogout }) {
 
                 setKotError(null);
                 retryRequestIdRef.current = null;
+                retryPrintOrderIdRef.current = null;
 
               }}
 
@@ -6803,26 +6861,37 @@ export default function CaptainApp({ onLogout }) {
 
               onClick={() => {
 
-                setKotError(null);
+                if (kotError.isPrintRetry) {
 
-                // currentSessionItems was already restored in the catch block;
+                  // Order is committed — only the print failed. Reprint via edge.
 
-                // calling sendIncrementalKOT now re-submits the same items.
+                  retryKotPrint();
 
-                // Reuse the original requestId so the backend's idempotency
-                // check recovers the existing committed order instead of
-                // throwing "Duplicate KOT detected".
-                const retryId = retryRequestIdRef.current;
-                retryRequestIdRef.current = null;
-                sendIncrementalKOT(retryId);
+                } else {
+
+                  // Order was not committed (network error). Re-submit the order.
+
+                  setKotError(null);
+
+                  const retryId = retryRequestIdRef.current;
+
+                  retryRequestIdRef.current = null;
+
+                  retryPrintOrderIdRef.current = null;
+
+                  sendIncrementalKOT(retryId);
+
+                }
 
               }}
 
-              className="px-5 py-2 text-[11px] font-black uppercase tracking-wider bg-white text-[#E53935] rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg"
+              disabled={retryingPrint}
+
+              className="px-5 py-2 text-[11px] font-black uppercase tracking-wider bg-white text-[#E53935] rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
 
             >
 
-              Retry
+              {retryingPrint ? 'Printing…' : 'Retry'}
 
             </button>
 
