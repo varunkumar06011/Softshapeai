@@ -1704,7 +1704,7 @@ export default function AdminPurchases() {
             <div className="flex gap-2">
               <button
                 onClick={handleSaveDaily}
-                disabled={dailySaving || !dailyRowsValid || dailyEntryReadOnly}
+                disabled={dailyEntryReadOnly}
                 className="flex-1 bg-[#E53935] text-white rounded-xl px-4 py-3 text-xs font-black uppercase hover:bg-[#B71C1C] disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {dailySaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
