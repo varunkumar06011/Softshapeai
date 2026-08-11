@@ -1,6 +1,6 @@
 {
   "name": "softshape-captain-android",
-  "version": "23.12.21",
+  "version": "23.12.22",
   "description": "SoftShape Captain Android App (Capacitor)",
   "private": true,
   "type": "module",
