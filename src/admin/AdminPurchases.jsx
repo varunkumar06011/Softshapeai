@@ -531,6 +531,7 @@ export default function AdminPurchases() {
   }, [dailyRows]);
 
   const handleSaveDaily = async () => {
+    console.log('[AdminPurchases] handleSaveDaily clicked', { dailyEntryReadOnly, dailyEntryDate, rows: dailyRows.length });
     // Prevent saving past dates (read-only)
     if (dailyEntryReadOnly) {
       setError('Past dates are read-only. Switch to today to save entries.');
@@ -1704,8 +1705,7 @@ export default function AdminPurchases() {
             <div className="flex gap-2">
               <button
                 onClick={handleSaveDaily}
-                disabled={dailyEntryReadOnly}
-                className="flex-1 bg-[#E53935] text-white rounded-xl px-4 py-3 text-xs font-black uppercase hover:bg-[#B71C1C] disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 bg-[#E53935] text-white rounded-xl px-4 py-3 text-xs font-black uppercase hover:bg-[#B71C1C] flex items-center justify-center gap-2"
               >
                 {dailySaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 Save Today's Entries
