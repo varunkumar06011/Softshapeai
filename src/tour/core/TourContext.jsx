@@ -8,7 +8,6 @@ import {
   setTourDismissed,
   saveTourStep,
   clearTourProgress,
-  shouldAutoShowTour,
   markAutoShown,
   getAllTourProgress,
   resetDeviceTourState,
@@ -283,19 +282,13 @@ export function TourProvider({ children }) {
 
   useEffect(() => {
     if (autoShowChecked || isTourActive) return;
-    if (role === 'visitor') {
-      if (shouldAutoShowTour(userId, restaurantId, 'landing-tour', 1)) {
-        setAutoShowChecked(true);
-        const timer = setTimeout(() => {
-          startTour('landing-tour', { silent: true });
-        }, 800);
-        return () => clearTimeout(timer);
-      }
-      setAutoShowChecked(true);
-      return;
-    }
+    // Auto-showing a tour renders a full-screen overlay (pointer-events: all,
+    // z-index 9998) that blocks all clicks except on the highlighted element.
+    // On the landing page this prevents users from clicking portal buttons
+    // (e.g. Cashier Panel) to log in. Tours remain available on-demand via
+    // the "Guide" FAB — do not auto-start them.
     setAutoShowChecked(true);
-  }, [autoShowChecked, isTourActive, role, userId, restaurantId, startTour]);
+  }, [autoShowChecked, isTourActive]);
 
   const value = {
     isTourActive,
