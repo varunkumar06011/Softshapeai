@@ -1,6 +1,6 @@
 {
   "name": "softshape-admin-android",
-  "version": "23.12.18",
+  "version": "23.12.19",
   "description": "SoftShape Admin Android App (Capacitor)",
   "private": true,
   "type": "module",
