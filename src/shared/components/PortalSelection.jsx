@@ -5,7 +5,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode, ArrowRight, Phone, Mail, Users } from 'lucide-react';
-import { TourLauncher } from '../../tour/index.js';
 
 const PortalSelection = ({ onSelect }) => {
   const isDesktopApp = typeof window !== 'undefined' && !!window.__TAURI__;
@@ -66,7 +65,7 @@ const PortalSelection = ({ onSelect }) => {
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* ── Dark Hero Section ── */}
-      <section className="relative overflow-hidden bg-[#0B0F19]" data-tour="landing-hero">
+      <section className="relative overflow-hidden bg-[#0B0F19]">
         {/* Subtle grid pattern */}
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.03]"
@@ -99,7 +98,6 @@ const PortalSelection = ({ onSelect }) => {
             <Link
               to="/onboarding/legacy"
               className="inline-flex items-center gap-2 rounded-lg bg-[#E53935] px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-[#B71C1C]"
-              data-tour="landing-get-started"
             >
               Get Started
               <ArrowRight size={16} />
@@ -129,7 +127,6 @@ const PortalSelection = ({ onSelect }) => {
               <Link
                 to="/onboarding/legacy"
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#E53935] px-7 py-3.5 text-sm font-bold text-white transition-all hover:bg-[#B71C1C]"
-                data-tour="landing-get-started-free"
               >
                 Get Started Free
                 <ArrowRight size={16} />
@@ -190,10 +187,9 @@ const PortalSelection = ({ onSelect }) => {
       </section>
 
       {/* ── Portals Section ── */}
-      <section className="relative z-10 bg-white px-6 py-24 lg:px-16" data-tour="landing-portals">
+      <section className="relative z-10 bg-white px-6 py-24 lg:px-16">
         <div className="mx-auto max-w-7xl">
           <div className="mb-12 text-center">
-            <TourLauncher tourId="landing-tour" label="Take a Tour" variant="button" className="mb-4" />
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E53935]">Choose Your Portal</p>
             <h2 className="mt-3 text-balance text-3xl font-bold text-gray-900 sm:text-4xl">
               Built for every role in your restaurant
@@ -207,7 +203,6 @@ const PortalSelection = ({ onSelect }) => {
                 <button
                   key={portal.id}
                   onClick={() => onSelect(portal.id)}
-                  data-tour={`landing-portal-${portal.id}`}
                   className="group flex h-full flex-col items-start rounded-xl border border-gray-100 bg-white p-6 text-left shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-gray-200 hover:shadow-lg"
                 >
                   <div
