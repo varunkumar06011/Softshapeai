@@ -457,7 +457,7 @@ export default function AdminDailyBalanceSheet() {
     try {
       const params = new URLSearchParams({ date: selectedDate, limit: '500', outletId });
       const data = await apiFetch(`/api/expenditures?${params.toString()}`);
-      setExpenditures(data || []);
+      setExpenditures((data || []).filter(v => v.entryType !== 'LIABILITY'));
     } catch {
       setExpenditures([]);
     } finally {
