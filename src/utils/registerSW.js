@@ -16,6 +16,30 @@ export async function registerSW() {
     return;
   }
 
+  // Tauri desktop apps load files from local disk — a service worker only
+  // causes harm by serving stale cached bundles after a Tauri app update,
+  // leaving the app in a broken state where buttons stop working.
+  // Unregister any leftover SW from a previous browser-mode session and skip.
+  if (typeof window !== 'undefined' && window.__TAURI__) {
+    console.log('[SW] Tauri desktop detected — unregistering stale SW');
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        await reg.unregister();
+      }
+      // Also clear all caches left behind by the old SW
+      if (window.caches) {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          await caches.delete(key);
+        }
+      }
+    } catch (err) {
+      console.error('[SW] Failed to clean up Tauri SW:', err);
+    }
+    return;
+  }
+
   // Don't register SW in localhost dev mode unless explicitly enabled
   if (import.meta.env.DEV && !import.meta.env.VITE_ENABLE_SW_DEV) {
     console.log('[SW] Skipping SW registration in dev mode');
