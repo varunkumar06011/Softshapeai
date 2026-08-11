@@ -222,6 +222,22 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
             </div>
           ))}
           <TotalRow label="Total Expenditure" amount={data.totalExpenditure} />
+          {data.adjustments?.length > 0 && (
+            <>
+              <div className="mt-3 mb-1 text-[10px] font-bold uppercase" style={{ color: '#9CA3AF' }}>Adjustments</div>
+              {data.adjustments.map((row, idx) => (
+                <div key={idx} className="flex items-start justify-between py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
+                  <div className="flex-1">
+                    <span className="text-sm font-semibold" style={{ color: '#334155' }}>{row.label}</span>
+                    {row.narration && (
+                      <div className="text-[10px] font-medium" style={{ color: '#9CA3AF' }}>{row.narration}</div>
+                    )}
+                  </div>
+                  <span className="text-sm font-bold leading-none" style={{ color: '#1E293B' }}>{inr(row.amount).replace('₹', '')}</span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
 

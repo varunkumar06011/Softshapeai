@@ -116,7 +116,7 @@ export default function XReportSection() {
         notes20: data.notes20 || 0,
         notes10: data.notes10 || 0,
       });
-      setExpenditures((exps || []).filter((v) => v.status !== 'VOIDED' && !v.voided));
+      setExpenditures((exps || []).filter((v) => v.status !== 'VOIDED' && !v.voided && v.entryType !== 'LIABILITY_PAYMENT'));
       setManuallyEditedFields(new Set());
     } catch (err) {
       setError(err.message || 'Failed to load X Report');

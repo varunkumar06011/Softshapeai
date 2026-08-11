@@ -80,7 +80,7 @@ export default function ExpenditureModule() {
         load('paid-to-options', '/api/expenditures/paid-to-options', (d) => setPaidToOptions(d || { staff: [] })),
         load('narration-suggestions', '/api/expenditures/narration-suggestions', (d) => setNarrationSuggestions(d || [])),
         load('today-summary', `/api/expenditures/today-summary?date=${date}`, (d) => setTodaySummary(d || null)),
-        load('recent-expenditures', `/api/expenditures?date=${date}&limit=10`, (d) => setRecentExpenditures(d || [])),
+        load('recent-expenditures', `/api/expenditures?date=${date}&limit=10`, (d) => setRecentExpenditures((d || []).filter((v) => v.entryType !== 'LIABILITY_PAYMENT'))),
       ]);
     }
 

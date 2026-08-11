@@ -741,7 +741,6 @@ export default function AdminDailyBalanceSheet() {
     for (const v of expenditures) {
       if (v.status === 'VOIDED') continue;
       const cat = v.category || v.paidToType || 'Other';
-      if (cat.toUpperCase() === 'STAFF') continue;
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(v);
     }
@@ -821,7 +820,7 @@ export default function AdminDailyBalanceSheet() {
       totalSales,
       netSales: balanceCalc.netSales,
       totalSalesSourcesCount: 5,
-      totalExpenditure: totalExpenditures,
+      totalExpenditure: round2(expenditureSubtotal),
       totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
       totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
       totalAdjustmentsEntriesCount: adjustments.filter(a => a.sign !== 'PLUS').length,
@@ -837,18 +836,13 @@ export default function AdminDailyBalanceSheet() {
         { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
         { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
       ],
-      expenditures: [
-        ...Object.entries(expenditureGroups).map(([cat, vlist]) => ({
-          label: cat,
-          amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
-          narration: null,
+      expenditures: expenditures
+        .filter(v => v.status !== 'VOIDED')
+        .map(v => ({
+          label: v.paidToName || v.category || 'Other',
+          amount: Number(v.amount),
+          narration: v.narration || null,
         })),
-        ...adjustments.filter(a => a.sign !== 'PLUS').map(a => ({
-          label: a.label,
-          amount: Number(a.amount),
-          narration: a.narration || null,
-        })),
-      ],
       adjustments: adjustments.filter(a => a.sign !== 'PLUS').map(a => ({
         label: a.label,
         amount: Number(a.amount),
@@ -926,7 +920,7 @@ export default function AdminDailyBalanceSheet() {
       }
       throw err;
     }
-  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, computedSales, allOutletsPaymentSummary, user?.name, logoBase64]);
+  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, expenditureSubtotal, expenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, computedSales, allOutletsPaymentSummary, user?.name, logoBase64]);
 
   // ── WhatsApp share: generate PNG and share via Web Share API ───────────────
   const handleWhatsAppShare = async () => {
@@ -963,7 +957,7 @@ export default function AdminDailyBalanceSheet() {
         totalSales,
         netSales: balanceCalc.netSales,
         totalSalesSourcesCount: 5,
-        totalExpenditure: totalExpenditures,
+        totalExpenditure: round2(expenditureSubtotal),
         totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
         totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
         totalAdjustmentsEntriesCount: adjustments.filter(a => a.sign !== 'PLUS').length,
@@ -979,13 +973,17 @@ export default function AdminDailyBalanceSheet() {
           { icon: null, label: 'Family', amount: computedSales.familyWing, color: '#F59E0B' },
           { icon: null, label: 'Parcel Counter', amount: computedSales.parcel, color: '#3B82F6' },
         ],
-        expenditures: Object.entries(expenditureGroups).map(([cat, vlist]) => ({
-          label: cat,
-          amount: vlist.reduce((s, v) => s + Number(v.amount), 0),
-        })),
+        expenditures: expenditures
+          .filter(v => v.status !== 'VOIDED')
+          .map(v => ({
+            label: v.paidToName || v.category || 'Other',
+            amount: Number(v.amount),
+            narration: v.narration || null,
+          })),
         adjustments: adjustments.filter(a => a.sign !== 'PLUS').map(a => ({
           label: a.label,
           amount: Number(a.amount),
+          narration: a.narration || null,
         })),
         payment: paymentData,
       };

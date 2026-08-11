@@ -1,18 +1,22 @@
-import { Store, Calendar, Package, ClipboardList } from 'lucide-react';
-
 const round2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 const inr = (n) => '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inrPlain = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function MetaItem({ icon: Icon, label, children }) {
+const flex = { display: 'flex' };
+const flexCol = { display: 'flex', flexDirection: 'column' };
+const flexCenter = { display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const flexBetween = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
+const flexStartBetween = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' };
+
+function MetaItem({ label, children }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background: '#FEF2F2' }}>
-        <Icon size={20} style={{ color: '#EF4444' }} />
+    <div style={{ ...flex, alignItems: 'center', gap: '12px' }}>
+      <div style={{ ...flexCenter, height: '44px', width: '44px', borderRadius: '50%', background: '#FEF2F2' }}>
+        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#EF4444' }} />
       </div>
-      <div>
-        <div className="text-[10px] font-bold tracking-wide" style={{ color: '#9CA3AF' }}>{label}</div>
-        <div className="text-sm font-bold" style={{ color: '#1E293B' }}>{children}</div>
+      <div style={flexCol}>
+        <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', color: '#9CA3AF' }}>{label}</div>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>{children}</div>
       </div>
     </div>
   );
@@ -25,67 +29,85 @@ export default function PurchaseReportTemplate({ data, logoSrc }) {
   const totalItems = validRows.length;
   const totalAmount = round2(validRows.reduce((sum, r) => sum + round2(r.quantity) * round2(r.unitPrice), 0));
 
+  const thBase = {
+    padding: '12px 16px',
+    fontSize: '10px',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: '#6B7280',
+  };
+
+  const tdBase = {
+    padding: '12px 16px',
+    fontSize: '14px',
+  };
+
   return (
     <div
       id="purchase-report"
-      className="mx-auto w-[900px] p-8 font-sans"
-      style={{ fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif", background: '#FFFFFF', color: '#1E293B' }}
+      style={{
+        width: '900px',
+        margin: '0 auto',
+        padding: '32px',
+        boxSizing: 'border-box',
+        fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif",
+        background: '#FFFFFF',
+        color: '#1E293B',
+      }}
     >
       {/* ── Header ─────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl" style={{ background: '#E63946' }}>
-            <img src={logoSrc} alt="Softshape" className="h-8 w-8 object-contain" />
+      <div style={flexStartBetween}>
+        <div style={{ ...flex, alignItems: 'center', gap: '12px' }}>
+          <div style={{ ...flexCenter, height: '56px', width: '56px', borderRadius: '12px', background: '#E63946' }}>
+            <img src={logoSrc} alt="Softshape" style={{ height: '32px', width: '32px', objectFit: 'contain' }} />
           </div>
-          <div>
-            <div className="text-xl font-black">
-              <span style={{ color: '#0F172A' }}>Softshape</span>
-            </div>
-            <div className="text-[9px] font-bold tracking-widest" style={{ color: '#9CA3AF' }}>
+          <div style={flexCol}>
+            <div style={{ fontSize: '20px', fontWeight: 900, color: '#0F172A' }}>Softshape</div>
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.15em', color: '#9CA3AF' }}>
               THE AI OPERATING SYSTEM FOR RESTAURANTS
             </div>
           </div>
         </div>
-        <div className="text-right">
-          <h1 className="text-3xl font-black">
+        <div style={{ textAlign: 'right' }}>
+          <h1 style={{ fontSize: '30px', fontWeight: 900, margin: 0 }}>
             <span style={{ color: '#0F172A' }}>DAILY </span>
             <span style={{ color: '#E63946' }}>PURCHASE ENTRY</span>
           </h1>
         </div>
       </div>
-      <div className="mt-4 h-[3px] w-full" style={{ background: '#E63946' }} />
+      <div style={{ marginTop: '16px', height: '3px', width: '100%', background: '#E63946' }} />
 
       {/* ── Meta row ───────────────────────────────────────────────── */}
-      <div className="mt-6 flex items-start justify-between">
-        <div className="flex gap-8">
-          <MetaItem icon={Store} label="OUTLET">{restaurantName}</MetaItem>
-          <MetaItem icon={Calendar} label="DATE">
+      <div style={{ marginTop: '24px', ...flexStartBetween }}>
+        <div style={{ ...flex, gap: '32px' }}>
+          <MetaItem label="OUTLET">{restaurantName}</MetaItem>
+          <MetaItem label="DATE">
             {date}
-            {weekday && <div className="text-xs font-medium" style={{ color: '#9CA3AF' }}>{weekday}</div>}
+            {weekday && <div style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF' }}>{weekday}</div>}
           </MetaItem>
-          <MetaItem icon={Package} label="TOTAL ITEMS">{totalItems} Items</MetaItem>
+          <MetaItem label="TOTAL ITEMS">{totalItems} Items</MetaItem>
         </div>
-        <div className="text-right text-[11px] leading-5" style={{ color: '#6B7280' }}>
-          <div><span className="font-bold" style={{ color: '#9CA3AF' }}>GENERATED ON: </span>{generatedOn}</div>
-          <div><span className="font-bold" style={{ color: '#9CA3AF' }}>GENERATED BY: </span>{generatedBy}</div>
+        <div style={{ textAlign: 'right', fontSize: '11px', lineHeight: '20px', color: '#6B7280' }}>
+          <div><span style={{ fontWeight: 700, color: '#9CA3AF' }}>GENERATED ON: </span>{generatedOn}</div>
+          <div><span style={{ fontWeight: 700, color: '#9CA3AF' }}>GENERATED BY: </span>{generatedBy}</div>
         </div>
       </div>
 
       {/* ── Purchase Items Table ───────────────────────────────────── */}
-      <div className="mt-6 overflow-hidden rounded-xl border" style={{ borderColor: '#E5E7EB' }}>
-        <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: '#0F172A' }}>
-          <ClipboardList size={16} style={{ color: '#FFFFFF' }} />
-          <span className="text-xs font-bold tracking-wide" style={{ color: '#FFFFFF' }}>PURCHASE ITEMS</span>
+      <div style={{ marginTop: '24px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #E5E7EB' }}>
+        <div style={{ ...flex, alignItems: 'center', gap: '8px', padding: '10px 16px', background: '#0F172A' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', color: '#FFFFFF' }}>PURCHASE ITEMS</span>
         </div>
-        <table className="w-full text-left text-sm" style={{ borderCollapse: 'collapse' }}>
+        <table style={{ width: '100%', textAlign: 'left', fontSize: '14px', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#F9FAFB' }}>
-              <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280', width: '40px' }}>#</th>
-              <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280' }}>Item Name</th>
-              <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280', width: '70px' }}>Qty</th>
-              <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280', width: '70px' }}>Unit</th>
-              <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280', width: '100px' }}>Rate (₹)</th>
-              <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280', width: '120px' }}>Amount (₹)</th>
+              <th style={{ ...thBase, textAlign: 'center', width: '40px' }}>#</th>
+              <th style={{ ...thBase, textAlign: 'left' }}>Item Name</th>
+              <th style={{ ...thBase, textAlign: 'center', width: '70px' }}>Qty</th>
+              <th style={{ ...thBase, textAlign: 'center', width: '70px' }}>Unit</th>
+              <th style={{ ...thBase, textAlign: 'right', width: '100px' }}>Rate (₹)</th>
+              <th style={{ ...thBase, textAlign: 'right', width: '120px' }}>Amount (₹)</th>
             </tr>
           </thead>
           <tbody>
@@ -93,12 +115,12 @@ export default function PurchaseReportTemplate({ data, logoSrc }) {
               const amount = round2(row.quantity) * round2(row.unitPrice);
               return (
                 <tr key={idx} style={{ background: idx % 2 === 0 ? '#FFFFFF' : '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
-                  <td className="px-4 py-3 text-center font-semibold" style={{ color: '#6B7280' }}>{idx + 1}</td>
-                  <td className="px-4 py-3 font-bold" style={{ color: '#1E293B' }}>{row.itemName}</td>
-                  <td className="px-4 py-3 text-center font-semibold" style={{ color: '#334155' }}>{Number(row.quantity)}</td>
-                  <td className="px-4 py-3 text-center font-semibold" style={{ color: '#6B7280' }}>{row.unit || '—'}</td>
-                  <td className="px-4 py-3 text-right font-semibold" style={{ color: '#334155' }}>{inrPlain(round2(row.unitPrice))}</td>
-                  <td className="px-4 py-3 text-right font-bold" style={{ color: '#1E293B' }}>{inrPlain(amount)}</td>
+                  <td style={{ ...tdBase, textAlign: 'center', fontWeight: 600, color: '#6B7280' }}>{idx + 1}</td>
+                  <td style={{ ...tdBase, fontWeight: 700, color: '#1E293B', wordBreak: 'break-word', maxWidth: '380px' }}>{row.itemName}</td>
+                  <td style={{ ...tdBase, textAlign: 'center', fontWeight: 600, color: '#334155' }}>{Number(row.quantity)}</td>
+                  <td style={{ ...tdBase, textAlign: 'center', fontWeight: 600, color: '#6B7280' }}>{row.unit || '—'}</td>
+                  <td style={{ ...tdBase, textAlign: 'right', fontWeight: 600, color: '#334155' }}>{inrPlain(round2(row.unitPrice))}</td>
+                  <td style={{ ...tdBase, textAlign: 'right', fontWeight: 700, color: '#1E293B' }}>{inrPlain(amount)}</td>
                 </tr>
               );
             })}
@@ -108,32 +130,32 @@ export default function PurchaseReportTemplate({ data, logoSrc }) {
 
       {/* ── Remarks / Notes ────────────────────────────────────────── */}
       {remarks && (
-        <div className="mt-4 rounded-xl border p-4" style={{ borderColor: '#BBF7D0', background: '#F0FDF4' }}>
-          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: '#16A34A' }}>Notes / Remarks</div>
-          <div className="text-sm font-semibold" style={{ color: '#166534', lineHeight: 1.6 }}>{remarks}</div>
+        <div style={{ marginTop: '16px', borderRadius: '12px', border: '1px solid #BBF7D0', background: '#F0FDF4', padding: '16px' }}>
+          <div style={{ marginBottom: '4px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#16A34A' }}>Notes / Remarks</div>
+          <div style={{ fontSize: '14px', fontWeight: 600, color: '#166534', lineHeight: 1.6 }}>{remarks}</div>
         </div>
       )}
 
       {/* ── Footer band ────────────────────────────────────────────── */}
-      <div className="mt-6 flex items-center justify-between rounded-xl p-5" style={{ background: '#0F172A' }}>
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#9CA3AF' }}>Total Purchase Amount</div>
-          <div className="text-3xl font-black" style={{ color: '#4ADE80' }}>{inr(totalAmount)}</div>
-          <div className="mt-1 text-[10px]" style={{ color: '#9CA3AF' }}>{totalItems} item{totalItems !== 1 ? 's' : ''} purchased</div>
+      <div style={{ marginTop: '24px', ...flexBetween, borderRadius: '12px', padding: '20px', background: '#0F172A' }}>
+        <div style={flexCol}>
+          <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9CA3AF' }}>Total Purchase Amount</div>
+          <div style={{ fontSize: '30px', fontWeight: 900, color: '#4ADE80' }}>{inr(totalAmount)}</div>
+          <div style={{ marginTop: '4px', fontSize: '10px', color: '#9CA3AF' }}>{totalItems} item{totalItems !== 1 ? 's' : ''} purchased</div>
         </div>
-        <div className="flex gap-8 text-center text-[10px]" style={{ color: '#D1D5DB' }}>
-          <div>
-            <div className="mb-4 w-24 border-b" style={{ borderColor: '#6B7280' }} />
+        <div style={{ ...flex, gap: '32px', textAlign: 'center', fontSize: '10px', color: '#D1D5DB' }}>
+          <div style={flexCol}>
+            <div style={{ marginBottom: '16px', width: '96px', borderBottom: '1px solid #6B7280' }} />
             PREPARED BY<br /><span style={{ color: '#6B7280' }}>(Signature)</span>
           </div>
-          <div>
-            <div className="mb-4 w-24 border-b" style={{ borderColor: '#6B7280' }} />
+          <div style={flexCol}>
+            <div style={{ marginBottom: '16px', width: '96px', borderBottom: '1px solid #6B7280' }} />
             VERIFIED BY<br /><span style={{ color: '#6B7280' }}>(Signature)</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-3 text-center text-[10px]" style={{ color: '#9CA3AF' }}>
+      <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '10px', color: '#9CA3AF' }}>
         Softshape AI - software that shapes your business
       </div>
     </div>

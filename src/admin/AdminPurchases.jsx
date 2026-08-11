@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createRoot } from 'react-dom/client';
 import {
   Loader2, Plus, Trash2, Save, Store, Package, ArrowLeft,
   CheckCircle, AlertCircle, X, Truck, CreditCard, Ban,
-  ChevronRight, Search, MessageCircle, Calendar,
+  ChevronRight, Search, MessageCircle, Calendar, WifiOff,
 } from 'lucide-react';
-import { apiFetch } from '../services/apiConfig';
+import { apiFetch, isBackendReachable, subscribeReachability } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { useAuth } from '../context/AuthContext';
 import html2canvas from 'html2canvas';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 import PurchaseReportTemplate from './components/PurchaseReportTemplate';
+import { getUnitOptions } from '../shared/utils/unitConversion';
+import { PAYMENT_METHODS, API_TIMEOUT_SHORT_MS, API_TIMEOUT_DEFAULT_MS, API_TIMEOUT_SAVE_DAILY_MS } from '../shared/utils/constants';
 
 function round2(n) {
-  return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
+  return Math.round(Number(n || 0) * 100) / 100;
 }
 
 const STATUS_STYLES = {
@@ -42,6 +45,14 @@ export default function AdminPurchases() {
   const [poDetail, setPoDetail] = useState(null);
   const [kitchenItems, setKitchenItems] = useState([]);
 
+  // Vendor payment form state
+  const [showVendorPaymentForm, setShowVendorPaymentForm] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [paymentDate, setPaymentDate] = useState(getKolkataDateString());
+  const [paymentNarration, setPaymentNarration] = useState('');
+  const [savingPayment, setSavingPayment] = useState(false);
+
   // Daily purchase entry state
   const [dailyRows, setDailyRows] = useState([]);
   const [dailyEntryDate, setDailyEntryDate] = useState(getKolkataDateString());
@@ -50,6 +61,10 @@ export default function AdminPurchases() {
   const [dailySaving, setDailySaving] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [pendingVendorRowIndex, setPendingVendorRowIndex] = useState(null);
+  const [backendOnline, setBackendOnline] = useState(isBackendReachable());
+
+  // Per-tenant draft key — no 'default' fallback to prevent cross-tenant leakage
+  const DRAFT_KEY = `dailyPurchaseDraft_${restaurant?.id || user?.id || 'unknown'}`;
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('');
@@ -67,12 +82,53 @@ export default function AdminPurchases() {
 
   useEffect(() => { loadKitchenItems(); }, [loadKitchenItems]);
 
+  // Subscribe to backend reachability changes (non-blocking, informational only)
+  useEffect(() => {
+    const unsub = subscribeReachability((reachable) => setBackendOnline(reachable));
+    return unsub;
+  }, []);
+
+  // Load draft from localStorage if no saved entries exist (today only)
+  useEffect(() => {
+    if (view !== 'daily-entry') return;
+    const today = getKolkataDateString();
+    if (dailyEntryDate !== today) return;
+    const draft = localStorage.getItem(DRAFT_KEY);
+    if (draft) {
+      try {
+        const parsed = JSON.parse(draft);
+        if (parsed.date === today && parsed.rows?.length > 0) {
+          apiFetch(`/api/purchase-orders/daily?date=${today}`, { timeout: API_TIMEOUT_SHORT_MS })
+            .then((data) => { if (!data || data.length === 0) setDailyRows(parsed.rows); })
+            .catch(() => setDailyRows(parsed.rows));
+        }
+      } catch { /* invalid draft */ }
+    }
+  }, [view, dailyEntryDate, DRAFT_KEY]);
+
+  // Save draft to localStorage whenever dailyRows changes (today only)
+  useEffect(() => {
+    if (view !== 'daily-entry') return;
+    const today = getKolkataDateString();
+    if (dailyEntryDate !== today) return;
+    const hasData = dailyRows.some((r) => r.itemName?.trim());
+    if (hasData) {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        date: today,
+        rows: dailyRows.map(({ _showSuggestions, ...rest }) => rest),
+        savedAt: new Date().toISOString(),
+      }));
+    } else {
+      localStorage.removeItem(DRAFT_KEY);
+    }
+  }, [dailyRows, view, dailyEntryDate, DRAFT_KEY]);
+
   // ── Load vendors ─────────────────────────────────────────────────────────────
   const loadVendors = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await apiFetch('/api/vendors?includeInactive=true');
+      const data = await apiFetch('/api/vendors?includeInactive=true', { timeout: API_TIMEOUT_DEFAULT_MS });
       setVendors(data || []);
     } catch (err) {
       setError(err.message || 'Failed to load vendors');
@@ -114,6 +170,52 @@ export default function AdminPurchases() {
     }
   }, []);
 
+  // ── Record vendor payment ────────────────────────────────────────────────────
+  const handleVendorPayment = async () => {
+    if (!selectedVendorId) return;
+    const amt = parseFloat(paymentAmount);
+    if (!amt || amt <= 0) { setError('Enter a valid payment amount'); return; }
+    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+      setError('Select a valid payment method'); return;
+    }
+    setSavingPayment(true);
+    setError('');
+    try {
+      const result = await apiFetch(`/api/vendors/${selectedVendorId}/payments`, {
+        method: 'POST',
+        timeout: API_TIMEOUT_DEFAULT_MS,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amt,
+          paymentMethod,
+          paymentDate,
+          narration: paymentNarration || undefined,
+        }),
+      });
+
+      setVendorDetail((prev) => prev ? {
+        ...prev,
+        outstandingBalance: String(result.newOutstandingBalance),
+      } : prev);
+
+      setVendors((prev) => prev.map((v) => v.id === selectedVendorId
+        ? { ...v, outstandingBalance: String(result.newOutstandingBalance) }
+        : v
+      ));
+
+      setShowVendorPaymentForm(false);
+      setPaymentAmount('');
+      setPaymentNarration('');
+      setPaymentMethod('CASH');
+      setPaymentDate(getKolkataDateString());
+      showSuccess(`Payment of ₹${round2(amt).toLocaleString()} recorded. New balance: ₹${round2(result.newOutstandingBalance).toLocaleString()}`);
+    } catch (err) {
+      setError(err.message || 'Failed to record payment');
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
   // ── Load PO detail ───────────────────────────────────────────────────────────
   const loadPODetail = useCallback(async (id) => {
     setLoading(true);
@@ -150,7 +252,7 @@ export default function AdminPurchases() {
     setError('');
     setSaving(true);
     try {
-      const result = await apiFetch('/api/vendors', { method: 'POST', body: JSON.stringify(vendorForm) });
+      const result = await apiFetch('/api/vendors', { method: 'POST', timeout: API_TIMEOUT_DEFAULT_MS, body: JSON.stringify(vendorForm) });
       if (result.duplicateWarning) {
         setError(result.duplicateWarning);
       }
@@ -222,7 +324,7 @@ export default function AdminPurchases() {
     }));
   };
 
-  const poFormTotal = round2(poForm.items.reduce((sum, item) => sum + round2(item.quantity) * round2(item.unitCost), 0));
+  const poFormTotal = round2(poForm.items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitCost), 0));
 
   const handleCreatePO = async () => {
     if (!poForm.vendorId) { setError('Select a vendor'); return; }
@@ -353,7 +455,7 @@ export default function AdminPurchases() {
           kitchenInventoryItemId: e.kitchenInventoryItemId,
           vendorId: e.vendorId,
           quantity: String(e.quantity),
-          unit: e.unit || '',
+          unit: e.unit || 'NOS',
           unitPrice: String(e.unitPrice),
           previousPrice: e.previousPrice,
           paymentStatus: e.paymentStatus,
@@ -414,16 +516,17 @@ export default function AdminPurchases() {
       .catch(() => {});
   };
 
-  const dailyTotal = round2(dailyRows.reduce((sum, r) => sum + round2(r.quantity) * round2(r.unitPrice), 0));
+  const dailyTotal = round2(dailyRows.reduce((sum, r) => sum + Number(r.quantity) * Number(r.unitPrice), 0));
 
   const dailyRowsValid = useMemo(() => {
-    return dailyRows.length > 0 && dailyRows.every((r) =>
+    const filledRows = dailyRows.filter((r) => r.itemName?.trim() && (parseFloat(r.quantity) || 0) > 0);
+    if (filledRows.length === 0) return false;
+    return filledRows.every((r) =>
       r.itemName?.trim() &&
       r.vendorId &&
       r.unit?.trim() &&
-      r.quantity !== '' && !isNaN(parseFloat(r.quantity)) &&
       r.unitPrice !== '' && !isNaN(parseFloat(r.unitPrice)) &&
-      (r.paymentStatus === 'PENDING' || (r.paymentStatus === 'DONE' && ['CASH', 'BANK', 'UPI', 'CHEQUE'].includes(r.paymentMethod)))
+      (r.paymentStatus === 'PENDING' || (r.paymentStatus === 'DONE' && PAYMENT_METHODS.includes(r.paymentMethod)))
     );
   }, [dailyRows]);
 
@@ -449,15 +552,16 @@ export default function AdminPurchases() {
       if (!row.itemName?.trim()) { setError('Item name is required for all rows'); return; }
       if (!row.vendorId) { setError(`Vendor is required for item "${row.itemName}"`); return; }
       if (!row.unit?.trim()) { setError(`Unit is required for item "${row.itemName}"`); return; }
-      if (row.paymentStatus === 'DONE' && !['CASH', 'BANK', 'UPI', 'CHEQUE'].includes(row.paymentMethod)) {
+      if (row.paymentStatus === 'DONE' && !PAYMENT_METHODS.includes(row.paymentMethod)) {
         setError(`Payment method is required for DONE item "${row.itemName}"`); return;
       }
     }
     setError('');
     setDailySaving(true);
     try {
-      await apiFetch('/api/purchase-orders/daily', {
+      const savedResult = await apiFetch('/api/purchase-orders/daily', {
         method: 'POST',
+        timeout: API_TIMEOUT_SAVE_DAILY_MS,
         body: JSON.stringify({
           date: dailyEntryDate,
           rows: validRows.map((r) => ({
@@ -472,10 +576,22 @@ export default function AdminPurchases() {
           })),
         }),
       });
-      showSuccess('Daily purchase entries saved');
+      if (!Array.isArray(savedResult) || savedResult.length !== validRows.length) {
+        console.error('[AdminPurchases] Save mismatch:', validRows.length, 'submitted,', savedResult?.length, 'confirmed');
+        setError(`Save may be incomplete — submitted ${validRows.length} but backend confirmed ${savedResult?.length || 0}. Please refresh to verify.`);
+        loadDailyEntries(dailyEntryDate);
+        return;
+      }
+      showSuccess(`${savedResult.length} entries saved`);
+      localStorage.removeItem(DRAFT_KEY);
       loadDailyEntries(dailyEntryDate);
     } catch (err) {
-      setError(err.message || 'Failed to save daily entries');
+      const isConnectionError = err.message?.includes('timed out') || err.message?.includes('ERR_CONNECTION') || err.message?.includes('Failed to fetch');
+      if (isConnectionError) {
+        setError('Connection failed — your entries are preserved on this screen. Check network and try again. Do NOT refresh or your entries will be lost.');
+      } else {
+        setError(err.message || 'Failed to save daily entries');
+      }
     } finally {
       setDailySaving(false);
     }
@@ -494,14 +610,51 @@ export default function AdminPurchases() {
   }, [dailyRows]);
 
   const handleWhatsAppShare = async () => {
-    const validRows = dailyRows.filter((r) => r.itemName?.trim() && (parseFloat(r.quantity) || 0) > 0);
-    if (validRows.length === 0) {
-      setError('No purchase entries to share. Add at least one item.');
-      return;
-    }
-
     setError('');
     setSharing(true);
+
+    // Build vendor name lookup from already-loaded vendors state
+    const vendorMap = new Map(vendors.map((v) => [v.id, v.name]));
+
+    // Step 1: Gather rows — prefer locally-loaded dailyRows, fall back to backend fetch
+    let validRows = [];
+    const localRows = dailyRows.filter((r) => r.itemName?.trim() && (parseFloat(r.quantity) || 0) > 0);
+
+    if (localRows.length > 0) {
+      // Use data already in UI state (works offline)
+      validRows = localRows.map((r) => ({
+        itemName: r.itemName,
+        quantity: String(r.quantity),
+        unit: r.unit || '',
+        unitPrice: String(r.unitPrice),
+        vendorName: vendorMap.get(r.vendorId) || '',
+        paymentStatus: r.paymentStatus,
+        paymentMethod: r.paymentMethod || '',
+      }));
+    } else {
+      // No local data — try fetching from backend
+      try {
+        const savedEntries = await apiFetch(`/api/purchase-orders/daily?date=${dailyEntryDate}`, { timeout: API_TIMEOUT_SHORT_MS });
+        if (!savedEntries || savedEntries.length === 0) {
+          setError('No saved purchase entries to share. Save entries first.');
+          setSharing(false);
+          return;
+        }
+        validRows = savedEntries.map((e) => ({
+          itemName: e.itemName,
+          quantity: String(e.quantity),
+          unit: e.unit || '',
+          unitPrice: String(e.unitPrice),
+          vendorName: e.vendorName || '',
+          paymentStatus: e.paymentStatus,
+          paymentMethod: e.paymentMethod || '',
+        }));
+      } catch (err) {
+        setError('No purchase entries found locally or on server. Save entries first.');
+        setSharing(false);
+        return;
+      }
+    }
 
     let container = null;
     let root = null;
@@ -524,17 +677,16 @@ export default function AdminPurchases() {
         generatedBy: user?.name || 'Admin',
       };
 
-      // Create detached DOM container (isolated from parent CSS)
+      // Create detached DOM container (off-screen but rendered)
       container = document.createElement('div');
       container.style.position = 'fixed';
       container.style.left = '-9999px';
       container.style.top = '0';
       container.style.width = '900px';
-      container.style.background = 'white';
+      container.style.background = '#ffffff';
       document.body.appendChild(container);
 
-      // Render template into detached container
-      const { createRoot } = await import('react-dom/client');
+      // Render template into detached container (static import — no dynamic chunk needed)
       root = createRoot(container);
       root.render(
         <PurchaseReportTemplate
@@ -543,15 +695,26 @@ export default function AdminPurchases() {
         />
       );
 
-      // Wait for render to settle
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for React to flush + images to load
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const imgs = container.querySelectorAll('img');
+      if (imgs.length > 0) {
+        await Promise.all(Array.from(imgs).map((img) =>
+          img.complete ? Promise.resolve() : new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = resolve;
+          })
+        ));
+      }
 
-      // Capture with html2canvas
+      // Capture with html2canvas — allowTaint for local images, skip logo on CORS failure
       const canvas = await html2canvas(container, {
         scale: 3,
         useCORS: true,
+        allowTaint: false,
         logging: false,
         backgroundColor: '#ffffff',
+        imageTimeout: 5000,
       });
 
       // Cleanup React root and container
@@ -693,7 +856,21 @@ export default function AdminPurchases() {
                           {v.isActive ? 'Active' : 'Retired'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {v.isActive && parseFloat(v.outstandingBalance) > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedVendorId(v.id);
+                              setShowVendorPaymentForm(true);
+                              setView('vendor-detail');
+                              loadVendorDetail(v.id);
+                            }}
+                            className="text-[10px] font-bold text-green-600 hover:bg-green-50 px-2 py-1 rounded mr-2"
+                          >
+                            Payment
+                          </button>
+                        )}
                         {v.isActive && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRetireVendor(v.id); }}
@@ -753,6 +930,95 @@ export default function AdminPurchases() {
                 ₹{round2(vendorDetail.outstandingBalance).toLocaleString()}
               </span>
             </div>
+          </div>
+
+          {/* Vendor Payment Card */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-black uppercase tracking-widest text-gray-500">Record Payment</h4>
+              {parseFloat(vendorDetail.outstandingBalance) > 0 && !showVendorPaymentForm && (
+                <button
+                  onClick={() => setShowVendorPaymentForm(true)}
+                  className="flex items-center gap-1 text-xs font-black uppercase text-green-600 hover:bg-green-50 px-3 py-1.5 rounded-lg"
+                >
+                  <CreditCard size={14} />
+                  New Payment
+                </button>
+              )}
+            </div>
+
+            {showVendorPaymentForm ? (
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-gray-500">
+                  Outstanding: <span className="text-[#E53935]">₹{round2(vendorDetail.outstandingBalance).toLocaleString()}</span>
+                  {parseFloat(vendorDetail.outstandingBalance) > 0 && (
+                    <button
+                      onClick={() => setPaymentAmount(String(round2(vendorDetail.outstandingBalance)))}
+                      className="ml-2 text-[10px] font-black text-green-600 hover:bg-green-50 px-2 py-0.5 rounded"
+                    >
+                      Pay Full Amount
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Amount (₹)"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                  />
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="BANK">Bank</option>
+                    <option value="UPI">UPI</option>
+                    <option value="CHEQUE">Cheque</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => setPaymentDate(e.target.value)}
+                    className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Narration (optional)"
+                    value={paymentNarration}
+                    onChange={(e) => setPaymentNarration(e.target.value)}
+                    className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleVendorPayment}
+                    disabled={savingPayment}
+                    className="flex items-center gap-1 text-xs font-black uppercase text-white bg-green-600 hover:bg-green-700 px-4 py-1.5 rounded-lg disabled:opacity-50"
+                  >
+                    {savingPayment ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                    {savingPayment ? 'Saving...' : 'Record Payment'}
+                  </button>
+                  <button
+                    onClick={() => { setShowVendorPaymentForm(false); setPaymentAmount(''); setPaymentNarration(''); }}
+                    className="text-xs font-black uppercase text-gray-500 hover:bg-gray-100 px-4 py-1.5 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">
+                {parseFloat(vendorDetail.outstandingBalance) > 0
+                  ? `Outstanding: ₹${round2(vendorDetail.outstandingBalance).toLocaleString()} — click "New Payment" to record a payment.`
+                  : 'No outstanding balance.'}
+              </p>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
@@ -1136,7 +1402,7 @@ export default function AdminPurchases() {
                       className="col-span-2 bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
                     />
                     <span className="col-span-2 text-xs font-black text-[#E53935] text-right">
-                      ₹{round2(round2(item.quantity) * round2(item.unitCost)).toLocaleString()}
+                      ₹{round2(Number(item.quantity) * Number(item.unitCost)).toLocaleString()}
                     </span>
                     <div className="col-span-1 flex justify-end">
                       {poForm.items.length > 1 && (
@@ -1212,6 +1478,12 @@ export default function AdminPurchases() {
       {/* ── Daily Purchase Entry View ──────────────────────────────────────────── */}
       {view === 'daily-entry' && (
         <>
+          {!backendOnline && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-center gap-2">
+              <WifiOff size={14} className="text-amber-500" />
+              <span className="text-xs font-bold text-amber-700">Server may be unreachable — save may take longer than usual. Your draft is preserved on this screen.</span>
+            </div>
+          )}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 flex items-center gap-2">
@@ -1244,7 +1516,7 @@ export default function AdminPurchases() {
           {/* Rows */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
             {dailyRows.map((row, idx) => {
-              const rowTotal = round2(row.quantity) * round2(row.unitPrice);
+              const rowTotal = round2(Number(row.quantity) * Number(row.unitPrice));
               const priceUp = row.previousPrice != null && round2(row.unitPrice) > row.previousPrice;
               const priceDown = row.previousPrice != null && round2(row.unitPrice) < row.previousPrice;
               return (
@@ -1323,14 +1595,17 @@ export default function AdminPurchases() {
                     />
 
                     {/* Unit */}
-                    <input
-                      type="text"
-                      placeholder="Unit"
+                    <select
                       value={row.unit}
                       disabled={dailyEntryReadOnly}
                       onChange={(e) => updateDailyRow(idx, 'unit', e.target.value)}
                       className="col-span-2 sm:col-span-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935] disabled:bg-gray-100"
-                    />
+                    >
+                      <option value="">Unit...</option>
+                      {getUnitOptions(row.unit).map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
 
                     {/* Unit price with price change flag */}
                     <div className="col-span-4 sm:col-span-2 flex items-center gap-1">

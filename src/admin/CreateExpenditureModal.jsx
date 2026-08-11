@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Search, ChevronDown, Loader2, Save, Wallet } from 'lucide-react';
+import { X, Search, ChevronDown, Loader2, Save, Wallet, AlertTriangle } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
@@ -23,6 +23,7 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editE
   const [selectedApprover, setSelectedApprover] = useState(null);
   const [approverSearch, setApproverSearch] = useState('');
   const [expenditureDate, setExpenditureDate] = useState(() => getKolkataDateString());
+  const [entryType, setEntryType] = useState('EXPENSE');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +59,7 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editE
         setNarration(exp.narration || '');
         setNarrationDebounce(exp.narration || '');
         setExpenditureDate(exp.expenditureDate || getKolkataDateString());
+        setEntryType(exp.entryType || 'EXPENSE');
         setSelectedApprover(exp.approvedByName || exp.approvedBy?.name || null);
         setApproverSearch(exp.approvedByName || exp.approvedBy?.name || '');
         if (exp.paidToType === 'STAFF') {
@@ -99,6 +101,7 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editE
     setSelectedApprover(null);
     setApproverSearch('');
     setExpenditureDate(getKolkataDateString());
+    setEntryType('EXPENSE');
     setError('');
   };
 
@@ -241,6 +244,15 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editE
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs font-bold">
               {error}
+            </div>
+          )}
+
+          {entryType === 'LIABILITY_PAYMENT' && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 text-amber-800 px-3 py-2.5 rounded-lg">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-600" />
+              <div className="text-xs font-bold">
+                This is a vendor liability payment. Please use the <span className="underline">Vendor Detail</span> page to record or manage vendor payments for accurate outstanding balance tracking.
+              </div>
             </div>
           )}
 
