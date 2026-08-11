@@ -30,6 +30,9 @@ import { bulkImportSpecials, mapFlatMenuItems } from '../services/menuService';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import { modalBackdropVariants, modalContentVariants, springs, useMotionConfig } from '../shared/animations';
 
+// Fallback categories shown when the menu hasn't loaded yet (menuCategories only has "All")
+const DEFAULT_CATEGORIES = ['Main Course', 'Starters', 'Biryani', 'Curries', 'Breads', 'Desserts', 'Beverages', 'Snacks', 'Combo', 'Specials'];
+
 export default function TodaySpecials() {
   const { shouldReduce } = useMotionConfig();
   const { refreshMenu, categories: menuCategories, menuItems: allMenuItems } = useMenu();
@@ -1118,8 +1121,7 @@ export default function TodaySpecials() {
                     {(() => {
                       const cats = (menuCategories || []).filter(c => c && c !== 'All');
                       if (cats.length === 0) {
-                        return ['Main Course', 'Starters', 'Biryani', 'Curries', 'Breads', 'Desserts', 'Beverages', 'Snacks', 'Combo', 'Specials']
-                          .map(cat => <option key={cat} value={cat}>{cat}</option>);
+                        return DEFAULT_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>);
                       }
                       if (formData.c && !cats.includes(formData.c)) {
                         return [<option key={formData.c} value={formData.c}>{formData.c}</option>, ...cats.map(cat => <option key={cat} value={cat}>{cat}</option>)];
@@ -1676,11 +1678,14 @@ export default function TodaySpecials() {
                           }}
                           className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#E53935]"
                         >
-                          {(menuCategories || [])
-                            .filter(c => c && c !== 'All')
-                            .map(cat => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
+                          {(() => {
+                            const cats = (menuCategories || []).filter(c => c && c !== 'All');
+                            const list = cats.length === 0 ? DEFAULT_CATEGORIES : cats;
+                            if (row.c && !list.includes(row.c)) {
+                              return [<option key={row.c} value={row.c}>{row.c}</option>, ...list.map(cat => <option key={cat} value={cat}>{cat}</option>)];
+                            }
+                            return list.map(cat => <option key={cat} value={cat}>{cat}</option>);
+                          })()}
                         </select>
                       </div>
                       <div>
