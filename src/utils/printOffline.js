@@ -573,23 +573,15 @@ export async function printLocal(job) {
 
 // ── Queue management ─────────────────────────────────────────────────────────
 
-// KOT job types are never queued — a silently queued KOT that prints later
-// (when connectivity is restored) causes the kitchen to prepare the same
-// food twice. KOTs fail immediately so the captain sees "Print Failed" and
-// retries explicitly via reprintKot.
-function isKotJobType(type) {
-  const t = (type || '').toUpperCase();
-  return t === 'KOT' || t === 'BAR_KOT' || t === 'CANCEL_KOT';
-}
+// All job types (including KOTs) are durably queued when no printer is
+// reachable. The queue is auto-flushed by syncEngine when connectivity is
+// restored (see flushQueuedPrintJobs below). Duplicate prints are prevented
+// by the Print Agent's eventId dedup — the same eventId is shared between
+// the local queue and the backend's socket emission, so even if both paths
+// deliver the job, the Print Agent only prints once.
 
 async function queuePrintJob(job, text, reason) {
   const jobType = job.type || job.jobType;
-  // KOTs: fail immediately instead of queueing. The captain must retry
-  // explicitly — no silent background reprint.
-  if (isKotJobType(jobType)) {
-    logOfflinePrint({ status: 'error', message: `${jobType} not queued (fail-fast)`, detail: reason });
-    return { printed: false, queued: false, error: reason };
-  }
   const id = `offline-print-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await addOfflinePrintJob({
     id,
@@ -611,13 +603,12 @@ async function queuePrintJob(job, text, reason) {
 
 /**
  * Process all queued print jobs. Called when connectivity is restored
- * or when a printer becomes available.
+ * or when a printer becomes available (via syncEngine's online handler).
  *
- * KOT job types (KOT, BAR_KOT, CANCEL_KOT) are SKIPPED here. A silently
- * flushed KOT causes the kitchen to prepare the same food twice (the captain
- * may have already re-sent from the cashier). KOTs use fail-fast + explicit
- * retry via reprintKot instead. Only bills/reports (non-duplicate-prone) are
- * auto-flushed.
+ * All job types including KOTs are flushed. Duplicate prints are prevented
+ * by the Print Agent's eventId dedup — the queued job carries the same
+ * eventId that was passed to the backend, so even if the backend also emits
+ * via socket, the Print Agent only prints once.
  */
 export async function flushQueuedPrintJobs() {
   const jobs = await getOfflinePrintJobs();
@@ -626,17 +617,9 @@ export async function flushQueuedPrintJobs() {
 
   let flushed = 0;
   let failed = 0;
-  let skipped = 0;
 
   for (const job of jobs) {
     if (job.status !== 'pending') continue;
-
-    // KOTs are never auto-flushed — see comment above.
-    const jobType = (job.jobType || '').toUpperCase();
-    if (jobType === 'KOT' || jobType === 'BAR_KOT' || jobType === 'CANCEL_KOT') {
-      skipped++;
-      continue;
-    }
 
     try {
       const result = await printLocal({
@@ -661,10 +644,7 @@ export async function flushQueuedPrintJobs() {
     }
   }
 
-  if (skipped > 0) {
-    logOfflinePrint({ status: 'flush', message: 'Skipped KOT jobs', detail: `${skipped} KOT(s) skipped — use explicit retry` });
-  }
-  logOfflinePrint({ status: 'flush', message: 'Flush done', detail: `${flushed} ok, ${failed} failed, ${skipped} skipped` });
+  logOfflinePrint({ status: 'flush', message: 'Flush done', detail: `${flushed} ok, ${failed} failed` });
   return { flushed, failed };
 }
 
