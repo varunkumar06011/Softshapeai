@@ -44,7 +44,7 @@ export default function AdminExpenditures() {
       }
       params.set('limit', '500');
       const data = await apiFetch(`/api/expenditures?${params.toString()}`);
-      setExpenditures(data || []);
+      setExpenditures((data || []).filter(v => v.entryType !== 'LIABILITY'));
     } catch (err) {
       console.error('[AdminExpenditures] Load failed:', err);
     } finally {

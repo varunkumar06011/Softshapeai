@@ -614,6 +614,25 @@ export default function AdminPurchases() {
     setError('');
     setSharing(true);
 
+    // Detect mobile vs desktop synchronously (needed for popup strategy)
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    // Desktop: open a blank tab NOW (within user gesture) to avoid popup blocker.
+    // We'll navigate it to WhatsApp Web after the image is generated.
+    let whatsappTab = null;
+    if (!isMobile) {
+      whatsappTab = window.open('', '_blank');
+      if (!whatsappTab) {
+        setError('Popup blocked. Please allow popups for this site to open WhatsApp Web, then try again.');
+        setSharing(false);
+        return;
+      }
+      // Show a loading state in the tab while we generate the image
+      try {
+        whatsappTab.document.write('<html><head><title>Opening WhatsApp Web…</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f0f2f5;color:#333}p{text-align:center;font-size:16px}</style></head><body><p>Preparing WhatsApp Web…<br>Please wait.</p></body></html>');
+      } catch { /* cross-origin, ignore */ }
+    }
+
     // Build vendor name lookup from already-loaded vendors state
     const vendorMap = new Map(vendors.map((v) => [v.id, v.name]));
 
@@ -638,6 +657,7 @@ export default function AdminPurchases() {
         const savedEntries = await apiFetch(`/api/purchase-orders/daily?date=${dailyEntryDate}`, { timeout: API_TIMEOUT_SHORT_MS });
         if (!savedEntries || savedEntries.length === 0) {
           setError('No saved purchase entries to share. Save entries first.');
+          if (whatsappTab) try { whatsappTab.close(); } catch {}
           setSharing(false);
           return;
         }
@@ -652,6 +672,7 @@ export default function AdminPurchases() {
         }));
       } catch (err) {
         setError('No purchase entries found locally or on server. Save entries first.');
+        if (whatsappTab) try { whatsappTab.close(); } catch {}
         setSharing(false);
         return;
       }
@@ -728,6 +749,7 @@ export default function AdminPurchases() {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1.0));
       if (!blob) {
         setError('Failed to generate report image.');
+        if (whatsappTab) try { whatsappTab.close(); } catch {}
         return;
       }
 
@@ -735,9 +757,6 @@ export default function AdminPurchases() {
       const file = new File([blob], fileName, { type: 'image/png' });
 
       const shareText = `${restaurant?.name ? `${restaurant.name} — ` : ''}Daily Purchase Entry on ${dailyEntryDate}`;
-
-      // Detect mobile vs desktop
-      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
       if (isMobile && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
         // Mobile: use Web Share API (opens native WhatsApp with image attached)
@@ -747,7 +766,7 @@ export default function AdminPurchases() {
           files: [file],
         });
       } else {
-        // Desktop: download image + open WhatsApp Web in new tab
+        // Desktop: download image, then navigate the pre-opened tab to WhatsApp Web
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -757,13 +776,25 @@ export default function AdminPurchases() {
         a.remove();
         URL.revokeObjectURL(url);
 
-        // Open WhatsApp Web directly (redirects to web.whatsapp.com on desktop)
+        // Navigate the pre-opened tab to WhatsApp Web
         const whatsappUrl = `https://web.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
-        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-        showSuccess('Image downloaded. Attach it in WhatsApp Web (opens in new tab).');
+        if (whatsappTab) {
+          try {
+            whatsappTab.location.href = whatsappUrl;
+          } catch {
+            // Cross-origin restriction — fall back to opening a new tab
+            whatsappTab.close();
+            window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+          }
+        } else {
+          // Tab was blocked earlier, try again (may still fail)
+          window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+        }
+        showSuccess('Image downloaded. Attach it in WhatsApp Web (opened in new tab).');
       }
     } catch (err) {
       console.error('[AdminPurchases] WhatsApp share failed:', err);
+      if (whatsappTab) try { whatsappTab.close(); } catch {}
       if (err.name !== 'AbortError') {
         setError('Failed to generate/share report image. Please try again.');
       }
