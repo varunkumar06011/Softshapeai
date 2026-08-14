@@ -169,6 +169,12 @@ let _cachedAgentUrls = null;
 let _lastDiscoveryTime = 0;
 const DISCOVERY_CACHE_MS = 30_000;
 
+// Cached agent-endpoint response (includes agents array with per-device
+// availablePrinters). Used to route print jobs to the correct edge server
+// in multi-edge setups.
+let _cachedAgentEndpoint = null;
+let _lastAgentEndpointTime = 0;
+
 /**
  * Invalidate the cached Print Agent URL list so the next discoverPrintAgentUrls()
  * call rebuilds it from scratch. Call this when a new edge URL is discovered
@@ -178,6 +184,8 @@ const DISCOVERY_CACHE_MS = 30_000;
 export function invalidatePrintAgentUrlCache() {
   _cachedAgentUrls = null;
   _lastDiscoveryTime = 0;
+  _cachedAgentEndpoint = null;
+  _lastAgentEndpointTime = 0;
 }
 
 /**
@@ -186,10 +194,14 @@ export function invalidatePrintAgentUrlCache() {
  *   2. Backend-reported LAN IP (fetched from /api/print/agent-endpoint)
  *   3. localStorage cache of last-known working URL
  *   4. localhost fallback (same-machine only)
+ *
+ * When printerName is provided, the URL list is filtered to only include
+ * edge servers that have that printer in their availablePrinters list.
+ * If no edge reports having the printer, all URLs are returned (fallback).
  */
-async function discoverPrintAgentUrls() {
+async function discoverPrintAgentUrls(printerName) {
   if (_cachedAgentUrls && Date.now() - _lastDiscoveryTime < DISCOVERY_CACHE_MS) {
-    return _cachedAgentUrls;
+    return filterUrlsByPrinter(_cachedAgentUrls, printerName);
   }
 
   const urls = [];
@@ -250,6 +262,10 @@ async function discoverPrintAgentUrls() {
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
+        // Cache the full agent-endpoint response for printer-based URL filtering
+        _cachedAgentEndpoint = data;
+        _lastAgentEndpointTime = Date.now();
+
         // Version check: invalidate stale cached URL before any code reads it.
         // Only clear on a confirmed version mismatch — never on network failure.
         if (data?.cacheVersion) {
@@ -259,6 +275,7 @@ async function discoverPrintAgentUrls() {
             localStorage.setItem('print_agent_cache_version', data.cacheVersion);
           }
         }
+        // Primary agent URL (top-level fields — backward compat)
         if (data.httpUrl) add(data.httpUrl);
         if (data.lanIp) {
           // Edge server (port 3101) is the LAN print path — broadcasts via
@@ -267,6 +284,19 @@ async function discoverPrintAgentUrls() {
         }
         if (data.printerMapping && Object.keys(data.printerMapping).length > 0) {
           setLocalPrinterMapping(data.printerMapping).catch(() => {});
+        }
+
+        // ── Multi-agent: add ALL active agent URLs ──────────────────────────
+        // In a multi-edge setup, each edge has different printers physically
+        // connected. The captain must be able to reach any edge's printer.
+        // The agents array from agent-endpoint contains per-device URLs and
+        // availablePrinters lists.
+        if (Array.isArray(data.agents)) {
+          for (const agent of data.agents) {
+            if (!agent.online) continue;
+            if (agent.httpUrl) add(agent.httpUrl);
+            if (agent.lanIp) add(`http://${agent.lanIp}:3101`);
+          }
         }
       }
     }
@@ -285,7 +315,40 @@ async function discoverPrintAgentUrls() {
 
   _cachedAgentUrls = urls;
   _lastDiscoveryTime = Date.now();
-  return urls;
+  return filterUrlsByPrinter(urls, printerName);
+}
+
+/**
+ * Filter a URL list to only include edges that have the requested printer.
+ * Uses the cached agent-endpoint response's agents array (availablePrinters).
+ * If no edge reports having the printer, returns the full list (fallback).
+ */
+function filterUrlsByPrinter(urls, printerName) {
+  if (!printerName || !_cachedAgentEndpoint || !Array.isArray(_cachedAgentEndpoint.agents)) {
+    return urls;
+  }
+
+  // Build a set of URLs for edges that have this printer
+  const printerOwnerUrls = new Set();
+  for (const agent of _cachedAgentEndpoint.agents) {
+    if (!agent.online) continue;
+    const printers = Array.isArray(agent.availablePrinters) ? agent.availablePrinters : [];
+    if (printers.includes(printerName)) {
+      if (agent.httpUrl) printerOwnerUrls.add(agent.httpUrl.replace(/\/+$/, ''));
+      if (agent.lanIp) printerOwnerUrls.add(`http://${agent.lanIp}:3101`);
+    }
+  }
+
+  if (printerOwnerUrls.size === 0) {
+    // No edge reports having this printer — return all URLs (fallback).
+    // The edge server will reject cleanly if it doesn't have the printer.
+    return urls;
+  }
+
+  // Filter: keep URLs that belong to edges with the printer, plus localhost
+  // (localhost might be the correct edge on desktop).
+  const filtered = urls.filter(url => printerOwnerUrls.has(url) || url === 'http://127.0.0.1:3101');
+  return filtered.length > 0 ? filtered : urls;
 }
 
 /**
@@ -297,7 +360,8 @@ async function discoverPrintAgentUrls() {
  * could not print immediately (print service down) — it will retry every 5s.
  */
 async function tryPrintAgentUrls(body, jobType) {
-  const urls = await discoverPrintAgentUrls();
+  const printerName = body.printerName || null;
+  const urls = await discoverPrintAgentUrls(printerName);
   if (urls.length === 0) return null;
 
   const tryUrl = async (url) => {
@@ -324,6 +388,25 @@ async function tryPrintAgentUrls(body, jobType) {
         // The queued flag is propagated for observability/UI differentiation.
         const data = await res.json().catch(() => ({}));
         return { url, queued: !!data.queued };
+      }
+      // 404 with printerNotAvailable: this edge doesn't have the requested
+      // printer. Return null (not an error) so the next URL is tried.
+      if (res.status === 404) {
+        const errData = await res.json().catch(() => ({}));
+        if (errData.printerNotAvailable) {
+          console.log(`[printOffline] Printer not on ${url} — trying next`);
+          return null;
+        }
+      }
+      // 503 with printerServiceUnavailable: print service is down on this
+      // edge, so it can't verify printer ownership. Return null so the next
+      // URL is tried — the correct edge (with print service up) will accept.
+      if (res.status === 503) {
+        const errData = await res.json().catch(() => ({}));
+        if (errData.printerServiceUnavailable) {
+          console.log(`[printOffline] Print service unavailable at ${url} — trying next`);
+          return null;
+        }
       }
     } catch (err) {
       clearTimeout(timeout);
