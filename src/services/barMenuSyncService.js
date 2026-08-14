@@ -11,7 +11,7 @@
 // This is the bar equivalent of menuSyncService.js (for regular restaurant menu).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { API_BASE, getAuthHeaders } from "./apiConfig";
 import secureStorage from "../utils/secureStorage";
 import {
@@ -138,6 +138,20 @@ function isBarModuleEnabled() {
   }
 }
 
+// Optimistically update the singleton bar menu store + cache, then notify
+// subscribers. Used by cashier edit-menu mutations (add/edit) so LIQUOR items
+// appear instantly without waiting for the edge config.changed → refresh cycle.
+export function setGlobalBarMenu(updater) {
+  const nextMenu = typeof updater === "function"
+    ? updater(barGlobalMenu ?? [])
+    : updater;
+  barGlobalMenu = nextMenu;
+  _isLoading = false;
+  _loadError = null;
+  writeBarMenuCache(nextMenu);
+  notifySubscribers();
+}
+
 export function useBarMenuSync() {
   const [state, setState] = useState({
     menuItems: barGlobalMenu ?? [],
@@ -165,6 +179,10 @@ export function useBarMenuSync() {
     barGlobalMenu = null;
     loadBarMenu({ skipRepair: true, bypassCache });
   };
+
+  const setGlobalMenu = useCallback((updater) => {
+    setGlobalBarMenu(updater);
+  }, []);
 
   // Listen for socket menu update events from admin panel
   useEffect(() => {
@@ -226,7 +244,7 @@ export function useBarMenuSync() {
     return () => window.removeEventListener("bar-menu-synced", handleBackgroundSync);
   }, []);
 
-  return { ...state, refreshMenu };
+  return { ...state, refreshMenu, setGlobalMenu };
 }
 
 /**

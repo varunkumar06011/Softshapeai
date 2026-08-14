@@ -3562,29 +3562,33 @@ export default function CaptainApp({ onLogout }) {
         // set localPrinted=true, which made the backend skip the print_job
         // socket emit — the failed print was silently lost.
         localPrinted = printResults.length > 0 && printResults.every(r => r.status === 'fulfilled' && r.value?.printed && !r.value?.queued);
-        // Track if any print was durably queued (edge server accepted but
-        // print service was down — will retry every 5s). Used for the
-        // post-submit notification so the captain knows the KOT hasn't
-        // physically printed yet.
-        anyQueued = localPrinted && printResults.some(r => r.status === 'fulfilled' && r.value?.queued);
+        // Track if any print was durably queued (local IndexedDB or edge server
+        // accepted but printer not ready). Used for the post-submit notification
+        // so the captain knows the KOT will print automatically when the printer
+        // becomes available.
+        anyQueued = printResults.some(r => r.status === 'fulfilled' && r.value?.queued);
         if (localPrinted) {
           markKotNumberPrinted(preReservedKotNumber);
           console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber}`);
         } else {
-          // Filter kotEventIds to only those that actually printed, so the
-          // backend's eventId dedup doesn't suppress re-emission of failed ones.
-          const succeededEventIds = [];
-          if (foodEscpos.length > 0 && printResults[0]?.status === 'fulfilled' && printResults[0]?.value?.printed) {
-            succeededEventIds.push({ type: 'KOT', eventId: foodEventId });
+          // Pass eventIds for both printed AND queued jobs to the backend.
+          // For printed jobs: prevents the backend from re-emitting via socket
+          //   (the Print Agent already printed it).
+          // For queued jobs: the backend uses the same eventId if it emits via
+          //   socket, so the Print Agent dedup prevents double-printing when
+          //   the local queue auto-flushes on reconnect.
+          const handledEventIds = [];
+          if (foodEscpos.length > 0 && printResults[0]?.status === 'fulfilled' && (printResults[0]?.value?.printed || printResults[0]?.value?.queued)) {
+            handledEventIds.push({ type: 'KOT', eventId: foodEventId });
           }
           if (liquorEscpos.length > 0) {
             const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
-            if (printResults[liquorIdx]?.status === 'fulfilled' && printResults[liquorIdx]?.value?.printed) {
-              succeededEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
+            if (printResults[liquorIdx]?.status === 'fulfilled' && (printResults[liquorIdx]?.value?.printed || printResults[liquorIdx]?.value?.queued)) {
+              handledEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
             }
           }
-          kotEventIds = succeededEventIds;
-          console.log(`[KOT] Local print failed (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
+          kotEventIds = handledEventIds;
+          console.log(`[KOT] Local print failed/queued (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
         }
         } // end fallback local print
 
@@ -3730,23 +3734,23 @@ export default function CaptainApp({ onLogout }) {
                 const edgePrintResults = await Promise.allSettled(edgePrintPromises);
                 edgeLocalPrinted = edgePrintResults.length > 0 && edgePrintResults.every(r => r.status === 'fulfilled' && r.value?.printed && !r.value?.queued);
                 localPrinted = edgeLocalPrinted;
-                anyQueued = edgeLocalPrinted && edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.queued);
+                anyQueued = edgePrintResults.some(r => r.status === 'fulfilled' && r.value?.queued);
                 if (edgeLocalPrinted) {
                   markKotNumberPrinted(edgePreReservedKotNumber);
                   console.log(`[KOT] Edge fallback local print succeeded for KOT #${edgePreReservedKotNumber}`);
                 } else {
-                  // Filter edgeKotEventIds to only successful prints
-                  const edgeSucceededEventIds = [];
-                  if (edgeFoodEscpos.length > 0 && edgePrintResults[0]?.status === 'fulfilled' && edgePrintResults[0]?.value?.printed) {
-                    edgeSucceededEventIds.push({ type: 'KOT', eventId: edgeFoodEventId });
+                  // Pass eventIds for both printed AND queued jobs (same as primary path)
+                  const edgeHandledEventIds = [];
+                  if (edgeFoodEscpos.length > 0 && edgePrintResults[0]?.status === 'fulfilled' && (edgePrintResults[0]?.value?.printed || edgePrintResults[0]?.value?.queued)) {
+                    edgeHandledEventIds.push({ type: 'KOT', eventId: edgeFoodEventId });
                   }
                   if (edgeLiquorEscpos.length > 0) {
                     const liquorIdx = edgeFoodEscpos.length > 0 ? 1 : 0;
-                    if (edgePrintResults[liquorIdx]?.status === 'fulfilled' && edgePrintResults[liquorIdx]?.value?.printed) {
-                      edgeSucceededEventIds.push({ type: 'BAR_KOT', eventId: edgeLiquorEventId });
+                    if (edgePrintResults[liquorIdx]?.status === 'fulfilled' && (edgePrintResults[liquorIdx]?.value?.printed || edgePrintResults[liquorIdx]?.value?.queued)) {
+                      edgeHandledEventIds.push({ type: 'BAR_KOT', eventId: edgeLiquorEventId });
                     }
                   }
-                  edgeKotEventIds = edgeSucceededEventIds;
+                  edgeKotEventIds = edgeHandledEventIds;
                 }
               }
             }
@@ -3984,22 +3988,10 @@ export default function CaptainApp({ onLogout }) {
         // Captain already printed locally — print succeeded.
         addNotification(`KOT #${realKotId || newKOT.id} Sent ✓`, 'success');
       } else if (anyQueued) {
-        // Local print was durably queued (Print Agent accepted but printer
-        // warming up). For KOTs this is now treated as failure since the
-        // kitchen hasn't received the paper yet — the captain should retry.
-        addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print pending`, 'Printer not ready. Tap Retry to reprint.', 'error');
-        // Mark KOT as "Print Failed" in history (not removed).
-        const failedKotId = String(newKOT.id);
-        failedPrintKotIdsRef.current.add(failedKotId);
-        setActiveTables(prev => prev.map(t => {
-          if (t.backendId !== activeTable?.backendId) return t;
-          return { ...t, kotHistory: (t.kotHistory || []).map(k => String(k.id) === failedKotId ? { ...k, s: 'Print Failed', printFailed: true } : k) };
-        }), { skipPersist: true });
-        retryPrintOrderIdRef.current = savedOrder?.id || existingOrderId || null;
-        setKotError({
-          message: 'Printer not ready — tap Retry to reprint.',
-          isPrintRetry: true,
-        });
+        // KOT was durably queued (local IndexedDB or edge server accepted).
+        // It will print automatically when the printer becomes available
+        // via the sync engine's auto-flush on reconnect. No retry needed.
+        addNotification(`KOT #${realKotId || newKOT.id} ⚠ Print queued`, 'KOT saved — will print automatically when printer is available.', 'info');
       } else {
         // Cloud order (no edge, no local print) — wait for socket kot:printed
         // ack. On timeout, show "Print Failed" notification.
@@ -4769,7 +4761,7 @@ export default function CaptainApp({ onLogout }) {
       {printServiceDown && (
         <div className="bg-amber-500 text-white px-4 py-2 text-sm font-bold flex items-center gap-2 shrink-0 z-30">
           <AlertCircle size={16} />
-          Printer service is offline — KOTs will be saved and printed automatically when the printer comes back online.
+          Printer service is offline — KOTs are queued and will print automatically when the printer comes back.
         </div>
       )}
 

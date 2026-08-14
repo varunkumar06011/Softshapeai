@@ -791,7 +791,7 @@ const CashierDashboard = ({ onLogout }) => {
   const { tables, setTables, refetch: refetchRestaurantTables } = useTableSync({ shouldSkipTableUpdate: shouldSkipSyncUpdate });
 
   const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync({ shouldSkipTableUpdate: shouldSkipSyncUpdate });
-  const { menuItems: barMenuItems, loading: barMenuLoading } = useBarMenuSync();
+  const { menuItems: barMenuItems, loading: barMenuLoading, setGlobalMenu: setGlobalBarMenu } = useBarMenuSync();
   const menuLoading = activeOutlet === 'bar' || activeOutlet === 'both' ? barMenuLoading : restaurantMenuLoading;
   const [barMenuTab, setBarMenuTab] = useState('food');
   const [extraTables, setExtraTables] = useState(() => {
@@ -4783,9 +4783,18 @@ const CashierDashboard = ({ onLogout }) => {
   }, [fetchedSections]);
 
   const editMenuCategories = useMemo(() => {
-    // categories from useMenu is an array of strings (names); map to {id, name}
-    return (categories || []).filter(c => c !== 'All').map(name => ({ id: name, name }));
-  }, [categories]);
+    // categories from useMenu is an array of strings (names); map to {id, name}.
+    // In bar/both mode, merge in bar menu categories so LIQUOR items can be
+    // assigned a category that only exists in the bar menu.
+    const restCats = (categories || []).filter(c => c !== 'All');
+    const barCats = (barMenuItems || [])
+      .map(i => i.c || i.category)
+      .filter(Boolean);
+    const merged = activeOutlet === 'restaurant'
+      ? restCats
+      : Array.from(new Set([...restCats, ...barCats]));
+    return merged.map(name => ({ id: name, name }));
+  }, [categories, barMenuItems, activeOutlet]);
 
   // Items for the edit menu list (combine restaurant + bar based on outlet)
   const editMenuItems = useMemo(() => {
@@ -4815,9 +4824,12 @@ const CashierDashboard = ({ onLogout }) => {
         return { success: false, error: msg };
       }
       // Optimistically update the in-memory menu so the POS reflects the change
-      // immediately. The config.changed event from edge will trigger a full
-      // refresh via menuSyncService, so we don't call refreshMenu() here.
-      setGlobalMenu(prev => prev.map(i => i.id === payload.id ? {
+      // immediately. Route to the bar menu store for LIQUOR items and the
+      // restaurant menu store for FOOD items, since editMenuItems derives from
+      // the matching store per outlet. The config.changed event from edge will
+      // trigger a full refresh via menuSyncService/barMenuSyncService.
+      const isLiquor = (payload.menuType || 'FOOD').toUpperCase() === 'LIQUOR';
+      const patch = i => i.id === payload.id ? {
         ...i,
         n: payload.name,
         c: payload.category,
@@ -4829,7 +4841,12 @@ const CashierDashboard = ({ onLogout }) => {
         printerName: payload.printerName,
         isAvailable: payload.isAvailable,
         venuePrices: payload.venuePrices,
-      } : i));
+      } : i;
+      if (isLiquor) {
+        setGlobalBarMenu(prev => prev.map(patch));
+      } else {
+        setGlobalMenu(prev => prev.map(patch));
+      }
       addNotification('Menu Updated', `${payload.name} saved (synced to edge)`, 'success');
       return { success: true, id: payload.id };
     } catch (err) {
@@ -4838,13 +4855,15 @@ const CashierDashboard = ({ onLogout }) => {
     } finally {
       setMenuEditSaving(false);
     }
-  }, [addNotification, setGlobalMenu]);
+  }, [addNotification, setGlobalMenu, setGlobalBarMenu]);
 
   // ── Create handler for the add menu item modal (edge-first with cloud fallback) ──
   // Mirrors handleSaveMenuItem: writes to the edge server instantly and enqueues a
   // background cloud sync. The edge emits config.changed, which triggers a full
-  // menu refresh (restaurant + bar) via menuSyncService/barMenuSyncService, so a
-  // LIQUOR item added in bar/both mode lands in the correct store after refresh.
+  // menu refresh (restaurant + bar) via menuSyncService/barMenuSyncService.
+  // The optimistic insert routes to the bar menu store for LIQUOR items and the
+  // restaurant menu store for FOOD items so the new item appears instantly in
+  // the edit list (which derives from the matching store per outlet).
   const handleCreateMenuItem = useCallback(async (payload) => {
     setMenuEditSaving(true);
     try {
@@ -4855,26 +4874,29 @@ const CashierDashboard = ({ onLogout }) => {
         return { success: false, error: msg };
       }
       const newId = result.id || payload.id;
-      // Optimistically insert into the in-memory menu so the item appears instantly.
-      setGlobalMenu(prev => {
-        if (prev.some(i => i.id === newId)) return prev;
-        return [...prev, {
-          id: newId,
-          n: payload.name,
-          c: payload.category,
-          t: payload.isVeg ? 'veg' : 'non',
-          p: Number(payload.price) || 0,
-          img: payload.imageUrl || '/placeholder.svg',
-          menuType: payload.menuType || 'FOOD',
-          gstEnabled: payload.gstEnabled,
-          printerTarget: payload.printerTarget || null,
-          printerName: payload.printerName || null,
-          isAvailable: payload.isAvailable !== false,
-          venuePrices: payload.venuePrices || {},
-          isSpecial: false,
-          active: true,
-        }];
-      });
+      const newItem = {
+        id: newId,
+        n: payload.name,
+        c: payload.category,
+        t: payload.isVeg ? 'veg' : 'non',
+        p: Number(payload.price) || 0,
+        img: payload.imageUrl || '/placeholder.svg',
+        menuType: payload.menuType || 'FOOD',
+        gstEnabled: payload.gstEnabled,
+        printerTarget: payload.printerTarget || null,
+        printerName: payload.printerName || null,
+        isAvailable: payload.isAvailable !== false,
+        venuePrices: payload.venuePrices || {},
+        isSpecial: false,
+        active: true,
+      };
+      const isLiquor = (payload.menuType || 'FOOD').toUpperCase() === 'LIQUOR';
+      const insert = prev => prev.some(i => i.id === newId) ? prev : [...prev, newItem];
+      if (isLiquor) {
+        setGlobalBarMenu(insert);
+      } else {
+        setGlobalMenu(insert);
+      }
       addNotification('Menu Item Added', `${payload.name} added (synced to edge)`, 'success');
       return { success: true, id: newId };
     } catch (err) {
@@ -4883,7 +4905,7 @@ const CashierDashboard = ({ onLogout }) => {
     } finally {
       setMenuEditSaving(false);
     }
-  }, [addNotification, setGlobalMenu]);
+  }, [addNotification, setGlobalMenu, setGlobalBarMenu]);
 
   const menuTypeSubcategories = useMemo(() => {
     const items = activeOutlet === 'restaurant'
@@ -5468,20 +5490,23 @@ const CashierDashboard = ({ onLogout }) => {
           markKotNumberPrinted(preReservedKotNumber);
           if (import.meta.env.DEV) console.log(`[KOT] Local print succeeded for KOT #${preReservedKotNumber} — backend will skip socket emission`);
         } else {
-          // Filter kotEventIds to only those that actually printed, so the
-          // backend's eventId dedup doesn't suppress re-emission of failed ones.
-          const succeededEventIds = [];
-          if (foodEscpos.length > 0 && localPrintResults[0]?.status === 'fulfilled' && localPrintResults[0]?.value?.printed) {
-            succeededEventIds.push({ type: 'KOT', eventId: foodEventId });
+          // Pass eventIds for both printed AND queued jobs to the backend.
+          // For printed jobs: prevents the backend from re-emitting via socket.
+          // For queued jobs: the backend uses the same eventId if it emits via
+          //   socket, so the Print Agent dedup prevents double-printing when
+          //   the local queue auto-flushes on reconnect.
+          const handledEventIds = [];
+          if (foodEscpos.length > 0 && localPrintResults[0]?.status === 'fulfilled' && (localPrintResults[0]?.value?.printed || localPrintResults[0]?.value?.queued)) {
+            handledEventIds.push({ type: 'KOT', eventId: foodEventId });
           }
           if (liquorEscpos.length > 0) {
             const liquorIdx = foodEscpos.length > 0 ? 1 : 0;
-            if (localPrintResults[liquorIdx]?.status === 'fulfilled' && localPrintResults[liquorIdx]?.value?.printed) {
-              succeededEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
+            if (localPrintResults[liquorIdx]?.status === 'fulfilled' && (localPrintResults[liquorIdx]?.value?.printed || localPrintResults[liquorIdx]?.value?.queued)) {
+              handledEventIds.push({ type: 'BAR_KOT', eventId: liquorEventId });
             }
           }
-          kotEventIds = succeededEventIds;
-          if (import.meta.env.DEV) console.log(`[KOT] Local print failed (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
+          kotEventIds = handledEventIds;
+          if (import.meta.env.DEV) console.log(`[KOT] Local print failed/queued (partial or full) for KOT #${preReservedKotNumber} — backend will emit via socket for unprinted items`);
         }
         } // end fallback local print
         } // end else (not already printed)
