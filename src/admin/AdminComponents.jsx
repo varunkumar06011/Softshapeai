@@ -40,8 +40,6 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import {
 
-  ChartNoAxesCombined,
-
   ClipboardList,
 
   Sparkles,
@@ -120,12 +118,6 @@ import {
 
   Flame,
 
-  Crown,
-
-  Medal,
-
-  Award,
-
   Wallet,
 
   Tag,
@@ -134,9 +126,19 @@ import {
 
   Banknote,
 
-  ArrowUpRight,
+  IndianRupee,
 
-  Loader2
+  Percent,
+
+  CreditCard,
+
+  LayoutDashboard,
+
+  MoreHorizontal,
+
+  Loader2,
+
+  ShoppingCart
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -144,7 +146,7 @@ import { StarIcon } from '../shared/icons/StarIcon';
 import {
 
   Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, Line, LineChart, Area, AreaChart, ComposedChart,
 
 } from 'recharts';
 
@@ -172,7 +174,7 @@ import { useBarMenuSync, updateBarMenuItem, toggleBarMenuAvailability } from '..
 
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from '../services/apiConfig';
 
-import { fetchReportCategorywise, fetchReportItemwise } from '../services/reportsApi';
+
 
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat';
 
@@ -182,7 +184,7 @@ import { fetchVenues } from '../services/tableApi';
 
 import { fetchUnifiedMenu } from '../services/unifiedMenuService';
 
-import { getTodayAttendanceSummary, getAttendance, getAttendanceRange, markAttendance, markAttendanceBulk, checkIn, checkOut } from '../services/attendanceService';
+import { getAttendance, getAttendanceRange, markAttendance, markAttendanceBulk, checkIn, checkOut } from '../services/attendanceService';
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
@@ -529,1010 +531,842 @@ function IngredientAvatar({ name }) {
 
 
 
-export function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, dashboardScope, selectedDate, onDateChange }) {
-
-  const { tables } = useTableSync();
+export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, dashboardScope, selectedDate, onDateChange }) {
   const { restaurant } = useAuth();
-
-  const [sales, setSales] = useState([]);
-
-  const [salesLoading, setSalesLoading] = useState(true);
-
-  const [staffPresent, setStaffPresent] = useState(0);
-
-  const [staffTotal, setStaffTotal] = useState(0);
-
-  // Expenditure summary from cloud (admin synced data) — used for the
-  // Expenditures + Final Amount summary tiles, matching the cashier's
-  // DataDashboard widget 1 but sourced from /api/expenditures/today-summary
-  // instead of the cashier's local SQLite expenditure records.
-  const [expenditureSummary, setExpenditureSummary] = useState({ totalAmount: 0, count: 0 });
-
   const activeDate = selectedDate || getKolkataDateString();
+  const outletId = useMemo(() => dashboardScope === 'all' ? 'all' : restaurant?.id, [dashboardScope, restaurant?.id]);
 
-
-
-  const occupiedCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
-
-  const totalTables = tables.length;
-
-  const liveOrdersCount = tables.filter(t => t.status && t.status !== 'Free' && t.status !== 'available').length;
-
-
+  const [dailyData, setDailyData] = useState(null);
+  const [dailyLoading, setDailyLoading] = useState(true);
+  const [paymentData, setPaymentData] = useState(null);
+  const [lastWeekPaymentData, setLastWeekPaymentData] = useState(null);
+  const [paymentLoading, setPaymentLoading] = useState(true);
+  const [specialsData, setSpecialsData] = useState(null);
+  const [specialsLoading, setSpecialsLoading] = useState(true);
+  const [expenditureData, setExpenditureData] = useState(null);
+  const [expenditureLoading, setExpenditureLoading] = useState(true);
+  const [lastWeekExpenditure, setLastWeekExpenditure] = useState(null);
+  const [todayPurchaseEntries, setTodayPurchaseEntries] = useState(0);
+  const [lastWeekPurchaseEntries, setLastWeekPurchaseEntries] = useState(0);
+  const [purchasesLoading, setPurchasesLoading] = useState(true);
+  const [netCashHistory, setNetCashHistory] = useState(null);
+  const [netCashHistoryLoading, setNetCashHistoryLoading] = useState(true);
+  const [mobileTab, setMobileTab] = useState('overview');
+  const [expandedRows, setExpandedRows] = useState({});
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
 
   useEffect(() => {
-
-    let cancelled = false;
-
-
-
-    const loadSalesData = async () => {
-
-      try {
-
-        const end = new Date(`${activeDate}T00:00:00+05:30`);
-
-        const start = new Date(end);
-
-        start.setDate(start.getDate() - 6);
-
-
-
-        const startISO = getKolkataDateString(start);
-
-        const endISO = getKolkataDateString(end);
-
-
-
-        const outletId = dashboardScope === 'all' ? 'all' : restaurant?.id;
-        const res = await fetch(`${API_BASE}/api/reports/daily-sales?startDate=${startISO}&endDate=${endISO}&outletId=${outletId}`, {
-
-          headers: { ...getAuthHeaders() },
-
-        });
-
-
-
-        if (!res.ok) throw new Error('Failed to fetch sales data');
-
-        const data = await res.json();
-
-
-
-        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-        const dailyData = days.map(d => ({ day: d, revenue: 0 }));
-
-
-
-        (data.byDay || []).forEach(day => {
-
-          const dayDate = new Date(day.date);
-
-          const dayIdx = dayDate.getDay();
-
-          dailyData[dayIdx].revenue += Number(day.revenue || 0);
-
-        });
-
-
-
-        const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-        const chartData = order.map(dayName => {
-
-          const dayIdx = days.indexOf(dayName);
-
-          return {
-
-            d: dayName,
-
-            v: Math.round(dailyData[dayIdx].revenue)
-
-          };
-
-        });
-
-
-
-        if (!cancelled) {
-
-          setSales(chartData);
-
-          setSalesLoading(false);
-
-        }
-
-      } catch (err) {
-
-        console.warn('[Dashboard] Failed to load sales data:', err.message);
-
-        if (!cancelled) {
-
-          setSalesLoading(false);
-
-        }
-
-      }
-
-    };
-
-
-
-    loadSalesData();
-
-    const interval = setInterval(loadSalesData, 600000); // Refresh every 10 minutes
-
-
-
-    return () => {
-
-      cancelled = true;
-
-      clearInterval(interval);
-
-    };
-
-  }, [dashboardScope, restaurant?.id, activeDate]);
-
-
-
-  useEffect(() => {
-
-    let cancelled = false;
-
-
-
-    const loadStaff = async () => {
-
-      try {
-
-        const summary = await getTodayAttendanceSummary();
-
-        if (cancelled) return;
-
-        setStaffPresent(summary.present ?? 0);
-
-        setStaffTotal(summary.total ?? 0);
-
-      } catch (err) {
-
-        console.warn('[Dashboard] Failed to load staff attendance:', err.message);
-
-      }
-
-    };
-
-
-
-    loadStaff();
-
-    const interval = setInterval(loadStaff, 300000); // Refresh every 5 minutes
-
-
-
-    return () => {
-
-      cancelled = true;
-
-      clearInterval(interval);
-
-    };
-
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 639px)');
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
-
-
-  // ── Expenditure summary from cloud (admin synced data) ──────────────────
-  // Mirrors the cashier's DataDashboard widget 1 expenditure tile, but reads
-  // from /api/expenditures/today-summary (Postgres) instead of the cashier's
-  // local SQLite expenditure records. Falls back gracefully on error.
-  useEffect(() => {
-
-    let cancelled = false;
-
-    const loadExpenditure = async () => {
-
-      try {
-
-        const data = await apiFetch(`/api/expenditures/today-summary?date=${activeDate}`);
-
-        if (cancelled) return;
-
-        setExpenditureSummary({
-
-          totalAmount: Math.round(Number(data?.totalAmount || 0) * 100) / 100,
-
-          count: Number(data?.count || 0),
-
-        });
-
-      } catch (err) {
-
-        console.warn('[Dashboard] Failed to load expenditure summary:', err.message);
-
-      }
-
-    };
-
-    loadExpenditure();
-
-    const interval = setInterval(loadExpenditure, 300000); // 5 minutes
-
-    return () => {
-
-      cancelled = true;
-
-      clearInterval(interval);
-
-    };
-
-  }, [activeDate]);
-
-
-
-  return <div className="space-y-4 font-sans" data-tour="admin-dashboard">
-
-    <div className="flex items-center justify-between">
-      <h2 className="text-base md:text-lg font-black text-gray-900">Dashboard</h2>
-      <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
-        <Calendar size={16} className="text-gray-400" />
-        <input
-          type="date"
-          value={activeDate}
-          onChange={(e) => onDateChange?.(e.target.value)}
-          className="bg-transparent text-sm font-semibold text-gray-800 outline-none"
-        />
-      </div>
-    </div>
-
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4" data-tour="admin-dashboard-stats">
-
-      {[
-
-        { label: "Total Sales", value: `₹${(totalSales ?? 0).toLocaleString()}`, sub: "With GST, after discount", color: "text-[#2E7D32]" },
-
-        { label: "Net Sales", value: `₹${(netSales ?? 0).toLocaleString()}`, sub: "Excl. GST, after discount", color: "text-[#1565C0]" },
-
-        { label: "Discount", value: `₹${(totalDiscount ?? 0).toLocaleString()}`, sub: `${ordersCount || 0} txns`, color: "text-[#C62828]" },
-
-        { label: "Tables Occupied", value: `${occupiedCount}/${totalTables}`, sub: "active", color: "text-[#1A1A1A]" },
-
-        { label: "Expenditures", value: `₹${(expenditureSummary.totalAmount ?? 0).toLocaleString()}`, sub: `${expenditureSummary.count || 0} expenditures`, color: "text-[#E65100]" },
-
-        { label: "Final Amount", value: `₹${((totalSales ?? 0) - (expenditureSummary.totalAmount ?? 0)).toLocaleString()}`, sub: "Sales − Expenditures", color: "text-[#2E7D32]" },
-
-      ].map((x) => (
-
-        <div key={x.label} className={card + " border-t-4 border-t-[#E53935] p-3 md:p-4 min-w-0 shadow-sm transition-all hover:translate-y-[-2px]"}>
-
-          <p className="text-[10px] md:text-xs font-bold uppercase tracking-tight text-[#6B6B6B] truncate">{x.label}</p>
-
-          <div className="mt-1 md:mt-2 flex flex-col sm:flex-row sm:items-baseline gap-1 overflow-hidden">
-
-            <p className="text-xl md:text-2xl lg:text-3xl font-black text-[#1A1A1A] whitespace-nowrap animate-number-grow">{x.value}</p>
-
-            <p className={`text-[10px] md:text-xs font-bold ${x.color} whitespace-nowrap`}>{x.sub}</p>
-
-          </div>
-
-        </div>
-
-      ))}
-
-    </div>
-
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-      <div className={card + " p-4 lg:col-span-2 flex flex-col animate-chart-in"}>
-
-        <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
-
-          <ChartNoAxesCombined size={18} className="text-[#E53935]" />
-
-          Sales Attribution - Last 7 days
-
-        </h3>
-
-        <div className="flex-grow h-[250px] w-full min-h-[250px]" style={{ minWidth: 0 }}>
-
-          <ResponsiveContainer width="99%" height="100%">
-
-            <BarChart data={sales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-
-              <defs>
-
-                <linearGradient id="dashBarGrad" x1="0" y1="0" x2="0" y2="1">
-
-                  <stop offset="0%" stopColor="#E53935" stopOpacity={1} />
-
-                  <stop offset="100%" stopColor="#E53935" stopOpacity={0.4} />
-
-                </linearGradient>
-
-              </defs>
-
-              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
-
-              <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-
-              <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-
-              <Tooltip cursor={{ fill: '#FFEBEE' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} />
-
-              <Bar dataKey="v" fill="url(#dashBarGrad)" radius={[6, 6, 0, 0]} barSize={32} isAnimationActive={true} animationDuration={800} animationEasing="ease-out" />
-
-            </BarChart>
-
-          </ResponsiveContainer>
-
-        </div>
-
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <TopItemsWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
-        </div>
-
-      </div>
-
-      <div className={card + " p-4 flex flex-col animate-chart-in-delay-1"}>
-        <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
-          <StarIcon size={18} className="text-amber-500 fill-amber-500" />
-          Today Specials Sold
-        </h3>
-        <TodaySpecialsSoldWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
-      </div>
-
-    </div>
-
-    {/* ── Cashier DataDashboard widgets (admin synced data) ─────────────────── */}
-    <div data-tour="admin-dashboard-activity">
-    {/* Widget 4: Today Special Captain Leader — /api/analytics/today-specials-by-staff */}
-    <CaptainLeaderWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
-
-    {/* Widget 5: Category Breakdown — /api/reports/categorywise-sales + itemwise-sales */}
-    <CategoryBreakdownWidget dashboardScope={dashboardScope} restaurantId={restaurant?.id} selectedDate={selectedDate} />
-    </div>
-
-  </div>;
-
-}
-
-
-
-function TopItemsWidget({ dashboardScope, restaurantId, selectedDate }) {
-  const [topItems, setTopItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const socket = useSocket(restaurantId);
-  const hasDataRef = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadTopItems = async () => {
-      try {
-        if (!hasDataRef.current) setLoading(true);
-        const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-        const date = selectedDate || getKolkataDateString();
-        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity&startDate=${date}&endDate=${date}`, {
-          headers: { ...getAuthHeaders() },
-        });
-        if (!res.ok) throw new Error('Failed to fetch top items');
-        const data = await res.json();
-        if (!cancelled) {
-          setTopItems(data.items || []);
-          hasDataRef.current = true;
-        }
-      } catch (err) {
-        console.warn('[TopItemsWidget] Failed to load top items:', err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    loadTopItems();
-    const interval = setInterval(loadTopItems, 600000); // 10 minutes
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [dashboardScope, restaurantId, selectedDate]);
-
-  useEffect(() => {
-    if (!socket) return;
-    const loadTopItems = async () => {
-      try {
-        const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-        const date = selectedDate || getKolkataDateString();
-        const res = await fetch(`${API_BASE}/api/analytics/top-items?outletId=${outletId}&limit=3&sortBy=quantity&startDate=${date}&endDate=${date}`, {
-          headers: { ...getAuthHeaders() },
-        });
-        if (!res.ok) throw new Error('Failed to fetch top items');
-        const data = await res.json();
-        setTopItems(data.items || []);
-      } catch (err) {
-        console.warn('[TopItemsWidget] Failed to fetch top items:', err.message);
-      }
-    };
-    const onOrderPaid = () => loadTopItems();
-    socket.on('order:paid', onOrderPaid);
-    return () => {
-      socket.off('order:paid', onOrderPaid);
-    };
-  }, [socket, dashboardScope, restaurantId, selectedDate]);
-
-  if (loading) {
-    return (
-      <div className="space-y-2 animate-pulse">
-        {[1, 2, 3].map(i => <div key={i} className="h-8 bg-gray-100 rounded-lg" />)}
-      </div>
-    );
-  }
-
-  if (topItems.length === 0) {
-    return <p className="text-xs text-gray-400 font-bold">No sales data yet</p>;
-  }
-
-  return (
-    <div>
-      <h4 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-3">Top Selling Items</h4>
-      <div className="space-y-2">
-        {topItems.map((item, idx) => (
-          <div key={item.name} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="w-5 h-5 rounded-full bg-[#E53935] text-white text-[10px] font-black flex items-center justify-center shrink-0">{idx + 1}</span>
-              <span className="text-sm font-bold text-gray-900 truncate">{item.name}</span>
-            </div>
-            <div className="text-right shrink-0">
-              <span className="text-sm font-black text-[#E53935]">{item.quantity}</span>
-              <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
-
-function TodaySpecialsSoldWidget({ dashboardScope, restaurantId, selectedDate }) {
-  const [specials, setSpecials] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const socket = useSocket(restaurantId);
-  const hasDataRef = useRef(false);
-
-  const loadSpecials = useCallback(async () => {
-    try {
-      if (!hasDataRef.current) setLoading(true);
-      const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-      const date = selectedDate || getKolkataDateString();
-      const res = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${outletId}&startDate=${date}&endDate=${date}`, {
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) throw new Error('Failed to fetch today specials sold');
-      const data = await res.json();
-      setSpecials(data.specials || []);
-      hasDataRef.current = true;
-    } catch (err) {
-      console.warn('[TodaySpecialsSoldWidget] Failed to load:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [dashboardScope, restaurantId, selectedDate]);
-
-  useEffect(() => {
-    loadSpecials();
-  }, [loadSpecials]);
-
-  useEffect(() => {
-    if (!socket) return;
-    const onOrderPaid = () => {
-      loadSpecials();
-    };
-    socket.on('order:paid', onOrderPaid);
-    return () => {
-      socket.off('order:paid', onOrderPaid);
-    };
-  }, [socket, loadSpecials]);
-
-  if (loading) {
-    return (
-      <div className="space-y-2 animate-pulse">
-        {[1, 2, 3].map(i => <div key={i} className="h-8 bg-gray-100 rounded-lg" />)}
-      </div>
-    );
-  }
-
-  if (specials.length === 0) {
-    return <p className="text-xs text-gray-400 font-bold">No specials sold</p>;
-  }
-
-  return (
-    <div>
-      <h4 className="text-xs font-black uppercase tracking-widest text-amber-500 mb-3 flex items-center gap-2">
-        <StarIcon size={14} className="fill-amber-500" /> Today Specials Sold
-      </h4>
-      <div className="space-y-2">
-        {specials.map(special => (
-          <div key={special.id} className="flex items-center justify-between bg-amber-50 rounded-xl px-3 py-2 border border-amber-100">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-black text-gray-500 uppercase">{special.specialChannel || 'BOTH'}</span>
-              <span className="text-sm font-bold text-gray-900 truncate">{special.name}</span>
-            </div>
-            <div className="text-right shrink-0">
-              <span className="text-sm font-black text-[#E53935]">{special.soldCount}</span>
-              <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CaptainLeaderWidget — Today Special Captain Leader (admin synced data)
-// ─────────────────────────────────────────────────────────────────────────────
-// Mirrors the cashier's DataDashboard widget 4, but reads from the cloud
-// /api/analytics/today-specials-by-staff endpoint (Postgres) instead of the
-// cashier's local data. Shows the full captain roster (including zero-sale
-// captains) so the admin sees the complete picture, not just today's winners.
-// Refreshes on socket 'order:paid' events for real-time updates.
-function CaptainLeaderWidget({ dashboardScope, restaurantId, selectedDate }) {
-  const [staff, setStaff] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [expanded, setExpanded] = useState(null);
-  const socket = useSocket(restaurantId);
-  const retryTimerRef = useRef(null);
-  const hasDataRef = useRef(false);
-
-  const load = useCallback(async (retryCount = 0) => {
-    if (retryCount === 0) {
-      if (!hasDataRef.current) setLoading(true);
-      setError(null);
-    }
-    let willRetry = false;
-    try {
-      const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-      const date = selectedDate || getKolkataDateString();
-      const params = new URLSearchParams();
-      if (outletId && outletId !== 'all') params.set('outletId', outletId);
-      params.set('startDate', date);
-      params.set('endDate', date);
-      const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff?${params}`, {
-        headers: { ...getAuthHeaders() },
-        cache: 'no-store',
-      });
-      if (res.status === 429 && retryCount < 5) {
-        // Rate limited — keep showing loading spinner (not error) and
-        // poll every 12s until the per-minute budget recovers.
-        willRetry = true;
-        retryTimerRef.current = setTimeout(() => load(retryCount + 1), 12000);
-        return;
-      }
-      if (!res.ok) {
-        let serverMsg = 'Failed to fetch captain leaderboard';
-        try { const body = await res.json(); if (body?.error) serverMsg = body.error; } catch {}
-        throw new Error(serverMsg);
-      }
-      const data = await res.json();
-      // Admin view shows the full captain roster (including zero-sale captains),
-      // unlike the cashier view which filters to soldCount > 0 only.
-      setStaff((data.staff || []).filter((s) => s.role === 'CAPTAIN'));
-      hasDataRef.current = true;
-    } catch (err) {
-      setError(err.message || 'Failed to load');
-    } finally {
-      if (!willRetry) {
-        setLoading(false);
-      }
-    }
-  }, [dashboardScope, restaurantId, selectedDate]);
-
-  useEffect(() => {
-    load();
-    return () => {
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-    };
-  }, [load]);
-
-  useEffect(() => {
-    if (!socket) return;
-    const onOrderPaid = () => load();
-    socket.on('order:paid', onOrderPaid);
-    return () => { socket.off('order:paid', onOrderPaid); };
-  }, [socket, load]);
-
-  const rankIcon = (idx) => {
-    if (idx === 0) return <Crown size={14} className="text-amber-500" />;
-    if (idx === 1) return <Medal size={14} className="text-gray-500" />;
-    if (idx === 2) return <Award size={14} className="text-orange-500" />;
-    return null;
+  const shiftDate = useCallback((dateStr, days) => {
+    const d = new Date(`${dateStr}T00:00:00+05:30`);
+    d.setDate(d.getDate() + days);
+    return getKolkataDateString(d);
+  }, []);
+
+  const weekdayShort = useCallback((dateStr) => {
+    const d = new Date(`${dateStr}T00:00:00+05:30`);
+    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+  }, []);
+
+  const weekdayLong = useCallback((dateStr) => {
+    const d = new Date(`${dateStr}T00:00:00+05:30`);
+    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()];
+  }, []);
+
+  const fmtInr = (n) => `₹${Math.round(Number(n || 0)).toLocaleString('en-IN')}`;
+  const fmtNum = (n) => Math.round(Number(n || 0)).toLocaleString('en-IN');
+  const fmtPct = (n) => `${Number(n || 0).toFixed(1)}%`;
+  const delta = (current, previous) => {
+    const cur = Number(current || 0);
+    const prev = Number(previous || 0);
+    if (prev === 0) return cur > 0 ? 100 : 0;
+    return Math.round(((cur - prev) / prev) * 1000) / 10;
   };
 
-  const sortedStaff = [...staff].sort((a, b) => Number(b.soldCount) - Number(a.soldCount));
+  const dashCard = `${card} rounded-2xl shadow-sm`;
+  const lastWeekDay = useMemo(() => shiftDate(activeDate, -7), [activeDate, shiftDate]);
 
-  return (
-    <div className={card + " p-4 flex flex-col animate-chart-in-delay-2"}>
-      <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
-        <Users size={18} className="text-[#E53935]" />
-        Today Special Captain Leader
-      </h3>
-      {loading ? (
-        <div className="space-y-2 animate-pulse">
-          {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center gap-2 py-6">
-          <p className="text-xs text-gray-400 font-bold text-center">{error}</p>
-          <button
-            onClick={() => load()}
-            className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C] bg-red-50 px-3 py-1.5 rounded-lg border border-red-100"
-          >
-            Retry
-          </button>
-        </div>
-      ) : sortedStaff.length === 0 ? (
-        <p className="text-xs text-gray-400 font-bold">No captains found</p>
-      ) : (
-        <div className="space-y-2 max-h-[280px] overflow-y-auto custom-scrollbar">
-          {sortedStaff.map((s, idx) => (
-            <div
-              key={s.userId}
-              className={`rounded-xl border overflow-hidden ${
-                idx === 0 ? 'bg-amber-50 border-amber-200' :
-                idx === 1 ? 'bg-gray-50 border-gray-200' :
-                idx === 2 ? 'bg-orange-50 border-orange-200' :
-                'bg-gray-50 border-transparent'
-              }`}
-            >
-              <div
-                className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-opacity-80 transition-colors"
-                onClick={() => setExpanded(expanded === s.userId ? null : s.userId)}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${
-                    idx === 0 ? 'bg-amber-500 text-white' :
-                    idx === 1 ? 'bg-gray-500 text-white' :
-                    idx === 2 ? 'bg-orange-500 text-white' :
-                    'bg-white border border-gray-200 text-gray-700'
-                  }`}>
-                    {idx + 1}
-                  </span>
-                  {rankIcon(idx)}
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-bold text-gray-900 truncate">{s.name || s.userId}</span>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                      {s.revenue > 0 ? `₹${Math.round(s.revenue).toLocaleString('en-IN')}` : 'No revenue'}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <div className="text-right">
-                    <span className="text-sm font-black text-[#E53935]">{s.soldCount}</span>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">sold</span>
-                  </div>
-                  <span className="text-gray-400 text-xs">{expanded === s.userId ? '▲' : '▼'}</span>
-                </div>
-              </div>
-              {expanded === s.userId && (
-                <div className="px-3 pb-2.5 pt-1 space-y-1 border-t border-gray-200/50">
-                  {s.items && s.items.length > 0 ? (
-                    s.items.map((it, i) => (
-                      <div key={i} className="flex items-center justify-between text-[11px] py-1">
-                        <span className="font-bold text-gray-700 truncate pr-2">{it.name}</span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-black text-[#E53935]">{it.soldCount}x</span>
-                          {it.revenue > 0 && <span className="font-bold text-gray-400">₹{Math.round(it.revenue).toLocaleString('en-IN')}</span>}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="py-2 text-center">
-                      <span className="text-[11px] font-bold text-gray-400">No specials sold</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CategoryBreakdownWidget — Food / Liquor / Beverages revenue pie + table
-// ─────────────────────────────────────────────────────────────────────────────
-// Mirrors the cashier's DataDashboard widget 5, but reads from cloud report
-// endpoints (fetchReportCategorywise + fetchReportItemwise) instead of the
-// cashier's local data. Clicking a category opens a popup listing every item
-// sold in that category with qty + revenue. Refreshes on socket 'order:paid'.
-const CATEGORY_COLORS = { Food: '#B71C1C', Liquor: '#E53935', Beverages: '#1565C0' };
-const FALLBACK_COLOR = '#EF9A9A';
-const CATEGORY_TO_OUTLET_TYPE = { Food: 'food', Liquor: 'liquor', Beverages: 'beverages' };
-
-function CategoryBreakdownWidget({ dashboardScope, restaurantId, selectedDate }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [drillItems, setDrillItems] = useState([]);
-  const [drillLoading, setDrillLoading] = useState(false);
-  const [drillError, setDrillError] = useState(null);
-  const socket = useSocket(restaurantId);
-  const retryTimerRef = useRef(null);
-  const hasDataRef = useRef(false);
-
-  const outletId = dashboardScope === 'all' ? 'all' : restaurantId;
-  const date = selectedDate || getKolkataDateString();
-
-  const load = useCallback(async (retryCount = 0) => {
-    if (retryCount === 0) {
-      if (!hasDataRef.current) setLoading(true);
-      setError(null);
-    }
-    let willRetry = false;
-    try {
-      const res = await fetchReportCategorywise(date, date, outletId || 'all');
-      setData(res);
-      hasDataRef.current = true;
-    } catch (err) {
-      const msg = err.message || '';
-      // Rate limited — keep showing loading spinner (not error) and
-      // poll every 12s until the per-minute budget recovers.
-      if (/too many|rate/i.test(msg) && retryCount < 5) {
-        willRetry = true;
-        retryTimerRef.current = setTimeout(() => load(retryCount + 1), 12000);
-        return;
-      }
-      setError(msg || 'Failed to load');
-    } finally {
-      if (!willRetry) {
-        setLoading(false);
-      }
-    }
-  }, [outletId, date]);
-
+  // Daily sales (14 days ending today)
   useEffect(() => {
-    load();
-    return () => {
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setDailyLoading(true);
+        const start = shiftDate(activeDate, -13);
+        const res = await fetch(`${API_BASE}/api/reports/daily-sales?startDate=${start}&endDate=${activeDate}&outletId=${outletId}`, {
+          headers: { ...getAuthHeaders() },
+        });
+        if (!res.ok) throw new Error('Failed to fetch daily sales');
+        const data = await res.json();
+        if (!cancelled) setDailyData(data);
+      } catch (err) {
+        console.warn('[Dashboard] daily-sales failed:', err.message);
+      } finally {
+        if (!cancelled) setDailyLoading(false);
+      }
     };
-  }, [load]);
+    load();
+    const interval = setInterval(load, 120000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [outletId, activeDate, shiftDate]);
+
+  // Payment methods (today + last week for Cash vs Online delta)
+  useEffect(() => {
+    let cancelled = false;
+    const loadSingle = async (date) => {
+      const res = await fetch(`${API_BASE}/api/reports/payment-methods?startDate=${date}&endDate=${date}&outletId=${outletId}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!res.ok) throw new Error('Failed to fetch payment methods');
+      return res.json();
+    };
+    const load = async () => {
+      try {
+        setPaymentLoading(true);
+        const [today, lastWeek] = await Promise.all([
+          loadSingle(activeDate),
+          loadSingle(shiftDate(activeDate, -7)),
+        ]);
+        if (!cancelled) {
+          setPaymentData(today);
+          setLastWeekPaymentData(lastWeek);
+        }
+      } catch (err) {
+        console.warn('[Dashboard] payment-methods failed:', err.message);
+      } finally {
+        if (!cancelled) setPaymentLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 120000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [outletId, activeDate, shiftDate]);
+
+  // Today specials sold
+  const loadSpecials = useCallback(async (date) => {
+    const res = await fetch(`${API_BASE}/api/analytics/today-specials-sold?outletId=${outletId}&startDate=${date}&endDate=${date}`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!res.ok) throw new Error('Failed to fetch specials');
+    return res.json();
+  }, [outletId]);
 
   useEffect(() => {
-    if (!socket) return;
-    const onOrderPaid = () => load();
-    socket.on('order:paid', onOrderPaid);
-    return () => { socket.off('order:paid', onOrderPaid); };
-  }, [socket, load]);
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setSpecialsLoading(true);
+        const [today, lastWeek] = await Promise.all([
+          loadSpecials(activeDate),
+          loadSpecials(shiftDate(activeDate, -7)),
+        ]);
+        if (!cancelled) setSpecialsData({ today, lastWeek });
+      } catch (err) {
+        console.warn('[Dashboard] specials failed:', err.message);
+      } finally {
+        if (!cancelled) setSpecialsLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 120000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [loadSpecials, activeDate, shiftDate]);
 
-  const openCategory = useCallback(async (catName) => {
-    const outletType = CATEGORY_TO_OUTLET_TYPE[catName];
-    if (!outletType) return;
-    setSelectedCategory(catName);
-    setDrillItems([]);
-    setDrillError(null);
-    setDrillLoading(true);
-    try {
-      const res = await fetchReportItemwise(date, date, outletType, outletId || 'all');
-      const items = (res.items || []).filter((it) => it.reportCategory === catName);
-      setDrillItems(items);
-    } catch (err) {
-      setDrillError(err.message || 'Failed to load items');
-    } finally {
-      setDrillLoading(false);
-    }
-  }, [date, outletId]);
+  // Expenditure
+  const loadExpenditure = useCallback(async (date) => {
+    const data = await apiFetch(`/api/expenditures/today-summary?date=${date}`);
+    return {
+      totalAmount: Math.round(Number(data?.totalAmount || 0) * 100) / 100,
+      count: Number(data?.count || 0),
+    };
+  }, []);
 
-  const closeCategory = () => setSelectedCategory(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setExpenditureLoading(true);
+        const [today, lastWeek] = await Promise.all([
+          loadExpenditure(activeDate),
+          loadExpenditure(shiftDate(activeDate, -7)),
+        ]);
+        if (!cancelled) {
+          setExpenditureData(today);
+          setLastWeekExpenditure(lastWeek);
+        }
+      } catch (err) {
+        console.warn('[Dashboard] expenditure failed:', err.message);
+      } finally {
+        if (!cancelled) setExpenditureLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 120000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [loadExpenditure, activeDate, shiftDate]);
 
-  const categories = data?.categories || [];
-  const totalRevenue = data?.summary?.totalRevenue || 0;
+  // Today's purchase entries count (quick summary — not deducted from sales)
+  const loadPurchaseEntriesCount = useCallback(async (date) => {
+    const data = await apiFetch(`/api/purchase-orders/daily?date=${date}`);
+    return Array.isArray(data) ? data.length : 0;
+  }, []);
 
-  const pieData = categories.map((c) => ({ name: c.name, value: c.totalRevenue }));
-  const colors = pieData.map((c) => CATEGORY_COLORS[c.name] || FALLBACK_COLOR);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setPurchasesLoading(true);
+        const [today, lastWeek] = await Promise.all([
+          loadPurchaseEntriesCount(activeDate),
+          loadPurchaseEntriesCount(shiftDate(activeDate, -7)),
+        ]);
+        if (!cancelled) {
+          setTodayPurchaseEntries(today);
+          setLastWeekPurchaseEntries(lastWeek);
+        }
+      } catch (err) {
+        console.warn('[Dashboard] purchase entries count failed:', err.message);
+      } finally {
+        if (!cancelled) setPurchasesLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 120000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [loadPurchaseEntriesCount, activeDate, shiftDate]);
 
-  return (
-    <div className={card + " p-4 flex flex-col animate-chart-in"}>
-      <h3 className="mb-4 font-bold text-sm md:text-base flex items-center gap-2">
-        <Package size={18} className="text-[#E53935]" />
-        Category Breakdown
-        <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">
-          ₹{Number(totalRevenue).toLocaleString('en-IN')} total
-        </span>
-      </h3>
-      {loading ? (
-        <div className="space-y-2 animate-pulse">
-          {[1, 2, 3].map((i) => <div key={i} className="h-8 bg-gray-100 rounded-lg" />)}
+  // Net cash history (last 7 days)
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setNetCashHistoryLoading(true);
+        const dates = Array.from({ length: 7 }, (_, i) => shiftDate(activeDate, -6 + i));
+        const byDayMap = new Map((dailyData?.byDay || []).map(d => [d.date, d]));
+        const expResults = await Promise.all(dates.map(date => loadExpenditure(date)));
+        const history = dates.map((date, i) => {
+          const day = byDayMap.get(date) || { revenue: 0, transactions: 0 };
+          const exp = expResults[i]?.totalAmount || 0;
+          return { date, day: weekdayShort(date), revenue: day.revenue, netCash: Math.max(0, day.revenue - exp) };
+        });
+        if (!cancelled) setNetCashHistory(history);
+      } catch (err) {
+        console.warn('[Dashboard] net cash history failed:', err.message);
+      } finally {
+        if (!cancelled) setNetCashHistoryLoading(false);
+      }
+    };
+    if (dailyData) load();
+  }, [dailyData, activeDate, shiftDate, loadExpenditure, weekdayShort]);
+
+  // Computed data
+  const byDayMap = useMemo(() => new Map((dailyData?.byDay || []).map(d => [d.date, d])), [dailyData]);
+  const todayData = useMemo(() => byDayMap.get(activeDate) || { revenue: 0, transactions: 0 }, [byDayMap, activeDate]);
+  const lastWeekData = useMemo(() => byDayMap.get(lastWeekDay) || { revenue: 0, transactions: 0 }, [byDayMap, lastWeekDay]);
+
+  const todayRevenue = todayData.revenue || 0;
+  const todayTransactions = todayData.transactions || 0;
+  const todayAov = todayTransactions > 0 ? todayRevenue / todayTransactions : 0;
+  const lastWeekRevenue = lastWeekData.revenue || 0;
+  const lastWeekTransactions = lastWeekData.transactions || 0;
+  const lastWeekAov = lastWeekTransactions > 0 ? lastWeekRevenue / lastWeekTransactions : 0;
+
+  const todayExpenditure = expenditureData?.totalAmount || 0;
+  const lastWeekExpenditureAmount = lastWeekExpenditure?.totalAmount || 0;
+  const todayNetCash = Math.max(0, todayRevenue - todayExpenditure);
+  const lastWeekNetCash = Math.max(0, lastWeekRevenue - lastWeekExpenditureAmount);
+
+  const todaySpecialsCount = useMemo(() =>
+    (specialsData?.today?.specials || []).reduce((s, x) => s + Number(x.soldCount || 0), 0),
+  [specialsData]);
+  const lastWeekSpecialsCount = useMemo(() =>
+    (specialsData?.lastWeek?.specials || []).reduce((s, x) => s + Number(x.soldCount || 0), 0),
+  [specialsData]);
+  const todayConversion = specialsData?.today?.tableMetrics?.conversionRate || 0;
+  const lastWeekConversion = specialsData?.lastWeek?.tableMetrics?.conversionRate || 0;
+  const todaySpecialsTables = specialsData?.today?.tableMetrics?.tablesWithSpecials || 0;
+  const todayTotalTables = specialsData?.today?.tableMetrics?.totalTables || 0;
+
+  const todayFinalAmount = todayNetCash;
+  const lastWeekFinalAmount = lastWeekNetCash;
+
+  const sparklineDates = useMemo(() => Array.from({ length: 7 }, (_, i) => shiftDate(activeDate, -6 + i)), [activeDate, shiftDate]);
+  const sparklineData = useMemo(() => sparklineDates.map(date => {
+    const day = byDayMap.get(date) || { revenue: 0, transactions: 0 };
+    return {
+      date,
+      day: weekdayShort(date),
+      revenue: day.revenue,
+      transactions: day.transactions,
+      aov: day.transactions > 0 ? day.revenue / day.transactions : 0,
+    };
+  }), [sparklineDates, byDayMap, weekdayShort]);
+
+  const aovVsSaleData = useMemo(() => sparklineData.map(d => ({
+    day: d.day,
+    aov: Math.round(d.aov),
+    sales: Math.round(d.revenue),
+  })), [sparklineData]);
+
+  const paymentMethods = paymentData?.methods || [];
+  const paymentByMethod = useCallback((method) => paymentMethods.find(m => m.method === method) || { amount: 0, percent: 0, count: 0 }, [paymentMethods]);
+  const lastWeekPaymentMethods = lastWeekPaymentData?.methods || [];
+  const lastWeekPaymentByMethod = useCallback((method) => lastWeekPaymentMethods.find(m => m.method === method) || { amount: 0, percent: 0, count: 0 }, [lastWeekPaymentMethods]);
+
+  const cashAmount = paymentByMethod('CASH').amount;
+  const cardAmount = paymentByMethod('CARD').amount;
+  const upiAmount = paymentByMethod('UPI').amount;
+  const otherAmount = paymentByMethod('OTHER').amount;
+  const onlineAmount = cardAmount + upiAmount;
+  const paymentTotal = paymentData?.summary?.totalAmount || cashAmount + cardAmount + upiAmount + otherAmount;
+
+  const lastWeekCashAmount = lastWeekPaymentByMethod('CASH').amount;
+  const lastWeekCardAmount = lastWeekPaymentByMethod('CARD').amount;
+  const lastWeekUpiAmount = lastWeekPaymentByMethod('UPI').amount;
+  const lastWeekOtherAmount = lastWeekPaymentByMethod('OTHER').amount;
+  const lastWeekOnlineAmount = lastWeekCardAmount + lastWeekUpiAmount;
+
+  const paymentMixData = useMemo(() => [
+    { name: 'UPI', value: upiAmount, color: '#22C55E', count: paymentByMethod('UPI').count },
+    { name: 'Cash', value: cashAmount, color: '#3B82F6', count: paymentByMethod('CASH').count },
+    { name: 'Card', value: cardAmount, color: '#8B5CF6', count: paymentByMethod('CARD').count },
+    { name: 'Other', value: otherAmount, color: '#F59E0B', count: paymentByMethod('OTHER').count },
+  ].filter(d => d.value > 0), [upiAmount, cashAmount, cardAmount, otherAmount, paymentByMethod]);
+
+  const cashVsOnlineData = useMemo(() => [
+    { name: 'Cash', value: cashAmount, color: '#3B82F6', lastWeek: lastWeekCashAmount },
+    { name: 'Online', value: onlineAmount, color: '#16A34A', lastWeek: lastWeekOnlineAmount },
+    { name: 'Other', value: otherAmount, color: '#F59E0B', lastWeek: lastWeekOtherAmount },
+  ].filter(d => d.value > 0), [cashAmount, onlineAmount, otherAmount, lastWeekCashAmount, lastWeekOnlineAmount, lastWeekOtherAmount]);
+
+  const MetricSparkline = ({ data, color, dataKey }) => {
+    if (!data || data.length === 0) return <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400 font-bold">No data</div>;
+    return (
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
+        <AreaChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold' }} />
+          <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} fill={`url(#grad-${dataKey})`} dot={{ r: 2, fill: color }} activeDot={{ r: 4 }} isAnimationActive={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    );
+  };
+
+  const MetricTile = ({ label, value, current, previous, color, icon: Icon, sparklineData, sparklineColor, sparklineKey, isInverse, loading }) => {
+    const d = delta(current, previous);
+    const up = d > 0;
+    const isGood = isInverse ? !up : up;
+    const colorClass = isGood ? 'text-green-600' : 'text-red-600';
+    const bgTint = color === '#E53935' ? 'bg-red-50' : color === '#7C3AED' ? 'bg-purple-50' : color === '#F97316' ? 'bg-orange-50' : 'bg-green-50';
+    const hasData = current > 0 || previous > 0;
+    return (
+      <div className={`${dashCard} p-3 min-w-0 relative overflow-hidden animate-chart-in`}>
+        <div className="absolute top-2.5 right-2.5">
+          <div className={`${bgTint} p-1.5 rounded-lg`}>
+            <Icon size={16} style={{ color }} />
+          </div>
         </div>
-      ) : error ? (
-        <div className="flex flex-col items-center gap-2 py-6">
-          <p className="text-xs text-gray-400 font-bold text-center">{error}</p>
-          <button
-            onClick={() => load()}
-            className="text-xs font-bold text-[#E53935] hover:text-[#B71C1C] bg-red-50 px-3 py-1.5 rounded-lg border border-red-100"
-          >
-            Retry
-          </button>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] truncate pr-8">{label}</p>
+        <div className="mt-1 flex items-baseline gap-2">
+          <p className="text-xl lg:text-2xl font-black text-[#1A1A1A]">{value}</p>
+          <span className={`text-[10px] font-bold ${colorClass} flex items-center gap-0.5`}>
+            {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(d)}
+          </span>
         </div>
-      ) : categories.length === 0 ? (
-        <p className="text-xs text-gray-400 font-bold">No sales for selected date</p>
+        <p className="text-[10px] text-[#6B6B6B] font-medium">vs last {weekdayLong(lastWeekDay)}</p>
+        <div className="mt-2 h-[50px]">
+          {loading ? (
+            <div className="h-full w-full animate-pulse bg-gray-100 rounded-lg" />
+          ) : !hasData ? (
+            <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400 font-bold">No data</div>
+          ) : (
+            <MetricSparkline data={sparklineData} color={sparklineColor} dataKey={sparklineKey} />
+          )}
+        </div>
+        <div className="mt-2 flex justify-between text-[10px] font-bold text-[#6B6B6B]">
+          <span>This {weekdayLong(activeDate)}</span>
+          <span>Last {weekdayLong(lastWeekDay)}</span>
+        </div>
+        <div className="flex justify-between text-sm font-black text-[#1A1A1A]">
+          <span>{value}</span>
+          <span>{sparklineKey === 'revenue' ? fmtInr(previous) : sparklineKey === 'aov' ? fmtInr(previous) : fmtNum(previous)}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const PlainTile = ({ label, value, current, previous, color, icon: Icon, isInverse, loading, extra, sublabel, deltaValue }) => {
+    const d = deltaValue !== undefined ? deltaValue : delta(current, previous);
+    const up = d > 0;
+    const isGood = isInverse ? !up : up;
+    const colorClass = isGood ? 'text-green-600' : 'text-red-600';
+    const bgTint = color === '#E53935' ? 'bg-red-50' : color === '#16A34A' ? 'bg-green-50' : color === '#F59E0B' ? 'bg-amber-50' : color === '#8B5CF6' ? 'bg-violet-50' : color === '#0EA5E9' ? 'bg-sky-50' : 'bg-gray-50';
+    const hasData = current > 0 || previous > 0;
+    return (
+      <div className={`${dashCard} p-3 min-w-0 relative overflow-hidden animate-chart-in`}>
+        <div className="absolute top-2.5 right-2.5">
+          <div className={`${bgTint} p-1.5 rounded-lg`}>
+            <Icon size={16} style={{ color }} />
+          </div>
+        </div>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] truncate pr-8">{label}</p>
+        <div className="mt-1 flex items-baseline gap-2">
+          <p className="text-xl lg:text-2xl font-black text-[#1A1A1A]">{value}</p>
+          <span className={`text-[10px] font-bold ${colorClass} flex items-center gap-0.5`}>
+            {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(d)}
+          </span>
+        </div>
+        <p className="text-[10px] text-[#6B6B6B] font-medium leading-tight">
+          vs last {weekdayLong(lastWeekDay)}: {sublabel || (loading ? '...' : hasData ? (color === '#E53935' || color === '#16A34A' ? fmtInr(previous) : fmtNum(previous)) : 'No data')}
+        </p>
+        {extra && <div className="mt-2">{extra}</div>}
+        {loading && <div className="mt-2 h-2 w-1/2 animate-pulse bg-gray-100 rounded" />}
+      </div>
+    );
+  };
+
+  const PaymentMixWidget = () => (
+    <div className={`${dashCard} p-4 flex flex-col animate-chart-in`}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-sm md:text-base flex items-center gap-2 text-[#1A1A1A]">
+          <Layers size={18} className="text-[#E53935]" /> Payment Mix (Today)
+        </h3>
+      </div>
+      {paymentLoading ? (
+        <div className="h-[180px] animate-pulse bg-gray-100 rounded-lg" />
+      ) : paymentMixData.length === 0 ? (
+        <div className="h-[180px] flex items-center justify-center text-sm font-bold text-gray-400">No payment data</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="h-[240px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+        <div className="flex flex-col xl:flex-row items-center gap-3">
+          <div className="h-[140px] w-[140px] min-w-[140px] sm:h-[150px] sm:w-[150px] sm:min-w-[150px] xl:h-[160px] xl:w-[160px] xl:min-w-[160px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
               <PieChart>
                 <Pie
-                  data={pieData}
+                  data={paymentMixData}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
                   cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={4}
+                  innerRadius={42}
+                  outerRadius={68}
+                  paddingAngle={3}
                   stroke="none"
-                  isAnimationActive
-                  animationDuration={800}
+                  isAnimationActive={false}
                 >
-                  {pieData.map((_e, i) => <Cell key={i} fill={colors[i]} />)}
+                  {paymentMixData.map((e, i) => <Cell key={i} fill={e.color} />)}
                 </Pie>
-                <Tooltip formatter={(v) => [`₹${Number(v).toLocaleString('en-IN')}`, 'Revenue']} />
+                <Tooltip formatter={(v) => [fmtInr(v), 'Amount']} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-2 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
-                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Items</th>
-                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Qty</th>
-                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
-                  <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categories.map((c) => (
-                  <tr
-                    key={c.name}
-                    onClick={() => openCategory(c.name)}
-                    className="border-b border-gray-100 hover:bg-red-50/50 cursor-pointer transition-colors"
-                    title={`Click to view all ${c.name} items sold`}
-                  >
-                    <td className="px-2 py-2.5 font-bold text-gray-900 flex items-center gap-1.5">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR }}
-                      />
-                      {c.name}
-                      <ArrowUpRight size={12} className="text-gray-300" />
-                    </td>
-                    <td className="px-2 py-2.5 text-right text-gray-700">{c.itemCount}</td>
-                    <td className="px-2 py-2.5 text-right text-gray-700">{c.totalQuantity}</td>
-                    <td className="px-2 py-2.5 text-right font-bold text-gray-900">₹{Number(c.totalRevenue).toLocaleString('en-IN')}</td>
-                    <td className="px-2 py-2.5 text-right">
-                      <div className="w-16 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.min(c.revenuePercent, 100)}%`,
-                            background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR,
-                          }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-gray-500 font-bold">{c.revenuePercent}%</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="text-[10px] text-gray-400 font-bold mt-2">Click a category to see item-wise sales</p>
+          <div className="flex-1 w-full min-w-0">
+            <div className="space-y-1.5">
+              {paymentMixData.map(item => {
+                const pct = item.percent || (paymentTotal > 0 ? (item.value / paymentTotal) * 100 : 0);
+                return (
+                  <div key={item.name} className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+                      <span className="font-bold text-[#1A1A1A] truncate">{item.name}</span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-black text-[#1A1A1A]">{fmtInr(item.value)}</span>
+                      <span className="text-[10px] font-bold text-[#6B6B6B] ml-1">({fmtPct(pct)})</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
-
-      {/* Item drill-in popup */}
-      <AnimatePresence>
-        {selectedCategory && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={closeCategory}
-          >
-            <motion.div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                <h3 className="text-sm font-black uppercase tracking-widest text-gray-800 flex items-center gap-2">
-                  <span
-                    className="w-3 h-3 rounded-full"
-                    style={{ background: CATEGORY_COLORS[selectedCategory] || FALLBACK_COLOR }}
-                  />
-                  {selectedCategory} — Item-wise Sales
-                  <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">({today})</span>
-                </h3>
-                <button
-                  onClick={closeCategory}
-                  className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-500"
-                  aria-label="Close"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="overflow-y-auto custom-scrollbar flex-grow">
-                {drillLoading ? (
-                  <div className="flex items-center justify-center py-10 text-gray-400">
-                    <Loader2 size={20} className="animate-spin mr-2" />
-                    <span className="text-xs font-bold uppercase tracking-widest">Loading items…</span>
-                  </div>
-                ) : drillError ? (
-                  <div className="flex items-center justify-center py-10 text-gray-400">
-                    <span className="text-xs font-bold uppercase tracking-widest">{drillError}</span>
-                  </div>
-                ) : drillItems.length === 0 ? (
-                  <div className="flex items-center justify-center py-10 text-gray-300">
-                    <span className="text-xs font-bold uppercase tracking-widest">No {selectedCategory} items sold</span>
-                  </div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Item</th>
-                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Qty Sold</th>
-                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Unit Price</th>
-                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
-                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Orders</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {drillItems.map((it) => (
-                        <tr key={it.id || it.name} className="border-b border-gray-100 hover:bg-red-50/40">
-                          <td className="px-4 py-3 font-bold text-gray-900">{it.name}</td>
-                          <td className="px-4 py-3 text-right font-black text-[#E53935]">{it.quantitySold}</td>
-                          <td className="px-4 py-3 text-right text-gray-600">₹{Number(it.unitPrice).toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-right font-bold text-gray-900">₹{Number(it.totalRevenue).toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-right text-gray-500">{it.orderCount}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-gray-50 font-black">
-                        <td className="px-4 py-3 text-gray-800">Total</td>
-                        <td className="px-4 py-3 text-right text-gray-800">
-                          {drillItems.reduce((s, it) => s + Number(it.quantitySold || 0), 0)}
-                        </td>
-                        <td className="px-4 py-3" />
-                        <td className="px-4 py-3 text-right text-gray-900">
-                          ₹{Number(drillItems.reduce((s, it) => s + Number(it.totalRevenue || 0), 0)).toLocaleString('en-IN')}
-                        </td>
-                        <td className="px-4 py-3" />
-                      </tr>
-                    </tfoot>
-                  </table>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
-}
 
+  const AovVsSaleWidget = () => (
+    <div className={`${dashCard} p-4 flex flex-col animate-chart-in-delay-1`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+        <h3 className="font-bold text-sm md:text-base flex items-center gap-2 text-[#1A1A1A]">
+          <TrendingUp size={18} className="text-[#E53935]" /> AOV vs Sale (This Week)
+        </h3>
+        <select className="text-xs font-bold border border-gray-200 rounded-lg px-2 py-1 outline-none bg-white w-fit">
+          <option>Daily</option>
+        </select>
+      </div>
+      {dailyLoading ? (
+        <div className="h-[200px] animate-pulse bg-gray-100 rounded-lg" />
+      ) : aovVsSaleData.length === 0 || aovVsSaleData.every(d => d.sales === 0) ? (
+        <div className="h-[200px] flex items-center justify-center text-sm font-bold text-gray-400">No sales data</div>
+      ) : (
+        <div className="h-[220px] w-full min-h-[180px]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
+            <ComposedChart data={aovVsSaleData} margin={{ top: 10, right: 45, left: 45, bottom: 0 }}>
+              <defs>
+                <linearGradient id="aovVsSaleGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#EF4444" stopOpacity={0.2} />
+                  <stop offset="100%" stopColor="#EF4444" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
+              <XAxis dataKey="day" tick={{ fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="left" tick={{ fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} orientation="left" stroke="#8B5CF6" width={35} />
+              <YAxis yAxisId="right" tick={{ fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} orientation="right" stroke="#EF4444" width={35} />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold' }} />
+              <Line yAxisId="left" type="monotone" dataKey="aov" stroke="#8B5CF6" strokeWidth={2} dot={{ r: 3, fill: '#8B5CF6' }} isAnimationActive={false} />
+              <Area yAxisId="right" type="monotone" dataKey="sales" stroke="#EF4444" strokeWidth={2} fill="url(#aovVsSaleGrad)" dot={{ r: 3, fill: '#EF4444' }} isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+
+  const CashVsOnlineWidget = () => {
+    const total = cashVsOnlineData.reduce((s, d) => s + d.value, 0);
+    return (
+      <div className={`${dashCard} p-4 flex flex-col animate-chart-in-delay-2`}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-sm md:text-base flex items-center gap-2 text-[#1A1A1A]">
+            <Wallet size={18} className="text-[#E53935]" /> CASH vs ONLINE (Today)
+          </h3>
+        </div>
+        {paymentLoading ? (
+          <div className="h-[180px] animate-pulse bg-gray-100 rounded-lg" />
+        ) : cashVsOnlineData.length === 0 ? (
+          <div className="h-[180px] flex items-center justify-center text-sm font-bold text-gray-400">No payment data</div>
+        ) : (
+          <div className="flex flex-col xl:flex-row items-center gap-3">
+            <div className="h-[140px] w-[140px] min-w-[140px] sm:h-[150px] sm:w-[150px] sm:min-w-[150px] xl:h-[160px] xl:w-[160px] xl:min-w-[160px]">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
+                <PieChart>
+                  <Pie
+                    data={cashVsOnlineData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={42}
+                    outerRadius={68}
+                    paddingAngle={3}
+                    stroke="none"
+                    isAnimationActive={false}
+                  >
+                    {cashVsOnlineData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(v) => [fmtInr(v), 'Amount']} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 w-full min-w-0 space-y-2">
+              {cashVsOnlineData.map(item => {
+                const pct = total > 0 ? (item.value / total) * 100 : 0;
+                const d = delta(item.value, item.lastWeek);
+                const up = d > 0;
+                const deltaColor = up ? 'text-green-600' : 'text-red-600';
+                return (
+                  <div key={item.name} className="rounded-xl p-2" style={{ background: `${item.color}15` }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold flex items-center gap-1.5 min-w-0" style={{ color: item.color }}>
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} /> <span className="truncate">{item.name}</span>
+                      </span>
+                      <span className="text-sm font-black text-[#1A1A1A] shrink-0">{fmtInr(item.value)}</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1 gap-2">
+                      <span className="text-[10px] font-bold text-[#6B6B6B]">{fmtPct(pct)}</span>
+                      <span className={`text-[10px] font-bold ${deltaColor} flex items-center gap-0.5 shrink-0`}>
+                        {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(d)} vs last {weekdayLong(lastWeekDay)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const MobileCollapsedRow = ({ title, subtitle, icon: Icon, isOpen, onToggle, children }) => (
+    <div className={`${dashCard} overflow-hidden`}>
+      <button onClick={onToggle} className="w-full p-4 flex items-center justify-between text-left">
+        <div className="flex items-center gap-3">
+          <div className="bg-red-50 p-2 rounded-lg">
+            <Icon size={18} className="text-[#E53935]" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-[#1A1A1A]">{title}</p>
+            <p className="text-[10px] font-bold text-[#6B6B6B]">{subtitle}</p>
+          </div>
+        </div>
+        {isOpen ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+      </button>
+      {isOpen && <div className="px-4 pb-4">{children}</div>}
+    </div>
+  );
+
+  const kpiTiles = [
+    <MetricTile
+      key="total-sale"
+      label="Total Sale"
+      value={fmtInr(todayRevenue)}
+      current={todayRevenue}
+      previous={lastWeekRevenue}
+      color="#E53935"
+      icon={IndianRupee}
+      sparklineData={sparklineData}
+      sparklineColor="#E53935"
+      sparklineKey="revenue"
+      loading={dailyLoading}
+    />,
+    <MetricTile
+      key="aov"
+      label="AOV (Average Order Value)"
+      value={fmtInr(todayAov)}
+      current={todayAov}
+      previous={lastWeekAov}
+      color="#7C3AED"
+      icon={CreditCard}
+      sparklineData={sparklineData}
+      sparklineColor="#7C3AED"
+      sparklineKey="aov"
+      loading={dailyLoading}
+    />,
+    <MetricTile
+      key="orders"
+      label="Orders / Bills"
+      value={fmtNum(todayTransactions)}
+      current={todayTransactions}
+      previous={lastWeekTransactions}
+      color="#F97316"
+      icon={Receipt}
+      sparklineData={sparklineData}
+      sparklineColor="#F97316"
+      sparklineKey="transactions"
+      loading={dailyLoading}
+    />,
+    <MetricTile
+      key="net-cash"
+      label="Net Cash Position"
+      value={fmtInr(todayNetCash)}
+      current={todayNetCash}
+      previous={lastWeekNetCash}
+      color="#16A34A"
+      icon={Banknote}
+      sparklineData={netCashHistory}
+      sparklineColor="#16A34A"
+      sparklineKey="netCash"
+      loading={dailyLoading || netCashHistoryLoading}
+    />,
+    <PlainTile
+      key="specials-sold"
+      label="Today Specials Sold"
+      value={fmtNum(todaySpecialsCount)}
+      current={todaySpecialsCount}
+      previous={lastWeekSpecialsCount}
+      color="#F59E0B"
+      icon={StarIcon}
+      loading={specialsLoading}
+      sublabel={fmtNum(lastWeekSpecialsCount)}
+    />,
+    <PlainTile
+      key="specials-penetration"
+      label="Specials Penetration"
+      value={fmtPct(todayConversion)}
+      current={todayConversion}
+      previous={lastWeekConversion}
+      color="#8B5CF6"
+      icon={Percent}
+      loading={specialsLoading}
+      deltaValue={todayConversion - lastWeekConversion}
+      sublabel={`${todaySpecialsTables}/${todayTotalTables} bills`}
+      extra={
+        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-2">
+          <div className="h-full rounded-full" style={{ width: `${Math.min(todayConversion, 100)}%`, background: 'linear-gradient(90deg, #8B5CF6, #EC4899)' }} />
+        </div>
+      }
+    />,
+    <PlainTile
+      key="today-purchases-entries"
+      label="Today Purchases — Total Entries"
+      value={fmtNum(todayPurchaseEntries)}
+      current={todayPurchaseEntries}
+      previous={lastWeekPurchaseEntries}
+      color="#0EA5E9"
+      icon={ShoppingCart}
+      loading={purchasesLoading}
+      sublabel={fmtNum(lastWeekPurchaseEntries)}
+      extra={
+        <p className="text-[10px] font-bold text-[#6B6B6B]">Purchase entries logged today</p>
+      }
+    />,
+    <PlainTile
+      key="expenditure"
+      label="Expenditure"
+      value={fmtInr(todayExpenditure)}
+      current={todayExpenditure}
+      previous={lastWeekExpenditureAmount}
+      color="#E53935"
+      icon={Receipt}
+      isInverse
+      loading={expenditureLoading}
+    />,
+    <PlainTile
+      key="final-amount"
+      label="Final Amount"
+      value={fmtInr(todayFinalAmount)}
+      current={todayFinalAmount}
+      previous={lastWeekFinalAmount}
+      color="#16A34A"
+      icon={Wallet}
+      loading={expenditureLoading || dailyLoading}
+    />,
+  ];
+
+  const tabs = [
+    { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { key: 'payment-mix', label: 'Payment Mix', icon: Layers },
+    { key: 'cash-online', label: 'Cash vs Online', icon: Wallet },
+    { key: 'aov-sale', label: 'AOV vs Sale', icon: TrendingUp },
+    { key: 'today-specials', label: 'Today Specials', icon: StarIcon },
+    { key: 'more', label: 'More', icon: MoreHorizontal },
+  ];
+
+  const toggleRow = (key) => setExpandedRows(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const renderOverview = () => (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3">
+        {kpiTiles}
+      </div>
+      <div className="space-y-3 lg:hidden">
+        <MobileCollapsedRow
+          title="Payment Mix"
+          subtitle="UPI, Cash, Card, Other"
+          icon={Layers}
+          isOpen={expandedRows['payment-mix']}
+          onToggle={() => toggleRow('payment-mix')}
+        >
+          <PaymentMixWidget />
+        </MobileCollapsedRow>
+        <MobileCollapsedRow
+          title="Cash vs Online"
+          subtitle="Cash Collection vs Online Collection"
+          icon={Wallet}
+          isOpen={expandedRows['cash-online']}
+          onToggle={() => toggleRow('cash-online')}
+        >
+          <CashVsOnlineWidget />
+        </MobileCollapsedRow>
+        <MobileCollapsedRow
+          title="AOV vs Sale"
+          subtitle="Track AOV and Sales trend"
+          icon={TrendingUp}
+          isOpen={expandedRows['aov-sale']}
+          onToggle={() => toggleRow('aov-sale')}
+        >
+          <AovVsSaleWidget />
+        </MobileCollapsedRow>
+      </div>
+    </div>
+  );
+
+  const renderTabContent = () => {
+    switch (mobileTab) {
+      case 'payment-mix': return <PaymentMixWidget />;
+      case 'cash-online': return <CashVsOnlineWidget />;
+      case 'aov-sale': return <AovVsSaleWidget />;
+      case 'today-specials': return (
+        <div className="grid grid-cols-1 gap-3">
+          {kpiTiles[4]}
+          {kpiTiles[5]}
+        </div>
+      );
+      case 'more': return (
+        <div className="text-center py-12 text-gray-400 text-sm font-bold">
+          More dashboard features coming soon
+        </div>
+      );
+      default: return renderOverview();
+    }
+  };
+
+  return (
+    <div className="space-y-4 font-sans bg-[#F8F9FB] -m-4 p-4 md:-m-6 md:p-6 min-h-full" data-tour="admin-dashboard">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base md:text-lg font-black text-[#1A1A1A]">Dashboard</h2>
+          <p className="text-[10px] font-bold text-[#6B6B6B] uppercase tracking-wider">{restaurant?.name}</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+          <Calendar size={16} className="text-gray-400" />
+          <input
+            type="date"
+            value={activeDate}
+            onChange={(e) => onDateChange?.(e.target.value)}
+            className="bg-transparent text-sm font-semibold text-gray-800 outline-none"
+          />
+        </div>
+      </div>
+
+      {isMobile ? (
+        <>
+          <div className="-mx-4 px-4 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
+            <div className="flex gap-2">
+              {tabs.map(tab => {
+                const active = mobileTab === tab.key;
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setMobileTab(tab.key)}
+                    className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[80px] transition-all ${
+                      active ? 'bg-[#E53935] text-white shadow-sm' : 'bg-white text-[#6B6B6B] border border-[#FFCDD2]'
+                    }`}
+                  >
+                    <Icon size={20} className={active ? 'text-white' : 'text-[#E53935]'} />
+                    <span className="text-[10px] font-bold">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {renderTabContent()}
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 items-start" data-tour="admin-dashboard-stats">
+            {kpiTiles}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <PaymentMixWidget />
+            <AovVsSaleWidget />
+            <CashVsOnlineWidget />
+          </div>
+        </>
+      )}
+
+      <p className="text-[10px] text-[#6B6B6B] font-medium text-center mt-4">
+        All values are approximate and updated in real-time
+      </p>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return prevProps.dashboardScope === nextProps.dashboardScope &&
+         prevProps.selectedDate === nextProps.selectedDate &&
+         prevProps.onDateChange === nextProps.onDateChange;
+});
 
 
 export function Pos({ onKOTSend = () => {}, onOrderComplete = () => {} }) {

@@ -15,7 +15,7 @@
 // Usage: Wrap app in <AuthProvider>, then useAuth() in any component.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { isEdgeAvailable, edgeFetch } from '../services/edgeHealth';
 import { resetMenuState } from '../services/menuSyncService';
 import { resetBarMenuState } from '../services/barMenuSyncService';
@@ -103,7 +103,7 @@ export const AuthProvider = ({ children }) => {
     return () => { cancelled = true; };
   }, [token, user]);
 
-  const setAuth = ({ token: newToken, user: newUser, restaurant: newRestaurant }) => {
+  const setAuth = useCallback(({ token: newToken, user: newUser, restaurant: newRestaurant }) => {
     const prevToken = token;
     setToken(newToken);
     setUser(newUser);
@@ -115,16 +115,16 @@ export const AuthProvider = ({ children }) => {
       resetMenuState();
       resetBarMenuState();
     }
-  };
+  }, [token]);
 
-  const setRestaurant = (updatedRestaurant) => {
+  const setRestaurant = useCallback((updatedRestaurant) => {
     setRestaurantState(updatedRestaurant);
     if (updatedRestaurant) {
       localStorage.setItem('ss_restaurant', JSON.stringify(updatedRestaurant));
     }
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setToken(null);
     setUser(null);
     setRestaurantState(null);
@@ -133,7 +133,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('ss_user');
     localStorage.removeItem('ss_restaurant');
     localStorage.removeItem('ss_accessible_outlets');
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ token, user, restaurant, setAuth, setRestaurant, logout }}>

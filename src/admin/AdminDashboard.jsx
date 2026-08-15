@@ -36,6 +36,8 @@ import {
   ChevronDown,
   CheckCircle,
   ArrowRight,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
@@ -90,6 +92,14 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       return 280;
     }
   });
+  // Desktop sidebar collapse — admin can close/open the sidebar on desktop.
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('admin-sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const isResizingRef = useRef(false);
   const spireMessagesEndRef = useRef(null);
 
@@ -121,6 +131,15 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [sidebarWidth]);
+
+  // Persist desktop sidebar collapsed state
+  useEffect(() => {
+    try {
+      localStorage.setItem('admin-sidebar-collapsed', String(isSidebarCollapsed));
+    } catch {
+      // ignore
+    }
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     if (spireOpen) {
@@ -505,7 +524,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#FDE7EA] text-[#B71C1C] transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:!translate-x-0`}
+        className={`fixed left-0 top-0 z-[60] flex h-[100dvh] flex-col bg-[#FDE7EA] text-[#B71C1C] transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} ${isSidebarCollapsed ? "md:-translate-x-full" : "md:translate-x-0"}`}
         style={{ width: sidebarWidth }}
         data-tour="admin-sidebar"
       >
@@ -518,7 +537,16 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
                 className="w-full h-full object-contain"
               />
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-[#B71C1C]/80 hover:text-[#B71C1C]">✕</button>
+            <button
+              onClick={() => {
+                setIsSidebarOpen(false);          // mobile drawer
+                setIsSidebarCollapsed(true);      // desktop collapse
+              }}
+              className="text-[#B71C1C]/80 hover:text-[#B71C1C] p-1.5 rounded-md hover:bg-[#B71C1C]/10 transition-colors"
+              title="Close sidebar"
+            >
+              <PanelLeftClose size={20} />
+            </button>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-bold text-[#B71C1C]/90 flex-shrink-0 mb-2 mt-4">
             <span className="h-2 w-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" />
@@ -549,19 +577,28 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
           </div>
         </div>
 
-        {/* Resize handle */}
+        {/* Resize handle — hidden when sidebar is collapsed on desktop */}
         <div
-          className="absolute top-0 right-0 h-full w-3 cursor-col-resize z-50 hover:bg-[#B71C1C]/20 active:bg-[#B71C1C]/40 transition-colors hidden md:block"
+          className={`absolute top-0 right-0 h-full w-3 cursor-col-resize z-50 hover:bg-[#B71C1C]/20 active:bg-[#B71C1C]/40 transition-colors hidden md:block ${isSidebarCollapsed ? 'md:hidden' : ''}`}
           onMouseDown={() => { isResizingRef.current = true; }}
           title="Drag to resize sidebar"
         />
       </aside>
 
-      <div className="flex flex-col h-[100dvh] overflow-hidden md:!ml-[var(--sidebar-width)]" style={{ ['--sidebar-width']: `${sidebarWidth}px` }}>
+      <div className="flex flex-col h-[100dvh] overflow-hidden md:!ml-[var(--sidebar-width)]" style={{ ['--sidebar-width']: isSidebarCollapsed ? '0px' : `${sidebarWidth}px` }}>
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#FFCDD2] bg-white px-4 md:px-6 shadow-sm" data-tour="admin-header">
           <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
             <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
               <LayoutDashboard size={18} />
+            </button>
+            {/* Desktop reopen button — visible only when sidebar is collapsed */}
+            <button
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="hidden md:flex flex-shrink-0 items-center gap-2 rounded-md border border-[#FFCDD2] bg-[#FFEBEE] px-3 py-2 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] transition-colors"
+              title="Open sidebar"
+            >
+              <PanelLeftOpen size={18} />
+              <span>Menu</span>
             </button>
             <div className="flex flex-col overflow-hidden">
               <div className="text-base md:text-xl font-black truncate tracking-tight">{title}</div>
