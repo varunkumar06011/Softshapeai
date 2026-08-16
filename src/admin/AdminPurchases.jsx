@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Loader2, Plus, Trash2, Save, Store, Package, ArrowLeft,
   CheckCircle, AlertCircle, X, Truck, CreditCard, Ban,
-  ChevronRight, Search, MessageCircle, Calendar, WifiOff,
+  ChevronRight, Search, MessageCircle, Calendar, WifiOff, RefreshCw,
 } from 'lucide-react';
 import { apiFetch, isBackendReachable, subscribeReachability } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
@@ -136,6 +136,21 @@ export default function AdminPurchases() {
       setLoading(false);
     }
   }, []);
+
+  const [recalcingBalances, setRecalcingBalances] = useState(false);
+  const handleRecalcBalances = async () => {
+    setRecalcingBalances(true);
+    setError('');
+    try {
+      const result = await apiFetch('/api/vendors/recalc-balances', { method: 'POST', timeout: API_TIMEOUT_DEFAULT_MS });
+      showSuccess(`Balances recalculated — ${result.correctedCount} of ${result.totalVendors} vendors updated.`);
+      await loadVendors();
+    } catch (err) {
+      setError(err.message || 'Failed to recalculate vendor balances');
+    } finally {
+      setRecalcingBalances(false);
+    }
+  };
 
   // ── Load POs ─────────────────────────────────────────────────────────────────
   const loadPOs = useCallback(async () => {
@@ -840,13 +855,24 @@ export default function AdminPurchases() {
                 <Store size={18} className="text-[#E53935]" />
                 Vendors
               </h3>
-              <button
-                onClick={() => setShowVendorForm(true)}
-                className="flex items-center gap-1 text-xs font-black uppercase text-[#E53935] hover:bg-red-50 px-3 py-1.5 rounded-lg"
-              >
-                <Plus size={14} />
-                New Vendor
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleRecalcBalances}
+                  disabled={recalcingBalances}
+                  className="flex items-center gap-1 text-xs font-bold uppercase text-gray-500 hover:bg-gray-100 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                  title="Recalculate all vendor outstanding balances"
+                >
+                  {recalcingBalances ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  Recalc Balances
+                </button>
+                <button
+                  onClick={() => setShowVendorForm(true)}
+                  className="flex items-center gap-1 text-xs font-black uppercase text-[#E53935] hover:bg-red-50 px-3 py-1.5 rounded-lg"
+                >
+                  <Plus size={14} />
+                  New Vendor
+                </button>
+              </div>
             </div>
           </div>
 

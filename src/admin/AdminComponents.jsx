@@ -547,10 +547,14 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   const [expenditureLoading, setExpenditureLoading] = useState(true);
   const [lastWeekExpenditure, setLastWeekExpenditure] = useState(null);
   const [todayPurchaseEntries, setTodayPurchaseEntries] = useState(0);
+  const [todayPurchaseAmount, setTodayPurchaseAmount] = useState(0);
   const [lastWeekPurchaseEntries, setLastWeekPurchaseEntries] = useState(0);
+  const [lastWeekPurchaseAmount, setLastWeekPurchaseAmount] = useState(0);
   const [purchasesLoading, setPurchasesLoading] = useState(true);
   const [netCashHistory, setNetCashHistory] = useState(null);
   const [netCashHistoryLoading, setNetCashHistoryLoading] = useState(true);
+  const [specialsByStaff, setSpecialsByStaff] = useState([]);
+  const [specialsByStaffLoading, setSpecialsByStaffLoading] = useState(true);
   const [mobileTab, setMobileTab] = useState('overview');
   const [expandedRows, setExpandedRows] = useState({});
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
@@ -678,6 +682,33 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     return () => { cancelled = true; clearInterval(interval); };
   }, [loadSpecials, activeDate, shiftDate]);
 
+  // Today specials by staff (captain attribution with revenue)
+  const loadSpecialsByStaff = useCallback(async (date) => {
+    const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff?outletId=${outletId}&startDate=${date}&endDate=${date}`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!res.ok) throw new Error('Failed to fetch specials by staff');
+    return res.json();
+  }, [outletId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setSpecialsByStaffLoading(true);
+        const data = await loadSpecialsByStaff(activeDate);
+        if (!cancelled) setSpecialsByStaff(data?.staff || []);
+      } catch (err) {
+        console.warn('[Dashboard] specials-by-staff failed:', err.message);
+      } finally {
+        if (!cancelled) setSpecialsByStaffLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 120000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [loadSpecialsByStaff, activeDate]);
+
   // Expenditure
   const loadExpenditure = useCallback(async (date) => {
     const data = await apiFetch(`/api/expenditures/today-summary?date=${date}`);
@@ -711,10 +742,13 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     return () => { cancelled = true; clearInterval(interval); };
   }, [loadExpenditure, activeDate, shiftDate]);
 
-  // Today's purchase entries count (quick summary — not deducted from sales)
-  const loadPurchaseEntriesCount = useCallback(async (date) => {
+  // Today's purchase entries — count + total price
+  const loadPurchaseEntries = useCallback(async (date) => {
     const data = await apiFetch(`/api/purchase-orders/daily?date=${date}`);
-    return Array.isArray(data) ? data.length : 0;
+    if (!Array.isArray(data)) return { count: 0, amount: 0 };
+    const count = data.length;
+    const amount = data.reduce((sum, e) => sum + Number(e.totalPrice || 0), 0);
+    return { count, amount: Math.round(amount * 100) / 100 };
   }, []);
 
   useEffect(() => {
@@ -723,15 +757,17 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       try {
         setPurchasesLoading(true);
         const [today, lastWeek] = await Promise.all([
-          loadPurchaseEntriesCount(activeDate),
-          loadPurchaseEntriesCount(shiftDate(activeDate, -7)),
+          loadPurchaseEntries(activeDate),
+          loadPurchaseEntries(shiftDate(activeDate, -7)),
         ]);
         if (!cancelled) {
-          setTodayPurchaseEntries(today);
-          setLastWeekPurchaseEntries(lastWeek);
+          setTodayPurchaseEntries(today.count);
+          setTodayPurchaseAmount(today.amount);
+          setLastWeekPurchaseEntries(lastWeek.count);
+          setLastWeekPurchaseAmount(lastWeek.amount);
         }
       } catch (err) {
-        console.warn('[Dashboard] purchase entries count failed:', err.message);
+        console.warn('[Dashboard] purchase entries failed:', err.message);
       } finally {
         if (!cancelled) setPurchasesLoading(false);
       }
@@ -739,7 +775,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [loadPurchaseEntriesCount, activeDate, shiftDate]);
+  }, [loadPurchaseEntries, activeDate, shiftDate]);
 
   // Net cash history (last 7 days)
   useEffect(() => {
@@ -795,6 +831,21 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
 
   const todayFinalAmount = todayNetCash;
   const lastWeekFinalAmount = lastWeekNetCash;
+
+  // Specials revenue from by-staff endpoint (sum of all captains' revenue)
+  const todaySpecialsRevenue = useMemo(() =>
+    (specialsByStaff || []).reduce((s, x) => s + Number(x.revenue || 0), 0),
+  [specialsByStaff]);
+  const todaySpecialsPctOfSales = todayRevenue > 0 ? (todaySpecialsRevenue / todayRevenue) * 100 : 0;
+  const todaySpecialsPctOfAov = todayAov > 0 ? (todaySpecialsRevenue / todayAov) * 100 : 0;
+
+  // Top 2 captains by specials sold
+  const topCaptains = useMemo(() =>
+    (specialsByStaff || [])
+      .filter(s => Number(s.soldCount || 0) > 0)
+      .sort((a, b) => Number(b.soldCount || 0) - Number(a.soldCount || 0))
+      .slice(0, 2),
+  [specialsByStaff]);
 
   const sparklineDates = useMemo(() => Array.from({ length: 7 }, (_, i) => shiftDate(activeDate, -6 + i)), [activeDate, shiftDate]);
   const sparklineData = useMemo(() => sparklineDates.map(date => {
@@ -863,7 +914,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     );
   };
 
-  const MetricTile = ({ label, value, current, previous, color, icon: Icon, sparklineData, sparklineColor, sparklineKey, isInverse, loading }) => {
+  const MetricTile = ({ label, value, current, previous, color, icon: Icon, sparklineData, sparklineColor, sparklineKey, isInverse, loading, extra }) => {
     const d = delta(current, previous);
     const up = d > 0;
     const isGood = isInverse ? !up : up;
@@ -885,6 +936,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
           </span>
         </div>
         <p className="text-[10px] text-[#6B6B6B] font-medium">vs last {weekdayLong(lastWeekDay)}</p>
+        {extra && <div className="mt-1 text-[10px] font-bold text-[#8B5CF6]">{extra}</div>}
         <div className="mt-2 h-[50px]">
           {loading ? (
             <div className="h-full w-full animate-pulse bg-gray-100 rounded-lg" />
@@ -994,39 +1046,34 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     </div>
   );
 
-  const AovVsSaleWidget = () => (
+  const TopCaptainsWidget = () => (
     <div className={`${dashCard} p-4 flex flex-col animate-chart-in-delay-1`}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+      <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-sm md:text-base flex items-center gap-2 text-[#1A1A1A]">
-          <TrendingUp size={18} className="text-[#E53935]" /> AOV vs Sale (This Week)
+          <StarIcon size={18} className="text-[#F59E0B]" /> Top Captains — Specials Today
         </h3>
-        <select className="text-xs font-bold border border-gray-200 rounded-lg px-2 py-1 outline-none bg-white w-fit">
-          <option>Daily</option>
-        </select>
       </div>
-      {dailyLoading ? (
-        <div className="h-[200px] animate-pulse bg-gray-100 rounded-lg" />
-      ) : aovVsSaleData.length === 0 || aovVsSaleData.every(d => d.sales === 0) ? (
-        <div className="h-[200px] flex items-center justify-center text-sm font-bold text-gray-400">No sales data</div>
+      {specialsByStaffLoading ? (
+        <div className="h-[120px] animate-pulse bg-gray-100 rounded-lg" />
+      ) : topCaptains.length === 0 ? (
+        <div className="h-[120px] flex items-center justify-center text-sm font-bold text-gray-400">No specials sold today</div>
       ) : (
-        <div className="h-[220px] w-full min-h-[180px]">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
-            <ComposedChart data={aovVsSaleData} margin={{ top: 10, right: 45, left: 45, bottom: 0 }}>
-              <defs>
-                <linearGradient id="aovVsSaleGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#EF4444" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="#EF4444" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
-              <XAxis dataKey="day" tick={{ fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left" tick={{ fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} orientation="left" stroke="#8B5CF6" width={35} />
-              <YAxis yAxisId="right" tick={{ fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} orientation="right" stroke="#EF4444" width={35} />
-              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold' }} />
-              <Line yAxisId="left" type="monotone" dataKey="aov" stroke="#8B5CF6" strokeWidth={2} dot={{ r: 3, fill: '#8B5CF6' }} isAnimationActive={false} />
-              <Area yAxisId="right" type="monotone" dataKey="sales" stroke="#EF4444" strokeWidth={2} fill="url(#aovVsSaleGrad)" dot={{ r: 3, fill: '#EF4444' }} isAnimationActive={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+        <div className="space-y-3">
+          {topCaptains.map((captain, idx) => (
+            <div key={captain.userId || idx} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: idx === 0 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(139, 92, 246, 0.08)' }}>
+              <div className="flex items-center justify-center w-8 h-8 rounded-full shrink-0 text-white font-black text-xs" style={{ background: idx === 0 ? '#F59E0B' : '#8B5CF6' }}>
+                {idx + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-[#1A1A1A] truncate">{captain.name || 'Unknown'}</p>
+                <p className="text-[10px] font-bold text-[#6B6B6B]">{Number(captain.soldCount || 0)} specials sold</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-black text-[#1A1A1A]">{fmtInr(Number(captain.revenue || 0))}</p>
+                <p className="text-[10px] font-bold text-[#6B6B6B]">revenue</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -1117,18 +1164,15 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   );
 
   const kpiTiles = [
-    <MetricTile
-      key="total-sale"
-      label="Total Sale"
-      value={fmtInr(todayRevenue)}
-      current={todayRevenue}
-      previous={lastWeekRevenue}
-      color="#E53935"
-      icon={IndianRupee}
-      sparklineData={sparklineData}
-      sparklineColor="#E53935"
-      sparklineKey="revenue"
-      loading={dailyLoading}
+    <PlainTile
+      key="final-amount"
+      label="Final Amount"
+      value={fmtInr(todayFinalAmount)}
+      current={todayFinalAmount}
+      previous={lastWeekFinalAmount}
+      color="#16A34A"
+      icon={Wallet}
+      loading={expenditureLoading || dailyLoading}
     />,
     <MetricTile
       key="aov"
@@ -1142,6 +1186,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       sparklineColor="#7C3AED"
       sparklineKey="aov"
       loading={dailyLoading}
+      extra={todaySpecialsPctOfSales > 0 ? `${fmtPct(todaySpecialsPctOfSales)} from specials` : null}
     />,
     <MetricTile
       key="orders"
@@ -1156,19 +1201,6 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       sparklineKey="transactions"
       loading={dailyLoading}
     />,
-    <MetricTile
-      key="net-cash"
-      label="Net Cash Position"
-      value={fmtInr(todayNetCash)}
-      current={todayNetCash}
-      previous={lastWeekNetCash}
-      color="#16A34A"
-      icon={Banknote}
-      sparklineData={netCashHistory}
-      sparklineColor="#16A34A"
-      sparklineKey="netCash"
-      loading={dailyLoading || netCashHistoryLoading}
-    />,
     <PlainTile
       key="specials-sold"
       label="Today Specials Sold"
@@ -1181,35 +1213,32 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       sublabel={fmtNum(lastWeekSpecialsCount)}
     />,
     <PlainTile
-      key="specials-penetration"
-      label="Specials Penetration"
-      value={fmtPct(todayConversion)}
-      current={todayConversion}
-      previous={lastWeekConversion}
+      key="specials-pct-sales"
+      label="% Specials of Total Sales"
+      value={fmtPct(todaySpecialsPctOfSales)}
+      current={todaySpecialsPctOfSales}
+      previous={0}
       color="#8B5CF6"
       icon={Percent}
-      loading={specialsLoading}
-      deltaValue={todayConversion - lastWeekConversion}
-      sublabel={`${todaySpecialsTables}/${todayTotalTables} bills`}
+      loading={specialsByStaffLoading || dailyLoading}
+      deltaValue={0}
+      sublabel={`${fmtInr(todaySpecialsRevenue)} from specials`}
       extra={
         <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-2">
-          <div className="h-full rounded-full" style={{ width: `${Math.min(todayConversion, 100)}%`, background: 'linear-gradient(90deg, #8B5CF6, #EC4899)' }} />
+          <div className="h-full rounded-full" style={{ width: `${Math.min(todaySpecialsPctOfSales, 100)}%`, background: 'linear-gradient(90deg, #8B5CF6, #EC4899)' }} />
         </div>
       }
     />,
     <PlainTile
-      key="today-purchases-entries"
-      label="Today Purchases — Total Entries"
-      value={fmtNum(todayPurchaseEntries)}
-      current={todayPurchaseEntries}
-      previous={lastWeekPurchaseEntries}
+      key="today-purchases"
+      label="Today Purchases"
+      value={fmtInr(todayPurchaseAmount)}
+      current={todayPurchaseAmount}
+      previous={lastWeekPurchaseAmount}
       color="#0EA5E9"
       icon={ShoppingCart}
       loading={purchasesLoading}
-      sublabel={fmtNum(lastWeekPurchaseEntries)}
-      extra={
-        <p className="text-[10px] font-bold text-[#6B6B6B]">Purchase entries logged today</p>
-      }
+      sublabel={`${todayPurchaseEntries} entries · last ${weekdayLong(lastWeekDay)}: ${fmtInr(lastWeekPurchaseAmount)}`}
     />,
     <PlainTile
       key="expenditure"
@@ -1222,23 +1251,13 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       isInverse
       loading={expenditureLoading}
     />,
-    <PlainTile
-      key="final-amount"
-      label="Final Amount"
-      value={fmtInr(todayFinalAmount)}
-      current={todayFinalAmount}
-      previous={lastWeekFinalAmount}
-      color="#16A34A"
-      icon={Wallet}
-      loading={expenditureLoading || dailyLoading}
-    />,
   ];
 
   const tabs = [
     { key: 'overview', label: 'Overview', icon: LayoutDashboard },
     { key: 'payment-mix', label: 'Payment Mix', icon: Layers },
     { key: 'cash-online', label: 'Cash vs Online', icon: Wallet },
-    { key: 'aov-sale', label: 'AOV vs Sale', icon: TrendingUp },
+    { key: 'top-captains', label: 'Top Captains', icon: StarIcon },
     { key: 'today-specials', label: 'Today Specials', icon: StarIcon },
     { key: 'more', label: 'More', icon: MoreHorizontal },
   ];
@@ -1270,13 +1289,13 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
           <CashVsOnlineWidget />
         </MobileCollapsedRow>
         <MobileCollapsedRow
-          title="AOV vs Sale"
-          subtitle="Track AOV and Sales trend"
-          icon={TrendingUp}
-          isOpen={expandedRows['aov-sale']}
-          onToggle={() => toggleRow('aov-sale')}
+          title="Top Captains"
+          subtitle="Specials sold by captain"
+          icon={StarIcon}
+          isOpen={expandedRows['top-captains']}
+          onToggle={() => toggleRow('top-captains')}
         >
-          <AovVsSaleWidget />
+          <TopCaptainsWidget />
         </MobileCollapsedRow>
       </div>
     </div>
@@ -1286,13 +1305,14 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     switch (mobileTab) {
       case 'payment-mix': return <PaymentMixWidget />;
       case 'cash-online': return <CashVsOnlineWidget />;
-      case 'aov-sale': return <AovVsSaleWidget />;
+      case 'top-captains': return <TopCaptainsWidget />;
       case 'today-specials': return (
         <div className="grid grid-cols-1 gap-3">
+          {kpiTiles[3]}
           {kpiTiles[4]}
-          {kpiTiles[5]}
         </div>
       );
+      // kpiTiles[3] = Today Specials Sold, kpiTiles[4] = % Specials of Total Sales
       case 'more': return (
         <div className="text-center py-12 text-gray-400 text-sm font-bold">
           More dashboard features coming soon
@@ -1351,7 +1371,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <PaymentMixWidget />
-            <AovVsSaleWidget />
+            <TopCaptainsWidget />
             <CashVsOnlineWidget />
           </div>
         </>
