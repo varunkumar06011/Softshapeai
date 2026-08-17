@@ -425,8 +425,11 @@ export default function AdminDailyBalanceSheet() {
       const params = new URLSearchParams({ date: selectedDate, limit: '5000', outletId });
       const data = await apiFetch(`/api/expenditures?${params.toString()}`);
       setExpenditures((data || []).filter(v => v.entryType !== 'LIABILITY'));
-    } catch {
-      setExpenditures([]);
+    } catch (err) {
+      // DON'T wipe existing expenditures on error — keep the last successful
+      // data so the user doesn't see entries vanish due to a transient
+      // network/API failure.
+      console.error('[BalanceSheet] loadExpenditures failed:', err);
     } finally {
       setExpendituresLoading(false);
     }
@@ -559,6 +562,14 @@ export default function AdminDailyBalanceSheet() {
   // ── Manual save ────────────────────────────────────────────────────────────
   const doSave = useCallback(async () => {
     if (isLocked || !sheet) return;
+    // Block saving in "All Outlets" mode — the PUT endpoint saves to a single
+    // outlet only. Applying the single-outlet response to the aggregate view
+    // replaces the aggregate auto-fetched sales numbers (AC Bar, Non-AC, etc.)
+    // with single-outlet numbers, making them appear to vanish.
+    if (isAllOutlets) {
+      setError('Please select a specific outlet before saving. The "All Outlets" view is read-only.');
+      return;
+    }
     setSaving(true);
     const thisSeq = ++saveSeqRef.current;
     const saveDate = selectedDate;
@@ -591,13 +602,16 @@ export default function AdminDailyBalanceSheet() {
       });
       // Only apply if no newer save has been issued since this one started
       if (thisSeq === saveSeqRef.current && selectedDateRef.current === saveDate) {
-        if (outletId === 'all') {
-          // All-Outlets view is an aggregate; the backend saves against the active outlet,
-          // so reload the aggregate to keep the view consistent.
-          await loadSheet();
-        } else {
-          setSheet({ ...updated, __saveSeq: thisSeq });
-        }
+        // Apply the save response with __saveSeq so the useEffect treats it
+        // as a save echo (preserves in-flight user edits to overrides/
+        // adjustments while still updating computed fields like
+        // closingBalance). This works for both specific outlet and "all"
+        // views — calling loadSheet() for "all" would set loading=true,
+        // causing the entire component to flash a spinner and wipe all
+        // visible entries, then the fresh fetch (without __saveSeq) would
+        // overwrite local adjustments with aggregate data, losing the
+        // user's manually-added entries.
+        setSheet({ ...updated, __saveSeq: thisSeq });
         setDirty(false);
       }
     } catch (err) {
@@ -606,7 +620,7 @@ export default function AdminDailyBalanceSheet() {
     } finally {
       setSaving(false);
     }
-  }, [isLocked, sheet, selectedDate, outletId, loadSheet]);
+  }, [isLocked, sheet, selectedDate, outletId, isAllOutlets]);
 
   const handleSave = () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -1112,7 +1126,8 @@ export default function AdminDailyBalanceSheet() {
           )}
           <button
             onClick={handleSave}
-            disabled={saving || isLocked || !dirty}
+            disabled={saving || isLocked || !dirty || isAllOutlets}
+            title={isAllOutlets ? 'Select a specific outlet to save' : ''}
             className="flex items-center gap-1 rounded-lg bg-[#E53935] px-3 py-2 text-sm font-bold text-white hover:bg-[#C62828] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}

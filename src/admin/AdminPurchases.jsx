@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import html2canvas from 'html2canvas';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 import PurchaseReportTemplate from './components/PurchaseReportTemplate';
+import PurchaseHistory from './components/PurchaseHistory';
 import { getUnitOptions } from '../shared/utils/unitConversion';
 import { PAYMENT_METHODS, API_TIMEOUT_SHORT_MS, API_TIMEOUT_DEFAULT_MS, API_TIMEOUT_SAVE_DAILY_MS } from '../shared/utils/constants';
 
@@ -33,7 +34,27 @@ export default function AdminPurchases() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // View state: 'vendors' | 'po-grid' | 'po-detail' | 'po-form' | 'vendor-detail' | 'daily-entry'
+  // Outlet selection — mirrors AdminDailyBalanceSheet pattern.
+  // "all" → show/save across all tenant outlets
+  // specific id → show/save for that outlet only
+  const [outletId, setOutletId] = useState(() => {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      const outlets = raw ? JSON.parse(raw) : [];
+      if (outlets.length > 1) return 'all';
+      if (outlets.length === 1) return outlets[0].id;
+    } catch {}
+    const rid = user?.activeRestaurantId || user?.restaurantId || restaurant?.id;
+    return rid || 'all';
+  });
+  const accessibleOutlets = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('ss_accessible_outlets');
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }, []);
+
+  // View state: 'vendors' | 'po-grid' | 'po-detail' | 'po-form' | 'vendor-detail' | 'daily-entry' | 'purchase-history'
   const [view, setView] = useState('daily-entry');
   const [selectedVendorId, setSelectedVendorId] = useState(null);
   const [selectedPOId, setSelectedPOId] = useState(null);
@@ -98,7 +119,7 @@ export default function AdminPurchases() {
       try {
         const parsed = JSON.parse(draft);
         if (parsed.date === today && parsed.rows?.length > 0) {
-          apiFetch(`/api/purchase-orders/daily?date=${today}`, { timeout: API_TIMEOUT_SHORT_MS })
+          apiFetch(`/api/purchase-orders/daily?date=${today}${outletId ? `&outletId=${outletId}` : ''}`, { timeout: API_TIMEOUT_SHORT_MS })
             .then((data) => { if (!data || data.length === 0) setDailyRows(parsed.rows); })
             .catch(() => setDailyRows(parsed.rows));
         }
@@ -457,16 +478,18 @@ export default function AdminPurchases() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiFetch(`/api/purchase-orders/daily?date=${date}`);
+      const data = await apiFetch(`/api/purchase-orders/daily?date=${date}${outletId ? `&outletId=${outletId}` : ''}`);
 
       if (data.length === 0) {
-        setDailyRows([{ itemName: '', kitchenInventoryItemId: null, vendorId: '', quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' }]);
+        setDailyRows([{ itemName: '', kitchenInventoryItemId: null, vendorId: '', categoryId: null, categoryName: null, quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' }]);
       } else {
         setDailyRows(data.map((e) => ({
           id: e.id,
           itemName: e.itemName,
           kitchenInventoryItemId: e.kitchenInventoryItemId,
           vendorId: e.vendorId,
+          categoryId: e.categoryId || null,
+          categoryName: e.categoryName || null,
           quantity: String(e.quantity),
           unit: e.unit || 'NOS',
           unitPrice: String(e.unitPrice),
@@ -481,7 +504,7 @@ export default function AdminPurchases() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [outletId]);
 
   useEffect(() => {
     if (view === 'daily-entry') {
@@ -491,7 +514,7 @@ export default function AdminPurchases() {
   }, [view, dailyEntryDate, loadDailyKitchenItems, loadDailyEntries]);
 
   const addDailyRow = () => {
-    setDailyRows((prev) => [...prev, { itemName: '', kitchenInventoryItemId: null, vendorId: '', quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' }]);
+    setDailyRows((prev) => [...prev, { itemName: '', kitchenInventoryItemId: null, vendorId: '', categoryId: null, categoryName: null, quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' }]);
   };
 
   const removeDailyRow = (idx) => {
@@ -545,6 +568,12 @@ export default function AdminPurchases() {
 
   const handleSaveDaily = async () => {
     console.log('[AdminPurchases] handleSaveDaily clicked', { dailyEntryReadOnly, dailyEntryDate, rows: dailyRows.length });
+    // When "All Outlets" is selected, require the user to pick a specific outlet
+    // before saving — purchases must be saved to a single outlet.
+    if (outletId === 'all' && accessibleOutlets.length > 1) {
+      setError('Please select a specific outlet before saving. Purchases cannot be saved to "All Outlets".');
+      return;
+    }
     // Filter out completely empty rows (no item name, no qty, no price)
     const validRows = dailyRows.filter((r) => r.itemName?.trim() && (parseFloat(r.quantity) || 0) > 0);
     if (validRows.length === 0) {
@@ -567,10 +596,12 @@ export default function AdminPurchases() {
         timeout: API_TIMEOUT_SAVE_DAILY_MS,
         body: JSON.stringify({
           date: dailyEntryDate,
+          outletId: outletId && outletId !== 'all' ? outletId : undefined,
           rows: validRows.map((r) => ({
             itemName: r.itemName.trim(),
             kitchenInventoryItemId: r.kitchenInventoryItemId || undefined,
             vendorId: r.vendorId,
+            categoryId: r.categoryId || undefined,
             quantity: parseFloat(r.quantity) || 0,
             unit: r.unit.trim(),
             unitPrice: parseFloat(r.unitPrice) || 0,
@@ -656,7 +687,7 @@ export default function AdminPurchases() {
     } else {
       // No local data — try fetching from backend
       try {
-        const savedEntries = await apiFetch(`/api/purchase-orders/daily?date=${dailyEntryDate}`, { timeout: API_TIMEOUT_SHORT_MS });
+        const savedEntries = await apiFetch(`/api/purchase-orders/daily?date=${dailyEntryDate}${outletId ? `&outletId=${outletId}` : ''}`, { timeout: API_TIMEOUT_SHORT_MS });
         if (!savedEntries || savedEntries.length === 0) {
           setError('No saved purchase entries to share. Save entries first.');
           if (whatsappTab) try { whatsappTab.close(); } catch {}
@@ -1535,7 +1566,19 @@ export default function AdminPurchases() {
                 <Calendar size={18} className="text-[#E53935]" />
                 Daily Purchase Entry
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {accessibleOutlets.length > 1 && (
+                  <select
+                    value={outletId}
+                    onChange={(e) => setOutletId(e.target.value)}
+                    className="text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-[#E53935]"
+                  >
+                    <option value="all">All Outlets</option>
+                    {accessibleOutlets.map((o) => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                )}
                 <input
                   type="date"
                   value={dailyEntryDate}
@@ -1543,6 +1586,12 @@ export default function AdminPurchases() {
                   onChange={(e) => setDailyEntryDate(e.target.value)}
                   className="text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-[#E53935]"
                 />
+                <button
+                  onClick={() => setView('purchase-history')}
+                  className="text-[10px] font-black uppercase text-[#E53935] hover:bg-red-50 bg-red-50 px-2 py-1 rounded"
+                >
+                  History
+                </button>
                 <button
                   onClick={() => setView('vendors')}
                   className="text-[10px] font-black uppercase text-gray-500 hover:text-[#E53935] bg-gray-50 px-2 py-1 rounded"
@@ -1712,6 +1761,25 @@ export default function AdminPurchases() {
                       </select>
                     )}
                   </div>
+
+                  {/* Category picker */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-gray-400 whitespace-nowrap">Category</span>
+                    <div className="flex-1">
+                      <LedgerCategoryPicker
+                        entryType="GROCERY"
+                        value={row.categoryId ? { id: row.categoryId, name: row.categoryName } : null}
+                        onChange={(cat) => {
+                          setDailyRows((prev) => prev.map((r, i) => i === idx ? {
+                            ...r,
+                            categoryId: cat?.id || null,
+                            categoryName: cat?.name || null,
+                          } : r));
+                        }}
+                        placeholder="Select or create category..."
+                      />
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -1760,6 +1828,14 @@ export default function AdminPurchases() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Purchase History View ──────────────────────────────────────────────── */}
+      {view === 'purchase-history' && (
+        <PurchaseHistory
+          onBack={() => setView('daily-entry')}
+          outletId={outletId}
+        />
       )}
 
       {/* ── New Vendor Modal ───────────────────────────────────────────────────── */}
