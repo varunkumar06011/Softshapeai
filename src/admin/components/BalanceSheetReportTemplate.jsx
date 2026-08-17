@@ -5,8 +5,6 @@
 
 import {
   Store, Calendar, ClipboardList, TrendingUp, ArrowDownCircle,
-  Wallet, Banknote, CreditCard,
-  Smartphone, Landmark,
 } from 'lucide-react';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -91,19 +89,6 @@ function TotalRow({ label, amount, tint = '#E63946' }) {
   );
 }
 
-function PaymentTile({ icon: Icon, label, amount, pct, color }) {
-  return (
-    <div className="rounded-xl border p-3 text-center" style={{ borderColor: '#E5E7EB', background: '#FFFFFF' }}>
-      <div className="mx-auto mb-1.5 flex h-9 w-9 items-center justify-center rounded-full" style={{ background: `${color}1A` }}>
-        <Icon size={16} style={{ color }} />
-      </div>
-      <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#9CA3AF' }}>{label}</div>
-      <div className="text-base font-black" style={{ color: '#111827' }}>{inr(amount)}</div>
-      <div className="text-[10px] font-bold" style={{ color }}>{pct}%</div>
-    </div>
-  );
-}
-
 function CalcBox({ label, value, highlight }) {
   return (
     <div
@@ -123,9 +108,6 @@ function CalcBox({ label, value, highlight }) {
 
 // ── Main template ────────────────────────────────────────────────────────
 export default function BalanceSheetReportTemplate({ data, logoSrc }) {
-  const totalReceipts = (data.payment?.cash || 0) + (data.payment?.upi || 0) + (data.payment?.card || 0) + (data.payment?.credit || 0);
-  const pct = (n) => totalReceipts > 0 ? ((n / totalReceipts) * 100).toFixed(2) : '0.00';
-
   return (
     <div
       id="balance-sheet-report"
@@ -183,7 +165,7 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
         <KpiCard icon={TrendingUp} label="Net Sales" value={data.netSales}
           sub="After Aggregator Deduction" color="#0EA5E9" bg="#F0F9FF" />
         <KpiCard icon={ArrowDownCircle} label="Total Expenditure" value={data.totalExpenditure}
-          sub={`from ${data.totalExpenditureCategoriesCount} categories`} color="#3B82F6" bg="#EFF6FF" />
+          sub={`from ${data.totalExpenditureEntriesCount} entries`} color="#3B82F6" bg="#EFF6FF" />
         <KpiCard icon={TrendingUp} label="Net Closing Balance" value={data.netClosingBalance}
           sub="After Expenditure" color="#16A34A" bg="#F0FDF4" />
       </div>
@@ -204,13 +186,13 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
           <TotalRow label="Net Sales (after Swiggy + Zomato deduction)" amount={data.netSales} />
         </div>
 
-        {/* RIGHT: Expenditure (auto + manual combined) */}
+        {/* RIGHT: Expenditure (auto expenditures + manual minus-adjustments combined) */}
         <div className="rounded-xl border p-4" style={{ borderColor: '#E5E7EB' }}>
           <SectionBadge n={2}>EXPENDITURE</SectionBadge>
           <div className="flex justify-between pb-1 text-[10px] font-bold uppercase" style={{ color: '#9CA3AF' }}>
             <span>Description</span><span>Amount (₹)</span>
           </div>
-          {data.expenditures.map((row, idx) => (
+          {[...(data.expenditures || []), ...(data.adjustments || [])].map((row, idx) => (
             <div key={idx} className="flex items-start justify-between py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
               <div className="flex-1">
                 <span className="text-sm font-semibold" style={{ color: '#334155' }}>{row.label}</span>
@@ -222,52 +204,33 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
             </div>
           ))}
           <TotalRow label="Total Expenditure" amount={data.totalExpenditure} />
-          {data.adjustments?.length > 0 && (
-            <>
-              <div className="mt-3 mb-1 text-[10px] font-bold uppercase" style={{ color: '#9CA3AF' }}>Adjustments</div>
-              {data.adjustments.map((row, idx) => (
-                <div key={idx} className="flex items-start justify-between py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
-                  <div className="flex-1">
-                    <span className="text-sm font-semibold" style={{ color: '#334155' }}>{row.label}</span>
-                    {row.narration && (
-                      <div className="text-[10px] font-medium" style={{ color: '#9CA3AF' }}>{row.narration}</div>
-                    )}
-                  </div>
-                  <span className="text-sm font-bold leading-none" style={{ color: '#1E293B' }}>{inr(row.amount).replace('₹', '')}</span>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ── Payment Mode Summary ───────────────────────────────────── */}
-      <div className="mt-6 overflow-hidden rounded-xl border" style={{ borderColor: '#E5E7EB' }}>
-        <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: '#0F172A' }}>
-          <Wallet size={16} style={{ color: '#FFFFFF' }} />
-          <span className="text-xs font-bold tracking-wide" style={{ color: '#FFFFFF' }}>PAYMENT MODE SUMMARY</span>
-        </div>
-        <div className="grid grid-cols-4 gap-3 p-4">
-          <PaymentTile icon={Banknote} label="Cash" amount={data.payment?.cash || 0} pct={pct(data.payment?.cash || 0)} color="#16A34A" />
-          <PaymentTile icon={Smartphone} label="UPI" amount={data.payment?.upi || 0} pct={pct(data.payment?.upi || 0)} color="#3B82F6" />
-          <PaymentTile icon={CreditCard} label="Card" amount={data.payment?.card || 0} pct={pct(data.payment?.card || 0)} color="#7C3AED" />
-          <PaymentTile icon={Landmark} label="Credit" amount={data.payment?.credit || 0} pct={pct(data.payment?.credit || 0)} color="#F59E0B" />
-        </div>
-        <div className="flex items-center justify-between px-4 py-2.5" style={{ borderTop: '1px solid #E5E7EB' }}>
-          <span className="text-xs font-bold uppercase" style={{ color: '#334155' }}>Total Receipts</span>
-          <span className="text-sm font-black" style={{ color: '#111827' }}>{inr(totalReceipts)}</span>
+          <div className="mt-1 text-[10px] font-bold" style={{ color: '#3B82F6' }}>
+            from {data.totalExpenditureEntriesCount} entries
+          </div>
         </div>
       </div>
 
       {/* ── Calculation Summary ────────────────────────────────────── */}
       <div className="mt-6">
         <SectionBadge n={3}>CALCULATION SUMMARY</SectionBadge>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {(data.openingBalance || 0) > 0 && (
+            <>
+              <CalcBox label="Opening Balance" value={data.openingBalance} />
+              <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
+            </>
+          )}
           <CalcBox label="Net Sales" value={data.netSales} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
           <CalcBox label="Other Income" value={data.otherIncome || 0} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>−</span>
           <CalcBox label="Total Expenditure" value={data.totalExpenditure} />
+          {(data.nonCashAddBack || 0) > 0 && (
+            <>
+              <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
+              <CalcBox label="Non-Cash Add-Back" value={data.nonCashAddBack} />
+            </>
+          )}
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>=</span>
           <CalcBox label="Net Closing Balance" value={data.netClosingBalance} highlight />
         </div>

@@ -361,7 +361,6 @@ export default function AdminDailyBalanceSheet() {
   const [showLedgerActivity, setShowLedgerActivity] = useState(false);
   const [ledgerActivityLoading, setLedgerActivityLoading] = useState(false);
   const [logoBase64, setLogoBase64] = useState(null);
-  const [allOutletsPaymentSummary, setAllOutletsPaymentSummary] = useState(null);
   const saveTimerRef = useRef(null);
   const dragItemRef = useRef(null);
   const saveSeqRef = useRef(0);
@@ -374,38 +373,6 @@ export default function AdminDailyBalanceSheet() {
       .then((data) => setLogoBase64(data))
       .catch(() => setLogoBase64(null));
   }, []);
-
-  // Fetch aggregated payment-mode summary across all accessible outlets for the selected date.
-  // The X report is per-outlet, so we use the reports/payment-methods endpoint with a
-  // single-day range to get the all-outlet cash/card/upi totals and percentages.
-  const loadAllOutletsPaymentSummary = useCallback(async () => {
-    if (!selectedDate) {
-      setAllOutletsPaymentSummary(null);
-      return;
-    }
-    try {
-      const params = new URLSearchParams({ startDate: selectedDate, endDate: selectedDate });
-      const data = await apiFetch(`/api/reports/payment-methods?${params.toString()}`);
-      const byMethod = (method) => data.methods.find((m) => m.method === method)?.amount || 0;
-      const pctByMethod = (method) => data.methods.find((m) => m.method === method)?.percent || 0;
-      setAllOutletsPaymentSummary({
-        cash: byMethod('CASH'),
-        card: byMethod('CARD'),
-        upi: byMethod('UPI'),
-        credit: byMethod('OTHER'),
-        pctCash: pctByMethod('CASH'),
-        pctCard: pctByMethod('CARD'),
-        pctUpi: pctByMethod('UPI'),
-        pctCredit: pctByMethod('OTHER'),
-        totalAmount: data.summary?.totalAmount || 0,
-      });
-    } catch (err) {
-      console.error('[BalanceSheet] Failed to load all-outlet payment summary:', err);
-      setAllOutletsPaymentSummary(null);
-    }
-  }, [selectedDate]);
-
-  useEffect(() => { loadAllOutletsPaymentSummary(); }, [loadAllOutletsPaymentSummary]);
 
   const accessibleOutlets = useMemo(() => {
     try {
@@ -455,7 +422,7 @@ export default function AdminDailyBalanceSheet() {
   const loadExpenditures = useCallback(async () => {
     setExpendituresLoading(true);
     try {
-      const params = new URLSearchParams({ date: selectedDate, limit: '500', outletId });
+      const params = new URLSearchParams({ date: selectedDate, limit: '5000', outletId });
       const data = await apiFetch(`/api/expenditures?${params.toString()}`);
       setExpenditures((data || []).filter(v => v.entryType !== 'LIABILITY'));
     } catch {
@@ -564,8 +531,22 @@ export default function AdminDailyBalanceSheet() {
     ? round2(overrides.totalSalesOverride)
     : computedTotalSales;
 
-  const totalExpenditures = Number(sheet?.totalExpenditures) || 0;
-  const nonCashExpenditures = Number(sheet?.nonCashExpenditures) || 0;
+  // Single source of truth: derive totals from the same expenditure entries
+  // displayed in the Expenditure section. This guarantees the displayed entries,
+  // the TOTAL EXPENDITURE, and the NET CLOSING BALANCE are always consistent.
+  const expenditureSubtotal = useMemo(() => {
+    return expenditures.filter((v) => v.status !== 'VOIDED').reduce((sum, v) => sum + Number(v.amount), 0);
+  }, [expenditures]);
+
+  // Non-cash portion of the displayed expenditures (vendor/PO payments via UPI/BANK/etc.)
+  // Mirrors backend computeNonCashExpenditureTotal: LIABILITY_PAYMENT, non-VOIDED, non-CASH.
+  const nonCashExpenditures = useMemo(() => {
+    return expenditures
+      .filter((v) => v.status !== 'VOIDED' && v.entryType === 'LIABILITY_PAYMENT' && v.paymentMethod && v.paymentMethod !== 'CASH')
+      .reduce((sum, v) => sum + Number(v.amount), 0);
+  }, [expenditures]);
+
+  const totalExpenditures = expenditureSubtotal;
   const effectiveTotalExpenditures = overrides.totalExpendituresOverride != null
     ? round2(overrides.totalExpendituresOverride)
     : round2(totalExpenditures);
@@ -747,10 +728,6 @@ export default function AdminDailyBalanceSheet() {
     return groups;
   }, [expenditures]);
 
-  const expenditureSubtotal = useMemo(() => {
-    return expenditures.filter((v) => v.status !== 'VOIDED').reduce((sum, v) => sum + Number(v.amount), 0);
-  }, [expenditures]);
-
   // ── Helper: Convert number to words (Indian Rupees) ───────────────────────
   function numberToWords(num) {
     if (num === 0) return 'Zero Only';
@@ -798,16 +775,11 @@ export default function AdminDailyBalanceSheet() {
     const generatedOn = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' | ' + 
                       now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-    // Payment mode data aggregated across all accessible outlets for the day
-    const paymentData = {
-      cash: Number(allOutletsPaymentSummary?.cash) || 0,
-      upi: Number(allOutletsPaymentSummary?.upi) || 0,
-      card: Number(allOutletsPaymentSummary?.card) || 0,
-      credit: Number(allOutletsPaymentSummary?.credit) || 0,
-    };
-
     // Calculate gross balance (sales - expenditure)
     const grossBalance = totalSales - totalExpenditures;
+
+    const minusAdjustmentsTotal = round2(adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0));
+    const otherIncomeTotal = round2(adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0));
 
     // Build template data
     const templateData = {
@@ -820,13 +792,19 @@ export default function AdminDailyBalanceSheet() {
       totalSales,
       netSales: balanceCalc.netSales,
       totalSalesSourcesCount: 5,
-      totalExpenditure: round2(expenditureSubtotal),
-      totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
-      totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
+      // Total Expenditure includes the minus adjustments because they are
+      // displayed as rows inside the Expenditure section.
+      totalExpenditure: round2(effectiveTotalExpenditures + minusAdjustmentsTotal),
+      totalExpenditureEntriesCount:
+        expenditures.filter(v => v.status !== 'VOIDED').length +
+        adjustments.filter(a => a.sign !== 'PLUS').length,
+      totalAdjustments: minusAdjustmentsTotal,
       totalAdjustmentsEntriesCount: adjustments.filter(a => a.sign !== 'PLUS').length,
       grossBalance,
       netClosingBalance: balanceCalc.closingBalance,
-      otherIncome: adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
+      otherIncome: otherIncomeTotal,
+      openingBalance: round2(overrides.openingBalance || 0),
+      nonCashAddBack: round2(balanceCalc.nonCashExpenditures || 0),
       amountInWords: numberToWords(balanceCalc.closingBalance),
       grossSales: totalSales,
       aggregatorSales: round2(computedSales.swiggy + computedSales.zomato),
@@ -848,7 +826,6 @@ export default function AdminDailyBalanceSheet() {
         amount: Number(a.amount),
         narration: a.narration || null,
       })),
-      payment: paymentData,
     };
 
     // Create off-screen container
@@ -920,7 +897,7 @@ export default function AdminDailyBalanceSheet() {
       }
       throw err;
     }
-  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, expenditureSubtotal, expenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, computedSales, allOutletsPaymentSummary, user?.name, logoBase64]);
+  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, effectiveTotalExpenditures, expenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, balanceCalc.netSales, balanceCalc.nonCashExpenditures, overrides.openingBalance, computedSales, user?.name, logoBase64]);
 
   // ── WhatsApp share: generate PNG and share via Web Share API ───────────────
   const handleWhatsAppShare = async () => {
@@ -938,14 +915,10 @@ export default function AdminDailyBalanceSheet() {
       const generatedOn = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' | ' + 
                         now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-      const paymentData = {
-        cash: Number(allOutletsPaymentSummary?.cash) || 0,
-        upi: Number(allOutletsPaymentSummary?.upi) || 0,
-        card: Number(allOutletsPaymentSummary?.card) || 0,
-        credit: Number(allOutletsPaymentSummary?.credit) || 0,
-      };
-
       const grossBalance = totalSales - totalExpenditures;
+
+      const minusAdjustmentsTotal = round2(adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0));
+      const otherIncomeTotal = round2(adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0));
 
       const templateData = {
         outletName,
@@ -957,13 +930,19 @@ export default function AdminDailyBalanceSheet() {
         totalSales,
         netSales: balanceCalc.netSales,
         totalSalesSourcesCount: 5,
-        totalExpenditure: round2(expenditureSubtotal),
-        totalExpenditureCategoriesCount: Object.keys(expenditureGroups).length,
-        totalAdjustments: adjustments.filter(a => a.sign !== 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
+        // Total Expenditure includes the minus adjustments because they are
+        // displayed as rows inside the Expenditure section.
+        totalExpenditure: round2(effectiveTotalExpenditures + minusAdjustmentsTotal),
+        totalExpenditureEntriesCount:
+          expenditures.filter(v => v.status !== 'VOIDED').length +
+          adjustments.filter(a => a.sign !== 'PLUS').length,
+        totalAdjustments: minusAdjustmentsTotal,
         totalAdjustmentsEntriesCount: adjustments.filter(a => a.sign !== 'PLUS').length,
         grossBalance,
         netClosingBalance: balanceCalc.closingBalance,
-        otherIncome: adjustments.filter(a => a.sign === 'PLUS').reduce((sum, a) => sum + Number(a.amount), 0),
+        otherIncome: otherIncomeTotal,
+        openingBalance: round2(overrides.openingBalance || 0),
+        nonCashAddBack: round2(balanceCalc.nonCashExpenditures || 0),
         amountInWords: numberToWords(balanceCalc.closingBalance),
         grossSales: totalSales,
         aggregatorSales: round2(computedSales.swiggy + computedSales.zomato),
@@ -985,7 +964,6 @@ export default function AdminDailyBalanceSheet() {
           amount: Number(a.amount),
           narration: a.narration || null,
         })),
-        payment: paymentData,
       };
 
       const container = document.createElement('div');
