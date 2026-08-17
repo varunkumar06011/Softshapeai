@@ -458,8 +458,6 @@ export default function AdminPurchases() {
     setError('');
     try {
       const data = await apiFetch(`/api/purchase-orders/daily?date=${date}`);
-      const today = getKolkataDateString();
-      const readOnly = date !== today;
 
       if (data.length === 0) {
         setDailyRows([{ itemName: '', kitchenInventoryItemId: null, vendorId: '', quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' }]);
@@ -477,7 +475,7 @@ export default function AdminPurchases() {
           paymentMethod: e.paymentMethod || 'CASH',
         })));
       }
-      setDailyEntryReadOnly(readOnly);
+      setDailyEntryReadOnly(false);
     } catch (err) {
       setError(err.message || 'Failed to load daily entries');
     } finally {
@@ -521,8 +519,8 @@ export default function AdminPurchases() {
       unit: item.unit || row.unit,
       _showSuggestions: false,
     } : row));
-    // Fetch previous price
-    apiFetch(`/api/purchase-orders/daily/previous-price?kitchenInventoryItemId=${item.id}&beforeDate=${getKolkataDateString()}`)
+    // Fetch previous price (relative to the currently selected date)
+    apiFetch(`/api/purchase-orders/daily/previous-price?kitchenInventoryItemId=${item.id}&beforeDate=${dailyEntryDate}`)
       .then((data) => {
         if (data.previousPrice != null) {
           setDailyRows((prev) => prev.map((row, i) => i === idx ? { ...row, previousPrice: data.previousPrice } : row));
@@ -547,17 +545,6 @@ export default function AdminPurchases() {
 
   const handleSaveDaily = async () => {
     console.log('[AdminPurchases] handleSaveDaily clicked', { dailyEntryReadOnly, dailyEntryDate, rows: dailyRows.length });
-    // Prevent saving past dates (read-only)
-    if (dailyEntryReadOnly) {
-      setError('Past dates are read-only. Switch to today to save entries.');
-      return;
-    }
-    // Ensure date is today
-    const today = getKolkataDateString();
-    if (dailyEntryDate !== today) {
-      setError('Can only save entries for today. Please select today\'s date.');
-      return;
-    }
     // Filter out completely empty rows (no item name, no qty, no price)
     const validRows = dailyRows.filter((r) => r.itemName?.trim() && (parseFloat(r.quantity) || 0) > 0);
     if (validRows.length === 0) {
@@ -1556,11 +1543,6 @@ export default function AdminPurchases() {
                   onChange={(e) => setDailyEntryDate(e.target.value)}
                   className="text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-[#E53935]"
                 />
-                {dailyEntryReadOnly && (
-                  <span className="text-[10px] font-black uppercase bg-gray-100 text-gray-500 px-2 py-1 rounded">
-                    Read Only
-                  </span>
-                )}
                 <button
                   onClick={() => setView('vendors')}
                   className="text-[10px] font-black uppercase text-gray-500 hover:text-[#E53935] bg-gray-50 px-2 py-1 rounded"
