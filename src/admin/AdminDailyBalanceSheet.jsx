@@ -562,14 +562,6 @@ export default function AdminDailyBalanceSheet() {
   // ── Manual save ────────────────────────────────────────────────────────────
   const doSave = useCallback(async () => {
     if (isLocked || !sheet) return;
-    // Block saving in "All Outlets" mode — the PUT endpoint saves to a single
-    // outlet only. Applying the single-outlet response to the aggregate view
-    // replaces the aggregate auto-fetched sales numbers (AC Bar, Non-AC, etc.)
-    // with single-outlet numbers, making them appear to vanish.
-    if (isAllOutlets) {
-      setError('Please select a specific outlet before saving. The "All Outlets" view is read-only.');
-      return;
-    }
     setSaving(true);
     const thisSeq = ++saveSeqRef.current;
     const saveDate = selectedDate;
@@ -595,7 +587,7 @@ export default function AdminDailyBalanceSheet() {
         })),
       };
       const params = new URLSearchParams();
-      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      if (outletId) params.set('outletId', outletId);
       const updated = await apiFetch(`/api/balance-sheet/${selectedDate}?${params.toString()}`, {
         method: 'PUT',
         body: JSON.stringify(body),
@@ -620,7 +612,7 @@ export default function AdminDailyBalanceSheet() {
     } finally {
       setSaving(false);
     }
-  }, [isLocked, sheet, selectedDate, outletId, isAllOutlets]);
+  }, [isLocked, sheet, selectedDate, outletId]);
 
   const handleSave = () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -697,7 +689,7 @@ export default function AdminDailyBalanceSheet() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      if (outletId) params.set('outletId', outletId);
       const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/submit?${params.toString()}`, { method: 'POST' });
       setSheet(updated);
     } catch (err) { setError(err.message); }
@@ -710,7 +702,7 @@ export default function AdminDailyBalanceSheet() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      if (outletId) params.set('outletId', outletId);
       const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/lock?${params.toString()}`, { method: 'POST' });
       setSheet(updated);
     } catch (err) { setError(err.message); }
@@ -723,7 +715,7 @@ export default function AdminDailyBalanceSheet() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (outletId && outletId !== 'all') params.set('outletId', outletId);
+      if (outletId) params.set('outletId', outletId);
       const updated = await apiFetch(`/api/balance-sheet/${selectedDate}/unlock?${params.toString()}`, { method: 'POST' });
       setSheet(updated);
     } catch (err) { setError(err.message); }
@@ -1126,8 +1118,7 @@ export default function AdminDailyBalanceSheet() {
           )}
           <button
             onClick={handleSave}
-            disabled={saving || isLocked || !dirty || isAllOutlets}
-            title={isAllOutlets ? 'Select a specific outlet to save' : ''}
+            disabled={saving || isLocked || !dirty}
             className="flex items-center gap-1 rounded-lg bg-[#E53935] px-3 py-2 text-sm font-bold text-white hover:bg-[#C62828] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
