@@ -821,8 +821,12 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
 
   const todayExpenditure = expenditureData?.totalAmount || 0;
   const lastWeekExpenditureAmount = lastWeekExpenditure?.totalAmount || 0;
-  const todayNetCash = Math.max(0, todayRevenue - todayExpenditure);
-  const lastWeekNetCash = Math.max(0, lastWeekRevenue - lastWeekExpenditureAmount);
+  // Use the totalSales prop (from loadStats / summary aggregate, paidAt-based) for
+  // today's Final Amount so it matches the Total Sales tile exactly. The byDay
+  // revenue (txnDate-based) can differ from summary.totalSales for midnight-edge
+  // transactions, causing a small discrepancy between the two tiles.
+  const todayNetCash = totalSales - todayExpenditure;
+  const lastWeekNetCash = lastWeekRevenue - lastWeekExpenditureAmount;
 
   const todaySpecialsCount = useMemo(() =>
     (specialsData?.today?.specials || []).reduce((s, x) => s + Number(x.soldCount || 0), 0),
