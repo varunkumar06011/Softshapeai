@@ -746,13 +746,16 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   }, [loadExpenditure, activeDate, shiftDate]);
 
   // Today's purchase entries — count + total price
-  const loadPurchaseEntries = useCallback(async (date) => {
-    const data = await apiFetch(`/api/purchase-orders/daily?date=${date}`);
+  // outletId mirrors the Total Sales / Expenditure fetches so the Today
+  // Purchases tile stays consistent across single-outlet and All-Outlets
+  // dashboard scopes. Backend already supports outletId on this endpoint.
+  const loadPurchaseEntries = useCallback(async (date, scopeOutletId = outletId) => {
+    const data = await apiFetch(`/api/purchase-orders/daily?date=${date}&outletId=${scopeOutletId}`);
     if (!Array.isArray(data)) return { count: 0, amount: 0 };
     const count = data.length;
     const amount = data.reduce((sum, e) => sum + Number(e.totalPrice || 0), 0);
     return { count, amount: Math.round(amount * 100) / 100 };
-  }, []);
+  }, [outletId]);
 
   useEffect(() => {
     let cancelled = false;
