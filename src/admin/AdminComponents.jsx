@@ -710,13 +710,16 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   }, [loadSpecialsByStaff, activeDate]);
 
   // Expenditure
-  const loadExpenditure = useCallback(async (date) => {
-    const data = await apiFetch(`/api/expenditures/today-summary?date=${date}`);
+  // outletId mirrors the Total Sales fetch so the Final Amount tile
+  // (Total Sales - Expenditures) stays consistent across single-outlet and
+  // All-Outlets dashboard scopes.
+  const loadExpenditure = useCallback(async (date, scopeOutletId = outletId) => {
+    const data = await apiFetch(`/api/expenditures/today-summary?date=${date}&outletId=${scopeOutletId}`);
     return {
       totalAmount: Math.round(Number(data?.totalAmount || 0) * 100) / 100,
       count: Number(data?.count || 0),
     };
-  }, []);
+  }, [outletId]);
 
   useEffect(() => {
     let cancelled = false;
