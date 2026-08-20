@@ -167,6 +167,8 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
         id: o.id,
         name: o.name,
         restaurantCode: o.restaurantCode,
+        restaurantType: o.restaurantType ?? null,
+        enabledModules: o.enabledModules ?? null,
       }));
       setAccessibleOutlets(list);
       localStorage.setItem('ss_accessible_outlets', JSON.stringify(list));
@@ -359,11 +361,12 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
   const routeCtx = useMemo(() => ({
     revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading,
     activeOutlet, loadStats, dashboardScope, selectedDate, setSelectedDate, role,
+    accessibleOutlets,
     onAddDish: () => setDishModalOpen(true),
     goToSection,
     mUpload, setMUpload, mUploadRef, mGenerated, setMGenerated, mPosted, setMPosted,
   }), [revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, statsLoading, activeOutlet, loadStats,
-       goToSection, mUpload, mGenerated, mPosted, dashboardScope, selectedDate, setSelectedDate, role]);
+       goToSection, mUpload, mGenerated, mPosted, dashboardScope, selectedDate, setSelectedDate, role, accessibleOutlets]);
 
   const handleQuickSwitch = async (outletId) => {
     setShowOutletSwitcher(false);

@@ -57,6 +57,45 @@ function normalizeInventoryArray(items) {
   return items.map(normalizeInventoryItem);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Idempotency helpers — generate and persist requestId across retries
+// so the server can deduplicate double-clicks and network-retry submissions.
+// Uses sessionStorage (survives modal unmount/remount within the same browser
+// session) keyed by `item+action`. Callers must clear the key on success/error.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Get or create a requestId for a bar inventory mutation.
+ * The same key returns the same UUID across calls within a browser session,
+ * so retries (double-click, timeout-then-retry) reuse the same ID.
+ * @param {string} actionKey — e.g. `bar-purchase:${itemId}` or `bar-adjust:${itemId}`
+ * @returns {string} UUID
+ */
+export function getOrCreateRequestId(actionKey) {
+  const storageKey = `barInvReqId:${actionKey}`;
+  try {
+    let id = sessionStorage.getItem(storageKey);
+    if (!id) {
+      id = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      sessionStorage.setItem(storageKey, id);
+    }
+    return id;
+  } catch {
+    // sessionStorage may be unavailable (private mode) — generate ephemeral UUID
+    return crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+/**
+ * Clear the persisted requestId after a confirmed success or terminal error.
+ * @param {string} actionKey — same key passed to getOrCreateRequestId
+ */
+export function clearRequestId(actionKey) {
+  try {
+    sessionStorage.removeItem(`barInvReqId:${actionKey}`);
+  } catch {}
+}
+
 // Get all inventory items
 export async function fetchBarInventory(date = '') {
   try {
@@ -108,24 +147,32 @@ export async function deleteInventoryItem(id) {
 }
 
 // Adjust stock (manual adjustment)
+// data.requestId (optional) — UUID for idempotency; if provided, server deduplicates
+// retries with the same requestId via ProcessedRequest.
 export async function adjustStock(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/adjust-stock'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
-  const item = await parseResponse(res);
+  const result = await parseResponse(res);
+  // Backend returns { item, transaction } — normalize the item for callers
+  const item = result?.item ?? result;
   return normalizeInventoryItem(item);
 }
 
 // Record purchase
+// data.requestId (optional) — UUID for idempotency; if provided, server deduplicates
+// retries with the same requestId via ProcessedRequest.
 export async function recordPurchase(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/record-purchase'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
-  const item = await parseResponse(res);
+  const result = await parseResponse(res);
+  // Backend returns { item, transaction } — normalize the item for callers
+  const item = result?.item ?? result;
   return normalizeInventoryItem(item);
 }
 

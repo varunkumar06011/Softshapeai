@@ -79,7 +79,9 @@ export default function AdminPurchases() {
   const [dailyEntryDate, setDailyEntryDate] = useState(getKolkataDateString());
   const [dailyEntryReadOnly, setDailyEntryReadOnly] = useState(false);
   const [dailyKitchenItems, setDailyKitchenItems] = useState([]);
+  const [dailyBarItems, setDailyBarItems] = useState([]);
   const [dailySaving, setDailySaving] = useState(false);
+  const [deletingIdx, setDeletingIdx] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [pendingVendorRowIndex, setPendingVendorRowIndex] = useState(null);
   const [backendOnline, setBackendOnline] = useState(isBackendReachable());
@@ -474,6 +476,17 @@ export default function AdminPurchases() {
     }
   }, []);
 
+  // Load bar menu items for autocomplete (multi-tenant — scoped to outlet)
+  const loadDailyBarItems = useCallback(async () => {
+    try {
+      const params = outletId && outletId !== 'all' ? `?outletId=${outletId}` : '';
+      const data = await apiFetch(`/api/purchase-orders/daily/bar-items${params}`);
+      setDailyBarItems(data || []);
+    } catch (err) {
+      console.error('[AdminPurchases] Load daily bar items failed:', err);
+    }
+  }, [outletId]);
+
   const loadDailyEntries = useCallback(async (date) => {
     setLoading(true);
     setError('');
@@ -486,15 +499,17 @@ export default function AdminPurchases() {
         setDailyRows(data.map((e) => ({
           id: e.id,
           itemName: e.itemName,
-          kitchenInventoryItemId: e.kitchenInventoryItemId,
-          vendorId: e.vendorId,
+          kitchenInventoryItemId: e.kitchenInventoryItemId || null,
+          menuItemId: e.menuItemId || null,
+          isBarItem: e.isBarItem || false,
+          vendorId: e.vendorId || '',
           categoryId: e.categoryId || null,
           categoryName: e.categoryName || null,
           quantity: String(e.quantity),
           unit: e.unit || 'NOS',
           unitPrice: String(e.unitPrice),
-          previousPrice: e.previousPrice,
-          paymentStatus: e.paymentStatus,
+          previousPrice: e.previousPrice || null,
+          paymentStatus: e.paymentStatus || 'PENDING',
           paymentMethod: e.paymentMethod || 'CASH',
         })));
       }
@@ -509,36 +524,112 @@ export default function AdminPurchases() {
   useEffect(() => {
     if (view === 'daily-entry') {
       loadDailyKitchenItems();
+      loadDailyBarItems();
       loadDailyEntries(dailyEntryDate);
     }
-  }, [view, dailyEntryDate, loadDailyKitchenItems, loadDailyEntries]);
+  }, [view, dailyEntryDate, loadDailyKitchenItems, loadDailyBarItems, loadDailyEntries]);
 
   const addDailyRow = () => {
+    setError('');
     setDailyRows((prev) => [...prev, { itemName: '', kitchenInventoryItemId: null, vendorId: '', categoryId: null, categoryName: null, quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' }]);
   };
 
   const removeDailyRow = (idx) => {
+    setError('');
     setDailyRows((prev) => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
   };
 
+  // Delete a saved daily entry from the backend + reverse inventory.
+  // Idempotent: backend returns success even if already deleted.
+  const handleDeleteDailyEntry = async (idx) => {
+    const row = dailyRows[idx];
+    if (!row) return;
+
+    // If the row has no backend ID, it's unsaved — just remove from UI
+    if (!row.id) {
+      removeDailyRow(idx);
+      return;
+    }
+
+    if (!confirm(`Delete "${row.itemName}"? This will reverse the inventory stock this purchase added.`)) return;
+
+    setDeletingIdx(idx);
+    setError('');
+    try {
+      const isBar = row.isBarItem;
+      const endpoint = isBar
+        ? `/api/purchase-orders/daily/bar/${row.id}${outletId ? `?outletId=${outletId}` : ''}`
+        : `/api/purchase-orders/daily/${row.id}${outletId ? `?outletId=${outletId}` : ''}`;
+
+      const result = await apiFetch(endpoint, {
+        method: 'DELETE',
+        timeout: API_TIMEOUT_SAVE_DAILY_MS,
+      });
+
+      if (result.alreadyDeleted) {
+        showSuccess(`"${row.itemName}" was already deleted.`);
+      } else {
+        const reversedNote = result.reversedStock > 0 ? ` (stock reversed: ${result.reversedStock})` : '';
+        showSuccess(`Deleted "${row.itemName}"${reversedNote}`);
+      }
+
+      // Remove from UI immediately
+      removeDailyRow(idx);
+
+      // Reload entries to get fresh state from backend
+      loadDailyEntries(dailyEntryDate);
+    } catch (err) {
+      // Keep the row visible — do NOT pretend it was deleted
+      setError(err.message || 'Failed to delete entry. The entry is still visible.');
+    } finally {
+      setDeletingIdx(null);
+    }
+  };
+
   const updateDailyRow = (idx, field, value) => {
+    setError('');
     setDailyRows((prev) => prev.map((row, i) => {
       if (i !== idx) return row;
       const updated = { ...row, [field]: value };
       if (field === 'itemName') {
         updated.kitchenInventoryItemId = null;
+        updated.menuItemId = null;
+        updated.isBarItem = false;
         updated.previousPrice = null;
         updated._showSuggestions = true;
+        const trimmed = value?.trim();
+        if (trimmed) {
+          const barMatch = dailyBarItems.find(
+            (bi) => bi.itemName.toLowerCase() === trimmed.toLowerCase()
+          );
+          if (barMatch) {
+            updated.isBarItem = true;
+            updated.menuItemId = barMatch.menuItemId;
+            updated.unit = 'bottle';
+            updated.unitPrice = barMatch.costPerBottle ? String(barMatch.costPerBottle) : row.unitPrice;
+          } else {
+            const kitchenMatch = dailyKitchenItems.find(
+              (ki) => ki.itemName.toLowerCase() === trimmed.toLowerCase()
+            );
+            if (kitchenMatch) {
+              updated.kitchenInventoryItemId = kitchenMatch.kitchenInventoryItemId;
+              updated.unit = kitchenMatch.unit || row.unit;
+            }
+          }
+        }
       }
       return updated;
     }));
   };
 
   const selectDailyItem = (idx, item) => {
+    setError('');
     setDailyRows((prev) => prev.map((row, i) => i === idx ? {
       ...row,
       itemName: item.name,
       kitchenInventoryItemId: item.id,
+      menuItemId: null,
+      isBarItem: false,
       unit: item.unit || row.unit,
       _showSuggestions: false,
     } : row));
@@ -550,6 +641,56 @@ export default function AdminPurchases() {
         }
       })
       .catch(() => {});
+  };
+
+  // Select a bar menu item — sets menuItemId + isBarItem flag
+  const selectDailyBarItem = (idx, item) => {
+    setError('');
+    setDailyRows((prev) => prev.map((row, i) => i === idx ? {
+      ...row,
+      itemName: item.itemName,
+      menuItemId: item.menuItemId,
+      kitchenInventoryItemId: null,
+      isBarItem: true,
+      unit: 'bottle',
+      // Prefill cost per bottle from existing inventory if available
+      unitPrice: item.costPerBottle || row.unitPrice,
+      _showSuggestions: false,
+    } : row));
+  };
+
+  const toggleBarFlag = (idx) => {
+    setError('');
+    setDailyRows((prev) => prev.map((row, i) => {
+      if (i !== idx) return row;
+      const newIsBar = !row.isBarItem;
+      if (!newIsBar) {
+        return {
+          ...row,
+          isBarItem: false,
+          menuItemId: null,
+          unit: row.unit === 'bottle' ? '' : row.unit,
+        };
+      }
+      const barMatch = dailyBarItems.find(
+        (bi) => bi.itemName.toLowerCase() === row.itemName?.trim().toLowerCase()
+      );
+      if (barMatch) {
+        return {
+          ...row,
+          isBarItem: true,
+          menuItemId: barMatch.menuItemId,
+          unit: 'bottle',
+          unitPrice: barMatch.costPerBottle ? String(barMatch.costPerBottle) : row.unitPrice,
+        };
+      }
+      return {
+        ...row,
+        isBarItem: true,
+        menuItemId: null,
+        unit: 'bottle',
+      };
+    }));
   };
 
   const dailyTotal = round2(dailyRows.reduce((sum, r) => sum + Number(r.quantity) * Number(r.unitPrice), 0));
@@ -568,12 +709,8 @@ export default function AdminPurchases() {
 
   const handleSaveDaily = async () => {
     console.log('[AdminPurchases] handleSaveDaily clicked', { dailyEntryReadOnly, dailyEntryDate, rows: dailyRows.length });
-    // When "All Outlets" is selected, require the user to pick a specific outlet
-    // before saving — purchases must be saved to a single outlet.
-    if (outletId === 'all' && accessibleOutlets.length > 1) {
-      setError('Please select a specific outlet before saving. Purchases cannot be saved to "All Outlets".');
-      return;
-    }
+    // "All Outlets" is allowed — when selected, the purchase saves to the
+    // admin's active/home outlet (backend defaults to sessionRestaurantId).
     // Filter out completely empty rows (no item name, no qty, no price)
     const validRows = dailyRows.filter((r) => r.itemName?.trim() && (parseFloat(r.quantity) || 0) > 0);
     if (validRows.length === 0) {
@@ -582,41 +719,69 @@ export default function AdminPurchases() {
     }
     for (const row of validRows) {
       if (!row.itemName?.trim()) { setError('Item name is required for all rows'); return; }
-      if (!row.vendorId) { setError(`Vendor is required for item "${row.itemName}"`); return; }
       if (!row.unit?.trim()) { setError(`Unit is required for item "${row.itemName}"`); return; }
-      if (row.paymentStatus === 'DONE' && !PAYMENT_METHODS.includes(row.paymentMethod)) {
-        setError(`Payment method is required for DONE item "${row.itemName}"`); return;
+      // Bar items don't track vendor or payment status in this flow
+      if (!row.isBarItem) {
+        if (!row.vendorId) { setError(`Vendor is required for item "${row.itemName}"`); return; }
+        if (row.paymentStatus === 'DONE' && !PAYMENT_METHODS.includes(row.paymentMethod)) {
+          setError(`Payment method is required for DONE item "${row.itemName}"`); return;
+        }
       }
     }
     setError('');
     setDailySaving(true);
     try {
-      const savedResult = await apiFetch('/api/purchase-orders/daily', {
-        method: 'POST',
-        timeout: API_TIMEOUT_SAVE_DAILY_MS,
-        body: JSON.stringify({
-          date: dailyEntryDate,
-          outletId: outletId && outletId !== 'all' ? outletId : undefined,
-          rows: validRows.map((r) => ({
-            itemName: r.itemName.trim(),
-            kitchenInventoryItemId: r.kitchenInventoryItemId || undefined,
-            vendorId: r.vendorId,
-            categoryId: r.categoryId || undefined,
-            quantity: parseFloat(r.quantity) || 0,
-            unit: r.unit.trim(),
-            unitPrice: parseFloat(r.unitPrice) || 0,
-            paymentStatus: r.paymentStatus,
-            paymentMethod: r.paymentStatus === 'DONE' ? r.paymentMethod : undefined,
-          })),
-        }),
-      });
-      if (!Array.isArray(savedResult) || savedResult.length !== validRows.length) {
-        console.error('[AdminPurchases] Save mismatch:', validRows.length, 'submitted,', savedResult?.length, 'confirmed');
-        setError(`Save may be incomplete — submitted ${validRows.length} but backend confirmed ${savedResult?.length || 0}. Please refresh to verify.`);
-        loadDailyEntries(dailyEntryDate);
-        return;
+      // Split rows into kitchen and bar batches
+      const kitchenRows = validRows.filter((r) => !r.isBarItem);
+      const barRows = validRows.filter((r) => r.isBarItem);
+
+      const results = [];
+
+      // Save kitchen rows via the existing endpoint
+      if (kitchenRows.length > 0) {
+        const kitchenResult = await apiFetch('/api/purchase-orders/daily', {
+          method: 'POST',
+          timeout: API_TIMEOUT_SAVE_DAILY_MS,
+          body: JSON.stringify({
+            date: dailyEntryDate,
+            outletId: outletId && outletId !== 'all' ? outletId : undefined,
+            rows: kitchenRows.map((r) => ({
+              itemName: r.itemName.trim(),
+              kitchenInventoryItemId: r.kitchenInventoryItemId || undefined,
+              vendorId: r.vendorId,
+              categoryId: r.categoryId || undefined,
+              quantity: parseFloat(r.quantity) || 0,
+              unit: r.unit.trim(),
+              unitPrice: parseFloat(r.unitPrice) || 0,
+              paymentStatus: r.paymentStatus,
+              paymentMethod: r.paymentStatus === 'DONE' ? r.paymentMethod : undefined,
+            })),
+          }),
+        });
+        results.push(...(Array.isArray(kitchenResult) ? kitchenResult : []));
       }
-      showSuccess(`${savedResult.length} entries saved`);
+
+      // Save bar rows via the new bar endpoint
+      if (barRows.length > 0) {
+        const barResult = await apiFetch('/api/purchase-orders/daily/bar', {
+          method: 'POST',
+          timeout: API_TIMEOUT_SAVE_DAILY_MS,
+          body: JSON.stringify({
+            date: dailyEntryDate,
+            outletId: outletId && outletId !== 'all' ? outletId : undefined,
+            rows: barRows.map((r) => ({
+              menuItemId: r.menuItemId,
+              itemName: r.itemName.trim(),
+              purchaseBottles: parseFloat(r.quantity) || 0,
+              costPerBottle: parseFloat(r.unitPrice) || 0,
+            })),
+          }),
+        });
+        results.push(...(Array.isArray(barResult) ? barResult : []));
+      }
+
+      const totalSaved = kitchenRows.length + barRows.length;
+      showSuccess(`${totalSaved} entries saved (${kitchenRows.length} kitchen, ${barRows.length} bar)`);
       localStorage.removeItem(DRAFT_KEY);
       loadDailyEntries(dailyEntryDate);
     } catch (err) {
@@ -1612,14 +1777,25 @@ export default function AdminPurchases() {
                 <div key={idx} className="space-y-2 bg-gray-50 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[10px] font-black text-gray-400 w-6">{idx + 1}</span>
+                    {!dailyEntryReadOnly ? (
+                      <button
+                        onClick={() => toggleBarFlag(idx)}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${row.isBarItem ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}
+                      >
+                        {row.isBarItem ? 'Bar' : 'Kitchen'}
+                      </button>
+                    ) : row.isBarItem ? (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black uppercase">Bar</span>
+                    ) : null}
                   </div>
                   <div className="grid grid-cols-12 gap-2 items-center">
                     {/* Item name with autocomplete */}
-                    <div className="col-span-12 sm:col-span-4 relative">
+                    <div className="col-span-12 sm:col-span-5 relative">
                       <input
                         type="text"
                         placeholder="Item name"
                         value={row.itemName}
+                        title={row.itemName}
                         disabled={dailyEntryReadOnly}
                         onChange={(e) => updateDailyRow(idx, 'itemName', e.target.value)}
                         onFocus={() => updateDailyRow(idx, '_showSuggestions', true)}
@@ -1627,7 +1803,7 @@ export default function AdminPurchases() {
                         className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935] disabled:bg-gray-100"
                       />
                       {row._showSuggestions && row.itemName && !dailyEntryReadOnly && (
-                        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow-lg max-h-32 overflow-y-auto">
+                        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow-lg max-h-40 overflow-y-auto">
                           {dailyKitchenItems
                             .filter((ki) => ki.itemName.toLowerCase().includes(row.itemName.toLowerCase()))
                             .slice(0, 5)
@@ -1641,7 +1817,22 @@ export default function AdminPurchases() {
                                 <span className="ml-1 text-[10px] text-gray-400">{ki.unit}</span>
                               </button>
                             ))}
-                          {dailyKitchenItems.filter((ki) => ki.itemName.toLowerCase().includes(row.itemName.toLowerCase())).length === 0 && (
+                          {dailyBarItems
+                            .filter((bi) => bi.itemName.toLowerCase().includes(row.itemName.toLowerCase()))
+                            .slice(0, 5)
+                            .map((bi) => (
+                              <button
+                                key={`bar-${bi.menuItemId}`}
+                                onMouseDown={() => selectDailyBarItem(idx, bi)}
+                                className="w-full text-left px-2 py-1.5 text-xs font-bold text-gray-700 hover:bg-amber-50 flex items-center gap-1"
+                              >
+                                {bi.itemName}
+                                <span className="ml-1 px-1 rounded bg-amber-100 text-amber-700 text-[9px] font-black uppercase">Bar</span>
+                                {!bi.hasInventory && <span className="text-[9px] text-blue-500 font-bold">+inv</span>}
+                              </button>
+                            ))}
+                          {dailyKitchenItems.filter((ki) => ki.itemName.toLowerCase().includes(row.itemName.toLowerCase())).length === 0 &&
+                           dailyBarItems.filter((bi) => bi.itemName.toLowerCase().includes(row.itemName.toLowerCase())).length === 0 && (
                             <div className="px-2 py-1.5 text-[10px] text-gray-400 italic">No match — new item will be created</div>
                           )}
                         </div>
@@ -1649,7 +1840,7 @@ export default function AdminPurchases() {
                     </div>
 
                     {/* Vendor + add button */}
-                    <div className="col-span-12 sm:col-span-3 flex items-center gap-1">
+                    <div className="col-span-12 sm:col-span-2 flex items-center gap-1">
                       <select
                         value={row.vendorId}
                         disabled={dailyEntryReadOnly}
@@ -1720,10 +1911,15 @@ export default function AdminPurchases() {
                     <div className="col-span-1 flex justify-end">
                       {!dailyEntryReadOnly && dailyRows.length > 1 && (
                         <button
-                          onClick={() => removeDailyRow(idx)}
-                          className="p-1 bg-red-100 rounded hover:bg-red-200"
+                          onClick={() => handleDeleteDailyEntry(idx)}
+                          disabled={deletingIdx === idx}
+                          className="p-1 bg-red-100 rounded hover:bg-red-200 disabled:opacity-50"
                         >
-                          <Trash2 size={12} className="text-red-600" />
+                          {deletingIdx === idx ? (
+                            <Loader2 size={12} className="text-red-600 animate-spin" />
+                          ) : (
+                            <Trash2 size={12} className="text-red-600" />
+                          )}
                         </button>
                       )}
                     </div>

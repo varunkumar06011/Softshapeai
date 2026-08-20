@@ -92,6 +92,12 @@ import {
 
   ArrowDown,
 
+  ArrowRight,
+
+  Trophy,
+
+  Wine,
+
   GlassWater,
 
   Utensils,
@@ -132,13 +138,7 @@ import {
 
   CreditCard,
 
-  LayoutDashboard,
-
-  MoreHorizontal,
-
-  Loader2,
-
-  ShoppingCart
+  Loader2
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -531,7 +531,7 @@ function IngredientAvatar({ name }) {
 
 
 
-export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, dashboardScope, selectedDate, onDateChange }) {
+export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, netSales, totalDiscount, ordersCount, activityLog, dashboardScope, selectedDate, onDateChange, accessibleOutlets, goToSection }) {
   const { restaurant } = useAuth();
   const activeDate = selectedDate || getKolkataDateString();
   const outletId = useMemo(() => dashboardScope === 'all' ? 'all' : restaurant?.id, [dashboardScope, restaurant?.id]);
@@ -539,33 +539,38 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   const [dailyData, setDailyData] = useState(null);
   const [dailyLoading, setDailyLoading] = useState(true);
   const [paymentData, setPaymentData] = useState(null);
-  const [lastWeekPaymentData, setLastWeekPaymentData] = useState(null);
   const [paymentLoading, setPaymentLoading] = useState(true);
   const [specialsData, setSpecialsData] = useState(null);
   const [specialsLoading, setSpecialsLoading] = useState(true);
   const [expenditureData, setExpenditureData] = useState(null);
   const [expenditureLoading, setExpenditureLoading] = useState(true);
   const [lastWeekExpenditure, setLastWeekExpenditure] = useState(null);
-  const [todayPurchaseEntries, setTodayPurchaseEntries] = useState(0);
-  const [todayPurchaseAmount, setTodayPurchaseAmount] = useState(0);
-  const [lastWeekPurchaseEntries, setLastWeekPurchaseEntries] = useState(0);
-  const [lastWeekPurchaseAmount, setLastWeekPurchaseAmount] = useState(0);
-  const [purchasesLoading, setPurchasesLoading] = useState(true);
+  const [itemwiseData, setItemwiseData] = useState(null);
+  const [itemwiseLoading, setItemwiseLoading] = useState(true);
   const [netCashHistory, setNetCashHistory] = useState(null);
   const [netCashHistoryLoading, setNetCashHistoryLoading] = useState(true);
   const [specialsByStaff, setSpecialsByStaff] = useState([]);
   const [specialsByStaffLoading, setSpecialsByStaffLoading] = useState(true);
-  const [mobileTab, setMobileTab] = useState('overview');
-  const [expandedRows, setExpandedRows] = useState({});
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
 
+  // Clear all stale data immediately on outletId change to prevent
+  // brief cross-outlet data contamination during outlet switching.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 639px)');
-    const onChange = (e) => setIsMobile(e.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
+    setDailyData(null);
+    setDailyLoading(true);
+    setPaymentData(null);
+    setPaymentLoading(true);
+    setSpecialsData(null);
+    setSpecialsLoading(true);
+    setExpenditureData(null);
+    setExpenditureLoading(true);
+    setLastWeekExpenditure(null);
+    setItemwiseData(null);
+    setItemwiseLoading(true);
+    setNetCashHistory(null);
+    setNetCashHistoryLoading(true);
+    setSpecialsByStaff([]);
+    setSpecialsByStaffLoading(true);
+  }, [outletId]);
 
   const shiftDate = useCallback((dateStr, days) => {
     const d = new Date(`${dateStr}T00:00:00+05:30`);
@@ -615,42 +620,35 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         if (!cancelled) setDailyLoading(false);
       }
     };
+    if (!outletId) return;
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [outletId, activeDate, shiftDate]);
 
-  // Payment methods (today + last week for Cash vs Online delta)
+  // Payment methods (today)
   useEffect(() => {
     let cancelled = false;
-    const loadSingle = async (date) => {
-      const res = await fetch(`${API_BASE}/api/reports/payment-methods?startDate=${date}&endDate=${date}&outletId=${outletId}`, {
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) throw new Error('Failed to fetch payment methods');
-      return res.json();
-    };
     const load = async () => {
       try {
         setPaymentLoading(true);
-        const [today, lastWeek] = await Promise.all([
-          loadSingle(activeDate),
-          loadSingle(shiftDate(activeDate, -7)),
-        ]);
-        if (!cancelled) {
-          setPaymentData(today);
-          setLastWeekPaymentData(lastWeek);
-        }
+        const res = await fetch(`${API_BASE}/api/reports/payment-methods?startDate=${activeDate}&endDate=${activeDate}&outletId=${outletId}`, {
+          headers: { ...getAuthHeaders() },
+        });
+        if (!res.ok) throw new Error('Failed to fetch payment methods');
+        const data = await res.json();
+        if (!cancelled) setPaymentData(data);
       } catch (err) {
         console.warn('[Dashboard] payment-methods failed:', err.message);
       } finally {
         if (!cancelled) setPaymentLoading(false);
       }
     };
+    if (!outletId) return;
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [outletId, activeDate, shiftDate]);
+  }, [outletId, activeDate]);
 
   // Today specials sold
   const loadSpecials = useCallback(async (date) => {
@@ -677,6 +675,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         if (!cancelled) setSpecialsLoading(false);
       }
     };
+    if (!outletId) return;
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
@@ -704,19 +703,20 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         if (!cancelled) setSpecialsByStaffLoading(false);
       }
     };
+    if (!outletId) return;
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [loadSpecialsByStaff, activeDate]);
 
-  // Expenditure
+  // Expenditure (outlet-aware: aggregated for All Outlets, scoped for a single outlet)
   const loadExpenditure = useCallback(async (date) => {
-    const data = await apiFetch(`/api/expenditures/today-summary?date=${date}`);
+    const data = await apiFetch(`/api/expenditures/today-summary?date=${date}&outletId=${outletId}`);
     return {
       totalAmount: Math.round(Number(data?.totalAmount || 0) * 100) / 100,
       count: Number(data?.count || 0),
     };
-  }, []);
+  }, [outletId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -732,50 +732,47 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
           setLastWeekExpenditure(lastWeek);
         }
       } catch (err) {
-        console.warn('[Dashboard] expenditure failed:', err.message);
+        console.warn('[Dashboard] expenditure failed (outletId=' + outletId + '):', err.message);
       } finally {
         if (!cancelled) setExpenditureLoading(false);
       }
     };
+    if (!outletId) return;
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [loadExpenditure, activeDate, shiftDate]);
 
-  // Today's purchase entries — count + total price
-  const loadPurchaseEntries = useCallback(async (date) => {
-    const data = await apiFetch(`/api/purchase-orders/daily?date=${date}`);
-    if (!Array.isArray(data)) return { count: 0, amount: 0 };
-    const count = data.length;
-    const amount = data.reduce((sum, e) => sum + Number(e.totalPrice || 0), 0);
-    return { count, amount: Math.round(amount * 100) / 100 };
-  }, []);
+  // Item sales mix (Food / Beverages / Liquor / Combo) — today + last week
+  const loadItemwise = useCallback(async (date) => {
+    const res = await fetch(`${API_BASE}/api/reports/itemwise-sales?startDate=${date}&endDate=${date}&outletId=${outletId}`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!res.ok) throw new Error('Failed to fetch itemwise sales');
+    return res.json();
+  }, [outletId]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        setPurchasesLoading(true);
+        setItemwiseLoading(true);
         const [today, lastWeek] = await Promise.all([
-          loadPurchaseEntries(activeDate),
-          loadPurchaseEntries(shiftDate(activeDate, -7)),
+          loadItemwise(activeDate),
+          loadItemwise(shiftDate(activeDate, -7)),
         ]);
-        if (!cancelled) {
-          setTodayPurchaseEntries(today.count);
-          setTodayPurchaseAmount(today.amount);
-          setLastWeekPurchaseEntries(lastWeek.count);
-          setLastWeekPurchaseAmount(lastWeek.amount);
-        }
+        if (!cancelled) setItemwiseData({ today, lastWeek });
       } catch (err) {
-        console.warn('[Dashboard] purchase entries failed:', err.message);
+        console.warn('[Dashboard] itemwise-sales failed:', err.message);
       } finally {
-        if (!cancelled) setPurchasesLoading(false);
+        if (!cancelled) setItemwiseLoading(false);
       }
     };
+    if (!outletId) return;
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [loadPurchaseEntries, activeDate, shiftDate]);
+  }, [loadItemwise, activeDate, shiftDate]);
 
   // Net cash history (last 7 days)
   useEffect(() => {
@@ -824,11 +821,6 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   const lastWeekSpecialsCount = useMemo(() =>
     (specialsData?.lastWeek?.specials || []).reduce((s, x) => s + Number(x.soldCount || 0), 0),
   [specialsData]);
-  const todayConversion = specialsData?.today?.tableMetrics?.conversionRate || 0;
-  const lastWeekConversion = specialsData?.lastWeek?.tableMetrics?.conversionRate || 0;
-  const todaySpecialsTables = specialsData?.today?.tableMetrics?.tablesWithSpecials || 0;
-  const todayTotalTables = specialsData?.today?.tableMetrics?.totalTables || 0;
-
   const todayFinalAmount = todayNetCash;
   const lastWeekFinalAmount = lastWeekNetCash;
 
@@ -837,15 +829,62 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     (specialsByStaff || []).reduce((s, x) => s + Number(x.revenue || 0), 0),
   [specialsByStaff]);
   const todaySpecialsPctOfSales = todayRevenue > 0 ? (todaySpecialsRevenue / todayRevenue) * 100 : 0;
-  const todaySpecialsPctOfAov = todayAov > 0 ? (todaySpecialsRevenue / todayAov) * 100 : 0;
 
-  // Top 2 captains by specials sold
+  // Top 3 captains by specials sold
   const topCaptains = useMemo(() =>
     (specialsByStaff || [])
       .filter(s => Number(s.soldCount || 0) > 0)
       .sort((a, b) => Number(b.soldCount || 0) - Number(a.soldCount || 0))
-      .slice(0, 2),
+      .slice(0, 3),
   [specialsByStaff]);
+
+  // ── Outlet-aware feature detection (drives conditional sections) ──────────
+  // An outlet is liquor-capable when its bar module is enabled or its type is a
+  // bar type. Food capability defaults to on unless explicitly disabled.
+  const BAR_OUTLET_TYPES = ['BAR_LOUNGE', 'BAR_WITH_DINING'];
+  const outletHasBar = (o) => o?.enabledModules?.bar === true || BAR_OUTLET_TYPES.includes(o?.restaurantType);
+  const outletHasFood = (o) => o?.enabledModules?.food !== false;
+  const scopeOutlets = useMemo(() => {
+    if (dashboardScope === 'all') {
+      return (accessibleOutlets && accessibleOutlets.length > 0)
+        ? accessibleOutlets
+        : (restaurant ? [restaurant] : []);
+    }
+    return restaurant ? [restaurant] : [];
+  }, [dashboardScope, accessibleOutlets, restaurant]);
+
+  // ── Category mix (Food / Beverages / Liquor / Combo) from itemwise-sales ──
+  // Proportions come from itemwise-sales (accurate per-item classification).
+  // Amounts are scaled to match todayRevenue from daily-sales (Transaction.grandTotal)
+  // so that Food + Bev + Liquor + Combo = Total Sales KPI.
+  const itemSummary = itemwiseData?.today?.summary || {};
+  const lastItemSummary = itemwiseData?.lastWeek?.summary || {};
+  const itemwiseTotal = Number(itemSummary.totalRevenue || 0);
+  const lastItemwiseTotal = Number(lastItemSummary.totalRevenue || 0);
+  const scaleFactor = itemwiseTotal > 0 ? todayRevenue / itemwiseTotal : 1;
+  const lastScaleFactor = lastItemwiseTotal > 0 ? lastWeekRevenue / lastItemwiseTotal : 1;
+  const mixRevenue = {
+    food: Math.round(Number(itemSummary.foodRevenue || 0) * scaleFactor),
+    beverages: Math.round(Number(itemSummary.beveragesRevenue || 0) * scaleFactor),
+    liquor: Math.round(Number(itemSummary.liquorRevenue || 0) * scaleFactor),
+    combo: Math.round(Number(itemSummary.comboRevenue || 0) * scaleFactor),
+  };
+  const lastMixRevenue = {
+    food: Math.round(Number(lastItemSummary.foodRevenue || 0) * lastScaleFactor),
+    beverages: Math.round(Number(lastItemSummary.beveragesRevenue || 0) * lastScaleFactor),
+    liquor: Math.round(Number(lastItemSummary.liquorRevenue || 0) * lastScaleFactor),
+    combo: Math.round(Number(lastItemSummary.comboRevenue || 0) * lastScaleFactor),
+  };
+
+  // Outlet config drives the default, but actual revenue data is used as a
+  // fallback so cards appear even when localStorage has stale outlet info
+  // (missing restaurantType/enabledModules from an older login response).
+  const hasLiquor = scopeOutlets.some(outletHasBar) || mixRevenue.liquor > 0 || lastMixRevenue.liquor > 0;
+  const hasFood = scopeOutlets.some(outletHasFood) || mixRevenue.food > 0 || mixRevenue.beverages > 0 || lastMixRevenue.food > 0 || lastMixRevenue.beverages > 0;
+  const mixTotal = mixRevenue.food + mixRevenue.beverages + mixRevenue.liquor + mixRevenue.combo;
+  const lastMixTotal = lastMixRevenue.food + lastMixRevenue.beverages + lastMixRevenue.liquor + lastMixRevenue.combo;
+  const mixShare = (key) => (mixTotal > 0 ? (mixRevenue[key] / mixTotal) * 100 : 0);
+  const lastMixShare = (key) => (lastMixTotal > 0 ? (lastMixRevenue[key] / lastMixTotal) * 100 : 0);
 
   const sparklineDates = useMemo(() => Array.from({ length: 7 }, (_, i) => shiftDate(activeDate, -6 + i)), [activeDate, shiftDate]);
   const sparklineData = useMemo(() => sparklineDates.map(date => {
@@ -859,42 +898,21 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     };
   }), [sparklineDates, byDayMap, weekdayShort]);
 
-  const aovVsSaleData = useMemo(() => sparklineData.map(d => ({
-    day: d.day,
-    aov: Math.round(d.aov),
-    sales: Math.round(d.revenue),
-  })), [sparklineData]);
-
   const paymentMethods = paymentData?.methods || [];
   const paymentByMethod = useCallback((method) => paymentMethods.find(m => m.method === method) || { amount: 0, percent: 0, count: 0 }, [paymentMethods]);
-  const lastWeekPaymentMethods = lastWeekPaymentData?.methods || [];
-  const lastWeekPaymentByMethod = useCallback((method) => lastWeekPaymentMethods.find(m => m.method === method) || { amount: 0, percent: 0, count: 0 }, [lastWeekPaymentMethods]);
 
   const cashAmount = paymentByMethod('CASH').amount;
   const cardAmount = paymentByMethod('CARD').amount;
   const upiAmount = paymentByMethod('UPI').amount;
   const otherAmount = paymentByMethod('OTHER').amount;
-  const onlineAmount = cardAmount + upiAmount;
   const paymentTotal = paymentData?.summary?.totalAmount || cashAmount + cardAmount + upiAmount + otherAmount;
 
-  const lastWeekCashAmount = lastWeekPaymentByMethod('CASH').amount;
-  const lastWeekCardAmount = lastWeekPaymentByMethod('CARD').amount;
-  const lastWeekUpiAmount = lastWeekPaymentByMethod('UPI').amount;
-  const lastWeekOtherAmount = lastWeekPaymentByMethod('OTHER').amount;
-  const lastWeekOnlineAmount = lastWeekCardAmount + lastWeekUpiAmount;
-
   const paymentMixData = useMemo(() => [
-    { name: 'UPI', value: upiAmount, color: '#22C55E', count: paymentByMethod('UPI').count },
-    { name: 'Cash', value: cashAmount, color: '#3B82F6', count: paymentByMethod('CASH').count },
+    { name: 'UPI', value: upiAmount, color: '#3B82F6', count: paymentByMethod('UPI').count },
+    { name: 'Cash', value: cashAmount, color: '#22C55E', count: paymentByMethod('CASH').count },
     { name: 'Card', value: cardAmount, color: '#8B5CF6', count: paymentByMethod('CARD').count },
     { name: 'Other', value: otherAmount, color: '#F59E0B', count: paymentByMethod('OTHER').count },
   ].filter(d => d.value > 0), [upiAmount, cashAmount, cardAmount, otherAmount, paymentByMethod]);
-
-  const cashVsOnlineData = useMemo(() => [
-    { name: 'Cash', value: cashAmount, color: '#3B82F6', lastWeek: lastWeekCashAmount },
-    { name: 'Online', value: onlineAmount, color: '#16A34A', lastWeek: lastWeekOnlineAmount },
-    { name: 'Other', value: otherAmount, color: '#F59E0B', lastWeek: lastWeekOtherAmount },
-  ].filter(d => d.value > 0), [cashAmount, onlineAmount, otherAmount, lastWeekCashAmount, lastWeekOnlineAmount, lastWeekOtherAmount]);
 
   const MetricSparkline = ({ data, color, dataKey }) => {
     if (!data || data.length === 0) return <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400 font-bold">No data</div>;
@@ -914,76 +932,84 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     );
   };
 
-  const MetricTile = ({ label, value, current, previous, color, icon: Icon, sparklineData, sparklineColor, sparklineKey, isInverse, loading, extra }) => {
+  const KpiCard = ({ label, value, current, previous, color, icon: Icon, sparklineData, sparklineColor, sparklineKey, isInverse, loading, fmt, extra }) => {
     const d = delta(current, previous);
     const up = d > 0;
     const isGood = isInverse ? !up : up;
-    const colorClass = isGood ? 'text-green-600' : 'text-red-600';
-    const bgTint = color === '#E53935' ? 'bg-red-50' : color === '#7C3AED' ? 'bg-purple-50' : color === '#F97316' ? 'bg-orange-50' : 'bg-green-50';
-    const hasData = current > 0 || previous > 0;
+    const deltaClass = d === 0 ? 'text-gray-400' : isGood ? 'text-green-600' : 'text-red-600';
+    const formatValue = fmt || fmtInr;
     return (
       <div className={`${dashCard} p-3 min-w-0 relative overflow-hidden animate-chart-in`}>
         <div className="absolute top-2.5 right-2.5">
-          <div className={`${bgTint} p-1.5 rounded-lg`}>
+          <div className="p-1.5 rounded-lg" style={{ background: `${color}1A` }}>
             <Icon size={16} style={{ color }} />
           </div>
         </div>
         <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] truncate pr-8">{label}</p>
-        <div className="mt-1 flex items-baseline gap-2">
-          <p className="text-xl lg:text-2xl font-black text-[#1A1A1A]">{value}</p>
-          <span className={`text-[10px] font-bold ${colorClass} flex items-center gap-0.5`}>
-            {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(d)}
+        <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+          <p className="text-xl lg:text-2xl font-black truncate" style={{ color }}>{value}</p>
+          <span className={`text-[10px] font-bold ${deltaClass} flex items-center gap-0.5 shrink-0`}>
+            {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(Math.abs(d))}
           </span>
         </div>
-        <p className="text-[10px] text-[#6B6B6B] font-medium">vs last {weekdayLong(lastWeekDay)}</p>
-        {extra && <div className="mt-1 text-[10px] font-bold text-[#8B5CF6]">{extra}</div>}
-        <div className="mt-2 h-[50px]">
-          {loading ? (
-            <div className="h-full w-full animate-pulse bg-gray-100 rounded-lg" />
-          ) : !hasData ? (
-            <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400 font-bold">No data</div>
-          ) : (
-            <MetricSparkline data={sparklineData} color={sparklineColor} dataKey={sparklineKey} />
-          )}
-        </div>
-        <div className="mt-2 flex justify-between text-[10px] font-bold text-[#6B6B6B]">
-          <span>This {weekdayLong(activeDate)}</span>
-          <span>Last {weekdayLong(lastWeekDay)}</span>
-        </div>
-        <div className="flex justify-between text-sm font-black text-[#1A1A1A]">
-          <span>{value}</span>
-          <span>{sparklineKey === 'revenue' ? fmtInr(previous) : sparklineKey === 'aov' ? fmtInr(previous) : fmtNum(previous)}</span>
-        </div>
+        <p className="text-[10px] text-[#6B6B6B] font-medium truncate">vs last {weekdayLong(lastWeekDay)}: {formatValue(previous)}</p>
+        {extra && <div className="mt-2">{extra}</div>}
+        {sparklineData && (
+          <div className="mt-2 h-[50px]">
+            {loading ? (
+              <div className="h-full w-full animate-pulse bg-gray-100 rounded-lg" />
+            ) : (
+              <MetricSparkline data={sparklineData} color={sparklineColor} dataKey={sparklineKey} />
+            )}
+          </div>
+        )}
+        {!sparklineData && loading && <div className="mt-2 h-2 w-1/2 animate-pulse bg-gray-100 rounded" />}
       </div>
     );
   };
 
-  const PlainTile = ({ label, value, current, previous, color, icon: Icon, isInverse, loading, extra, sublabel, deltaValue }) => {
-    const d = deltaValue !== undefined ? deltaValue : delta(current, previous);
-    const up = d > 0;
-    const isGood = isInverse ? !up : up;
-    const colorClass = isGood ? 'text-green-600' : 'text-red-600';
-    const bgTint = color === '#E53935' ? 'bg-red-50' : color === '#16A34A' ? 'bg-green-50' : color === '#F59E0B' ? 'bg-amber-50' : color === '#8B5CF6' ? 'bg-violet-50' : color === '#0EA5E9' ? 'bg-sky-50' : 'bg-gray-50';
-    const hasData = current > 0 || previous > 0;
+  const CategoryRingCard = ({ label, amount, share, prevShare, color, icon: Icon, loading }) => {
+    const pp = share - prevShare;
+    const up = pp > 0;
+    const ringData = [
+      { name: label, value: Math.min(Math.max(share, 0), 100) },
+      { name: 'rest', value: Math.min(Math.max(100 - share, 0), 100) },
+    ];
     return (
-      <div className={`${dashCard} p-3 min-w-0 relative overflow-hidden animate-chart-in`}>
-        <div className="absolute top-2.5 right-2.5">
-          <div className={`${bgTint} p-1.5 rounded-lg`}>
+      <div className={`${dashCard} p-3 min-w-0 animate-chart-in`}>
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg shrink-0" style={{ background: `${color}1A` }}>
             <Icon size={16} style={{ color }} />
           </div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] truncate">{label}</p>
         </div>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] truncate pr-8">{label}</p>
-        <div className="mt-1 flex items-baseline gap-2">
-          <p className="text-xl lg:text-2xl font-black text-[#1A1A1A]">{value}</p>
-          <span className={`text-[10px] font-bold ${colorClass} flex items-center gap-0.5`}>
-            {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(d)}
-          </span>
-        </div>
-        <p className="text-[10px] text-[#6B6B6B] font-medium leading-tight">
-          vs last {weekdayLong(lastWeekDay)}: {sublabel || (loading ? '...' : hasData ? (color === '#E53935' || color === '#16A34A' ? fmtInr(previous) : fmtNum(previous)) : 'No data')}
-        </p>
-        {extra && <div className="mt-2">{extra}</div>}
-        {loading && <div className="mt-2 h-2 w-1/2 animate-pulse bg-gray-100 rounded" />}
+        {loading ? (
+          <div className="mt-3 h-[96px] animate-pulse bg-gray-100 rounded-lg" />
+        ) : (
+          <div className="mt-2 flex items-center gap-3">
+            <div className="relative h-[88px] w-[88px] shrink-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
+                <PieChart>
+                  <Pie data={ringData} dataKey="value" cx="50%" cy="50%" innerRadius={30} outerRadius={40} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
+                    <Cell fill={color} />
+                    <Cell fill="#F1F5F9" />
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="text-xs font-black text-[#1A1A1A]">{fmtPct(share)}</span>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <p className="text-lg font-black truncate" style={{ color }}>{fmtInr(amount)}</p>
+              <p className="text-[10px] font-bold text-[#6B6B6B]">of Total Sales</p>
+              <p className={`text-[10px] font-bold flex items-center gap-0.5 mt-0.5 ${up ? 'text-green-600' : pp < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(Math.abs(pp))}
+              </p>
+              <p className="text-[10px] text-[#6B6B6B] font-medium">vs last {weekdayLong(lastWeekDay)}</p>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1000,336 +1026,136 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       ) : paymentMixData.length === 0 ? (
         <div className="h-[180px] flex items-center justify-center text-sm font-bold text-gray-400">No payment data</div>
       ) : (
-        <div className="flex flex-col xl:flex-row items-center gap-3">
-          <div className="h-[140px] w-[140px] min-w-[140px] sm:h-[150px] sm:w-[150px] sm:min-w-[150px] xl:h-[160px] xl:w-[160px] xl:min-w-[160px]">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
-              <PieChart>
-                <Pie
-                  data={paymentMixData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={42}
-                  outerRadius={68}
-                  paddingAngle={3}
-                  stroke="none"
-                  isAnimationActive={false}
-                >
-                  {paymentMixData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-                <Tooltip formatter={(v) => [fmtInr(v), 'Amount']} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex-1 w-full min-w-0">
-            <div className="space-y-1.5">
-              {paymentMixData.map(item => {
-                const pct = item.percent || (paymentTotal > 0 ? (item.value / paymentTotal) * 100 : 0);
-                return (
-                  <div key={item.name} className="flex items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
-                      <span className="font-bold text-[#1A1A1A] truncate">{item.name}</span>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="font-black text-[#1A1A1A]">{fmtInr(item.value)}</span>
-                      <span className="text-[10px] font-bold text-[#6B6B6B] ml-1">({fmtPct(pct)})</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const TopCaptainsWidget = () => (
-    <div className={`${dashCard} p-4 flex flex-col animate-chart-in-delay-1`}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-sm md:text-base flex items-center gap-2 text-[#1A1A1A]">
-          <StarIcon size={18} className="text-[#F59E0B]" /> Top Captains — Specials Today
-        </h3>
-      </div>
-      {specialsByStaffLoading ? (
-        <div className="h-[120px] animate-pulse bg-gray-100 rounded-lg" />
-      ) : topCaptains.length === 0 ? (
-        <div className="h-[120px] flex items-center justify-center text-sm font-bold text-gray-400">No specials sold today</div>
-      ) : (
-        <div className="space-y-3">
-          {topCaptains.map((captain, idx) => (
-            <div key={captain.userId || idx} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: idx === 0 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(139, 92, 246, 0.08)' }}>
-              <div className="flex items-center justify-center w-8 h-8 rounded-full shrink-0 text-white font-black text-xs" style={{ background: idx === 0 ? '#F59E0B' : '#8B5CF6' }}>
-                {idx + 1}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-black text-[#1A1A1A] truncate">{captain.name || 'Unknown'}</p>
-                <p className="text-[10px] font-bold text-[#6B6B6B]">{Number(captain.soldCount || 0)} specials sold</p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-sm font-black text-[#1A1A1A]">{fmtInr(Number(captain.revenue || 0))}</p>
-                <p className="text-[10px] font-bold text-[#6B6B6B]">revenue</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  const CashVsOnlineWidget = () => {
-    const total = cashVsOnlineData.reduce((s, d) => s + d.value, 0);
-    return (
-      <div className={`${dashCard} p-4 flex flex-col animate-chart-in-delay-2`}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-sm md:text-base flex items-center gap-2 text-[#1A1A1A]">
-            <Wallet size={18} className="text-[#E53935]" /> CASH vs ONLINE (Today)
-          </h3>
-        </div>
-        {paymentLoading ? (
-          <div className="h-[180px] animate-pulse bg-gray-100 rounded-lg" />
-        ) : cashVsOnlineData.length === 0 ? (
-          <div className="h-[180px] flex items-center justify-center text-sm font-bold text-gray-400">No payment data</div>
-        ) : (
-          <div className="flex flex-col xl:flex-row items-center gap-3">
-            <div className="h-[140px] w-[140px] min-w-[140px] sm:h-[150px] sm:w-[150px] sm:min-w-[150px] xl:h-[160px] xl:w-[160px] xl:min-w-[160px]">
+        <>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <div className="h-[150px] w-[150px] min-w-[150px] sm:h-[170px] sm:w-[170px] sm:min-w-[170px]">
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                 <PieChart>
                   <Pie
-                    data={cashVsOnlineData}
+                    data={paymentMixData}
                     dataKey="value"
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    innerRadius={42}
-                    outerRadius={68}
+                    innerRadius={45}
+                    outerRadius={72}
                     paddingAngle={3}
                     stroke="none"
                     isAnimationActive={false}
                   >
-                    {cashVsOnlineData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    {paymentMixData.map((e, i) => <Cell key={i} fill={e.color} />)}
                   </Pie>
                   <Tooltip formatter={(v) => [fmtInr(v), 'Amount']} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex-1 w-full min-w-0 space-y-2">
-              {cashVsOnlineData.map(item => {
-                const pct = total > 0 ? (item.value / total) * 100 : 0;
-                const d = delta(item.value, item.lastWeek);
-                const up = d > 0;
-                const deltaColor = up ? 'text-green-600' : 'text-red-600';
-                return (
-                  <div key={item.name} className="rounded-xl p-2" style={{ background: `${item.color}15` }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold flex items-center gap-1.5 min-w-0" style={{ color: item.color }}>
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} /> <span className="truncate">{item.name}</span>
-                      </span>
-                      <span className="text-sm font-black text-[#1A1A1A] shrink-0">{fmtInr(item.value)}</span>
+            <div className="flex-1 w-full min-w-0">
+              <div className="space-y-2">
+                {paymentMixData.map(item => {
+                  const pct = paymentTotal > 0 ? (item.value / paymentTotal) * 100 : 0;
+                  return (
+                    <div key={item.name} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+                        <span className="font-bold text-[#1A1A1A] truncate">{item.name}</span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-black text-[#1A1A1A]">{fmtInr(item.value)}</span>
+                        <span className="text-[10px] font-bold text-[#6B6B6B] ml-1.5">{fmtPct(pct)}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between mt-1 gap-2">
-                      <span className="text-[10px] font-bold text-[#6B6B6B]">{fmtPct(pct)}</span>
-                      <span className={`text-[10px] font-bold ${deltaColor} flex items-center gap-0.5 shrink-0`}>
-                        {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(d)} vs last {weekdayLong(lastWeekDay)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
+          <div className="mt-4 flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2.5">
+            <span className="text-xs font-bold text-[#6B6B6B]">Total Collection</span>
+            <span className="text-base font-black text-[#1A1A1A]">{fmtInr(paymentTotal)}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const TopCaptainsWidget = () => {
+    const rankColors = ['#F59E0B', '#94A3B8', '#F97316'];
+    const rankBgs = ['rgba(245, 158, 11, 0.10)', 'rgba(148, 163, 184, 0.12)', 'rgba(249, 115, 22, 0.10)'];
+    return (
+      <div className={`${dashCard} p-4 flex flex-col animate-chart-in-delay-1`}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-sm md:text-base flex items-center gap-2 text-[#1A1A1A]">
+            <Trophy size={18} className="text-[#F59E0B]" /> Top Captains — Specials Sold
+          </h3>
+        </div>
+        {specialsByStaffLoading ? (
+          <div className="h-[160px] animate-pulse bg-gray-100 rounded-lg" />
+        ) : topCaptains.length === 0 ? (
+          <div className="h-[160px] flex items-center justify-center text-sm font-bold text-gray-400">No specials sold today</div>
+        ) : (
+          <div className="space-y-2.5">
+            {topCaptains.map((captain, idx) => (
+              <div key={captain.userId || idx} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: rankBgs[idx] || 'rgba(148, 163, 184, 0.12)' }}>
+                <div className="flex items-center justify-center w-8 h-8 rounded-full shrink-0 text-white font-black text-xs" style={{ background: rankColors[idx] || '#94A3B8' }}>
+                  {idx + 1}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-black text-[#1A1A1A] truncate">{captain.name || 'Unknown'}</p>
+                  <p className="text-[10px] font-bold text-[#6B6B6B]">{Number(captain.soldCount || 0)} specials sold</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-black text-[#1A1A1A]">{fmtInr(Number(captain.revenue || 0))}</p>
+                  <p className="text-[10px] font-bold text-[#6B6B6B]">revenue</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {goToSection && (
+          <button
+            onClick={() => goToSection('captains')}
+            className="mt-3 flex items-center justify-between w-full rounded-xl border border-gray-100 px-3 py-2.5 text-xs font-bold text-[#6B6B6B] hover:bg-gray-50 hover:text-[#1A1A1A] transition-colors"
+          >
+            View All Captains <ArrowRight size={14} />
+          </button>
         )}
       </div>
     );
   };
 
-  const MobileCollapsedRow = ({ title, subtitle, icon: Icon, isOpen, onToggle, children }) => (
-    <div className={`${dashCard} overflow-hidden`}>
-      <button onClick={onToggle} className="w-full p-4 flex items-center justify-between text-left">
-        <div className="flex items-center gap-3">
-          <div className="bg-red-50 p-2 rounded-lg">
-            <Icon size={18} className="text-[#E53935]" />
-          </div>
-          <div>
-            <p className="text-sm font-black text-[#1A1A1A]">{title}</p>
-            <p className="text-[10px] font-bold text-[#6B6B6B]">{subtitle}</p>
-          </div>
-        </div>
-        {isOpen ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
-      </button>
-      {isOpen && <div className="px-4 pb-4">{children}</div>}
-    </div>
-  );
+  // ── Category mix cards — conditionally rendered from outlet configuration ──
+  const categoryCards = [];
+  if (hasFood) {
+    categoryCards.push(
+      { key: 'food', label: 'Food %', amount: mixRevenue.food, share: mixShare('food'), prevShare: lastMixShare('food'), color: '#22C55E', icon: Utensils },
+      { key: 'beverages', label: 'Beverages %', amount: mixRevenue.beverages, share: mixShare('beverages'), prevShare: lastMixShare('beverages'), color: '#3B82F6', icon: GlassWater },
+    );
+  }
+  if (hasLiquor) {
+    categoryCards.push({ key: 'liquor', label: 'Liquor %', amount: mixRevenue.liquor, share: mixShare('liquor'), prevShare: lastMixShare('liquor'), color: '#8B5CF6', icon: Wine });
+  }
+  if (mixRevenue.combo > 0 || lastMixRevenue.combo > 0) {
+    categoryCards.push({ key: 'combo', label: 'Combo %', amount: mixRevenue.combo, share: mixShare('combo'), prevShare: lastMixShare('combo'), color: '#EC4899', icon: Package });
+  }
 
-  const kpiTiles = [
-    <PlainTile
-      key="final-amount"
-      label="Final Amount"
-      value={fmtInr(todayFinalAmount)}
-      current={todayFinalAmount}
-      previous={lastWeekFinalAmount}
-      color="#16A34A"
-      icon={Wallet}
-      loading={expenditureLoading || dailyLoading}
-    />,
-    <MetricTile
-      key="aov"
-      label="AOV (Average Order Value)"
-      value={fmtInr(todayAov)}
-      current={todayAov}
-      previous={lastWeekAov}
-      color="#7C3AED"
-      icon={CreditCard}
-      sparklineData={sparklineData}
-      sparklineColor="#7C3AED"
-      sparklineKey="aov"
-      loading={dailyLoading}
-      extra={todaySpecialsPctOfSales > 0 ? `${fmtPct(todaySpecialsPctOfSales)} from specials` : null}
-    />,
-    <MetricTile
-      key="orders"
-      label="Orders / Bills"
-      value={fmtNum(todayTransactions)}
-      current={todayTransactions}
-      previous={lastWeekTransactions}
-      color="#F97316"
-      icon={Receipt}
-      sparklineData={sparklineData}
-      sparklineColor="#F97316"
-      sparklineKey="transactions"
-      loading={dailyLoading}
-    />,
-    <PlainTile
-      key="specials-sold"
-      label="Today Specials Sold"
-      value={fmtNum(todaySpecialsCount)}
-      current={todaySpecialsCount}
-      previous={lastWeekSpecialsCount}
-      color="#F59E0B"
-      icon={StarIcon}
-      loading={specialsLoading}
-      sublabel={fmtNum(lastWeekSpecialsCount)}
-    />,
-    <PlainTile
-      key="specials-pct-sales"
-      label="% Specials of Total Sales"
-      value={fmtPct(todaySpecialsPctOfSales)}
-      current={todaySpecialsPctOfSales}
-      previous={0}
-      color="#8B5CF6"
-      icon={Percent}
-      loading={specialsByStaffLoading || dailyLoading}
-      deltaValue={0}
-      sublabel={`${fmtInr(todaySpecialsRevenue)} from specials`}
-      extra={
-        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-2">
-          <div className="h-full rounded-full" style={{ width: `${Math.min(todaySpecialsPctOfSales, 100)}%`, background: 'linear-gradient(90deg, #8B5CF6, #EC4899)' }} />
-        </div>
-      }
-    />,
-    <PlainTile
-      key="today-purchases"
-      label="Today Purchases"
-      value={fmtInr(todayPurchaseAmount)}
-      current={todayPurchaseAmount}
-      previous={lastWeekPurchaseAmount}
-      color="#0EA5E9"
-      icon={ShoppingCart}
-      loading={purchasesLoading}
-      sublabel={`${todayPurchaseEntries} entries · last ${weekdayLong(lastWeekDay)}: ${fmtInr(lastWeekPurchaseAmount)}`}
-    />,
-    <PlainTile
-      key="expenditure"
-      label="Expenditure"
-      value={fmtInr(todayExpenditure)}
-      current={todayExpenditure}
-      previous={lastWeekExpenditureAmount}
-      color="#E53935"
-      icon={Receipt}
-      isInverse
-      loading={expenditureLoading}
-    />,
-  ];
-
-  const tabs = [
-    { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { key: 'payment-mix', label: 'Payment Mix', icon: Layers },
-    { key: 'cash-online', label: 'Cash vs Online', icon: Wallet },
-    { key: 'top-captains', label: 'Top Captains', icon: StarIcon },
-    { key: 'today-specials', label: 'Today Specials', icon: StarIcon },
-    { key: 'more', label: 'More', icon: MoreHorizontal },
-  ];
-
-  const toggleRow = (key) => setExpandedRows(prev => ({ ...prev, [key]: !prev[key] }));
-
-  const renderOverview = () => (
-    <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-3">
-        {kpiTiles}
-      </div>
-      <div className="space-y-3 lg:hidden">
-        <MobileCollapsedRow
-          title="Payment Mix"
-          subtitle="UPI, Cash, Card, Other"
-          icon={Layers}
-          isOpen={expandedRows['payment-mix']}
-          onToggle={() => toggleRow('payment-mix')}
-        >
-          <PaymentMixWidget />
-        </MobileCollapsedRow>
-        <MobileCollapsedRow
-          title="Cash vs Online"
-          subtitle="Cash Collection vs Online Collection"
-          icon={Wallet}
-          isOpen={expandedRows['cash-online']}
-          onToggle={() => toggleRow('cash-online')}
-        >
-          <CashVsOnlineWidget />
-        </MobileCollapsedRow>
-        <MobileCollapsedRow
-          title="Top Captains"
-          subtitle="Specials sold by captain"
-          icon={StarIcon}
-          isOpen={expandedRows['top-captains']}
-          onToggle={() => toggleRow('top-captains')}
-        >
-          <TopCaptainsWidget />
-        </MobileCollapsedRow>
-      </div>
-    </div>
-  );
-
-  const renderTabContent = () => {
-    switch (mobileTab) {
-      case 'payment-mix': return <PaymentMixWidget />;
-      case 'cash-online': return <CashVsOnlineWidget />;
-      case 'top-captains': return <TopCaptainsWidget />;
-      case 'today-specials': return (
-        <div className="grid grid-cols-1 gap-3">
-          {kpiTiles[3]}
-          {kpiTiles[4]}
-        </div>
-      );
-      // kpiTiles[3] = Today Specials Sold, kpiTiles[4] = % Specials of Total Sales
-      case 'more': return (
-        <div className="text-center py-12 text-gray-400 text-sm font-bold">
-          More dashboard features coming soon
-        </div>
-      );
-      default: return renderOverview();
-    }
-  };
+  const expenditureRatio = todayRevenue > 0 ? Math.min((todayExpenditure / todayRevenue) * 100, 100) : 0;
+  const secondRowCount = categoryCards.length + 1; // + Expenditure
+  const secondRowGridClass = secondRowCount >= 5
+    ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5'
+    : secondRowCount === 4
+      ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-4'
+      : secondRowCount === 3
+        ? 'grid-cols-2 sm:grid-cols-3'
+        : 'grid-cols-1 sm:grid-cols-2';
 
   return (
     <div className="space-y-4 font-sans bg-[#F8F9FB] -m-4 p-4 md:-m-6 md:p-6 min-h-full" data-tour="admin-dashboard">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-base md:text-lg font-black text-[#1A1A1A]">Dashboard</h2>
-          <p className="text-[10px] font-bold text-[#6B6B6B] uppercase tracking-wider">{restaurant?.name}</p>
+          <p className="text-[10px] font-bold text-[#6B6B6B] uppercase tracking-wider">{dashboardScope === 'all' ? 'All Outlets' : restaurant?.name}</p>
         </div>
-        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm self-start sm:self-auto">
           <Calendar size={16} className="text-gray-400" />
           <input
             type="date"
@@ -1340,42 +1166,111 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         </div>
       </div>
 
-      {isMobile ? (
-        <>
-          <div className="-mx-4 px-4 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
-            <div className="flex gap-2">
-              {tabs.map(tab => {
-                const active = mobileTab === tab.key;
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => setMobileTab(tab.key)}
-                    className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[80px] transition-all ${
-                      active ? 'bg-[#E53935] text-white shadow-sm' : 'bg-white text-[#6B6B6B] border border-[#FFCDD2]'
-                    }`}
-                  >
-                    <Icon size={20} className={active ? 'text-white' : 'text-[#E53935]'} />
-                    <span className="text-[10px] font-bold">{tab.label}</span>
-                  </button>
-                );
-              })}
+      {/* Row 1 — KPI tiles */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4 items-start" data-tour="admin-dashboard-stats">
+        <KpiCard
+          label="Total Sales"
+          value={fmtInr(todayRevenue)}
+          current={todayRevenue}
+          previous={lastWeekRevenue}
+          color="#E53935"
+          icon={TrendingUp}
+          sparklineData={sparklineData}
+          sparklineColor="#E53935"
+          sparklineKey="revenue"
+          loading={dailyLoading}
+        />
+        <KpiCard
+          label="Final Amount"
+          value={fmtInr(todayFinalAmount)}
+          current={todayFinalAmount}
+          previous={lastWeekFinalAmount}
+          color="#16A34A"
+          icon={Wallet}
+          sparklineData={netCashHistory || []}
+          sparklineColor="#16A34A"
+          sparklineKey="netCash"
+          loading={expenditureLoading || dailyLoading || netCashHistoryLoading}
+        />
+        <KpiCard
+          label="AOV (Avg Order Value)"
+          value={fmtInr(todayAov)}
+          current={todayAov}
+          previous={lastWeekAov}
+          color="#7C3AED"
+          icon={CreditCard}
+          sparklineData={sparklineData}
+          sparklineColor="#7C3AED"
+          sparklineKey="aov"
+          loading={dailyLoading}
+        />
+        <KpiCard
+          label="Orders / Bills"
+          value={fmtNum(todayTransactions)}
+          current={todayTransactions}
+          previous={lastWeekTransactions}
+          color="#F97316"
+          icon={Receipt}
+          sparklineData={sparklineData}
+          sparklineColor="#F97316"
+          sparklineKey="transactions"
+          loading={dailyLoading}
+          fmt={fmtNum}
+        />
+        <KpiCard
+          label="Today Specials Sold"
+          value={fmtNum(todaySpecialsCount)}
+          current={todaySpecialsCount}
+          previous={lastWeekSpecialsCount}
+          color="#F59E0B"
+          icon={StarIcon}
+          loading={specialsLoading}
+          fmt={fmtNum}
+          extra={
+            <div className="flex items-center justify-between rounded-lg bg-amber-50 px-2 py-1.5">
+              <span className="text-[10px] font-bold text-[#6B6B6B]">% of Total Sales</span>
+              <span className="text-xs font-black text-[#F59E0B]">{fmtPct(todaySpecialsPctOfSales)}</span>
             </div>
-          </div>
-          {renderTabContent()}
-        </>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 items-start" data-tour="admin-dashboard-stats">
-            {kpiTiles}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            <PaymentMixWidget />
-            <TopCaptainsWidget />
-            <CashVsOnlineWidget />
-          </div>
-        </>
-      )}
+          }
+        />
+      </div>
+
+      {/* Row 2 — category mix (outlet-aware) + expenditure */}
+      <div className={`grid ${secondRowGridClass} gap-3 md:gap-4 items-start`}>
+        {categoryCards.map(c => (
+          <CategoryRingCard
+            key={c.key}
+            label={c.label}
+            amount={c.amount}
+            share={c.share}
+            prevShare={c.prevShare}
+            color={c.color}
+            icon={c.icon}
+            loading={itemwiseLoading}
+          />
+        ))}
+        <KpiCard
+          label="Expenditure"
+          value={fmtInr(todayExpenditure)}
+          current={todayExpenditure}
+          previous={lastWeekExpenditureAmount}
+          color="#E53935"
+          icon={Banknote}
+          isInverse
+          loading={expenditureLoading}
+          extra={
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-[#E53935]" style={{ width: `${expenditureRatio}%` }} />
+            </div>
+          }
+        />
+      </div>
+
+      {/* Row 3 — payment mix + top captains */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PaymentMixWidget />
+        <TopCaptainsWidget />
+      </div>
 
       <p className="text-[10px] text-[#6B6B6B] font-medium text-center mt-4">
         All values are approximate and updated in real-time
@@ -1385,7 +1280,9 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
 }, (prevProps, nextProps) => {
   return prevProps.dashboardScope === nextProps.dashboardScope &&
          prevProps.selectedDate === nextProps.selectedDate &&
-         prevProps.onDateChange === nextProps.onDateChange;
+         prevProps.onDateChange === nextProps.onDateChange &&
+         prevProps.accessibleOutlets === nextProps.accessibleOutlets &&
+         prevProps.goToSection === nextProps.goToSection;
 });
 
 

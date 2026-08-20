@@ -1,11 +1,10 @@
-import { lazy, useState } from 'react';
+import { lazy } from 'react';
 import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
   ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
   Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale, Landmark, Package, Building2, TrendingDown,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
-import { useAuth } from '../context/AuthContext';
 
 // ── Lazy-loaded section components (code-splitting) ──────────────────────────
 // Each section becomes a separate chunk, reducing initial bundle size.
@@ -23,6 +22,7 @@ const Marketing       = lazy(() => import('./AdminComponents').then(m => ({ defa
 const Pricing         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Pricing })));
 const Inventory       = lazy(() => import('./AdminComponents').then(m => ({ default: m.Inventory })));
 const KitchenInventory = lazy(() => import('./AdminComponents').then(m => ({ default: m.KitchenInventory })));
+const NewInventoryPage = lazy(() => import('./inventory/InventoryPage').then(m => ({ default: m.InventoryPage })));
 const StaffManagement = lazy(() => import('./AdminComponents').then(m => ({ default: m.StaffManagement })));
 const Attendance      = lazy(() => import('./AdminComponents').then(m => ({ default: m.Attendance })));
 const AdminExpenditures = lazy(() => import('./AdminExpenditures'));
@@ -57,43 +57,9 @@ function MenuSection({ activeOutlet, onAddDish }) {
 }
 
 function InventorySection() {
-  const { restaurant } = useAuth();
-  const enabledModules = restaurant?.enabledModules || {};
-  const [tab, setTab] = useState('bar');
-
-  const hasBar = enabledModules.bar_inventory === true || enabledModules.bar === true;
-  const hasFood = enabledModules.food !== false;
-
-  // Food-only outlet: show kitchen inventory
-  if (!hasBar && hasFood) return <KitchenInventory />;
-
-  // Bar-only outlet: show bar inventory
-  if (hasBar && !hasFood) return <Inventory />;
-
-  // Bar + dining outlet: show tabs for both
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-2 border-b border-gray-200">
-        <button
-          onClick={() => setTab('bar')}
-          className={`px-4 py-3 font-bold text-sm transition-all ${
-            tab === 'bar' ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Bar Inventory
-        </button>
-        <button
-          onClick={() => setTab('kitchen')}
-          className={`px-4 py-3 font-bold text-sm transition-all ${
-            tab === 'kitchen' ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Kitchen Inventory
-        </button>
-      </div>
-      {tab === 'bar' ? <Inventory /> : <KitchenInventory />}
-    </div>
-  );
+  // The new InventoryPage handles tab logic (bar/kitchen/both) internally,
+  // preserving enabledModules checks and outlet switching behavior.
+  return <NewInventoryPage />;
 }
 
 // ── Eager preloading for frequently used sections ──────────────────────────
@@ -123,7 +89,7 @@ export function preloadAdminSections() {
 
 export const adminRoutes = [
   // ── Local-first operational routes ──────────────────────────────────────────
-  { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner','manager'], element: <Dashboard />,                    source: 'cloud', props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope, selectedDate: ctx.selectedDate, onDateChange: ctx.setSelectedDate }) },
+  { key: 'dashboard',         label: 'Dashboard',              icon: LayoutDashboard,     roles: ['admin','owner','manager'], element: <Dashboard />,                    source: 'cloud', props: (ctx) => ({ revenue: ctx.revenue, totalSales: ctx.totalSales, netSales: ctx.netSales, totalDiscount: ctx.totalDiscount, ordersCount: ctx.ordersCount, activityLog: ctx.activityLog, statsLoading: ctx.statsLoading, dashboardScope: ctx.dashboardScope, selectedDate: ctx.selectedDate, onDateChange: ctx.setSelectedDate, accessibleOutlets: ctx.accessibleOutlets, goToSection: ctx.goToSection }) },
   { key: 'tables',            label: 'Tables',                 icon: Table2,              roles: ['admin','owner','manager'], element: <TablesSection />,                source: 'local', props: (ctx) => ({ activeOutlet: ctx.activeOutlet, dashboardScope: ctx.dashboardScope }) },
   { key: 'menu',              label: 'Menu',                   icon: UtensilsCrossed,     roles: ['admin','owner','manager'], element: <MenuSection />,                  source: 'local', props: (ctx) => ({ activeOutlet: ctx.activeOutlet, onAddDish: ctx.onAddDish }) },
   { key: 'specials',          label: 'Today Specials',         icon: StarIcon,                roles: ['admin','owner','manager'], element: <TodaySpecials />, source: 'local' },
