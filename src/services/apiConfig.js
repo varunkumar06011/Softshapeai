@@ -139,6 +139,7 @@ export async function apiFetch(path, options = {}) {
         return apiFetch(path, { ...options, _apiBase, _isRetry: true });
       }
 
+      let refreshFailedWithNetworkError = false;
       try {
         const refreshRes = await fetch(`${_apiBase}/api/auth/refresh`, {
           method: 'POST',
@@ -149,20 +150,43 @@ export async function apiFetch(path, options = {}) {
           secureStorage.setItem('ss_token', newToken);
           return apiFetch(path, { ...options, _apiBase, _isRetry: true });
         }
-      } catch {
-        // refresh failed — fall through to error
-      }
-      // Only clear+redirect if the failed token is still the current one
-      // (otherwise a newer login already replaced it — don't wipe that)
-      if (secureStorage.getItem('ss_token') === token) {
-        secureStorage.removeItem('ss_token');
-        localStorage.removeItem('ss_user');
-        localStorage.removeItem('ss_restaurant');
-        if (typeof window !== 'undefined') {
-          window.location.href = '/';
+        // Refresh endpoint returned 401 — token is truly invalid/expired and
+        // the server rejected the refresh. Clear session and redirect.
+        if (refreshRes.status === 401) {
+          if (secureStorage.getItem('ss_token') === token) {
+            const role = (() => {
+              try {
+                const u = JSON.parse(localStorage.getItem('ss_user') || 'null');
+                return u?.role?.toLowerCase() || '';
+              } catch { return ''; }
+            })();
+            secureStorage.removeItem('ss_token');
+            localStorage.removeItem('ss_user');
+            localStorage.removeItem('ss_restaurant');
+            if (typeof window !== 'undefined') {
+              const loginPath = role === 'manager' ? '/manager'
+                : role === 'cashier' ? '/cashier'
+                : role === 'captain' ? '/captain'
+                : '/admin';
+              window.location.href = loginPath;
+            }
+          }
+          throw new Error('Session expired. Please log in again.');
         }
+        // Non-401 error from refresh (e.g. 500) — don't wipe session, just throw
+        throw new Error('Session refresh failed. Please try again.');
+      } catch (refreshErr) {
+        if (refreshErr?.message === 'Session expired. Please log in again.' || 
+            refreshErr?.message === 'Session refresh failed. Please try again.') {
+          throw refreshErr;
+        }
+        // Network error during refresh — backend temporarily unreachable.
+        // Don't wipe the session; the token may still be valid on retry.
+        refreshFailedWithNetworkError = true;
       }
-      throw new Error('Session expired. Please log in again.');
+      if (refreshFailedWithNetworkError) {
+        throw new Error('Network error during session refresh. Please check your connection.');
+      }
     }
 
     if (!response.ok) {

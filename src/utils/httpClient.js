@@ -118,6 +118,7 @@ export async function http(path, options = {}) {
     }
 
     // Attempt token refresh
+    let refreshHadNetworkError = false;
     try {
       const refreshRes = await httpFetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
@@ -129,20 +130,45 @@ export async function http(path, options = {}) {
         secureStorage.setItem('ss_token', newToken);
         return http(path, { ...options, _isRetry: true });
       }
-    } catch {
-      // refresh failed — fall through to session cleanup
+
+      // Refresh endpoint returned 401 — token is truly invalid. Clear session.
+      if (refreshRes.status === 401) {
+        if (secureStorage.getItem('ss_token') === token) {
+          const role = (() => {
+            try {
+              const u = JSON.parse(localStorage.getItem('ss_user') || 'null');
+              return u?.role?.toLowerCase() || '';
+            } catch { return ''; }
+          })();
+          secureStorage.removeItem('ss_token');
+          localStorage.removeItem('ss_user');
+          localStorage.removeItem('ss_restaurant');
+          if (typeof window !== 'undefined') {
+            const loginPath = role === 'manager' ? '/manager'
+              : role === 'cashier' ? '/cashier'
+              : role === 'captain' ? '/captain'
+              : '/admin';
+            window.location.href = loginPath;
+          }
+        }
+        throw new Error('Session expired. Please log in again.');
+      }
+
+      // Non-401 refresh error (e.g. 500) — don't wipe session
+      throw new Error('Session refresh failed. Please try again.');
+    } catch (refreshErr) {
+      if (refreshErr?.message === 'Session expired. Please log in again.' ||
+          refreshErr?.message === 'Session refresh failed. Please try again.') {
+        throw refreshErr;
+      }
+      // Network error during refresh — backend temporarily unreachable.
+      // Don't wipe the session; the token may still be valid on retry.
+      refreshHadNetworkError = true;
     }
 
-    // Only clear+redirect if the failed token is still the current one
-    if (secureStorage.getItem('ss_token') === token) {
-      secureStorage.removeItem('ss_token');
-      localStorage.removeItem('ss_user');
-      localStorage.removeItem('ss_restaurant');
-      if (typeof window !== 'undefined') {
-        window.location.href = '/';
-      }
+    if (refreshHadNetworkError) {
+      throw new Error('Network error during session refresh. Please check your connection.');
     }
-    throw new Error('Session expired. Please log in again.');
   }
 
   return res;
