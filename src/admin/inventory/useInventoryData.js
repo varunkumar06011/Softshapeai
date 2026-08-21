@@ -19,6 +19,7 @@ import {
   fetchKitchenInventory,
   fetchKitchenTopSelling,
 } from '../../services/kitchenInventoryApi';
+import { getKolkataDateString } from '../../shared/utils/dateFormat';
 import { SEARCH_DEBOUNCE_MS, PAGE_SIZE } from './inventoryConstants';
 
 export function useInventoryData(tab, restaurant) {
@@ -31,6 +32,12 @@ export function useInventoryData(tab, restaurant) {
   const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'low'
   const [page, setPage] = useState(0);
   const [topSelling, setTopSelling] = useState([]);
+  // Date range for viewing historical inventory snapshots.
+  // fromDate = the date whose opening stock is shown in the "Opening" column.
+  // toDate = the date whose closing stock is shown as "Current Stock".
+  // Defaults to today (live view).
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   // Track the latest AbortController so socket-triggered refetches can be
   // aborted when a tab switch starts a new fetch. Without this, a socket event
@@ -47,17 +54,21 @@ export function useInventoryData(tab, restaurant) {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Fetch inventory data
+  // Fetch inventory data — uses fromDate for the daily entry lookup so the
+  // "Opening" column reflects the selected date range start.
   const fetchData = useCallback(async (signal) => {
     if (!restaurant?.id) return;
     setLoading(true);
     setError(null);
     try {
       let data;
+      // The backend accepts a single `date` param for the snapshot to display.
+      // We use fromDate if set (that's the opening stock date); otherwise today.
+      const snapshotDate = fromDate || getKolkataDateString();
       if (tab === 'bar') {
-        data = await fetchBarInventory();
+        data = await fetchBarInventory(snapshotDate);
       } else {
-        data = await fetchKitchenInventory();
+        data = await fetchKitchenInventory(snapshotDate);
       }
       // Ignore result if a newer fetch was triggered (tab switch, etc.)
       if (signal?.aborted) return;
@@ -69,7 +80,7 @@ export function useInventoryData(tab, restaurant) {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [tab, restaurant?.id]);
+  }, [tab, restaurant?.id, fromDate]);
 
   // Initial fetch + refetch on tab/restaurant change
   useEffect(() => {
@@ -92,17 +103,19 @@ export function useInventoryData(tab, restaurant) {
     fetchData(controller.signal);
   }, [fetchData]);
 
-  // Fetch top-selling data (for today's usage card)
+  // Fetch top-selling data (for usage card) — uses the selected date range
   useEffect(() => {
     if (!restaurant?.id) return;
     const fetchTopSelling = async () => {
       try {
-        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const today = getKolkataDateString();
+        const startDate = fromDate || today;
+        const endDate = toDate || today;
         if (tab === 'bar') {
-          const data = await fetchBarTopSelling({ startDate: today, endDate: today });
+          const data = await fetchBarTopSelling({ startDate, endDate });
           setTopSelling(data || []);
         } else {
-          const data = await fetchKitchenTopSelling({ startDate: today, endDate: today });
+          const data = await fetchKitchenTopSelling({ startDate, endDate });
           setTopSelling(data || []);
         }
       } catch {
@@ -110,7 +123,7 @@ export function useInventoryData(tab, restaurant) {
       }
     };
     fetchTopSelling();
-  }, [tab, restaurant?.id]);
+  }, [tab, restaurant?.id, fromDate, toDate]);
 
   // Socket listeners for live updates — refetch on inventory changes
   useSocket({
@@ -218,5 +231,9 @@ export function useInventoryData(tab, restaurant) {
     totalPages,
     summary,
     refresh,
+    fromDate,
+    setFromDate,
+    toDate,
+    setToDate,
   };
 }
