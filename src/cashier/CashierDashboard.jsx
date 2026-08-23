@@ -1360,6 +1360,14 @@ const CashierDashboard = ({ onLogout }) => {
 
   const [selectedSettleMethod, setSelectedSettleMethod] = useState(null);
 
+  // Explicit bill allocation inputs for split payments
+  const [splitMode, setSplitMode] = useState(false);
+  const [billCashInput, setBillCashInput] = useState('');
+  const [billCardInput, setBillCardInput] = useState('');
+  const [billUpiInput, setBillUpiInput] = useState('');
+  const [billOtherInput, setBillOtherInput] = useState('');
+  // Tip tender selection: which method the tip is paid in
+  const [tipMethod, setTipMethod] = useState('CASH');
   const [isPrintingBill, setIsPrintingBill] = useState(false);
 
   const isPrintingBillRef = useRef(false);
@@ -3210,12 +3218,16 @@ const CashierDashboard = ({ onLogout }) => {
 
         cardAmount: cardAmt,
 
+        upiAmount: effectiveMethod === 'UPI' ? Number(confirmPaymentTxn.grandTotal || confirmPaymentTxn.amount || 0) : 0,
+        otherAmount: effectiveMethod === 'OTHER' && !isMixed ? Number(confirmPaymentTxn.grandTotal || confirmPaymentTxn.amount || 0) : 0,
         tipAmount: tipAmt,
 
         cashTipAmount: effectiveMethod === 'CASH' ? tipAmt : 0,
 
         cardTipAmount: effectiveMethod === 'CARD' ? tipAmt : 0,
 
+        upiTipAmount: effectiveMethod === 'UPI' ? tipAmt : 0,
+        otherTipAmount: effectiveMethod === 'OTHER' ? tipAmt : 0,
       });
 
       if (result?.offline) {
@@ -3724,6 +3736,14 @@ const CashierDashboard = ({ onLogout }) => {
 
                 cashAmount: Number(txn.grandTotal || txn.amount || 0),
 
+                cardAmount: 0,
+                upiAmount: 0,
+                otherAmount: 0,
+                tipAmount: 0,
+                cashTipAmount: 0,
+                cardTipAmount: 0,
+                upiTipAmount: 0,
+                otherTipAmount: 0,
               });
 
               if (res?.offline) {
@@ -8032,8 +8052,7 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-  const handlePayment = async (method, tipAmount = 0, cashAmount = 0, cardAmount = 0) => {
-
+  const handlePayment = async (method, tipAmount = 0, cashAmount = 0, cardAmount = 0, opts = {}) => {
     if (!selectedTable || !method) return;
 
     if (isSubmittingPaymentRef.current) return;
@@ -8420,14 +8439,28 @@ const CashierDashboard = ({ onLogout }) => {
 
               tipAmount: Number(tipAmount) || 0,
 
-              cashTipAmount: method === 'CASH' ? (Number(tipAmount) || 0) : (method === 'MIXED' ? 0 : 0),
-
-              cardTipAmount: method === 'CARD' ? (Number(tipAmount) || 0) : (method === 'MIXED' ? 0 : 0),
-
-              cashAmount: Number(cashAmount) || 0,
-
-              cardAmount: Number(cardAmount) || 0,
-
+              // Tip allocations: use explicit per-method split from opts, fallback to method-based
+              cashTipAmount: opts.cashTip != null ? Number(opts.cashTip) || 0
+                : method === 'CASH' ? (Number(tipAmount) || 0) : 0,
+              cardTipAmount: opts.cardTip != null ? Number(opts.cardTip) || 0
+                : method === 'CARD' ? (Number(tipAmount) || 0) : 0,
+              upiTipAmount: opts.upiTip != null ? Number(opts.upiTip) || 0
+                : method === 'UPI' ? (Number(tipAmount) || 0) : 0,
+              otherTipAmount: opts.otherTip != null ? Number(opts.otherTip) || 0
+                : method === 'OTHER' ? (Number(tipAmount) || 0) : 0,
+              // Bill allocations: use explicit split values from opts, fallback to method-based
+              cashAmount: opts.upiBill != null || opts.otherBill != null
+                ? (Number(cashAmount) || 0)
+                : (method === 'CASH' ? Number(activeGrandTotal) : Number(cashAmount) || 0),
+              cardAmount: opts.upiBill != null || opts.otherBill != null
+                ? (Number(cardAmount) || 0)
+                : (method === 'CARD' ? Number(activeGrandTotal) : Number(cardAmount) || 0),
+              upiAmount: opts.upiBill != null
+                ? Number(opts.upiBill) || 0
+                : (method === 'UPI' ? Number(activeGrandTotal) : 0),
+              otherAmount: opts.otherBill != null
+                ? Number(opts.otherBill) || 0
+                : (method === 'OTHER' ? Number(activeGrandTotal) : 0),
               discountPercent: selectedTable.isExtra
 
                 ? (discountPercent || selectedTable.discountPercent || 0)
@@ -17090,8 +17123,7 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-      {/* SETTLE — Payment Method Picker + Tip Input */}
-
+      {/* SETTLE — Payment Method Picker + Bill/Tip Allocations */}
       {showSettleConfirm && (
 
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
@@ -17110,8 +17142,19 @@ const CashierDashboard = ({ onLogout }) => {
 
               <button
 
-                onClick={() => { setShowSettleConfirm(false); setTipInput(''); setSelectedSettleMethod(null); setOtherCashInput(''); setOtherCardInput(''); }}
-
+                onClick={() => {
+                  setShowSettleConfirm(false);
+                  setTipInput('');
+                  setSelectedSettleMethod(null);
+                  setOtherCashInput('');
+                  setOtherCardInput('');
+                  setSplitMode(false);
+                  setBillCashInput('');
+                  setBillCardInput('');
+                  setBillUpiInput('');
+                  setBillOtherInput('');
+                  setTipMethod('CASH');
+                }}
                 className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors duration-150"
 
               >
@@ -17124,10 +17167,9 @@ const CashierDashboard = ({ onLogout }) => {
 
             <div className="p-6">
 
-              <p className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Select Payment Method</p>
-
-              <div className="grid grid-cols-2 gap-3 mb-5">
-
+              {/* Payment method buttons */}
+              <p className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Payment Method</p>
+              <div className="grid grid-cols-4 gap-2 mb-4">
                 {[
 
                   { label: 'Cash', method: 'CASH', icon: Banknote, color: 'green' },
@@ -17138,18 +17180,19 @@ const CashierDashboard = ({ onLogout }) => {
 
                   { label: 'Other', method: 'OTHER', icon: Wallet, color: 'orange' },
 
-                ].map(({ label, method, icon: Icon, color }) => (
-
+                ].map(({ label, method: m, icon: Icon, color }) => (
                   <button
-
-                    key={method}
-
-                    onClick={() => { setSelectedSettleMethod(method); setOtherCashInput(''); setOtherCardInput(''); }}
-
-                    className={`relative flex flex-col items-center gap-2.5 py-4 rounded-2xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm ${
-
-                      selectedSettleMethod === method
-
+                    key={m}
+                    onClick={() => {
+                      setSelectedSettleMethod(m);
+                      setSplitMode(false);
+                      setBillCashInput('');
+                      setBillCardInput('');
+                      setBillUpiInput('');
+                      setBillOtherInput('');
+                    }}
+                    className={`relative flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-95 shadow-sm ${
+                      selectedSettleMethod === m && !splitMode
                         ? color === 'green' ? 'bg-green-50 border-green-600 text-green-700'
 
                           : color === 'purple' ? 'bg-purple-50 border-purple-600 text-purple-700'
@@ -17164,16 +17207,8 @@ const CashierDashboard = ({ onLogout }) => {
 
                   >
 
-                    <Icon size={28} strokeWidth={2} />
-
-                    <span className="text-sm font-black uppercase tracking-wider">{label}</span>
-
-                    {selectedSettleMethod === method && (
-
-                      <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-current" />
-
-                    )}
-
+                    <Icon size={22} strokeWidth={2} />
+                    <span className="text-[10px] font-black uppercase tracking-wider">{label}</span>
                   </button>
 
                 ))}
@@ -17182,12 +17217,68 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-              {/* Cash/Card sub-boxes when "Other" is selected */}
+              {/* Split payment toggle */}
+              <button
+                onClick={() => {
+                  setSplitMode(!splitMode);
+                  if (!splitMode) {
+                    setSelectedSettleMethod(null);
+                    setOtherCashInput('');
+                    setOtherCardInput('');
+                  }
+                }}
+                className={`w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border-2 transition-all mb-4 ${
+                  splitMode
+                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-400'
+                }`}
+              >
+                {splitMode ? '✓ Split Payment' : 'Split Payment'}
+              </button>
 
-              {selectedSettleMethod === 'OTHER' && (
+              {/* Split bill allocation inputs */}
+              {splitMode && (
+                <div className="mb-4 p-4 bg-indigo-50 rounded-xl border-2 border-indigo-200 space-y-2">
+                  <p className="text-xs font-black uppercase text-indigo-600 tracking-widest mb-2">Bill Allocation</p>
+                  {[
+                    { label: 'Cash', val: billCashInput, set: setBillCashInput },
+                    { label: 'Card', val: billCardInput, set: setBillCardInput },
+                    { label: 'UPI', val: billUpiInput, set: setBillUpiInput },
+                    { label: 'Other', val: billOtherInput, set: setBillOtherInput },
+                  ].map(({ label, val, set: setVal }) => (
+                    <div key={label} className="flex items-center gap-3">
+                      <span className="text-xs font-black text-gray-600 w-12">{label}</span>
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={val}
+                          onChange={(e) => setVal(e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-8 pr-3 py-2 rounded-lg border-2 border-gray-200 text-sm font-black text-gray-900 tabular-nums focus:outline-none focus:border-indigo-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {(() => {
+                    const total = (Number(billCashInput) || 0) + (Number(billCardInput) || 0) + (Number(billUpiInput) || 0) + (Number(billOtherInput) || 0);
+                    const grandTotalNum = Number(activeGrandTotal > 0 ? activeGrandTotal : 0);
+                    const diff = Math.round((total - grandTotalNum) * 100) / 100;
+                    return (
+                      <div className={`text-xs font-bold ${diff === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        Allocated: ₹{total.toFixed(0)} {diff === 0 ? '✓' : diff > 0 ? `(₹${diff.toFixed(0)} over)` : `(₹${(-diff).toFixed(0)} short)`}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
-                <div className="mb-5 p-4 bg-orange-50 rounded-xl border-2 border-orange-200 space-y-3">
-
+              {/* Cash/Card sub-boxes when "Other" is selected (legacy path) */}
+              {selectedSettleMethod === 'OTHER' && !splitMode && (
+                <div className="mb-4 p-4 bg-orange-50 rounded-xl border-2 border-orange-200 space-y-3">
                   <p className="text-xs font-black uppercase text-orange-600 tracking-widest">Other Payment Breakdown (Optional)</p>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -17292,12 +17383,12 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
+              {/* Tip input + tip tender selection */}
               <div className="mb-5">
 
                 <label className="text-xs font-black uppercase text-gray-400 tracking-widest mb-2 block">Tip Amount</label>
 
-                <div className="relative">
-
+                <div className="relative mb-2">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xl">₹</span>
 
                   <input
@@ -17329,30 +17420,36 @@ const CashierDashboard = ({ onLogout }) => {
               <button
 
                 onClick={() => {
-
-                  if (!selectedSettleMethod || isPrintingBill || isSettling) return;
-
-                  const cashAmt = Number(otherCashInput) || 0;
-
-                  const cardAmt = Number(otherCardInput) || 0;
-
-                  const isMixed = selectedSettleMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0);
-
-                  const effectiveMethod = isMixed ? 'MIXED' : selectedSettleMethod;
-
-                  handlePayment(effectiveMethod, Number(tipInput) || 0, cashAmt, cardAmt);
-
+                  if ((!selectedSettleMethod && !splitMode) || isPrintingBill || isSettling) return;
+                  const tipAmt = Number(tipInput) || 0;
+                  if (splitMode) {
+                    handlePayment('MIXED', tipAmt, Number(billCashInput) || 0, Number(billCardInput) || 0, {
+                      upiBill: Number(billUpiInput) || 0,
+                      otherBill: Number(billOtherInput) || 0,
+                      cashTip: tipMethod === 'CASH' ? tipAmt : 0,
+                      cardTip: tipMethod === 'CARD' ? tipAmt : 0,
+                      upiTip: tipMethod === 'UPI' ? tipAmt : 0,
+                      otherTip: tipMethod === 'OTHER' ? tipAmt : 0,
+                    });
+                  } else {
+                    const cashAmt = Number(otherCashInput) || 0;
+                    const cardAmt = Number(otherCardInput) || 0;
+                    const isMixed = selectedSettleMethod === 'OTHER' && (cashAmt > 0 || cardAmt > 0);
+                    handlePayment(isMixed ? 'MIXED' : selectedSettleMethod, tipAmt, cashAmt, cardAmt);
+                  }
                   setTipInput('');
-
                   setSelectedSettleMethod(null);
-
                   setOtherCashInput('');
-
                   setOtherCardInput('');
-
+                  setSplitMode(false);
+                  setBillCashInput('');
+                  setBillCardInput('');
+                  setBillUpiInput('');
+                  setBillOtherInput('');
+                  setTipMethod('CASH');
                 }}
 
-                disabled={!selectedSettleMethod || isPrintingBill || isSettling}
+                disabled={(!selectedSettleMethod && !splitMode) || isPrintingBill || isSettling}
 
                 className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all duration-150 hover:scale-[1.01] active:scale-95 ${selectedSettleMethod && !isPrintingBill && !isSettling
 
@@ -17377,29 +17474,17 @@ const CashierDashboard = ({ onLogout }) => {
       )}
 
       {/* TABLE SWAP MODAL */}
-
       {showSwapModal && selectedTable && (
-
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-in border border-gray-200">
-
             <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-
               <div>
-
                 <p className="text-xs font-black uppercase text-gray-400 tracking-wider">Swap Table Session</p>
-
                 <p className="text-base font-black text-gray-900 mt-0.5">
-
                   {(activeOutlet === 'bar' || activeOutlet === 'both') ? `B${selectedTable.number ?? selectedTable.id}` : `T${selectedTable.id}`} → Select Destination
-
                 </p>
-
               </div>
-
               <button
-
                 onClick={() => { setShowSwapModal(false); setSwapTargetId(null); }}
 
                 className="p-2.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-150 rounded-xl shadow-sm transition-colors"

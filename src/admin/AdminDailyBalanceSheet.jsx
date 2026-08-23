@@ -1229,6 +1229,47 @@ export default function AdminDailyBalanceSheet() {
         </div>
       </div>
 
+      {/* ── Payment Summary (from backend snapshot) ────────────────────── */}
+      {sheet && (sheet.cashCollected != null || sheet.cardCollected != null || sheet.upiCollected != null) && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+          <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-2">Payment Summary (X-Report Snapshot)</h4>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">Cash Collected</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.cashCollected || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">Card Collected</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.cardCollected || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">UPI Collected</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.upiCollected || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">Other Collected</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.otherCollected || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">Total Tips</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.totalTips || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">Tips Paid (Cash)</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.tipsPaidAmount || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">Cash Expenditures</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.cashExpenditures || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-indigo-600">Expected Cash</span>
+              <span className="font-black text-indigo-900">₹{Number(sheet.expectedCash || 0).toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Balance Calculation (amounts only, no running balance) ──────── */}
       <div className="rounded-xl bg-gray-900 p-4">
         <div className="mb-3">
