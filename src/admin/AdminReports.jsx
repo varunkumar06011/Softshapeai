@@ -161,6 +161,7 @@ const REPORT_CATEGORIES = [
     key: 'sales', label: 'Sales & Revenue',
     reports: [
       { id: 'daily-sales', label: 'Daily Sales Summary', icon: TrendingUp, urgent: true },
+      { id: 'aov', label: 'Average Order Value', icon: Wallet, urgent: true },
       { id: 'itemwise-sales', label: 'Item-wise Sales', icon: Package, urgent: true },
       { id: 'categorywise-sales', label: 'Category-wise Sales', icon: Layers, urgent: true },
       { id: 'payment-methods', label: 'Payment Method Breakdown', icon: CreditCard, urgent: true },
@@ -754,6 +755,236 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
     </div>
   );
 }
+function AOVReport({ dateFilter, outletId, onDownloadRef }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try { const res = await fetchReportDailySales(dateFilter.startDate, dateFilter.endDate, outletId); setData(res); }
+    catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [dateFilter, outletId]);
+
+  const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
+
+  // Derive AOV-related metrics from the daily sales data
+  const summary = data?.summary || {};
+  const totalRevenue = summary.totalSales ?? summary.totalSubtotal ?? 0;
+  const totalOrders = summary.totalTransactions ?? 0;
+  const aov = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+
+  // Per-day AOV trend
+  const byDay = (data?.byDay || []).map((d) => ({
+    date: d.date,
+    revenue: d.revenue,
+    orders: d.transactions,
+    aov: d.transactions > 0 ? Math.round(d.revenue / d.transactions) : 0,
+  }));
+
+  // Per-outlet AOV
+  const byOutletEntries = Object.entries(data?.byOutlet || {}).map(([outlet, v]) => ({
+    outlet: outlet.charAt(0).toUpperCase() + outlet.slice(1),
+    orders: v.count,
+    revenue: v.amount,
+    aov: v.count > 0 ? Math.round(v.amount / v.count) : 0,
+  })).sort((a, b) => b.aov - a.aov);
+
+  // Per-method AOV
+  const byMethodEntries = Object.entries(data?.byMethod || {}).map(([method, v]) => ({
+    method,
+    orders: v.count,
+    revenue: v.amount,
+    aov: v.count > 0 ? Math.round(v.amount / v.count) : 0,
+  })).sort((a, b) => b.aov - a.aov);
+
+  const highestBill = summary.highestBill;
+  const lowestBill = summary.lowestBill;
+
+  const doPDF = () => {
+    if (!data) return;
+    const headers = [{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }];
+    const rows = [
+      { metric: 'Average Order Value', value: `₹${aov.toLocaleString('en-IN')}` },
+      { metric: 'Total Revenue', value: `₹${Number(totalRevenue).toLocaleString('en-IN')}` },
+      { metric: 'Total Orders', value: totalOrders },
+      { metric: 'Highest Bill', value: highestBill ? `₹${Number(highestBill.grandTotal || 0).toLocaleString('en-IN')}` : '—' },
+      { metric: 'Lowest Bill', value: lowestBill ? `₹${Number(lowestBill.grandTotal || 0).toLocaleString('en-IN')}` : '—' },
+    ];
+    downloadPDF({ title: 'Average Order Value (AOV)', dateRange: dateRangeText, headers, rows, filename: 'AOV-Report' });
+  };
+  const doExcel = () => {
+    if (!data) return;
+    const summaryRows = [
+      { metric: 'Average Order Value', value: aov },
+      { metric: 'Total Revenue', value: totalRevenue },
+      { metric: 'Total Orders', value: totalOrders },
+      { metric: 'Highest Bill', value: highestBill?.grandTotal || 0 },
+      { metric: 'Lowest Bill', value: lowestBill?.grandTotal || 0 },
+    ];
+    const dayHeaders = [
+      { key: 'date', label: 'Date' },
+      { key: 'orders', label: 'Orders' },
+      { key: 'revenue', label: 'Revenue', format: 'money' },
+      { key: 'aov', label: 'AOV', format: 'money' },
+    ];
+    const outletHeaders = [
+      { key: 'outlet', label: 'Outlet' },
+      { key: 'orders', label: 'Orders' },
+      { key: 'revenue', label: 'Revenue', format: 'money' },
+      { key: 'aov', label: 'AOV', format: 'money' },
+    ];
+    const methodHeaders = [
+      { key: 'method', label: 'Payment Method' },
+      { key: 'orders', label: 'Orders' },
+      { key: 'revenue', label: 'Revenue', format: 'money' },
+      { key: 'aov', label: 'AOV', format: 'money' },
+    ];
+    downloadExcel({
+      title: 'Average Order Value (AOV)', dateRange: dateRangeText, filename: 'AOV-Report',
+      sheets: [
+        { name: 'Summary', headers: [{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }], rows: summaryRows },
+        { name: 'By Day', headers: dayHeaders, rows: byDay },
+        { name: 'By Outlet', headers: outletHeaders, rows: byOutletEntries },
+        { name: 'By Method', headers: methodHeaders, rows: byMethodEntries },
+      ],
+    });
+  };
+  useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
+
+  if (loading) return <LoadingCard />;
+  if (error) return isOfflineError(error) ? <OfflineCard onRetry={fetchData} /> : <ErrorCard onRetry={fetchData} />;
+  if (!data || totalOrders === 0) return <EmptyCard />;
+
+  const trendData = byDay.map((d) => ({ date: d.date, aov: d.aov }));
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader title="Average Order Value" subtitle="AOV trend, outlet & payment breakdown">
+        <DownloadButtons onPDF={doPDF} onExcel={doExcel} />
+      </ReportHeader>
+
+      {/* AOV KPI cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Avg Order Value" value={`₹${aov.toLocaleString('en-IN')}`} sub="Per bill (incl. GST)" icon={Wallet} color="text-[#B71C1C]" />
+        <StatCard label="Total Revenue" value={`₹${Number(totalRevenue).toLocaleString('en-IN')}`} sub={`${totalOrders} orders`} icon={TrendingUp} color="text-green-600" />
+        <StatCard label="Highest Bill" value={highestBill ? `₹${Number(highestBill.grandTotal || 0).toLocaleString('en-IN')}` : '—'}
+          sub={highestBill ? `Bill #${highestBill.billNumber || '—'}` : undefined} icon={DollarSign} color="text-blue-600" />
+        <StatCard label="Lowest Bill" value={lowestBill ? `₹${Number(lowestBill.grandTotal || 0).toLocaleString('en-IN')}` : '—'}
+          sub={lowestBill ? `Bill #${lowestBill.billNumber || '—'}` : undefined} icon={CreditCard} color="text-orange-600" />
+      </div>
+
+      {/* AOV trend chart */}
+      {trendData.length > 1 && (
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-4">AOV Trend</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={trendData}>
+              <defs>
+                <linearGradient id="aovGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#B71C1C" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#B71C1C" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9CA3AF' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#9CA3AF' }} tickFormatter={(v) => `₹${v}`} />
+              <Tooltip formatter={(v) => `₹${Number(v).toLocaleString('en-IN')}`} />
+              <Area type="monotone" dataKey="aov" stroke="#B71C1C" strokeWidth={2} fill="url(#aovGrad)" name="AOV" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Per-day AOV table */}
+      {byDay.length > 0 && (
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-4">Day-wise AOV</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#FFCDD2]">
+                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Date</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Orders</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue</th>
+                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">AOV</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byDay.map((d) => (
+                  <tr key={d.date} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                    <td className="px-3 py-3 font-bold text-gray-900">{d.date}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{d.orders}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">₹{Number(d.revenue).toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-3 text-right font-black text-[#B71C1C]">₹{d.aov.toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Per-outlet AOV */}
+        {byOutletEntries.length > 0 && (
+          <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+            <h3 className="text-sm font-black text-gray-900 mb-4">Outlet-wise AOV</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#FFCDD2]">
+                    <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Outlet</th>
+                    <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Orders</th>
+                    <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">AOV</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byOutletEntries.map((o) => (
+                    <tr key={o.outlet} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                      <td className="px-3 py-3 font-bold text-gray-900">{o.outlet}</td>
+                      <td className="px-3 py-3 text-right text-gray-700">{o.orders}</td>
+                      <td className="px-3 py-3 text-right font-black text-[#B71C1C]">₹{o.aov.toLocaleString('en-IN')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Per-method AOV */}
+        {byMethodEntries.length > 0 && (
+          <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+            <h3 className="text-sm font-black text-gray-900 mb-4">Payment Method AOV</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#FFCDD2]">
+                    <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Method</th>
+                    <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Orders</th>
+                    <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">AOV</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byMethodEntries.map((m) => (
+                    <tr key={m.method} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                      <td className="px-3 py-3 font-bold text-gray-900 capitalize">{m.method.toLowerCase()}</td>
+                      <td className="px-3 py-3 text-right text-gray-700">{m.orders}</td>
+                      <td className="px-3 py-3 text-right font-black text-[#B71C1C]">₹{m.aov.toLocaleString('en-IN')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1826,6 +2057,7 @@ export default function AdminReports() {
           <div className="mb-4">
             {activeReport === 'overview' && <ExecutiveSummary dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'daily-sales' && <DailySalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'aov' && <AOVReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'itemwise-sales' && <ItemwiseSalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'categorywise-sales' && <CategorywiseSalesReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'payment-methods' && <PaymentMethodsReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
@@ -2016,6 +2248,78 @@ function MonthlyPLReport({ dateFilter, outletId }) {
           </table>
         </div>
       </div>
+      {data.purchaseBreakdown && (
+        <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
+          <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Purchases Breakdown</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="bg-gray-50 p-4 rounded-xl">
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Purchase Orders (Vendor) — Paid</p>
+              <p className="text-xl font-black text-gray-900"><Money value={data.purchaseBreakdown.purchaseOrders} /></p>
+              {data.purchaseBreakdown.purchaseOrdersAll > data.purchaseBreakdown.purchaseOrders && (
+                <p className="text-[10px] text-gray-400 mt-1">Total: <Money value={data.purchaseBreakdown.purchaseOrdersAll} /> | Pending: <Money value={data.purchaseBreakdown.purchaseOrdersAll - data.purchaseBreakdown.purchaseOrders} /></p>
+              )}
+            </div>
+            <div className="bg-amber-50 p-4 rounded-xl">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Bar Inventory — Paid</p>
+              <p className="text-xl font-black text-gray-900"><Money value={data.purchaseBreakdown.barInventory} /></p>
+              {data.purchaseBreakdown.barInventoryAll > data.purchaseBreakdown.barInventory && (
+                <p className="text-[10px] text-amber-500 mt-1">Total: <Money value={data.purchaseBreakdown.barInventoryAll} /> | Pending: <Money value={data.purchaseBreakdown.barInventoryAll - data.purchaseBreakdown.barInventory} /></p>
+              )}
+            </div>
+            <div className="bg-blue-50 p-4 rounded-xl">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Kitchen Daily — Paid</p>
+              <p className="text-xl font-black text-gray-900"><Money value={data.purchaseBreakdown.kitchenDaily} /></p>
+              {data.purchaseBreakdown.kitchenDailyAll > data.purchaseBreakdown.kitchenDaily && (
+                <p className="text-[10px] text-blue-500 mt-1">Total: <Money value={data.purchaseBreakdown.kitchenDailyAll} /> | Pending: <Money value={data.purchaseBreakdown.kitchenDailyAll - data.purchaseBreakdown.kitchenDaily} /></p>
+              )}
+            </div>
+          </div>
+          {s.totalPurchasesPending > 0 && (
+            <div className="bg-amber-50 p-3 rounded-xl mb-4 text-sm font-bold text-amber-700">
+              <span className="uppercase tracking-widest text-[10px]">Pending Purchases (not in P&L): </span>
+              <Money value={s.totalPurchasesPending} />
+            </div>
+          )}
+          {data.purchaseBreakdown.items?.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#F9FAFB] border-b border-[#FFCDD2]">
+                  <tr>
+                    <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Date</th>
+                    <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Source</th>
+                    <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Item</th>
+                    <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Qty</th>
+                    <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Unit Cost</th>
+                    <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Total Cost</th>
+                    <th className="px-3 py-3 text-center text-[10px] font-black uppercase tracking-widest text-gray-400">Payment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.purchaseBreakdown.items.map((it, idx) => (
+                    <tr key={idx} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
+                      <td className="px-3 py-3 text-gray-600 text-xs">{it.date}</td>
+                      <td className="px-3 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${it.source === 'bar-inventory' ? 'bg-amber-100 text-amber-700' : it.source === 'kitchen-daily' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {it.source}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 font-bold text-gray-900">{it.item}</td>
+                      <td className="px-3 py-3 text-right text-gray-700">{it.source === 'bar-inventory' ? `${it.bottles} btl` : it.quantityMl}</td>
+                      <td className="px-3 py-3 text-right text-gray-700"><Money value={it.unitCost} /></td>
+                      <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={it.totalCost} /></td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${it.paymentStatus === 'DONE' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {it.paymentStatus === 'DONE' ? `Paid${it.paymentMethod ? ` (${it.paymentMethod})` : ''}` : 'Pending'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

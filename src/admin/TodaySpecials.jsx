@@ -280,33 +280,34 @@ export default function TodaySpecials() {
 
   const getRangeForPeriod = (period) => {
 
+    // Use IST (UTC+5:30) for "today" so the date matches the business day
     const now = new Date();
-
-    const today = now.toISOString().slice(0, 10);
+    const istMs = now.getTime() + 5.5 * 60 * 60 * 1000;
+    const today = new Date(istMs).toISOString().slice(0, 10);
 
     if (period === 'Today') return { startDate: today, endDate: today };
 
     if (period === 'Yesterday') {
 
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const yesterdayIst = new Date(istMs - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-      return { startDate: yesterday, endDate: yesterday };
+      return { startDate: yesterdayIst, endDate: yesterdayIst };
 
     }
 
     if (period === 'Weekly') {
 
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const weekAgo = new Date(istMs - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-      return { startDate: weekAgo.toISOString().slice(0, 10), endDate: today };
+      return { startDate: weekAgo, endDate: today };
 
     }
 
     if (period === 'Monthly') {
 
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(istMs - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-      return { startDate: monthAgo.toISOString().slice(0, 10), endDate: today };
+      return { startDate: monthAgo, endDate: today };
 
     }
 
