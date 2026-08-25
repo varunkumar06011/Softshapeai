@@ -979,37 +979,37 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       { name: 'rest', value: Math.min(Math.max(100 - share, 0), 100) },
     ];
     return (
-      <div className={`${dashCard} p-3 min-w-0 animate-chart-in`}>
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg shrink-0" style={{ background: `${color}1A` }}>
-            <Icon size={16} style={{ color }} />
+      <div className={`${dashCard} p-2.5 min-w-0 animate-chart-in`}>
+        <div className="flex items-center gap-1.5">
+          <div className="p-1 rounded-md shrink-0" style={{ background: `${color}1A` }}>
+            <Icon size={14} style={{ color }} />
           </div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] truncate">{label}</p>
         </div>
         {loading ? (
-          <div className="mt-3 h-[96px] animate-pulse bg-gray-100 rounded-lg" />
+          <div className="mt-2 h-[72px] animate-pulse bg-gray-100 rounded-lg" />
         ) : (
-          <div className="mt-2 flex items-center gap-3">
-            <div className="relative h-[88px] w-[88px] shrink-0">
+          <div className="mt-1.5 flex flex-col md:flex-row items-center gap-1.5 md:gap-3">
+            <div className="relative h-[64px] w-[64px] md:h-[88px] md:w-[88px] shrink-0">
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                 <PieChart>
-                  <Pie data={ringData} dataKey="value" cx="50%" cy="50%" innerRadius={30} outerRadius={40} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
+                  <Pie data={ringData} dataKey="value" cx="50%" cy="50%" innerRadius={22} outerRadius={30} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
                     <Cell fill={color} />
                     <Cell fill="#F1F5F9" />
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <span className="text-xs font-black text-[#1A1A1A]">{fmtPct(share)}</span>
+                <span className="text-[11px] font-black text-[#1A1A1A]">{fmtPct(share)}</span>
               </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-lg font-black truncate" style={{ color }}>{fmtInr(amount)}</p>
-              <p className="text-[10px] font-bold text-[#6B6B6B]">of Total Sales</p>
-              <p className={`text-[10px] font-bold flex items-center gap-0.5 mt-0.5 ${up ? 'text-green-600' : pp < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+            <div className="min-w-0 text-center md:text-left leading-tight">
+              <p className="text-sm md:text-lg font-black leading-tight" style={{ color }}>{fmtInr(amount)}</p>
+              <p className="text-[10px] font-bold text-[#6B6B6B] leading-tight">of Total Sales</p>
+              <p className={`text-[10px] font-bold flex items-center justify-center md:justify-start gap-0.5 leading-tight ${up ? 'text-green-600' : pp < 0 ? 'text-red-600' : 'text-gray-400'}`}>
                 {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(Math.abs(pp))}
               </p>
-              <p className="text-[10px] text-[#6B6B6B] font-medium">vs last {weekdayLong(lastWeekDay)}</p>
+              <p className="text-[10px] text-[#6B6B6B] font-medium leading-tight">vs last {weekdayLong(lastWeekDay)}</p>
             </div>
           </div>
         )}
@@ -1142,17 +1142,9 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   }
 
   const expenditureRatio = todayRevenue > 0 ? Math.min((todayExpenditure / todayRevenue) * 100, 100) : 0;
-  const secondRowCount = categoryCards.length + 1; // + Expenditure
-  const secondRowGridClass = secondRowCount >= 5
-    ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5'
-    : secondRowCount === 4
-      ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-4'
-      : secondRowCount === 3
-        ? 'grid-cols-2 sm:grid-cols-3'
-        : 'grid-cols-1 sm:grid-cols-2';
 
   return (
-    <div className="space-y-4 font-sans bg-[#F8F9FB] -m-4 p-4 md:-m-6 md:p-6 min-h-full" data-tour="admin-dashboard">
+    <div className="space-y-4 font-sans bg-[#F8F9FB] -m-4 p-4 md:-m-6 md:p-6 min-h-full min-w-0 overflow-x-hidden" data-tour="admin-dashboard">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-base md:text-lg font-black text-[#1A1A1A]">Dashboard</h2>
@@ -1169,8 +1161,13 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         </div>
       </div>
 
-      {/* Row 1 — KPI tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4 items-start" data-tour="admin-dashboard-stats">
+      {/* Row 1 — KPI tiles — auto-fill minmax reflows based on actual content width
+          (not viewport), so cards never clip regardless of sidebar width */}
+      <div
+        className="grid gap-3 md:gap-4 items-start"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 175px), 1fr))' }}
+        data-tour="admin-dashboard-stats"
+      >
         <KpiCard
           label="Total Sales"
           value={fmtInr(todayRevenue)}
@@ -1236,22 +1233,6 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
             </div>
           }
         />
-      </div>
-
-      {/* Row 2 — category mix (outlet-aware) + expenditure */}
-      <div className={`grid ${secondRowGridClass} gap-3 md:gap-4 items-start`}>
-        {categoryCards.map(c => (
-          <CategoryRingCard
-            key={c.key}
-            label={c.label}
-            amount={c.amount}
-            share={c.share}
-            prevShare={c.prevShare}
-            color={c.color}
-            icon={c.icon}
-            loading={itemwiseLoading}
-          />
-        ))}
         <KpiCard
           label="Expenditure"
           value={fmtInr(todayExpenditure)}
@@ -1267,6 +1248,26 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
             </div>
           }
         />
+      </div>
+
+      {/* Row 2 — category mix (outlet-aware) — auto-fill minmax reflows based on
+          actual content width, not viewport, so cards never clip */}
+      <div
+        className="grid gap-3 md:gap-4 items-start"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))' }}
+      >
+        {categoryCards.map(c => (
+          <CategoryRingCard
+            key={c.key}
+            label={c.label}
+            amount={c.amount}
+            share={c.share}
+            prevShare={c.prevShare}
+            color={c.color}
+            icon={c.icon}
+            loading={itemwiseLoading}
+          />
+        ))}
       </div>
 
       {/* Row 3 — payment mix + top captains */}

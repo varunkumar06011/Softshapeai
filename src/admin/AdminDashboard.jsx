@@ -678,7 +678,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
           </div>
         </header>
 
-        <main className="flex-grow overflow-y-auto p-4 md:p-6 bg-[#FFF5F5]" data-tour="admin-content">
+        <main className="flex-grow overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-[#FFF5F5]" data-tour="admin-content">
           <Suspense fallback={
             <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-3">
               <div className="w-8 h-8 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />

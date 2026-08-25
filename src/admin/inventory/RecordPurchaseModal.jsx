@@ -1,14 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// RecordPurchaseModal — purchase form with item picker + idempotency
+// RecordPurchaseModal — purchase form with item picker + ML/Bottle modes
 // ─────────────────────────────────────────────────────────────────────────────
 // Two modes:
 //   1. Pre-selected item (from drawer): skips straight to the quantity form.
 //   2. No pre-selected item (from toolbar): shows an item search/select step
-//      first, then the quantity form. This fixes the bug where the toolbar
-//      button silently applied the purchase to inventory.items[0].
+//      first, then the quantity form.
 //
-// Generates a requestId (UUID) on first submit, persists it in sessionStorage
-// across retries, disables submit while in-flight to prevent double-clicks.
+// Purchase entry supports:
+//   - Bar: ML mode (enter ml directly) or Bottle mode (bottles × ml/bottle)
+//   - Kitchen: Unit-based entry (kg, g, ml, litre, dozen, piece, etc.)
+//
+// Generates a requestId (UUID) on first submit for bar purchases, persisted in
+// sessionStorage across retries, disables submit while in-flight.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo } from 'react';
@@ -17,36 +20,36 @@ import { createKitchenEntry } from '../../services/kitchenInventoryApi';
 import { getUnitOptions, convertToBaseUnit, normalizeUnit } from '../../shared/utils/unitConversion';
 
 export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }) {
-  // `selectedItem` is the item chosen in the picker step (or the pre-selected
-  // `item` prop when launched from the drawer). It is the ONLY item whose stock
-  // is updated — never falls back to items[0].
   const [selectedItem, setSelectedItem] = useState(null);
   const [itemSearch, setItemSearch] = useState('');
   const [quantity, setQuantity] = useState('');
   const [purchaseBottles, setPurchaseBottles] = useState('');
+  const [bottleSize, setBottleSize] = useState('');
   const [costPerBottle, setCostPerBottle] = useState('');
   const [purchaseUnit, setPurchaseUnit] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // Purchase mode: 'ml' = enter ML directly, 'bottles' = bottles × ml/bottle
+  const [purchaseMode, setPurchaseMode] = useState('ml');
 
-  // Reset state whenever the modal opens. If a pre-selected `item` is provided
-  // (drawer launch), use it directly and skip the picker step. Otherwise start
-  // at the picker step with no item selected.
+  // Reset state whenever the modal opens.
   useEffect(() => {
     if (open) {
       setSelectedItem(item ?? null);
       setItemSearch('');
       setQuantity('');
       setPurchaseBottles('');
-      setCostPerBottle(tab === 'bar' ? Number(item?.costPerBottle) || 0 : '');
+      setBottleSize(tab === 'bar' ? Number(item?.bottleSize) || '' : '');
+      setCostPerBottle(tab === 'bar' ? Number(item?.costPerBottle) || '' : '');
       setPurchaseUnit(tab === 'bar' ? 'ml' : normalizeUnit(item?.unit) || '');
       setNotes('');
       setError(null);
+      setPurchaseMode('ml');
     }
   }, [item, open, tab]);
 
-  // Filtered item list for the picker step. Searches by name (case-insensitive).
+  // Filtered item list for the picker step.
   const searchableItems = Array.isArray(items) ? items : [];
   const filteredPickerItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
@@ -62,35 +65,54 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
     setItemSearch('');
     setQuantity('');
     setPurchaseBottles('');
-    setCostPerBottle(tab === 'bar' ? Number(it.costPerBottle) || 0 : '');
+    setBottleSize(tab === 'bar' ? Number(it.bottleSize) || '' : '');
+    setCostPerBottle(tab === 'bar' ? Number(it.costPerBottle) || '' : '');
     setPurchaseUnit(tab === 'bar' ? 'ml' : normalizeUnit(it.unit) || '');
     setError(null);
+    setPurchaseMode('ml');
   };
 
   const handleBackToPicker = () => {
     setSelectedItem(null);
     setQuantity('');
     setPurchaseBottles('');
+    setBottleSize('');
     setPurchaseUnit('');
     setNotes('');
     setError(null);
   };
 
+  // Calculate the total ML from bottle mode inputs
+  const calculatedMl = useMemo(() => {
+    const bottles = Number(purchaseBottles) || 0;
+    const size = Number(bottleSize) || 0;
+    return bottles * size;
+  }, [purchaseBottles, bottleSize]);
+
   const handleSave = async () => {
-    // Validation: item selection is mandatory — never allow saving without a
-    // concrete selected item with a real id.
     if (!selectedItem || !selectedItem.id) {
       setError('Please select an inventory item first');
       return;
     }
 
     if (tab === 'bar') {
-      if (quantity <= 0 && purchaseBottles <= 0) {
-        setError('Enter either quantity (ml) or bottles');
-        return;
+      if (purchaseMode === 'bottles') {
+        if (!(Number(purchaseBottles) > 0)) {
+          setError('Enter number of bottles');
+          return;
+        }
+        if (!(Number(bottleSize) > 0)) {
+          setError('Enter ML per bottle');
+          return;
+        }
+      } else {
+        if (!(Number(quantity) > 0)) {
+          setError('Enter quantity in ml');
+          return;
+        }
       }
     } else {
-      if (quantity <= 0) {
+      if (!(Number(quantity) > 0)) {
         setError('Quantity must be greater than 0');
         return;
       }
@@ -99,8 +121,6 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
     setSaving(true);
     setError(null);
 
-    // Idempotency: generate requestId persisted in sessionStorage, reused on retry.
-    // Keyed by the actual selected item id so retries never bleed across items.
     const actionKey = `bar-purchase:${selectedItem.id}`;
     const requestId = tab === 'bar' ? getOrCreateRequestId(actionKey) : undefined;
 
@@ -111,21 +131,21 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
           notes: notes || undefined,
           createdBy: 'Admin',
         };
-        if (purchaseBottles > 0) {
-          body.purchaseBottles = purchaseBottles;
+        if (purchaseMode === 'bottles') {
+          body.purchaseBottles = Number(purchaseBottles);
+          // Send bottleSize so backend uses the correct size for ML conversion
+          if (Number(bottleSize) > 0) {
+            body.bottleSize = Number(bottleSize);
+          }
         } else {
-          body.quantity = quantity;
+          body.quantity = Number(quantity);
         }
-        if (costPerBottle > 0) body.costPerBottle = costPerBottle;
+        if (Number(costPerBottle) > 0) body.costPerBottle = Number(costPerBottle);
         if (requestId) body.requestId = requestId;
 
         await recordPurchase(body);
         clearRequestId(actionKey);
       } else {
-        // Kitchen: use entries endpoint with addStock — adds to today's entry,
-        // which feeds opening stock for subsequent days and currentStock now.
-        // Convert the entered quantity from the selected unit to the item's
-        // base unit so stock is always stored consistently.
         const baseUnit = selectedItem.unit || purchaseUnit;
         const { effectiveQty } = convertToBaseUnit(quantity, purchaseUnit || baseUnit, baseUnit);
         await createKitchenEntry({
@@ -140,7 +160,6 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to record purchase');
-      // Do NOT clear requestId on error — reuse on retry
     } finally {
       setSaving(false);
     }
@@ -148,10 +167,8 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
 
   if (!open) return null;
 
-  // Picker step — shown when no item is pre-selected and none chosen yet.
   const showPicker = !selectedItem;
 
-  // Derive display values for the form step from the selected item.
   const itemName = selectedItem
     ? (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name)
     : '';
@@ -238,7 +255,7 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
                         <div>
                           <div className="text-sm font-semibold text-gray-900">{name}</div>
                           <div className="text-xs text-gray-500 mt-0.5">
-                            Current: {stock.toFixed(2)} {itUnit}
+                            Stock: {stock.toFixed(2)} {itUnit}
                           </div>
                         </div>
                         <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -254,45 +271,104 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
               </p>
             </>
           ) : (
-            // ── Step 2: Quantity form ────────────────────────────────────────
+            // ── Step 2: Purchase form ────────────────────────────────────────
             <>
               <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Item</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide">Selected Item</div>
                 <div className="text-sm font-semibold text-gray-900 mt-0.5">{itemName}</div>
                 <div className="text-xs text-gray-500 mt-1">
-                  Current: {currentStock.toFixed(2)} {unit}
+                  Stock: {currentStock.toFixed(2)} {unit}
                 </div>
               </div>
 
               {tab === 'bar' ? (
                 <>
+                  {/* Purchase mode toggle */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Purchase (bottles)</label>
-                    <input
-                      type="number"
-                      value={purchaseBottles}
-                      onChange={(e) => setPurchaseBottles(e.target.value === '' ? '' : Number(e.target.value))}
-                      placeholder="0"
-                      className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Purchase Mode</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPurchaseMode('ml')}
+                        className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                          purchaseMode === 'ml'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        ML
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPurchaseMode('bottles')}
+                        className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                          purchaseMode === 'bottles'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        Bottles
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-center text-xs text-gray-400">— or —</div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (ml)</label>
-                    <input
-                      type="number"
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                      placeholder="0"
-                      className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                    />
-                  </div>
+
+                  {purchaseMode === 'ml' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Quantity (ml) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={quantity}
+                        onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+                        placeholder="0"
+                        className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Number of Bottles <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          value={purchaseBottles}
+                          onChange={(e) => setPurchaseBottles(e.target.value === '' ? '' : Number(e.target.value))}
+                          placeholder="0"
+                          className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          ML per Bottle <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          value={bottleSize}
+                          onChange={(e) => setBottleSize(e.target.value === '' ? '' : Number(e.target.value))}
+                          placeholder="750"
+                          className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                        />
+                      </div>
+                      {calculatedMl > 0 && (
+                        <div className="bg-green-50 rounded-lg p-3 text-sm text-green-700">
+                          Calculated Quantity: <span className="font-bold">{calculatedMl.toLocaleString()} ml</span>
+                          <span className="text-green-500 text-xs ml-1">
+                            ({Number(purchaseBottles)} × {Number(bottleSize)} ml)
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Cost per Bottle (₹)</label>
                     <input
                       type="number"
                       value={costPerBottle}
                       onChange={(e) => setCostPerBottle(e.target.value === '' ? '' : Number(e.target.value))}
+                      placeholder="0"
                       className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                     />
                   </div>
@@ -354,7 +430,7 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
               disabled={saving}
               className="px-4 py-2.5 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {saving ? 'Saving...' : 'Save Purchase'}
+              {saving ? 'Saving...' : 'Record Purchase'}
             </button>
           )}
         </div>

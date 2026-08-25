@@ -1,8 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // InventoryTable — shared table (desktop) + card list (mobile)
 // ─────────────────────────────────────────────────────────────────────────────
-// Columns: Item | Category | Unit | Opening | Current Stock | Low Stock | Rate |
+// Columns: Item | Category | Unit | Opening | Closing | Low Stock | Rate |
 //          Stock Value | Actions [Edit][View]
+//
+// "Closing" = today's closing stock (from daily snapshot if available,
+// otherwise the live currentStock running balance). This lets admins
+// verify that today's opening matches yesterday's closing.
+//
 // Mobile: renders cards instead of a compressed table.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -26,7 +31,7 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
               <th className="text-left px-4 py-3 font-semibold">Category</th>
               <th className="text-left px-4 py-3 font-semibold">Unit</th>
               <th className="text-right px-4 py-3 font-semibold">Opening</th>
-              <th className="text-right px-4 py-3 font-semibold">Current Stock</th>
+              <th className="text-right px-4 py-3 font-semibold">Closing</th>
               <th className="text-right px-4 py-3 font-semibold">Low Stock</th>
               <th className="text-right px-4 py-3 font-semibold">Rate</th>
               <th className="text-right px-4 py-3 font-semibold">Stock Value</th>
@@ -45,29 +50,43 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                 const name = tab === 'bar' ? item.menuItem?.name : item.name;
                 const category = tab === 'bar' ? item.menuItem?.category?.name : item.category;
                 const unit = tab === 'bar' ? 'ml' : item.unit;
+                // Opening = yesterday's closing + today's purchases.
+                // Kitchen: todayEntry.openingStock already includes purchases (folded in).
+                // Bar: todayEntry.openingStock is start-of-day stock, addedStock is
+                //      today's purchases — so we add them to match the same model.
                 const opening = tab === 'bar'
-                  ? Number(item.openingStock) || 0
+                  ? (Number(item.todayEntry?.openingStock) || 0) + (Number(item.todayEntry?.addedStock) || 0)
                   : Number(item.todayEntry?.openingStock) || 0;
-                const current = Number(item.currentStock) || 0;
+                // Closing = today's closing stock from snapshot if available,
+                // otherwise the live currentStock running balance.
+                const closing = Number(item.todayEntry?.closingStock) || Number(item.currentStock) || 0;
+                // Internal remaining stock — used for low-stock & value
+                const remaining = Number(item.currentStock) || 0;
                 const reorder = Number(item.reorderLevel) || 0;
                 const rate = tab === 'bar'
                   ? Number(item.costPerBottle) || 0
                   : Number(item.price) || 0;
                 const stockValue = tab === 'bar'
-                  ? (current / (Number(item.bottleSize) || 750)) * rate
-                  : current * rate;
-                const isLow = reorder > 0 && current <= reorder;
+                  ? (remaining / (Number(item.bottleSize) || 750)) * rate
+                  : remaining * rate;
+                const isLow = reorder > 0 && remaining <= reorder;
 
                 return (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isLow ? 'bg-red-50/40' : ''}`}>
                     <td className="px-4 py-3 font-medium text-gray-900">{name || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{category || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{unit || '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-600">{opening.toFixed(2)}</td>
-                    <td className={`px-4 py-3 text-right font-semibold ${isLow ? 'text-red-600' : 'text-gray-900'}`}>
-                      {current.toFixed(2)}
+                    <td className="px-4 py-3 text-right text-gray-600">{closing.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {reorder > 0 ? (
+                        <span className={isLow ? 'text-red-600 font-semibold' : 'text-gray-600'}>
+                          {reorder.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">{reorder > 0 ? reorder.toFixed(2) : '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-600">₹{rate.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right text-gray-600">₹{stockValue.toFixed(2)}</td>
                     <td className="px-4 py-3 text-center">
@@ -120,31 +139,39 @@ function MobileCardList({ items, tab, onEdit, onView, page, totalPages, setPage 
           const name = tab === 'bar' ? item.menuItem?.name : item.name;
           const category = tab === 'bar' ? item.menuItem?.category?.name : item.category;
           const unit = tab === 'bar' ? 'ml' : item.unit;
-          const current = Number(item.currentStock) || 0;
+          const opening = tab === 'bar'
+            ? (Number(item.todayEntry?.openingStock) || 0) + (Number(item.todayEntry?.addedStock) || 0)
+            : Number(item.todayEntry?.openingStock) || 0;
+          // Closing = today's closing stock from snapshot if available,
+          // otherwise the live currentStock running balance.
+          const closing = Number(item.todayEntry?.closingStock) || Number(item.currentStock) || 0;
+          // Internal remaining stock — used for low-stock detection and stock value
+          const remaining = Number(item.currentStock) || 0;
           const reorder = Number(item.reorderLevel) || 0;
           const rate = tab === 'bar'
             ? Number(item.costPerBottle) || 0
             : Number(item.price) || 0;
           const stockValue = tab === 'bar'
-            ? (current / (Number(item.bottleSize) || 750)) * rate
-            : current * rate;
-          const isLow = reorder > 0 && current <= reorder;
+            ? (remaining / (Number(item.bottleSize) || 750)) * rate
+            : remaining * rate;
+          const isLow = reorder > 0 && remaining <= reorder;
 
           return (
-            <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div key={item.id} className={`bg-white rounded-xl shadow-sm border p-4 ${isLow ? 'border-red-200' : 'border-gray-100'}`}>
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <div className="font-semibold text-gray-900">{name || '—'}</div>
                   <div className="text-xs text-gray-500">{category || '—'} · {unit}</div>
                 </div>
-                <div className="text-right">
-                  <div className={`text-2xl font-bold ${isLow ? 'text-red-600' : 'text-gray-900'}`}>
-                    {current.toFixed(2)}
-                  </div>
-                  {reorder > 0 && isLow && (
-                    <div className="text-xs text-red-500 font-medium">Low Stock</div>
-                  )}
-                </div>
+                {isLow && (
+                  <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full">
+                    Low Stock
+                  </span>
+                )}
+              </div>
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Opening: <span className="font-medium text-gray-900">{opening.toFixed(2)}</span></span>
+                <span>Closing: <span className="font-medium text-gray-900">{closing.toFixed(2)}</span></span>
               </div>
               <div className="flex justify-between text-sm text-gray-600 mb-3">
                 <span>Rate: ₹{rate.toFixed(2)}</span>

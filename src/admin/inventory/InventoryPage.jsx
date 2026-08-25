@@ -8,11 +8,12 @@
 
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { TAB_BAR, TAB_KITCHEN } from './inventoryConstants';
+import { TAB_BAR, TAB_KITCHEN, TAB_RECONCILIATION } from './inventoryConstants';
 import { useInventoryData } from './useInventoryData';
 import { InventorySummaryCards } from './InventorySummaryCards';
 import { InventoryToolbar } from './InventoryToolbar';
 import { InventoryTable } from './InventoryTable';
+import { InventoryReconciliation } from './InventoryReconciliation';
 import { AddItemModal } from './AddItemModal';
 import { EditItemModal } from './EditItemModal';
 import { RecordPurchaseModal } from './RecordPurchaseModal';
@@ -167,9 +168,20 @@ export function InventoryPage() {
         >
           Kitchen Inventory
         </button>
+        <button
+          onClick={() => setTab(TAB_RECONCILIATION)}
+          className={`px-4 py-3 font-bold text-sm transition-all ${
+            tab === TAB_RECONCILIATION ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Reconciliation
+        </button>
       </div>
 
-      <InventoryContent
+      {tab === TAB_RECONCILIATION ? (
+        <InventoryReconciliation />
+      ) : (
+        <InventoryContent
         tab={tab}
         inventory={inventory}
         onAddItem={handleAddItem}
@@ -188,6 +200,7 @@ export function InventoryPage() {
           </>
         }
       />
+      )}
     </div>
   );
 }

@@ -26,7 +26,7 @@ import {
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
   RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, AlertTriangle,
-  ArrowUpDown, Wallet, WifiOff,
+  ArrowUpDown, Wallet, WifiOff, Menu,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
@@ -1653,6 +1653,7 @@ export default function AdminReports() {
   const [exportOpen, setExportOpen] = useState(false);
   const [outletId, setOutletId] = useState('all');
   const [outlets, setOutlets] = useState([]);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const downloadRef = useRef({ pdf: () => {}, excel: () => {} });
 
   const { restaurant } = useAuth();
@@ -1740,12 +1741,12 @@ export default function AdminReports() {
               />
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {outlets.length > 1 && (
               <select
                 value={outletId}
                 onChange={(e) => setOutletId(e.target.value)}
-                className="px-3 py-2 text-xs font-bold border border-[#FFCDD2] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#B71C1C] bg-white cursor-pointer"
+                className="px-3 py-2 text-xs font-bold border border-[#FFCDD2] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#B71C1C] bg-white cursor-pointer shrink-0"
               >
                 <option value="all">All Outlets</option>
                 {outlets.map(o => (
@@ -1754,7 +1755,7 @@ export default function AdminReports() {
               </select>
             )}
             <ReportDateFilter value={dateFilter} onChange={setDateFilter} />
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={() => setExportOpen((v) => !v)}
                 className="flex items-center gap-2 bg-[#B71C1C] text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#8E1414] transition-colors"
@@ -1776,9 +1777,20 @@ export default function AdminReports() {
         </div>
       </div>
 
+      {/* Mobile sidebar toggle */}
+      <div className="md:hidden bg-white border-b border-[#FFCDD2] px-4 py-2">
+        <button
+          onClick={() => setMobileSidebarOpen((v) => !v)}
+          className="flex items-center gap-2 text-xs font-bold text-gray-600 hover:text-[#B71C1C] transition-colors"
+        >
+          <Menu size={16} />
+          {mobileSidebarOpen ? 'Hide Reports Menu' : 'Show Reports Menu'}
+        </button>
+      </div>
+
       <div className="flex flex-col md:flex-row">
         {/* Left Sidebar */}
-        <aside className="w-full md:w-56 flex-shrink-0 bg-white border-r border-[#FFCDD2] md:min-h-[calc(100vh-73px)]">
+        <aside className={`w-full md:w-56 flex-shrink-0 bg-white border-r border-[#FFCDD2] md:min-h-[calc(100vh-73px)] ${mobileSidebarOpen ? 'block' : 'hidden'} md:block`}>
           <div className="p-4 space-y-6">
             {filteredCategories.map((cat) => (
               <div key={cat.key}>
@@ -1790,7 +1802,7 @@ export default function AdminReports() {
                     return (
                       <button
                         key={r.id}
-                        onClick={() => setActiveReport(r.id)}
+                        onClick={() => { setActiveReport(r.id); setMobileSidebarOpen(false); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                           isActive ? 'bg-[#FFF5F5] text-[#B71C1C] font-bold' : 'text-gray-600 hover:bg-gray-50'
                         }`}

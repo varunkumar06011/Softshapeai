@@ -43,6 +43,7 @@ export const MOVEMENT_TYPE_SIGN = {
 // Tab keys
 export const TAB_BAR = 'bar';
 export const TAB_KITCHEN = 'kitchen';
+export const TAB_RECONCILIATION = 'reconciliation';
 
 // Summary card types
 export const SUMMARY_CARDS = [
