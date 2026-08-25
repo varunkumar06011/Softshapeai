@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// EditItemModal — edit item metadata only (NOT stock — use Stock Adjustment)
+// EditItemModal — edit item metadata and opening stock
 // ─────────────────────────────────────────────────────────────────────────────
-// Bar: bottle size, reorder level, cost per bottle
+// Bar: bottle size, reorder level, cost per bottle, opening stock (with reason)
 // Kitchen: name, category, unit, rate, low-stock threshold
-// Opening Stock is NOT editable here — to correct stock, use Stock Adjustment.
+// Opening Stock is editable for bar items — changing it updates currentStock
+// and creates an ADJUSTMENT transaction with the optional reason for audit.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
@@ -18,6 +19,9 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
   const [bottleSize, setBottleSize] = useState(750);
   const [reorderLevel, setReorderLevel] = useState(0);
   const [costPerBottle, setCostPerBottle] = useState(0);
+  const [openingStock, setOpeningStock] = useState(0);
+  const [openingStockReason, setOpeningStockReason] = useState('');
+  const [originalOpeningStock, setOriginalOpeningStock] = useState(0);
 
   // Kitchen fields
   const [name, setName] = useState('');
@@ -32,6 +36,11 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
         setBottleSize(Number(item.bottleSize) || 750);
         setReorderLevel(Number(item.reorderLevel) || 0);
         setCostPerBottle(Number(item.costPerBottle) || 0);
+        // Opening stock: use todayEntry.openingStock if available, otherwise currentStock
+        const todayOpening = Number(item.todayEntry?.openingStock) || Number(item.openingStock) || Number(item.currentStock) || 0;
+        setOpeningStock(todayOpening);
+        setOriginalOpeningStock(todayOpening);
+        setOpeningStockReason('');
       } else {
         setName(item.name || '');
         setCategory(item.category || '');
@@ -49,11 +58,17 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
     setError(null);
     try {
       if (tab === 'bar') {
-        await updateInventoryItem(item.id, {
+        const payload = {
           bottleSize,
           reorderLevel,
           costPerBottle,
-        });
+        };
+        // Only send openingStock if it changed
+        if (Math.abs(openingStock - originalOpeningStock) > 0.01) {
+          payload.openingStock = openingStock;
+          payload.notes = openingStockReason.trim() || undefined;
+        }
+        await updateInventoryItem(item.id, payload);
       } else {
         await updateKitchenItem(item.id, {
           name: name.trim(),
@@ -102,9 +117,11 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
                 {tab === 'bar' ? 'ml' : item.unit}
               </span>
             </div>
-            <p className="text-xs text-gray-400 mt-1">
-              To correct stock, use Stock Adjustment.
-            </p>
+            {tab !== 'bar' && (
+              <p className="text-xs text-gray-400 mt-1">
+                To correct stock, use Stock Adjustment.
+              </p>
+            )}
           </div>
 
           {tab === 'bar' ? (
@@ -136,6 +153,39 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Opening Stock (ml)
+                  {Math.abs(openingStock - originalOpeningStock) > 0.01 && (
+                    <span className="text-red-500 ml-1">•</span>
+                  )}
+                </label>
+                <input
+                  type="number"
+                  value={openingStock}
+                  onChange={(e) => setOpeningStock(Number(e.target.value))}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+                {Math.abs(openingStock - originalOpeningStock) > 0.01 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Changing opening stock will update current stock from {originalOpeningStock.toFixed(2)}ml to {(openingStock + (Number(item.todayEntry?.addedStock) || 0) - (Number(item.todayEntry?.consumedStock) || 0)).toFixed(2)}ml.
+                  </p>
+                )}
+              </div>
+              {Math.abs(openingStock - originalOpeningStock) > 0.01 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reason <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={openingStockReason}
+                    onChange={(e) => setOpeningStockReason(e.target.value)}
+                    placeholder="e.g. Corrected after physical count"
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                  />
+                </div>
+              )}
             </>
           ) : (
             <>

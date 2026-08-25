@@ -1,0 +1,13 @@
+feat: AOV report + editable opening stock with reason
+
+- Add Average Order Value report inside Reports section (Sales & Revenue)
+  with Today/Weekly/Monthly/Custom date filters, trend chart, outlet and
+  payment method breakdowns, PDF/Excel export
+- Make bar item opening stock editable via pencil icon in EditItemModal
+  with optional reason field and audit transaction
+- Remove negative closing stock rejection in PATCH endpoint (business
+  permits negative stock for over-sold items)
+
+Generated with [Devin](https://devin.ai)
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>
