@@ -2,15 +2,19 @@
 // InventoryTable — shared table (desktop) + card list (mobile)
 // ─────────────────────────────────────────────────────────────────────────────
 // Columns: Item | Category | Unit | Opening | [Opening Bottles (bar only)] |
-//          Closing | Low Stock | Rate | Stock Value | Actions [Edit][View]
+//          [Item Sale (bar only)] | Closing | Low Stock | Purchase Rate |
+//          [AC Selling Cost (bar only)] | [Non-AC Selling Cost (bar only)] |
+//          Stock Value | Actions [Edit][View]
 //
 // "Closing" = today's closing stock (from daily snapshot if available,
 // otherwise the live currentStock running balance). This lets admins
 // verify that today's opening matches yesterday's closing.
 //
-// Bar inventory shows an additional "Opening (Bottles)" column that
-// converts the ML opening stock to bottle quantity using the item's
-// configured bottle capacity: bottles = openingML / bottleSize.
+// Bar inventory shows additional columns:
+//   - Opening (Bottles): openingML / bottleSize
+//   - Item Sale: actual POS revenue for this item on the selected date
+//   - AC Selling Cost: AC selling price per bottle (override or derived)
+//   - Non-AC Selling Cost: Non-AC selling price per bottle (override or derived)
 //
 // Mobile: renders cards instead of a compressed table.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,9 +40,12 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
               <th className="text-left px-4 py-3 font-semibold">Unit</th>
               <th className="text-right px-4 py-3 font-semibold">Opening</th>
               {tab === 'bar' && <th className="text-right px-4 py-3 font-semibold">Opening (Bottles)</th>}
+              {tab === 'bar' && <th className="text-right px-4 py-3 font-semibold">Item Sale</th>}
               <th className="text-right px-4 py-3 font-semibold">Closing</th>
               <th className="text-right px-4 py-3 font-semibold">Low Stock</th>
-              <th className="text-right px-4 py-3 font-semibold">Rate</th>
+              <th className="text-right px-4 py-3 font-semibold">Purchase Rate</th>
+              {tab === 'bar' && <th className="text-right px-4 py-3 font-semibold">AC Selling</th>}
+              {tab === 'bar' && <th className="text-right px-4 py-3 font-semibold">Non-AC Selling</th>}
               <th className="text-right px-4 py-3 font-semibold">Stock Value</th>
               <th className="text-center px-4 py-3 font-semibold">Actions</th>
             </tr>
@@ -46,7 +53,7 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
           <tbody className="divide-y divide-gray-100">
             {items.length === 0 ? (
               <tr>
-                <td colSpan={tab === 'bar' ? 10 : 9} className="text-center py-12 text-gray-400">
+                <td colSpan={tab === 'bar' ? 13 : 9} className="text-center py-12 text-gray-400">
                   No items found
                 </td>
               </tr>
@@ -72,12 +79,25 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                   ? Number(item.costPerBottle) || 0
                   : Number(item.price) || 0;
                 const stockValue = tab === 'bar'
-                  ? (remaining / (Number(item.bottleSize) || 750)) * rate
+                  ? (Number(item.bottleSize) > 0 ? (remaining / Number(item.bottleSize)) * rate : 0)
                   : remaining * rate;
                 const isLow = reorder > 0 && remaining <= reorder;
                 // Bottle quantity for bar items: openingML / bottleSize
-                const bottleSize = Number(item.bottleSize) || 750;
+                const bottleSize = Number(item.bottleSize) || 0;
                 const openingBottles = bottleSize > 0 ? opening / bottleSize : 0;
+                // Item Sale = actual POS revenue for this item on the selected date
+                const itemSale = Number(item.itemSale) || 0;
+                // AC / Non-AC selling cost per bottle:
+                // Use override (acSellingPerMl × bottleSize) if set, otherwise
+                // derive from the menu item's base price / variant pricing.
+                const acSellingPerMlOverride = item.acSellingPerMl ? Number(item.acSellingPerMl) : null;
+                const nonAcSellingPerMlOverride = item.nonAcSellingPerMl ? Number(item.nonAcSellingPerMl) : null;
+                const acSellingCost = acSellingPerMlOverride != null && bottleSize > 0
+                  ? acSellingPerMlOverride * bottleSize
+                  : Number(item.menuItem?.basePrice || 0);
+                const nonAcSellingCost = nonAcSellingPerMlOverride != null && bottleSize > 0
+                  ? nonAcSellingPerMlOverride * bottleSize
+                  : Number(item.menuItem?.basePrice || 0);
 
                 return (
                   <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isLow ? 'bg-red-50/40' : ''}`}>
@@ -91,6 +111,11 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                         <span className="text-xs text-gray-400 ml-1">btl</span>
                       </td>
                     )}
+                    {tab === 'bar' && (
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {itemSale > 0 ? `₹${itemSale.toLocaleString('en-IN')}` : '—'}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right text-gray-600">{closing.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right">
                       {reorder > 0 ? (
@@ -101,7 +126,23 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                         <span className="text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">₹{rate.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-gray-600">{rate > 0 ? `₹${rate.toFixed(2)}` : '—'}</td>
+                    {tab === 'bar' && (
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {acSellingCost > 0 ? `₹${acSellingCost.toFixed(2)}` : '—'}
+                        {acSellingPerMlOverride == null && acSellingCost > 0 && (
+                          <span className="text-[10px] text-gray-400 ml-1" title="Auto-derived from menu price">auto</span>
+                        )}
+                      </td>
+                    )}
+                    {tab === 'bar' && (
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {nonAcSellingCost > 0 ? `₹${nonAcSellingCost.toFixed(2)}` : '—'}
+                        {nonAcSellingPerMlOverride == null && nonAcSellingCost > 0 && (
+                          <span className="text-[10px] text-gray-400 ml-1" title="Auto-derived from menu price">auto</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right text-gray-600">₹{stockValue.toFixed(2)}</td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center gap-1">
@@ -166,12 +207,21 @@ function MobileCardList({ items, tab, onEdit, onView, page, totalPages, setPage 
             ? Number(item.costPerBottle) || 0
             : Number(item.price) || 0;
           const stockValue = tab === 'bar'
-            ? (remaining / (Number(item.bottleSize) || 750)) * rate
+            ? (Number(item.bottleSize) > 0 ? (remaining / Number(item.bottleSize)) * rate : 0)
             : remaining * rate;
           const isLow = reorder > 0 && remaining <= reorder;
           // Bottle quantity for bar items: openingML / bottleSize
-          const bottleSize = Number(item.bottleSize) || 750;
+          const bottleSize = Number(item.bottleSize) || 0;
           const openingBottles = bottleSize > 0 ? opening / bottleSize : 0;
+          const itemSale = Number(item.itemSale) || 0;
+          const acSellingPerMlOverride = item.acSellingPerMl ? Number(item.acSellingPerMl) : null;
+          const nonAcSellingPerMlOverride = item.nonAcSellingPerMl ? Number(item.nonAcSellingPerMl) : null;
+          const acSellingCost = acSellingPerMlOverride != null && bottleSize > 0
+            ? acSellingPerMlOverride * bottleSize
+            : Number(item.menuItem?.basePrice || 0);
+          const nonAcSellingCost = nonAcSellingPerMlOverride != null && bottleSize > 0
+            ? nonAcSellingPerMlOverride * bottleSize
+            : Number(item.menuItem?.basePrice || 0);
 
           return (
             <div key={item.id} className={`bg-white rounded-xl shadow-sm border p-4 ${isLow ? 'border-red-200' : 'border-gray-100'}`}>
@@ -190,10 +240,22 @@ function MobileCardList({ items, tab, onEdit, onView, page, totalPages, setPage 
                 <span>Opening: <span className="font-medium text-gray-900">{opening.toFixed(2)}{tab === 'bar' ? ` (${openingBottles.toFixed(2)} btl)` : ''}</span></span>
                 <span>Closing: <span className="font-medium text-gray-900">{closing.toFixed(2)}</span></span>
               </div>
-              <div className="flex justify-between text-sm text-gray-600 mb-3">
-                <span>Rate: ₹{rate.toFixed(2)}</span>
+              {tab === 'bar' && itemSale > 0 && (
+                <div className="flex justify-between text-sm text-gray-600 mb-1">
+                  <span>Item Sale: <span className="font-medium text-gray-900">₹{itemSale.toLocaleString('en-IN')}</span></span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Purchase Rate: {rate > 0 ? `₹${rate.toFixed(2)}` : '—'}</span>
                 <span>Value: ₹{stockValue.toFixed(2)}</span>
               </div>
+              {tab === 'bar' && (acSellingCost > 0 || nonAcSellingCost > 0) && (
+                <div className="flex justify-between text-sm text-gray-600 mb-3">
+                  <span>AC Selling: {acSellingCost > 0 ? `₹${acSellingCost.toFixed(2)}` : '—'}</span>
+                  <span>Non-AC: {nonAcSellingCost > 0 ? `₹${nonAcSellingCost.toFixed(2)}` : '—'}</span>
+                </div>
+              )}
+              {tab !== 'bar' && <div className="mb-3" />}
               <div className="flex gap-2">
                 <button
                   onClick={() => onEdit(item)}

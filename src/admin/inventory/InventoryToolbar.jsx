@@ -17,6 +17,7 @@ export function InventoryToolbar({
   onStockAdjustment,
   onImport,
   onPrintSheet,
+  onLiquorReport,
 }) {
   const handleResetDates = () => {
     setFromDate('');
@@ -110,25 +111,39 @@ export function InventoryToolbar({
             </svg>
             Print / PDF
           </button>
+          {onLiquorReport && (
+            <button
+              onClick={onLiquorReport}
+              className="px-3 sm:px-4 py-2.5 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              title="Generate admin PDF report with category-wise stock, sales, consumption, and profitability"
+            >
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="hidden sm:inline">PDF to Admin</span>
+              <span className="sm:hidden">PDF</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Row 2: Date range picker */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Date Range</span>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 min-w-0">
           <input
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+            className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 min-w-0"
           />
-          <span className="text-gray-400 text-sm">to</span>
+          <span className="text-gray-400 text-sm shrink-0 text-center sm:text-left">to</span>
           <input
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+            className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 min-w-0"
           />
         </div>
         {(fromDate || toDate) && (

@@ -200,6 +200,7 @@ import FloorPlanEditor from './FloorPlanEditor';
 
 import InventoryRangeSummary from './InventoryRangeSummary';
 import DateRangePicker from './components/DateRangePicker';
+import { CategoryBreakdownModal } from './CategoryBreakdownModal';
 
 import MenuUpload from '../onboarding/MenuUpload';
 
@@ -547,6 +548,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   const [lastWeekExpenditure, setLastWeekExpenditure] = useState(null);
   const [itemwiseData, setItemwiseData] = useState(null);
   const [itemwiseLoading, setItemwiseLoading] = useState(true);
+  const [categoryBreakdown, setCategoryBreakdown] = useState({ open: false, key: null });
   const [netCashHistory, setNetCashHistory] = useState(null);
   const [netCashHistoryLoading, setNetCashHistoryLoading] = useState(true);
   const [specialsByStaff, setSpecialsByStaff] = useState([]);
@@ -971,7 +973,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     );
   };
 
-  const CategoryRingCard = ({ label, amount, share, prevShare, color, icon: Icon, loading }) => {
+  const CategoryRingCard = ({ label, amount, share, prevShare, color, icon: Icon, loading, onClick }) => {
     const pp = share - prevShare;
     const up = pp > 0;
     const ringData = [
@@ -979,7 +981,13 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       { name: 'rest', value: Math.min(Math.max(100 - share, 0), 100) },
     ];
     return (
-      <div className={`${dashCard} p-2.5 min-w-0 animate-chart-in`}>
+      <div
+        className={`${dashCard} p-2.5 min-w-0 animate-chart-in${onClick ? ' cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+        onClick={onClick}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      >
         <div className="flex items-center gap-1.5">
           <div className="p-1 rounded-md shrink-0" style={{ background: `${color}1A` }}>
             <Icon size={14} style={{ color }} />
@@ -1227,9 +1235,19 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
           loading={specialsLoading}
           fmt={fmtNum}
           extra={
-            <div className="flex items-center justify-between rounded-lg bg-amber-50 px-2 py-1.5">
-              <span className="text-[10px] font-bold text-[#6B6B6B]">% of Total Sales</span>
-              <span className="text-xs font-black text-[#F59E0B]">{fmtPct(todaySpecialsPctOfSales)}</span>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between rounded-lg bg-amber-50 px-2 py-1.5">
+                <span className="text-[10px] font-bold text-[#6B6B6B]">Specials Revenue</span>
+                <span className="text-xs font-black text-[#F59E0B]">{fmtInr(todaySpecialsRevenue)}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-gray-50 px-2 py-1.5">
+                <span className="text-[10px] font-bold text-[#6B6B6B]">Total Sales</span>
+                <span className="text-xs font-black text-[#1A1A1A]">{fmtInr(todayRevenue)}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-amber-50 px-2 py-1.5">
+                <span className="text-[10px] font-bold text-[#6B6B6B]">Contribution</span>
+                <span className="text-xs font-black text-[#F59E0B]">{fmtPct(todaySpecialsPctOfSales)}</span>
+              </div>
             </div>
           }
         />
@@ -1266,6 +1284,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
             color={c.color}
             icon={c.icon}
             loading={itemwiseLoading}
+            onClick={c.key !== 'combo' ? () => setCategoryBreakdown({ open: true, key: c.key }) : undefined}
           />
         ))}
       </div>
@@ -1279,6 +1298,14 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       <p className="text-[10px] text-[#6B6B6B] font-medium text-center mt-4">
         All values are approximate and updated in real-time
       </p>
+
+      {/* Category Breakdown Modal — opened by clicking Food/Liquor/Beverages cards */}
+      <CategoryBreakdownModal
+        open={categoryBreakdown.open}
+        categoryKey={categoryBreakdown.key}
+        date={activeDate}
+        onClose={() => setCategoryBreakdown({ open: false, key: null })}
+      />
     </div>
   );
 }, (prevProps, nextProps) => {
@@ -5284,17 +5311,19 @@ export function Orders() {
 
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
 
         <span className="text-sm font-semibold text-[#6B6B6B]">Date Range:</span>
 
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-md border border-[#FFCDD2] px-2 py-1 text-sm" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-md border border-[#FFCDD2] px-2 py-1 text-sm min-w-0" />
 
-        <span className="text-sm text-[#6B6B6B]">to</span>
+        <span className="text-sm text-[#6B6B6B] text-center sm:text-left">to</span>
 
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-md border border-[#FFCDD2] px-2 py-1 text-sm" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-md border border-[#FFCDD2] px-2 py-1 text-sm min-w-0" />
+        </div>
 
-        <button onClick={loadReport} className="rounded-md bg-[#B71C1C] px-3 py-1 text-sm text-white hover:bg-[#9A1313]">Refresh</button>
+        <button onClick={loadReport} className="rounded-md bg-[#B71C1C] px-3 py-1 text-sm text-white hover:bg-[#9A1313] shrink-0">Refresh</button>
 
       </div>
 
@@ -5903,7 +5932,7 @@ export function Payroll() {
                 className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
               />
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
                 <input
                   type="date"
                   value={startDate}
@@ -5917,9 +5946,9 @@ export function Payroll() {
                       setEndDate(max);
                     }
                   }}
-                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700 min-w-0"
                 />
-                <span className="text-xs font-bold text-gray-500">to</span>
+                <span className="text-xs font-bold text-gray-500 text-center sm:text-left shrink-0">to</span>
                 <input
                   type="date"
                   value={endDate}
@@ -5930,7 +5959,7 @@ export function Payroll() {
                     return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
                   })()}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700"
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700 min-w-0"
                 />
               </div>
             )}
@@ -8000,9 +8029,9 @@ export function KitchenInventory() {
 
       {subView === 'ledger' && (
         <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm p-6 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <h3 className="text-lg font-black text-gray-900">Inventory Ledger</h3>
-            <div className="flex flex-wrap gap-2 ml-auto">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:ml-auto">
               <select
                 value={ledgerFilters.type}
                 onChange={(e) => setLedgerFilters(f => ({ ...f, type: e.target.value }))}
@@ -8024,22 +8053,24 @@ export function KitchenInventory() {
                   <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
               </select>
-              <input
-                type="date"
-                value={ledgerFilters.startDate}
-                onChange={(e) => setLedgerFilters(f => ({ ...f, startDate: e.target.value }))}
-                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
-              />
-              <input
-                type="date"
-                value={ledgerFilters.endDate}
-                onChange={(e) => setLedgerFilters(f => ({ ...f, endDate: e.target.value }))}
-                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none"
-              />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <input
+                  type="date"
+                  value={ledgerFilters.startDate}
+                  onChange={(e) => setLedgerFilters(f => ({ ...f, startDate: e.target.value }))}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none min-w-0"
+                />
+                <input
+                  type="date"
+                  value={ledgerFilters.endDate}
+                  onChange={(e) => setLedgerFilters(f => ({ ...f, endDate: e.target.value }))}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-[#E53935] outline-none min-w-0"
+                />
+              </div>
               <button
                 onClick={() => loadLedger()}
                 disabled={ledgerLoading}
-                className="px-4 py-2 bg-[#F4F4F5] text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 disabled:opacity-50"
+                className="px-4 py-2 bg-[#F4F4F5] text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 disabled:opacity-50 shrink-0"
               >
                 {ledgerLoading ? 'Loading...' : 'Refresh'}
               </button>
@@ -12338,31 +12369,35 @@ function TopPerformersReport({ inventory }) {
 
 
 
-        <input
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
 
-          type="date"
+          <input
 
-          value={dateRange.startDate}
+            type="date"
 
-          onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+            value={dateRange.startDate}
 
-          className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm"
+            onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
 
-        />
+            className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm min-w-0"
+
+          />
 
 
 
-        <input
+          <input
 
-          type="date"
+            type="date"
 
-          value={dateRange.endDate}
+            value={dateRange.endDate}
 
-          onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+            onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
 
-          className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm"
+            className="px-4 py-3 bg-white border-2 border-gray-200 focus:border-[#E53935] rounded-xl outline-none text-sm min-w-0"
 
-        />
+          />
+
+        </div>
 
       </div>
 
@@ -19940,20 +19975,20 @@ export function Attendance() {
               className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
             />
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
               <input
                 type="date"
                 value={rangeStart}
                 onChange={(e) => setRangeStart(e.target.value)}
-                className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935] min-w-0"
               />
-              <span className="text-xs font-bold text-gray-500">to</span>
+              <span className="text-xs font-bold text-gray-500 text-center sm:text-left shrink-0">to</span>
               <input
                 type="date"
                 value={rangeEnd}
                 min={rangeStart}
                 onChange={(e) => setRangeEnd(e.target.value)}
-                className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
+                className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935] min-w-0"
               />
             </div>
           )}

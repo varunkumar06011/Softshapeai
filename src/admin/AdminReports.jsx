@@ -246,14 +246,14 @@ function ReportDateFilter({ value, onChange }) {
         ))}
       </div>
       {type === 'custom' && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <input type="date" value={startDate}
             onChange={(e) => onChange({ ...value, startDate: e.target.value })}
-            className="px-2 py-1.5 text-xs border border-[#FFCDD2] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#B71C1C]" />
-          <span className="text-gray-400 text-xs font-bold">to</span>
+            className="px-2 py-1.5 text-xs border border-[#FFCDD2] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#B71C1C] min-w-0" />
+          <span className="text-gray-400 text-xs font-bold text-center sm:text-left shrink-0">to</span>
           <input type="date" value={endDate}
             onChange={(e) => onChange({ ...value, endDate: e.target.value })}
-            className="px-2 py-1.5 text-xs border border-[#FFCDD2] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#B71C1C]" />
+            className="px-2 py-1.5 text-xs border border-[#FFCDD2] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#B71C1C] min-w-0" />
         </div>
       )}
     </div>

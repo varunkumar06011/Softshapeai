@@ -2,7 +2,7 @@ import { lazy } from 'react';
 import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
   ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
-  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale, Landmark, Package, Building2, TrendingDown,
+  Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale, Landmark, Package, Building2, TrendingDown, ShoppingBag,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 
@@ -42,6 +42,7 @@ const OutletsOverview = lazy(() => import('./OutletsOverview'));
 const AdminAuditTrail = lazy(() => import('./AdminAuditTrail'));
 const AdminReconciliation = lazy(() => import('./AdminReconciliation'));
 const CaptainPerformanceDashboard = lazy(() => import('../captain/CaptainPerformanceDashboard'));
+const AdditionalSalesPage = lazy(() => import('./AdditionalSalesPage'));
 
 // ── Wrapper components for activeOutlet forking ──────────────────────────────
 // Keeps bar/restaurant branching inside the section, not in the router config.
@@ -117,6 +118,7 @@ export const adminRoutes = [
   { key: 'printers',          label: 'Printers',               icon: Printer,             roles: ['admin','owner','manager'], element: <PrinterSettingsPage />, source: 'local' },
   { key: 'qr-codes',          label: 'QR Codes',               icon: QrCode,              roles: ['admin','owner','manager'], element: <TableQRCodes />,       source: 'local' },
   { key: 'outlets-overview',  label: 'My Outlets',             icon: Store,               roles: ['admin','owner','manager'], element: <OutletsOverview />, source: 'cloud' },
+  { key: 'additional-sales',  label: 'Additional / Offline Sales', icon: ShoppingBag,         roles: ['admin','owner','manager'], element: <AdditionalSalesPage />, source: 'cloud' },
 ];
 
 // ── Route source helpers ─────────────────────────────────────────────────────

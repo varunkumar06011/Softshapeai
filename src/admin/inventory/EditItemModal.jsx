@@ -16,9 +16,11 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
   const [error, setError] = useState(null);
 
   // Bar fields
-  const [bottleSize, setBottleSize] = useState(750);
+  const [bottleSize, setBottleSize] = useState('');
   const [reorderLevel, setReorderLevel] = useState(0);
-  const [costPerBottle, setCostPerBottle] = useState(0);
+  const [costPerBottle, setCostPerBottle] = useState('');
+  const [acSellingPerMl, setAcSellingPerMl] = useState('');
+  const [nonAcSellingPerMl, setNonAcSellingPerMl] = useState('');
   const [openingStock, setOpeningStock] = useState(0);
   const [openingStockReason, setOpeningStockReason] = useState('');
   const [originalOpeningStock, setOriginalOpeningStock] = useState(0);
@@ -27,15 +29,17 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [unit, setUnit] = useState('gm');
-  const [rate, setRate] = useState(0);
+  const [rate, setRate] = useState('');
   const [lowStockThreshold, setLowStockThreshold] = useState(0);
 
   useEffect(() => {
     if (item && open) {
       if (tab === 'bar') {
-        setBottleSize(Number(item.bottleSize) || 750);
+        setBottleSize(item.bottleSize != null ? String(item.bottleSize) : '');
         setReorderLevel(Number(item.reorderLevel) || 0);
-        setCostPerBottle(Number(item.costPerBottle) || 0);
+        setCostPerBottle(item.costPerBottle != null ? String(item.costPerBottle) : '');
+        setAcSellingPerMl(item.acSellingPerMl != null ? String(item.acSellingPerMl) : '');
+        setNonAcSellingPerMl(item.nonAcSellingPerMl != null ? String(item.nonAcSellingPerMl) : '');
         // Opening stock: use todayEntry.openingStock if available, otherwise currentStock
         const todayOpening = Number(item.todayEntry?.openingStock) || Number(item.openingStock) || Number(item.currentStock) || 0;
         setOpeningStock(todayOpening);
@@ -45,7 +49,7 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
         setName(item.name || '');
         setCategory(item.category || '');
         setUnit(item.unit || 'gm');
-        setRate(Number(item.price) || 0);
+        setRate(item.price != null ? String(item.price) : '');
         setLowStockThreshold(Number(item.reorderLevel) || 0);
       }
       setError(null);
@@ -59,9 +63,11 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
     try {
       if (tab === 'bar') {
         const payload = {
-          bottleSize,
+          bottleSize: bottleSize !== '' ? Number(bottleSize) : undefined,
           reorderLevel,
-          costPerBottle,
+          costPerBottle: costPerBottle !== '' ? Number(costPerBottle) : null,
+          acSellingPerMl: acSellingPerMl === '' ? null : Number(acSellingPerMl),
+          nonAcSellingPerMl: nonAcSellingPerMl === '' ? null : Number(nonAcSellingPerMl),
         };
         // Only send openingStock if it changed
         if (Math.abs(openingStock - originalOpeningStock) > 0.01) {
@@ -74,7 +80,7 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
           name: name.trim(),
           category: category.trim(),
           unit: unit.trim(),
-          price: rate,
+          price: rate !== '' ? Number(rate) : 0,
           reorderLevel: lowStockThreshold,
         });
       }
@@ -131,7 +137,7 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
                 <input
                   type="number"
                   value={bottleSize}
-                  onChange={(e) => setBottleSize(Number(e.target.value))}
+                  onChange={(e) => setBottleSize(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
@@ -149,7 +155,30 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
                 <input
                   type="number"
                   value={costPerBottle}
-                  onChange={(e) => setCostPerBottle(Number(e.target.value))}
+                  onChange={(e) => setCostPerBottle(e.target.value)}
+                  placeholder="enter cost"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">AC Selling/ML (override)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={acSellingPerMl}
+                  onChange={(e) => setAcSellingPerMl(e.target.value)}
+                  placeholder="blank = auto-derive"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Non-AC Selling/ML (override)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={nonAcSellingPerMl}
+                  onChange={(e) => setNonAcSellingPerMl(e.target.value)}
+                  placeholder="blank = auto-derive"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
@@ -226,7 +255,8 @@ export function EditItemModal({ open, item, tab, onClose, onSaved }) {
                 <input
                   type="number"
                   value={rate}
-                  onChange={(e) => setRate(Number(e.target.value))}
+                  onChange={(e) => setRate(e.target.value)}
+                  placeholder="enter rate"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>

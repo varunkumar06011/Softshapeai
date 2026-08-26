@@ -20,6 +20,7 @@ import { RecordPurchaseModal } from './RecordPurchaseModal';
 import { StockAdjustmentModal } from './StockAdjustmentModal';
 import { ItemDetailsDrawer } from './ItemDetailsDrawer';
 import { StockSheetPrintModal } from './StockSheetPrintModal';
+import LiquorDailyReportModal from './LiquorDailyReportModal';
 
 export function InventoryPage() {
   const { restaurant } = useAuth();
@@ -42,6 +43,7 @@ export function InventoryPage() {
   const [viewItem, setViewItem] = useState(null);
   const [viewOpen, setViewOpen] = useState(false);
   const [printSheetOpen, setPrintSheetOpen] = useState(false);
+  const [liquorReportOpen, setLiquorReportOpen] = useState(false);
 
   // Data hook
   const inventory = useInventoryData(tab, restaurant);
@@ -72,6 +74,7 @@ export function InventoryPage() {
   };
 
   const handlePrintSheet = () => setPrintSheetOpen(true);
+  const handleLiquorReport = () => setLiquorReportOpen(true);
 
   const handleEdit = (item) => {
     setEditItem(item);
@@ -139,6 +142,7 @@ export function InventoryPage() {
         onStockAdjustment={handleStockAdjustment}
         onImport={handleImport}
         onPrintSheet={handlePrintSheet}
+        onLiquorReport={handleLiquorReport}
         onEdit={handleEdit}
         onView={handleView}
         modals={
@@ -149,6 +153,7 @@ export function InventoryPage() {
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_BAR} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
+            <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} />
           </>
         }
       />
@@ -159,10 +164,10 @@ export function InventoryPage() {
   return (
     <div className="space-y-4">
       {/* Tab bar */}
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto flex-nowrap [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
         <button
           onClick={() => setTab(TAB_BAR)}
-          className={`px-4 py-3 font-bold text-sm transition-all ${
+          className={`px-4 py-3 font-bold text-sm transition-all whitespace-nowrap shrink-0 ${
             tab === TAB_BAR ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -170,7 +175,7 @@ export function InventoryPage() {
         </button>
         <button
           onClick={() => setTab(TAB_KITCHEN)}
-          className={`px-4 py-3 font-bold text-sm transition-all ${
+          className={`px-4 py-3 font-bold text-sm transition-all whitespace-nowrap shrink-0 ${
             tab === TAB_KITCHEN ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -178,7 +183,7 @@ export function InventoryPage() {
         </button>
         <button
           onClick={() => setTab(TAB_RECONCILIATION)}
-          className={`px-4 py-3 font-bold text-sm transition-all ${
+          className={`px-4 py-3 font-bold text-sm transition-all whitespace-nowrap shrink-0 ${
             tab === TAB_RECONCILIATION ? 'border-b-2 border-[#E53935] text-[#E53935]' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -197,6 +202,7 @@ export function InventoryPage() {
         onStockAdjustment={handleStockAdjustment}
         onImport={handleImport}
         onPrintSheet={handlePrintSheet}
+        onLiquorReport={handleLiquorReport}
         onEdit={handleEdit}
         onView={handleView}
         modals={
@@ -207,6 +213,7 @@ export function InventoryPage() {
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={tab} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
+            <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} />
           </>
         }
       />
@@ -216,7 +223,7 @@ export function InventoryPage() {
 }
 
 // Inner content component (shared between all outlet types)
-function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onEdit, onView, modals }) {
+function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals }) {
   const { loading, error } = inventory;
 
   return (
@@ -244,6 +251,7 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
         onStockAdjustment={onStockAdjustment}
         onImport={onImport}
         onPrintSheet={onPrintSheet}
+        onLiquorReport={tab === 'bar' ? onLiquorReport : undefined}
       />
 
       {/* Error state */}

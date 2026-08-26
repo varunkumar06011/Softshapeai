@@ -17,7 +17,7 @@
 // stored closing) are flagged so the admin can investigate before printing.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchBarStockSheet } from '../../services/barInventoryApi';
 import { fetchKitchenStockSheet } from '../../services/kitchenInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
@@ -27,11 +27,16 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Edits: { [itemId]: { openingStock, openingBottles, received, consumption, closingStock } }
+  // Only stores fields the admin has manually changed; missing keys fall back
+  // to the original backend value.
+  const [edits, setEdits] = useState({});
 
   // Reset + fetch when opened
   useEffect(() => {
     if (open) {
       setDate(defaultDate || getKolkataDateString());
+      setEdits({});
     }
   }, [open, defaultDate]);
 
@@ -40,6 +45,7 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
     setLoading(true);
     setError(null);
     setData(null);
+    setEdits({});
     try {
       const result = tab === 'bar'
         ? await fetchBarStockSheet(targetDate)
@@ -56,14 +62,36 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
     if (open && date) loadSheet(date);
   }, [open, date, loadSheet]);
 
+  // Build the merged (edited) data used for both preview and print.
+  // MUST be called before any early return — hooks cannot be conditional.
+  const mergedData = useMemo(() => mergeEdits(data, edits, tab), [data, edits, tab]);
+
   if (!open) return null;
 
   const outletName = data?.outletName || restaurant?.name || 'Outlet';
   const wing = data?.wing || (tab === 'bar' ? 'BAR' : 'KITCHEN');
   const formattedDate = formatDateDDMMYYYY(date);
 
+  // Update a single editable field for an item
+  const handleEdit = (itemId, field, value) => {
+    setEdits((prev) => {
+      const existing = prev[itemId] || {};
+      const next = { ...existing, [field]: value };
+      // For bar items: keep opening ML and opening bottles in sync
+      if (tab === 'bar') {
+        const bottleSize = getItemBottleSize(data, itemId);
+        if (field === 'openingBottles') {
+          next.openingStock = String(Math.round((Number(value) || 0) * (bottleSize || 750) * 100) / 100);
+        } else if (field === 'openingStock') {
+          next.openingBottles = String(Math.round(((Number(value) || 0) / (bottleSize || 750)) * 100) / 100);
+        }
+      }
+      return { ...prev, [itemId]: next };
+    });
+  };
+
   const handlePrint = () => {
-    const html = buildPrintHtml(data, { outletName, wing, formattedDate, tab });
+    const html = buildPrintHtml(mergedData, { outletName, wing, formattedDate, tab });
     const printWin = window.open('', '_blank', 'width=900,height=700');
     if (!printWin) {
       alert('Please allow pop-ups to print the stock sheet.');
@@ -72,14 +100,12 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
     printWin.document.open();
     printWin.document.write(html);
     printWin.document.close();
-    // Give the browser a moment to render before triggering print
     printWin.onload = () => {
       setTimeout(() => {
         printWin.focus();
         printWin.print();
       }, 250);
     };
-    // Fallback if onload already fired
     setTimeout(() => {
       try {
         printWin.focus();
@@ -103,7 +129,7 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
             </svg>
             <div>
               <h2 className="text-lg font-bold text-gray-900">Print / PDF — Daily Stock &amp; Sales Summary</h2>
-              <p className="text-xs text-gray-500">{tab === 'bar' ? 'Bar Inventory' : 'Kitchen Inventory'} · only items with activity on the selected date</p>
+              <p className="text-xs text-gray-500">{tab === 'bar' ? 'Bar Inventory' : 'Kitchen Inventory'} · editable preview · only items with activity on the selected date</p>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -122,8 +148,16 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
             onChange={(e) => setDate(e.target.value)}
             className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
           />
-          <span className="text-xs text-gray-400">Historical sheets use the inventory state &amp; transactions for that date.</span>
+          <span className="text-xs text-gray-400">Edit any value in the preview, then print. Edits are local to this sheet only.</span>
           <div className="ml-auto flex gap-2">
+            <button
+              onClick={() => { setEdits({}); }}
+              disabled={loading || !data}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+              title="Revert all edits to the system values"
+            >
+              Reset Edits
+            </button>
             <button
               onClick={() => loadSheet(date)}
               disabled={loading || !date}
@@ -154,7 +188,16 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
             <div className="bg-red-50 text-red-600 text-sm rounded-lg p-4 mb-4">{error}</div>
           )}
           {!loading && !error && data && (
-            <StockSheetPreview data={data} outletName={outletName} wing={wing} formattedDate={formattedDate} tab={tab} />
+            <StockSheetPreview
+              data={mergedData}
+              originalData={data}
+              edits={edits}
+              onEdit={handleEdit}
+              outletName={outletName}
+              wing={wing}
+              formattedDate={formattedDate}
+              tab={tab}
+            />
           )}
           {!loading && !error && data && data.totalRelevantItems === 0 && (
             <div className="bg-yellow-50 text-yellow-700 text-sm rounded-lg p-4 mt-3">
@@ -168,9 +211,9 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Preview — mirrors the print layout inside the modal
+// Preview — mirrors the print layout inside the modal, with editable cells
 // ─────────────────────────────────────────────────────────────────────────────
-function StockSheetPreview({ data, outletName, wing, formattedDate, tab }) {
+function StockSheetPreview({ data, originalData, edits, onEdit, outletName, wing, formattedDate, tab }) {
   const isBar = tab === 'bar';
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -182,9 +225,9 @@ function StockSheetPreview({ data, outletName, wing, formattedDate, tab }) {
       </div>
 
       {/* Discrepancy banner */}
-      {data.hasDiscrepancies && (
+      {originalData.hasDiscrepancies && (
         <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-xs text-yellow-800">
-          ⚠ {data.discrepancies.length} item(s) failed reconciliation (opening ≠ previous closing, or computed closing ≠ stored closing). Review before printing.
+          ⚠ {originalData.discrepancies.length} item(s) failed reconciliation (opening ≠ previous closing, or computed closing ≠ stored closing). Review before printing.
         </div>
       )}
 
@@ -217,16 +260,24 @@ function StockSheetPreview({ data, outletName, wing, formattedDate, tab }) {
                       <span className="ml-1 text-yellow-600" title="Reconciliation mismatch">⚠</span>
                     )}
                   </td>
-                  <td className="text-right px-2 py-1.5 text-gray-700">{fmt(item.openingStock, isBar)}</td>
+                  <td className="text-right px-1 py-1">
+                    <EditCell value={item.openingStock} onChange={(v) => onEdit(item.itemId, 'openingStock', v)} />
+                  </td>
                   {isBar && (
-                    <td className="text-right px-2 py-1.5 text-gray-700">
-                      {fmtBottles(item.openingStock, item.bottleSize)}
+                    <td className="text-right px-1 py-1">
+                      <EditCell value={item.openingBottles ?? fmtBottles(item.openingStock, item.bottleSize)} onChange={(v) => onEdit(item.itemId, 'openingBottles', v)} />
                     </td>
                   )}
-                  <td className="text-right px-2 py-1.5 text-gray-700">{fmt(item.received, isBar)}</td>
-                  <td className="text-right px-2 py-1.5 text-gray-700">{fmt(item.consumption, isBar)}</td>
+                  <td className="text-right px-1 py-1">
+                    <EditCell value={item.received} onChange={(v) => onEdit(item.itemId, 'received', v)} />
+                  </td>
+                  <td className="text-right px-1 py-1">
+                    <EditCell value={item.consumption} onChange={(v) => onEdit(item.itemId, 'consumption', v)} />
+                  </td>
                   <td className="text-right px-2 py-1.5 text-gray-300">&nbsp;</td>
-                  <td className="text-right px-2 py-1.5 font-semibold text-gray-900">{fmt(item.closingStock, isBar)}</td>
+                  <td className="text-right px-1 py-1">
+                    <EditCell value={item.closingStock} onChange={(v) => onEdit(item.itemId, 'closingStock', v)} bold />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -273,6 +324,20 @@ function StockSheetPreview({ data, outletName, wing, formattedDate, tab }) {
   );
 }
 
+// Editable cell — small right-aligned number input that looks like a plain
+// cell until focused. Empty string shows as blank (for manual write-in fields).
+function EditCell({ value, onChange, bold }) {
+  return (
+    <input
+      type="number"
+      step="any"
+      value={value === 0 || value === '0' ? '0' : (value ?? '')}
+      onChange={(e) => onChange(e.target.value)}
+      className={`w-full text-right px-1.5 py-0.5 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-blue-50 rounded text-xs focus:outline-none transition-colors ${bold ? 'font-semibold text-gray-900' : 'text-gray-700'}`}
+    />
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,6 +346,80 @@ function formatDateDDMMYYYY(yyyyMmDd) {
   if (!yyyyMmDd) return '';
   const [y, m, d] = yyyyMmDd.split('-');
   return `${d}.${m}.${y}`;
+}
+
+// Look up an item's bottleSize from the original (un-edited) data
+function getItemBottleSize(data, itemId) {
+  if (!data?.categories) return 750;
+  for (const section of data.categories) {
+    for (const item of section.items) {
+      if (item.itemId === itemId) return Number(item.bottleSize) || 750;
+    }
+  }
+  return 750;
+}
+
+// Merge the admin's local edits into the data so the preview and the printed
+// PDF both reflect the edited values. Category totals and grand totals are
+// recomputed from the edited per-item values.
+function mergeEdits(data, edits, tab) {
+  if (!data) return data;
+  if (!data.categories) return data;
+  const isBar = tab === 'bar';
+
+  const numOrZero = (v) => {
+    if (v === '' || v === null || v === undefined) return 0;
+    const n = Number(v);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const newCategories = data.categories.map((section) => {
+    const newItems = section.items.map((item) => {
+      const e = edits[item.itemId] || {};
+      const openingStock = e.openingStock !== undefined ? numOrZero(e.openingStock) : Number(item.openingStock) || 0;
+      const received = e.received !== undefined ? numOrZero(e.received) : Number(item.received) || 0;
+      const consumption = e.consumption !== undefined ? numOrZero(e.consumption) : Number(item.consumption) || 0;
+      const closingStock = e.closingStock !== undefined ? numOrZero(e.closingStock) : Number(item.closingStock) || 0;
+      const bottleSize = Number(item.bottleSize) || 750;
+      const openingBottles = e.openingBottles !== undefined
+        ? numOrZero(e.openingBottles)
+        : (isBar ? (bottleSize > 0 ? openingStock / bottleSize : 0) : undefined);
+      return {
+        ...item,
+        openingStock,
+        openingBottles,
+        received,
+        consumption,
+        closingStock,
+      };
+    });
+    const totals = {
+      openingStock: round2(newItems.reduce((s, i) => s + i.openingStock, 0)),
+      received: round2(newItems.reduce((s, i) => s + i.received, 0)),
+      consumption: round2(newItems.reduce((s, i) => s + i.consumption, 0)),
+      additional: 0,
+      closingStock: round2(newItems.reduce((s, i) => s + i.closingStock, 0)),
+    };
+    return { ...section, items: newItems, totals };
+  });
+
+  const grandTotals = {
+    openingStock: round2(newCategories.reduce((s, c) => s + c.totals.openingStock, 0)),
+    received: round2(newCategories.reduce((s, c) => s + c.totals.received, 0)),
+    consumption: round2(newCategories.reduce((s, c) => s + c.totals.consumption, 0)),
+    additional: 0,
+    closingStock: round2(newCategories.reduce((s, c) => s + c.totals.closingStock, 0)),
+  };
+
+  return {
+    ...data,
+    categories: newCategories,
+    grandTotals,
+  };
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
 }
 
 // Format a number for display. Bar items show ML-based values (e.g. "750 ml"
@@ -299,11 +438,15 @@ function fmt(value, isBar) {
 
 // Format opening stock as bottle count for bar items.
 // openingBottles = openingStock(ml) / bottleSize(ml), shown to 2 decimals.
-function fmtBottles(openingMl, bottleSize) {
-  const ml = Number(openingMl) || 0;
+// If isBottleValue is true, the input is already a bottle count (from edits).
+function fmtBottles(openingMl, bottleSize, isBottleValue = false) {
+  const val = Number(openingMl) || 0;
+  if (isBottleValue) {
+    return `${Math.round(val * 100) / 100}`;
+  }
   const size = Number(bottleSize) || 750;
   if (size <= 0) return '';
-  return `${Math.round((ml / size) * 100) / 100}`;
+  return `${Math.round((val / size) * 100) / 100}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,7 +461,7 @@ function buildPrintHtml(data, { outletName, wing, formattedDate, tab }) {
   const categoryBlocks = (data?.categories || []).map((section) => {
     const itemRows = section.items.map((item) => {
       const bottlesCell = isBar
-        ? `<td class="num narrow">${fmtBottles(item.openingStock, item.bottleSize)}</td>`
+        ? `<td class="num narrow">${fmtBottles(item.openingBottles ?? item.openingStock, item.bottleSize, !!item.openingBottles)}</td>`
         : '';
       return `
       <tr>

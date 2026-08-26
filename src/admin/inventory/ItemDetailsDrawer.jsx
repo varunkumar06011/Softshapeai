@@ -49,7 +49,7 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
   const unit = tab === 'bar' ? 'ml' : item.unit;
   const rate = tab === 'bar' ? Number(item.costPerBottle) || 0 : Number(item.price) || 0;
   const stockValue = tab === 'bar'
-    ? (currentStock / (Number(item.bottleSize) || 750)) * rate
+    ? (Number(item.bottleSize) > 0 ? (currentStock / Number(item.bottleSize)) * rate : 0)
     : currentStock * rate;
   const isLow = reorderLevel > 0 && currentStock <= reorderLevel;
 
@@ -113,6 +113,43 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
               <div className="text-lg font-semibold text-gray-700 mt-1">₹{rate.toFixed(2)}</div>
             </div>
           </div>
+
+          {/* Pricing breakdown (bar items only) */}
+          {tab === 'bar' && (
+            <div>
+              <h3 className="text-sm font-bold text-gray-700 mb-2">Pricing</h3>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Bottle Size</span>
+                  <span className="font-medium text-gray-900">{Number(item.bottleSize) > 0 ? `${Number(item.bottleSize)} ml` : 'Not set'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Cost / ML (derived)</span>
+                  <span className="font-medium text-gray-900">
+                    {Number(item.costPerBottle) > 0 && Number(item.bottleSize) > 0
+                      ? `₹${(Number(item.costPerBottle) / Number(item.bottleSize)).toFixed(2)}`
+                      : 'Cost not configured'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">AC Selling / ML</span>
+                  <span className="font-medium text-gray-900">
+                    {item.acSellingPerMl != null
+                      ? `₹${Number(item.acSellingPerMl).toFixed(2)} (override)`
+                      : 'auto-derived from venue pricing'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Non-AC Selling / ML</span>
+                  <span className="font-medium text-gray-900">
+                    {item.nonAcSellingPerMl != null
+                      ? `₹${Number(item.nonAcSellingPerMl).toFixed(2)} (override)`
+                      : 'auto-derived from venue pricing'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Recent Activity */}
           <div>

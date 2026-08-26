@@ -1491,7 +1491,7 @@ export default function TodaySpecials() {
 
           {/* Availability filter */}
 
-          <div className="flex bg-[#F4F4F5] p-1 rounded-xl">
+          <div className="flex bg-[#F4F4F5] p-1 rounded-xl overflow-x-auto flex-nowrap [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
 
             {[
 
@@ -1509,7 +1509,7 @@ export default function TodaySpecials() {
 
                 onClick={() => setAvailabilityFilter(opt.value)}
 
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${availabilityFilter === opt.value ? 'bg-white text-[#E53935] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shrink-0 ${availabilityFilter === opt.value ? 'bg-white text-[#E53935] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
 
               >
 
@@ -1619,7 +1619,7 @@ export default function TodaySpecials() {
 
       {/* STAFF LEADERBOARD */}
 
-      <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">
+      <div className="bg-white p-3 sm:p-5 rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
 
@@ -1629,7 +1629,7 @@ export default function TodaySpecials() {
 
           </h3>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col gap-2 min-w-0 w-full sm:w-auto sm:flex-row sm:items-center sm:gap-2 sm:flex-wrap">
 
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider shrink-0">
 
@@ -1637,7 +1637,7 @@ export default function TodaySpecials() {
 
             </span>
 
-            <div className="flex bg-[#F4F4F5] p-1 rounded-xl">
+            <div className="flex bg-[#F4F4F5] p-1 rounded-xl overflow-x-auto flex-nowrap w-full sm:flex-wrap sm:w-auto sm:overflow-visible [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
 
               {['Today', 'Yesterday', 'Weekly', 'Monthly', 'All Time', 'Custom'].map(p => (
 
@@ -1647,7 +1647,7 @@ export default function TodaySpecials() {
 
                   onClick={() => setLeaderboardPeriod(p)}
 
-                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${leaderboardPeriod === p ? 'bg-white text-[#E53935] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shrink-0 ${leaderboardPeriod === p ? 'bg-white text-[#E53935] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
 
                 >
 
@@ -1665,21 +1665,25 @@ export default function TodaySpecials() {
 
         {leaderboardPeriod === 'Custom' && (
 
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center">
 
-            <input
+            <div className="flex items-center gap-2 min-w-0">
 
-              type="date"
+              <input
 
-              value={customStart}
+                type="date"
 
-              onChange={(e) => setCustomStart(e.target.value)}
+                value={customStart}
 
-              className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+                onChange={(e) => setCustomStart(e.target.value)}
 
-            />
+                className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935] min-w-0 flex-1 sm:flex-none"
 
-            <span className="text-xs text-gray-400">to</span>
+              />
+
+              <span className="text-xs text-gray-400 shrink-0">to</span>
+
+            </div>
 
             <input
 
@@ -1689,7 +1693,7 @@ export default function TodaySpecials() {
 
               onChange={(e) => setCustomEnd(e.target.value)}
 
-              className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935]"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-[#E53935] min-w-0 flex-1 sm:flex-none"
 
             />
 
@@ -2303,7 +2307,7 @@ export default function TodaySpecials() {
 
               {/* Step 1: Item details */}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
                 <div className="col-span-2">
 
@@ -3071,7 +3075,7 @@ export default function TodaySpecials() {
 
                   ) : (
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
                       <div>
 
