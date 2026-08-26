@@ -19,6 +19,7 @@ import { EditItemModal } from './EditItemModal';
 import { RecordPurchaseModal } from './RecordPurchaseModal';
 import { StockAdjustmentModal } from './StockAdjustmentModal';
 import { ItemDetailsDrawer } from './ItemDetailsDrawer';
+import { StockSheetPrintModal } from './StockSheetPrintModal';
 
 export function InventoryPage() {
   const { restaurant } = useAuth();
@@ -40,6 +41,7 @@ export function InventoryPage() {
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [viewItem, setViewItem] = useState(null);
   const [viewOpen, setViewOpen] = useState(false);
+  const [printSheetOpen, setPrintSheetOpen] = useState(false);
 
   // Data hook
   const inventory = useInventoryData(tab, restaurant);
@@ -68,6 +70,8 @@ export function InventoryPage() {
     // For now, this is a placeholder that can be wired to the existing import
     alert('Import functionality will be wired to the existing CSV import flow.');
   };
+
+  const handlePrintSheet = () => setPrintSheetOpen(true);
 
   const handleEdit = (item) => {
     setEditItem(item);
@@ -107,6 +111,7 @@ export function InventoryPage() {
         onRecordPurchase={handleRecordPurchase}
         onStockAdjustment={handleStockAdjustment}
         onImport={handleImport}
+        onPrintSheet={handlePrintSheet}
         onEdit={handleEdit}
         onView={handleView}
         modals={
@@ -116,6 +121,7 @@ export function InventoryPage() {
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={TAB_KITCHEN} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_KITCHEN} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_KITCHEN} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
+            <StockSheetPrintModal open={printSheetOpen} tab={TAB_KITCHEN} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
           </>
         }
       />
@@ -132,6 +138,7 @@ export function InventoryPage() {
         onRecordPurchase={handleRecordPurchase}
         onStockAdjustment={handleStockAdjustment}
         onImport={handleImport}
+        onPrintSheet={handlePrintSheet}
         onEdit={handleEdit}
         onView={handleView}
         modals={
@@ -141,6 +148,7 @@ export function InventoryPage() {
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={TAB_BAR} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_BAR} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
+            <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
           </>
         }
       />
@@ -188,6 +196,7 @@ export function InventoryPage() {
         onRecordPurchase={handleRecordPurchase}
         onStockAdjustment={handleStockAdjustment}
         onImport={handleImport}
+        onPrintSheet={handlePrintSheet}
         onEdit={handleEdit}
         onView={handleView}
         modals={
@@ -197,6 +206,7 @@ export function InventoryPage() {
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={tab} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={tab} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
+            <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
           </>
         }
       />
@@ -206,7 +216,7 @@ export function InventoryPage() {
 }
 
 // Inner content component (shared between all outlet types)
-function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onEdit, onView, modals }) {
+function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onEdit, onView, modals }) {
   const { loading, error } = inventory;
 
   return (
@@ -233,6 +243,7 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
         onRecordPurchase={onRecordPurchase}
         onStockAdjustment={onStockAdjustment}
         onImport={onImport}
+        onPrintSheet={onPrintSheet}
       />
 
       {/* Error state */}

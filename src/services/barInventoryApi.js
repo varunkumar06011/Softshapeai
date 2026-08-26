@@ -196,6 +196,18 @@ export async function fetchDailyReport(date) {
   return parseResponse(res);
 }
 
+// Get printable Daily Stock & Sales Summary for a specific date.
+// Returns only items with relevant activity on that date, grouped by category,
+// with reconciliation flags. See backend /api/bar/inventory/stock-sheet.
+export async function fetchBarStockSheet(date) {
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), date });
+  const res = await fetch(apiUrl(`/api/bar/inventory/stock-sheet?${params}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
 // Get low stock items
 export async function fetchLowStockItems() {
   const res = await fetch(apiUrl(`/api/bar/inventory/low-stock?restaurantId=${getCurrentRestaurantId()}`), {

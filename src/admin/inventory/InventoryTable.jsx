@@ -1,12 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // InventoryTable — shared table (desktop) + card list (mobile)
 // ─────────────────────────────────────────────────────────────────────────────
-// Columns: Item | Category | Unit | Opening | Closing | Low Stock | Rate |
-//          Stock Value | Actions [Edit][View]
+// Columns: Item | Category | Unit | Opening | [Opening Bottles (bar only)] |
+//          Closing | Low Stock | Rate | Stock Value | Actions [Edit][View]
 //
 // "Closing" = today's closing stock (from daily snapshot if available,
 // otherwise the live currentStock running balance). This lets admins
 // verify that today's opening matches yesterday's closing.
+//
+// Bar inventory shows an additional "Opening (Bottles)" column that
+// converts the ML opening stock to bottle quantity using the item's
+// configured bottle capacity: bottles = openingML / bottleSize.
 //
 // Mobile: renders cards instead of a compressed table.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +35,7 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
               <th className="text-left px-4 py-3 font-semibold">Category</th>
               <th className="text-left px-4 py-3 font-semibold">Unit</th>
               <th className="text-right px-4 py-3 font-semibold">Opening</th>
+              {tab === 'bar' && <th className="text-right px-4 py-3 font-semibold">Opening (Bottles)</th>}
               <th className="text-right px-4 py-3 font-semibold">Closing</th>
               <th className="text-right px-4 py-3 font-semibold">Low Stock</th>
               <th className="text-right px-4 py-3 font-semibold">Rate</th>
@@ -41,7 +46,7 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
           <tbody className="divide-y divide-gray-100">
             {items.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center py-12 text-gray-400">
+                <td colSpan={tab === 'bar' ? 10 : 9} className="text-center py-12 text-gray-400">
                   No items found
                 </td>
               </tr>
@@ -70,6 +75,9 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                   ? (remaining / (Number(item.bottleSize) || 750)) * rate
                   : remaining * rate;
                 const isLow = reorder > 0 && remaining <= reorder;
+                // Bottle quantity for bar items: openingML / bottleSize
+                const bottleSize = Number(item.bottleSize) || 750;
+                const openingBottles = bottleSize > 0 ? opening / bottleSize : 0;
 
                 return (
                   <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isLow ? 'bg-red-50/40' : ''}`}>
@@ -77,6 +85,12 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                     <td className="px-4 py-3 text-gray-600">{category || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{unit || '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-600">{opening.toFixed(2)}</td>
+                    {tab === 'bar' && (
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {openingBottles.toFixed(2)}
+                        <span className="text-xs text-gray-400 ml-1">btl</span>
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right text-gray-600">{closing.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right">
                       {reorder > 0 ? (
@@ -155,6 +169,9 @@ function MobileCardList({ items, tab, onEdit, onView, page, totalPages, setPage 
             ? (remaining / (Number(item.bottleSize) || 750)) * rate
             : remaining * rate;
           const isLow = reorder > 0 && remaining <= reorder;
+          // Bottle quantity for bar items: openingML / bottleSize
+          const bottleSize = Number(item.bottleSize) || 750;
+          const openingBottles = bottleSize > 0 ? opening / bottleSize : 0;
 
           return (
             <div key={item.id} className={`bg-white rounded-xl shadow-sm border p-4 ${isLow ? 'border-red-200' : 'border-gray-100'}`}>
@@ -170,7 +187,7 @@ function MobileCardList({ items, tab, onEdit, onView, page, totalPages, setPage 
                 )}
               </div>
               <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>Opening: <span className="font-medium text-gray-900">{opening.toFixed(2)}</span></span>
+                <span>Opening: <span className="font-medium text-gray-900">{opening.toFixed(2)}{tab === 'bar' ? ` (${openingBottles.toFixed(2)} btl)` : ''}</span></span>
                 <span>Closing: <span className="font-medium text-gray-900">{closing.toFixed(2)}</span></span>
               </div>
               <div className="flex justify-between text-sm text-gray-600 mb-3">

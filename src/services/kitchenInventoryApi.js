@@ -125,6 +125,18 @@ export async function fetchKitchenLedger(filters = {}) {
   return parseResponse(res);
 }
 
+// Get printable Daily Stock & Sales Summary for a specific date.
+// Returns only kitchen items with relevant activity on that date, grouped by
+// category, with reconciliation flags. See backend /api/inventory/kitchen/stock-sheet.
+export async function fetchKitchenStockSheet(date) {
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), date });
+  const res = await fetch(apiUrl(`/api/inventory/kitchen/stock-sheet?${params}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
 // Get top-selling kitchen items
 export async function fetchKitchenTopSelling(filters = {}) {
   const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), ...filters });
