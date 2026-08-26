@@ -759,6 +759,8 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   }, [loadExpenditure, activeDate, shiftDate]);
 
   // Item sales mix (Food / Beverages / Liquor / Combo) — today + last week
+  // Also fetches Additional/Offline Sales in parallel so the badge appears
+  // at the same time as the card data, with no extra delay.
   const loadItemwise = useCallback(async (date) => {
     const res = await fetch(`${API_BASE}/api/reports/itemwise-sales?startDate=${date}&endDate=${date}&outletId=${outletId}`, {
       headers: { ...getAuthHeaders() },
@@ -767,59 +769,65 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     return res.json();
   }, [outletId]);
 
+  const loadOfflineTotals = useCallback(async (date) => {
+    const offlineResult = await fetchAdditionalSales({ date, category: 'All' });
+    const offMap = { Food: 0, Beverages: 0, Liquor: 0 };
+    const labelMap = { Food: '', Beverages: '', Liquor: '' };
+    (offlineResult.items || []).forEach((it) => {
+      if (offMap[it.category] !== undefined) {
+        offMap[it.category] += Number(it.revenue || 0);
+        if (!labelMap[it.category] && it.outletName) labelMap[it.category] = it.outletName;
+      }
+    });
+    return { offMap, labelMap };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
         setItemwiseLoading(true);
-        const [today, lastWeek] = await Promise.all([
+        const [today, lastWeek, offline] = await Promise.all([
           loadItemwise(activeDate),
           loadItemwise(shiftDate(activeDate, -7)),
+          loadOfflineTotals(activeDate),
         ]);
-        if (!cancelled) setItemwiseData({ today, lastWeek });
+        if (cancelled) return;
+        setItemwiseData({ today, lastWeek });
+        setOfflineTotals(offline.offMap);
+        setOfflineLabels(offline.labelMap);
       } catch (err) {
-        console.warn('[Dashboard] itemwise-sales failed:', err.message);
+        console.warn('[Dashboard] itemwise/offline fetch failed:', err.message);
       } finally {
-        if (!cancelled) setItemwiseLoading(false);
+        if (!cancelled) { setItemwiseLoading(false); setOfflineTotalsLoading(false); }
       }
     };
     if (!outletId) return;
     load();
     const interval = setInterval(load, 120000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [loadItemwise, activeDate, shiftDate]);
+  }, [loadItemwise, loadOfflineTotals, activeDate, shiftDate]);
 
-  // ── Additional / Offline Sales totals (display-only reference, NOT in Total Sales) ──
-  // Fetches offline sales per category for the active date.
-  // These are added to the category card amount for display only.
-  // They do NOT affect Total Sales, AOV, billing, or any official calculation.
+  // Quick refresh for offline totals only — triggered when the CategoryBreakdownModal
+  // closes after a create/edit/delete, so the badge updates instantly without
+  // waiting for the full 120-second poll cycle.
+  const [offlineRefreshKey, setOfflineRefreshKey] = useState(0);
   useEffect(() => {
+    if (offlineRefreshKey === 0) return; // skip initial mount
     let cancelled = false;
     const load = async () => {
       try {
-        setOfflineTotalsLoading(true);
-        const offlineResult = await fetchAdditionalSales({ date: activeDate, category: 'All' });
+        const offline = await loadOfflineTotals(activeDate);
         if (cancelled) return;
-        const offMap = { Food: 0, Beverages: 0, Liquor: 0 };
-        const labelMap = { Food: '', Beverages: '', Liquor: '' };
-        (offlineResult.items || []).forEach((it) => {
-          if (offMap[it.category] !== undefined) {
-            offMap[it.category] += Number(it.revenue || 0);
-            if (!labelMap[it.category] && it.outletName) labelMap[it.category] = it.outletName;
-          }
-        });
-        setOfflineTotals(offMap);
-        setOfflineLabels(labelMap);
+        setOfflineTotals(offline.offMap);
+        setOfflineLabels(offline.labelMap);
       } catch (err) {
-        console.warn('[Dashboard] offline sales fetch failed:', err.message);
-      } finally {
-        if (!cancelled) setOfflineTotalsLoading(false);
+        console.warn('[Dashboard] offline quick-refresh failed:', err.message);
       }
     };
     load();
-    const interval = setInterval(load, 120000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [activeDate]);
+    return () => { cancelled = true; };
+  }, [offlineRefreshKey, activeDate, loadOfflineTotals]);
 
   // Net cash history (last 7 days)
   useEffect(() => {
@@ -1363,7 +1371,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         open={categoryBreakdown.open}
         categoryKey={categoryBreakdown.key}
         date={activeDate}
-        onClose={() => setCategoryBreakdown({ open: false, key: null })}
+        onClose={() => { setCategoryBreakdown({ open: false, key: null }); setOfflineRefreshKey(k => k + 1); }}
       />
     </div>
   );
