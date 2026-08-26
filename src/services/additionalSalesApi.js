@@ -29,13 +29,21 @@ async function parseResponse(res) {
 }
 
 /**
- * Fetch additional/offline sales for a specific date (optionally filtered by category).
- * @param {string} date — YYYY-MM-DD
- * @param {string} [category] — 'Food' | 'Liquor' | 'Beverages'
+ * Fetch additional/offline sales with flexible filtering.
+ * @param {Object} opts
+ * @param {string} [opts.date] — single date YYYY-MM-DD (legacy)
+ * @param {string} [opts.fromDate] — range start YYYY-MM-DD
+ * @param {string} [opts.toDate] — range end YYYY-MM-DD
+ * @param {string} [opts.category] — 'Food' | 'Liquor' | 'Beverages' | 'All' (default: All)
+ * @param {string} [opts.search] — search by outlet name or notes
  */
-export async function fetchAdditionalSales(date, category) {
-  const params = new URLSearchParams({ date });
+export async function fetchAdditionalSales({ date, fromDate, toDate, category, search } = {}) {
+  const params = new URLSearchParams();
+  if (date) params.set('date', date);
+  if (fromDate) params.set('fromDate', fromDate);
+  if (toDate) params.set('toDate', toDate);
   if (category) params.set('category', category);
+  if (search) params.set('search', search);
   const res = await fetch(apiUrl(`/api/additional-sales?${params.toString()}`), {
     headers: { ...getAuthHeaders() },
   });

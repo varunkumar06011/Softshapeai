@@ -26,7 +26,7 @@ import {
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
   RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, AlertTriangle,
-  ArrowUpDown, Wallet, WifiOff, Menu,
+  ArrowUpDown, Wallet, WifiOff, Menu, ShoppingBag,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat.js';
@@ -40,6 +40,7 @@ import { useAuth } from '../context/AuthContext';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import OperationsDashboard from './OperationsDashboard';
+import AdditionalSalesPage from './AdditionalSalesPage';
 import { safeGetJSON } from '../utils/safeParseJSON';
 
 const BEVERAGE_KEYWORDS = [
@@ -191,6 +192,12 @@ const REPORT_CATEGORIES = [
     key: 'customer', label: 'Customer Insights',
     reports: [
       { id: 'captain-performance', label: 'Captain Performance', icon: StarIcon, urgent: false },
+    ],
+  },
+  {
+    key: 'additional', label: 'Additional Sales',
+    reports: [
+      { id: 'additional-sales', label: 'Additional / Offline Sales', icon: ShoppingBag, urgent: false },
     ],
   },
 ];
@@ -2073,6 +2080,7 @@ export default function AdminReports() {
             {activeReport === 'table-utilization' && <TableUtilizationReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'hourly-report' && <HourlyAnalysisReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
             {activeReport === 'kot-count' && <KOTCountReport dateFilter={dateFilter} outletId={outletId} onDownloadRef={downloadRef} />}
+            {activeReport === 'additional-sales' && <AdditionalSalesPage />}
           </div>
         </main>
       </div>

@@ -138,7 +138,9 @@ import {
 
   CreditCard,
 
-  Loader2
+  Loader2,
+
+  ShoppingBag
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -201,6 +203,7 @@ import FloorPlanEditor from './FloorPlanEditor';
 import InventoryRangeSummary from './InventoryRangeSummary';
 import DateRangePicker from './components/DateRangePicker';
 import { CategoryBreakdownModal } from './CategoryBreakdownModal';
+import { fetchAdditionalSales } from '../services/additionalSalesApi';
 
 import MenuUpload from '../onboarding/MenuUpload';
 
@@ -548,6 +551,10 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   const [lastWeekExpenditure, setLastWeekExpenditure] = useState(null);
   const [itemwiseData, setItemwiseData] = useState(null);
   const [itemwiseLoading, setItemwiseLoading] = useState(true);
+  // Additional / Offline Sales totals per category (display-only reference, NOT in Total Sales)
+  const [offlineTotals, setOfflineTotals] = useState({ Food: 0, Beverages: 0, Liquor: 0 });
+  const [offlineLabels, setOfflineLabels] = useState({ Food: '', Beverages: '', Liquor: '' });
+  const [offlineTotalsLoading, setOfflineTotalsLoading] = useState(true);
   const [categoryBreakdown, setCategoryBreakdown] = useState({ open: false, key: null });
   const [netCashHistory, setNetCashHistory] = useState(null);
   const [netCashHistoryLoading, setNetCashHistoryLoading] = useState(true);
@@ -568,6 +575,9 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     setLastWeekExpenditure(null);
     setItemwiseData(null);
     setItemwiseLoading(true);
+    setOfflineTotals({ Food: 0, Beverages: 0, Liquor: 0 });
+    setOfflineLabels({ Food: '', Beverages: '', Liquor: '' });
+    setOfflineTotalsLoading(true);
     setNetCashHistory(null);
     setNetCashHistoryLoading(true);
     setSpecialsByStaff([]);
@@ -779,6 +789,38 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     return () => { cancelled = true; clearInterval(interval); };
   }, [loadItemwise, activeDate, shiftDate]);
 
+  // ── Additional / Offline Sales totals (display-only reference, NOT in Total Sales) ──
+  // Fetches offline sales per category for the active date.
+  // These are added to the category card amount for display only.
+  // They do NOT affect Total Sales, AOV, billing, or any official calculation.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setOfflineTotalsLoading(true);
+        const offlineResult = await fetchAdditionalSales({ date: activeDate, category: 'All' });
+        if (cancelled) return;
+        const offMap = { Food: 0, Beverages: 0, Liquor: 0 };
+        const labelMap = { Food: '', Beverages: '', Liquor: '' };
+        (offlineResult.items || []).forEach((it) => {
+          if (offMap[it.category] !== undefined) {
+            offMap[it.category] += Number(it.revenue || 0);
+            if (!labelMap[it.category] && it.outletName) labelMap[it.category] = it.outletName;
+          }
+        });
+        setOfflineTotals(offMap);
+        setOfflineLabels(labelMap);
+      } catch (err) {
+        console.warn('[Dashboard] offline sales fetch failed:', err.message);
+      } finally {
+        if (!cancelled) setOfflineTotalsLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 120000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeDate]);
+
   // Net cash history (last 7 days)
   useEffect(() => {
     let cancelled = false;
@@ -862,6 +904,13 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   // Proportions come from itemwise-sales (accurate per-item classification).
   // Amounts are scaled to match todayRevenue from daily-sales (Transaction.grandTotal)
   // so that Food + Bev + Liquor + Combo = Total Sales KPI.
+  // Additional / Offline Sales are shown separately on the card — they do NOT affect
+  // the card amount, Total Sales, AOV, or any official calculation.
+  // Offline badge is shown ONLY in "All Outlets" scope to avoid confusion on
+  // individual outlet cards (offline sales are cross-outlet reference figures).
+  const showOfflineBadge = dashboardScope === 'all';
+  const offlineAmountFor = (cat) => showOfflineBadge ? offlineTotals[cat] : 0;
+  const offlineLabelFor = (cat) => showOfflineBadge ? offlineLabels[cat] : '';
   const itemSummary = itemwiseData?.today?.summary || {};
   const lastItemSummary = itemwiseData?.lastWeek?.summary || {};
   const itemwiseTotal = Number(itemSummary.totalRevenue || 0);
@@ -973,7 +1022,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     );
   };
 
-  const CategoryRingCard = ({ label, amount, share, prevShare, color, icon: Icon, loading, onClick }) => {
+  const CategoryRingCard = ({ label, amount, share, prevShare, color, icon: Icon, loading, onClick, offlineAmount, offlineLabel }) => {
     const pp = share - prevShare;
     const up = pp > 0;
     const ringData = [
@@ -1013,6 +1062,14 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
             </div>
             <div className="min-w-0 text-center md:text-left leading-tight">
               <p className="text-sm md:text-lg font-black leading-tight" style={{ color }}>{fmtInr(amount)}</p>
+              {offlineAmount > 0 && (
+                <div className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200">
+                  <ShoppingBag size={10} className="text-amber-600 shrink-0" />
+                  <span className="text-[10px] font-bold text-amber-700 truncate" title={offlineLabel}>
+                    + {fmtInr(offlineAmount)} {offlineLabel ? `· ${offlineLabel}` : ''}
+                  </span>
+                </div>
+              )}
               <p className="text-[10px] font-bold text-[#6B6B6B] leading-tight">of Total Sales</p>
               <p className={`text-[10px] font-bold flex items-center justify-center md:justify-start gap-0.5 leading-tight ${up ? 'text-green-600' : pp < 0 ? 'text-red-600' : 'text-gray-400'}`}>
                 {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />} {fmtPct(Math.abs(pp))}
@@ -1138,12 +1195,12 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   const categoryCards = [];
   if (hasFood) {
     categoryCards.push(
-      { key: 'food', label: 'Food %', amount: mixRevenue.food, share: mixShare('food'), prevShare: lastMixShare('food'), color: '#22C55E', icon: Utensils },
-      { key: 'beverages', label: 'Beverages %', amount: mixRevenue.beverages, share: mixShare('beverages'), prevShare: lastMixShare('beverages'), color: '#3B82F6', icon: GlassWater },
+      { key: 'food', label: 'Food %', amount: mixRevenue.food, share: mixShare('food'), prevShare: lastMixShare('food'), color: '#22C55E', icon: Utensils, offlineAmount: offlineAmountFor('Food'), offlineLabel: offlineLabelFor('Food') },
+      { key: 'beverages', label: 'Beverages %', amount: mixRevenue.beverages, share: mixShare('beverages'), prevShare: lastMixShare('beverages'), color: '#3B82F6', icon: GlassWater, offlineAmount: offlineAmountFor('Beverages'), offlineLabel: offlineLabelFor('Beverages') },
     );
   }
   if (hasLiquor) {
-    categoryCards.push({ key: 'liquor', label: 'Liquor %', amount: mixRevenue.liquor, share: mixShare('liquor'), prevShare: lastMixShare('liquor'), color: '#8B5CF6', icon: Wine });
+    categoryCards.push({ key: 'liquor', label: 'Liquor %', amount: mixRevenue.liquor, share: mixShare('liquor'), prevShare: lastMixShare('liquor'), color: '#8B5CF6', icon: Wine, offlineAmount: offlineAmountFor('Liquor'), offlineLabel: offlineLabelFor('Liquor') });
   }
   if (mixRevenue.combo > 0 || lastMixRevenue.combo > 0) {
     categoryCards.push({ key: 'combo', label: 'Combo %', amount: mixRevenue.combo, share: mixShare('combo'), prevShare: lastMixShare('combo'), color: '#EC4899', icon: Package });
@@ -1284,6 +1341,8 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
             color={c.color}
             icon={c.icon}
             loading={itemwiseLoading}
+            offlineAmount={c.offlineAmount}
+            offlineLabel={c.offlineLabel}
             onClick={c.key !== 'combo' ? () => setCategoryBreakdown({ open: true, key: c.key }) : undefined}
           />
         ))}

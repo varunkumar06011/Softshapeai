@@ -59,7 +59,7 @@ export function CategoryBreakdownModal({ open, categoryKey, date, onClose }) {
     try {
       const [systemRes, offlineRes] = await Promise.all([
         fetchCategoryOutletSales(categoryName, date),
-        fetchAdditionalSales(date, categoryName),
+        fetchAdditionalSales({ date, category: categoryName }),
       ]);
       setSystemOutlets(systemRes.outlets || []);
       setSystemTotal(systemRes.totalRevenue || 0);
