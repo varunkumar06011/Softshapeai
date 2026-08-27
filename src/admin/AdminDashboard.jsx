@@ -200,8 +200,22 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
   const [statsLoading, setStatsLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
-  const [dashboardScope, setDashboardScope] = useState('current'); // 'current' | 'all'
+  const [dashboardScope, setDashboardScope] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ss_dashboard_scope');
+      return saved === 'all' || saved === 'current' ? saved : 'current';
+    } catch {
+      return 'current';
+    }
+  }); // 'current' | 'all'
   const [selectedDate, setSelectedDate] = useState(() => getKolkataDateString());
+
+  // Persist dashboardScope to localStorage so it survives page refresh
+  useEffect(() => {
+    try {
+      localStorage.setItem('ss_dashboard_scope', dashboardScope);
+    } catch { /* ignore */ }
+  }, [dashboardScope]);
 
   const { setTables } = useTableSync();
   const { user, restaurant, setRestaurant, setAuth } = useAuth();
@@ -607,7 +621,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
               <div className="text-base md:text-xl font-black truncate tracking-tight">{title}</div>
               {restaurant?.name && (
                 <div className="flex items-center gap-2 -mt-0.5">
-                  <span className="text-[11px] font-bold text-gray-500 truncate">{restaurant.name}</span>
+                  <span className="text-[11px] font-bold text-gray-500 truncate">{dashboardScope === 'all' ? 'All Outlets' : restaurant.name}</span>
                   {restaurant.plan && (
                     <span className="rounded-full bg-[#FFEBEE] px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-[#B71C1C]">
                       {restaurant.plan}
@@ -694,7 +708,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
                 return (
                   <Route key={r.key} path={r.key} element={
                     <AdminRouteGuard
-                      key={restaurant?.id || 'no-outlet'}
+                      key={`${restaurant?.id || 'no-outlet'}-${dashboardScope}`}
                       allowedRoles={r.roles}
                       role={role}
                       routeKey={r.key}
