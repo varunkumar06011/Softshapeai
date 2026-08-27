@@ -21,8 +21,6 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   const [openingStock, setOpeningStock] = useState(0);
   const [reorderLevel, setReorderLevel] = useState(0);
   const [costPerBottle, setCostPerBottle] = useState('');
-  const [acSellingPerMl, setAcSellingPerMl] = useState('');
-  const [nonAcSellingPerMl, setNonAcSellingPerMl] = useState('');
 
   // Kitchen-specific state
   const [name, setName] = useState('');
@@ -102,8 +100,6 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
         openingStockBottles: openingStock,
         reorderLevel,
         ...(costPerBottle !== '' && { costPerBottle: Number(costPerBottle) }),
-        ...(acSellingPerMl !== '' && { acSellingPerMl: Number(acSellingPerMl) }),
-        ...(nonAcSellingPerMl !== '' && { nonAcSellingPerMl: Number(nonAcSellingPerMl) }),
       });
       onSaved?.();
       handleClose();
@@ -241,28 +237,6 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
                   value={costPerBottle}
                   onChange={(e) => setCostPerBottle(e.target.value)}
                   placeholder="enter cost"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">AC Selling/ML (override, optional)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={acSellingPerMl}
-                  onChange={(e) => setAcSellingPerMl(e.target.value)}
-                  placeholder="auto-derive from venue pricing"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Non-AC Selling/ML (override, optional)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={nonAcSellingPerMl}
-                  onChange={(e) => setNonAcSellingPerMl(e.target.value)}
-                  placeholder="auto-derive from venue pricing"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>

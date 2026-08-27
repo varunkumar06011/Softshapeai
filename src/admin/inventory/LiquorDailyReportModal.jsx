@@ -1,17 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// LiquorDailyReportModal — "PDF to Admin" category-wise liquor report
+// LiquorDailyReportModal — "PDF to Admin" item-wise liquor report
 // ─────────────────────────────────────────────────────────────────────────────
-// AC = System/POS data (read-only, automatically populated)
-// Non-AC = Manual admin entry (editable, for outlets without our POS)
+// Contains ONLY two detailed item-wise reports:
+//   1. Non-AC Detailed Item-wise Report (admin-entered · database-driven · editable)
+//   2. AC Bar Detailed Item-wise Report (POS billing · database-driven · editable)
 //
-// The admin can:
-//   1. Review the report preview with AC (system) + Non-AC (manual) data
-//   2. Edit Non-AC values (sales, landing cost) per category
-//   3. See live recalculation of profits, totals, percentages
-//   4. Save Non-AC changes (stored separately, NOT in POS/billing)
-//   5. Download the final PDF
+// Both tables have columns: S.No | Item Name | Qty (ml) | Sale (btl) | Purchase Cost
+//   | Consumption | Selling Price | Sale Amount | Profit
 //
-// Print/PDF uses a dedicated print window with landscape A4, proper pagination.
+// Every row is editable in the admin preview. Calculated fields auto-recalculate:
+//   Consumption = Sale × Purchase Cost
+//   Sale Amount = Sale × Selling Price
+//   Profit = Sale Amount − Consumption
+//
+// Save & Generate PDF:
+//   - Non-AC edits persist to non_ac_inventory_items + non_ac_daily_entries
+//   - AC edits persist to ac_report_adjustments (separate from POS data)
+//   - PDF contains only the two item-wise tables
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -21,11 +26,6 @@ import { apiUrl, getAuthHeaders } from '../../services/apiConfig';
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
   return `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
-}
-
-function fmtMl(n) {
-  if (n == null) return '—';
-  return `${Number(n).toFixed(0)} ml`;
 }
 
 function fmtPct(n) {
@@ -43,6 +43,10 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
   const [edits, setEdits] = useState({});
   // Editable summary overrides
   const [summaryEdits, setSummaryEdits] = useState({});
+  // Item-wise edits for Non-AC: { [itemId]: { qty, sale, purchaseCost, sellingPrice } }
+  const [nonAcItemEdits, setNonAcItemEdits] = useState({});
+  // Item-wise edits for AC: { [itemId]: { qty, sale, purchaseCost, sellingPrice } }
+  const [acItemEdits, setAcItemEdits] = useState({});
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
 
@@ -83,6 +87,30 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
         }
       }
       setEdits(init);
+
+      // Initialize item-wise edits from database data
+      const nonAcInit = {};
+      for (const item of (json.nonAcItems || [])) {
+        nonAcInit[item.itemId] = {
+          qty: item.qty ?? 0,
+          sale: item.sale ?? 0,
+          purchaseCost: item.purchaseCost ?? 0,
+          sellingPrice: item.sellingPrice ?? 0,
+        };
+      }
+      setNonAcItemEdits(nonAcInit);
+
+      const acInit = {};
+      for (const item of (json.acItems || [])) {
+        acInit[item.itemId] = {
+          qty: item.qty ?? 0,
+          sale: item.sale ?? 0,
+          purchaseCost: item.purchaseCost ?? 0,
+          sellingPrice: item.sellingPrice ?? 0,
+        };
+      }
+      setAcItemEdits(acInit);
+
       // Restore summary overrides from the response (already applied to summary by backend)
       // We don't set summaryEdits here because the backend already applied them to summary values.
       // The inputs will show the backend-provided values (which include overrides).
@@ -196,44 +224,158 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
     return { ...data, categories: cats, summary };
   }, [data, edits, summaryEdits]);
 
-  // ── Save entries (Non-AC stored in DB; AC edits are preview-only) ──
+  // ── Computed item-wise values with live recalculation from edits ──
+  // For each item: Consumption = Sale × Purchase Cost, Sale Amount = Sale × Selling Price, Profit = Sale Amount − Consumption
+  const computedNonAcItems = useMemo(() => {
+    if (!data) return [];
+    return (data.nonAcItems || []).map((item) => {
+      const edit = nonAcItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice };
+      const sale = Number(edit.sale) || 0;
+      const purchaseCost = Number(edit.purchaseCost) || 0;
+      const sellingPrice = Number(edit.sellingPrice) || 0;
+      const qty = Number(edit.qty) || 0;
+      const consumption = Math.round(sale * purchaseCost * 100) / 100;
+      const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
+      const profit = Math.round((saleAmount - consumption) * 100) / 100;
+      return {
+        ...item,
+        qty,
+        sale,
+        purchaseCost,
+        sellingPrice,
+        consumption,
+        saleAmount,
+        profit,
+        hasMissingPrice: purchaseCost <= 0,
+        hasMissingSellingPrice: sellingPrice <= 0,
+      };
+    });
+  }, [data, nonAcItemEdits]);
+
+  const computedAcItems = useMemo(() => {
+    if (!data) return [];
+    return (data.acItems || []).map((item) => {
+      const edit = acItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice };
+      const sale = Number(edit.sale) || 0;
+      const purchaseCost = Number(edit.purchaseCost) || 0;
+      const sellingPrice = Number(edit.sellingPrice) || 0;
+      const qty = Number(edit.qty) || 0;
+      // AC uses 30ML cost logic: Consumption = Sale × Purchase Cost (mathematically equivalent to pegs × 30ML_cost)
+      const consumption = Math.round(sale * purchaseCost * 100) / 100;
+      const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
+      const profit = Math.round((saleAmount - consumption) * 100) / 100;
+      return {
+        ...item,
+        qty,
+        sale,
+        purchaseCost,
+        sellingPrice,
+        consumption,
+        saleAmount,
+        profit,
+        hasMissingPrice: purchaseCost <= 0,
+        hasMissingBottleSize: qty <= 0,
+      };
+    });
+  }, [data, acItemEdits]);
+
+  // Item-wise totals (recalculated from edited values)
+  const computedNonAcTotals = useMemo(() => {
+    const consumption = Math.round(computedNonAcItems.reduce((s, i) => s + i.consumption, 0) * 100) / 100;
+    const saleAmount = Math.round(computedNonAcItems.reduce((s, i) => s + i.saleAmount, 0) * 100) / 100;
+    const profit = Math.round(computedNonAcItems.reduce((s, i) => s + i.profit, 0) * 100) / 100;
+    const profitMarginPct = consumption > 0 ? Math.round(profit / consumption * 100 * 100) / 100 : 0;
+    return { consumption, saleAmount, profit, profitMarginPct };
+  }, [computedNonAcItems]);
+
+  const computedAcTotals = useMemo(() => {
+    const consumption = Math.round(computedAcItems.reduce((s, i) => s + i.consumption, 0) * 100) / 100;
+    const saleAmount = Math.round(computedAcItems.reduce((s, i) => s + i.saleAmount, 0) * 100) / 100;
+    const profit = Math.round(computedAcItems.reduce((s, i) => s + i.profit, 0) * 100) / 100;
+    const profitMarginPct = consumption > 0 ? Math.round(profit / consumption * 100 * 100) / 100 : 0;
+    return { consumption, saleAmount, profit, profitMarginPct };
+  }, [computedAcItems]);
+
+  // ── Save item-wise edits to backend + summary overrides ──
+  // Returns true on success, false on failure
   const handleSave = async () => {
-    if (!data) return;
+    if (!data) return false;
     setSaving(true);
     setSavedMsg(false);
+    setError(null);
     try {
-      // Save Non-AC category entries
-      const entries = Object.entries(edits)
-        .filter(([_, v]) => Number(v.nonAcSales) > 0 || Number(v.nonAcLandingCost) > 0)
-        .map(([categoryName, v]) => ({
-          categoryName,
-          nonAcSales: Number(v.nonAcSales) || 0,
-          nonAcLandingCost: Number(v.nonAcLandingCost) || 0,
-        }));
-      // Save summary overrides (all editable business position fields)
-      const summaryOverrides = { ...summaryEdits };
-      const res = await fetch(apiUrl('/api/bar/inventory/liquor-report-non-ac'), {
+      // Build item-wise payloads from edits
+      const nonAcItemsPayload = computedNonAcItems.map((item) => ({
+        itemId: item.itemId,
+        bottleSize: Number(nonAcItemEdits[item.itemId]?.qty ?? item.qty) || 0,
+        sale: Number(nonAcItemEdits[item.itemId]?.sale ?? item.sale) || 0,
+        purchaseRate: Number(nonAcItemEdits[item.itemId]?.purchaseCost ?? item.purchaseCost) || 0,
+        sellingPrice: Number(nonAcItemEdits[item.itemId]?.sellingPrice ?? item.sellingPrice) || 0,
+      }));
+      const acAdjustmentsPayload = computedAcItems.map((item) => ({
+        itemId: item.itemId,
+        adjustedSaleBtl: Number(acItemEdits[item.itemId]?.sale ?? item.sale) || 0,
+        adjustedPurchaseCost: Number(acItemEdits[item.itemId]?.purchaseCost ?? item.purchaseCost) || 0,
+        adjustedSellingPrice: Number(acItemEdits[item.itemId]?.sellingPrice ?? item.sellingPrice) || 0,
+        adjustedConsumption: item.consumption,
+        adjustedSaleAmount: item.saleAmount,
+        adjustedProfit: item.profit,
+      }));
+
+      // Save item-wise edits (Non-AC to inventory + daily entries, AC to adjustment table)
+      const itemWiseRes = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ date, entries, summaryOverrides }),
+        body: JSON.stringify({ date, nonAcItems: nonAcItemsPayload, acAdjustments: acAdjustmentsPayload }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Save failed (${res.status})`);
+      if (!itemWiseRes.ok) {
+        const body = await itemWiseRes.json().catch(() => ({}));
+        throw new Error(body.error || `Item-wise save failed (${itemWiseRes.status})`);
       }
+
+      // Save summary overrides (Business Position cards)
+      const summaryOverrides = { ...summaryEdits };
+      const hasSummaryEdits = Object.values(summaryOverrides).some(v => v != null && v !== '' && !Number.isNaN(Number(v)));
+      if (hasSummaryEdits) {
+        const entries = Object.entries(edits)
+          .filter(([, v]) => Number(v.nonAcSales) > 0 || Number(v.nonAcLandingCost) > 0)
+          .map(([categoryName, v]) => ({
+            categoryName,
+            nonAcSales: Number(v.nonAcSales) || 0,
+            nonAcLandingCost: Number(v.nonAcLandingCost) || 0,
+          }));
+        await fetch(apiUrl('/api/bar/inventory/liquor-report-non-ac'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ date, entries, summaryOverrides }),
+        });
+      }
+
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 3000);
+      // Reload data to reflect saved state
+      loadData();
+      return true;
     } catch (err) {
       setError(err.message || 'Failed to save data');
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
-  // ── Print: open a dedicated window with proper A4 landscape CSS ──
-  const handlePrint = () => {
+  // ── Save & Generate PDF: save to backend first, then generate PDF ──
+  const handleSaveAndPrint = async () => {
     if (!computed) return;
-    const html = buildPrintHtml(computed);
+    const success = await handleSave();
+    if (!success) return;
+    const html = buildPrintHtml({
+      ...computed,
+      nonAcItems: computedNonAcItems,
+      acItems: computedAcItems,
+      nonAcItemTotals: computedNonAcTotals,
+      acItemTotals: computedAcTotals,
+    });
     const printWin = window.open('', '_blank', 'width=1200,height=800');
     if (!printWin) {
       alert('Please allow pop-ups to generate the PDF.');
@@ -252,22 +394,34 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
       try {
         printWin.focus();
         printWin.print();
-      } catch (_) { /* already printed or closed */ }
+      } catch { /* already printed or closed */ }
     }, 1000);
   };
 
-  const handleChange = (catName, field, value) => {
-    setEdits(prev => ({
+  const handleSummaryChange = (field, value) => {
+    setSummaryEdits(prev => ({ ...prev, [field]: value === '' ? '' : Math.max(0, Number(value) || 0) }));
+  };
+
+  // Item-wise edit handlers — editable fields: qty, sale, purchaseCost, sellingPrice
+  // Calculated fields (consumption, saleAmount, profit) auto-recalculate via useMemo
+  const handleNonAcItemChange = (itemId, field, value) => {
+    setNonAcItemEdits(prev => ({
       ...prev,
-      [catName]: {
-        ...(prev[catName] || { acSales: 0, acLandingCost: 0, nonAcSales: 0, nonAcLandingCost: 0 }),
+      [itemId]: {
+        ...(prev[itemId] || { qty: 0, sale: 0, purchaseCost: 0, sellingPrice: 0 }),
         [field]: value === '' ? '' : Math.max(0, Number(value) || 0),
       },
     }));
   };
 
-  const handleSummaryChange = (field, value) => {
-    setSummaryEdits(prev => ({ ...prev, [field]: value === '' ? '' : Math.max(0, Number(value) || 0) }));
+  const handleAcItemChange = (itemId, field, value) => {
+    setAcItemEdits(prev => ({
+      ...prev,
+      [itemId]: {
+        ...(prev[itemId] || { qty: 0, sale: 0, purchaseCost: 0, sellingPrice: 0 }),
+        [field]: value === '' ? '' : Math.max(0, Number(value) || 0),
+      },
+    }));
   };
 
   if (!open) return null;
@@ -303,14 +457,14 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
               disabled={loading || !!error || saving}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
             >
-              <Save size={14} /> <span className="hidden sm:inline">{saving ? 'Saving...' : 'Save'}</span><span className="sm:hidden">Save</span>
+              <Save size={14} /> <span className="hidden sm:inline">{saving ? 'Saving...' : 'Save Changes'}</span><span className="sm:hidden">Save</span>
             </button>
             <button
-              onClick={handlePrint}
-              disabled={loading || !!error}
+              onClick={handleSaveAndPrint}
+              disabled={loading || !!error || saving}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 whitespace-nowrap"
             >
-              <Printer size={14} /> <span className="hidden sm:inline">Download PDF</span><span className="sm:hidden">PDF</span>
+              <Printer size={14} /> <span className="hidden sm:inline">{saving ? 'Saving...' : 'Save & Generate PDF'}</span><span className="sm:hidden">PDF</span>
             </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
               <X size={20} />
@@ -326,10 +480,11 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
           {/* AC/Non-AC info banner */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
             <div className="text-xs text-blue-800">
-              <span className="font-bold">AC (System)</span> = from POS billing (editable in preview for adjustments).
+              <span className="font-bold">Non-AC</span> = admin-entered, database-driven (editable rows · saved to manual inventory store).
               {' '}
-              <span className="font-bold">Non-AC (Manual)</span> = admin-entered for outlets without our POS (editable).
-              Only Non-AC values are saved to the separate manual store. AC edits are preview-only and do NOT modify POS, Total Sales, AOV, billing, or inventory.
+              <span className="font-bold">AC Bar</span> = POS billing, database-driven (editable rows · adjustments saved separately, POS data preserved).
+              {' '}
+              Edit any row directly — Consumption, Sale Amount, and Profit auto-recalculate. Click <span className="font-bold">Save &amp; Generate PDF</span> to persist changes to the database and generate the final PDF.
             </div>
           </div>
 
@@ -384,185 +539,221 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
                 </div>
               </div>
 
-              {/* Category-wise Stock, Consumption & Sales */}
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-3">Category-wise Stock, Consumption & Sales</h3>
-                <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                  <table className="w-full text-xs min-w-[800px]">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Category</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Opening Stock</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Purchases</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Consumption</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Closing Stock</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">System Consumption</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Variance</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Closing Stock Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(!computed.categories || computed.categories.length === 0) ? (
+              {/* ── Item-wise Non-AC Table (editable rows) ── */}
+              {computedNonAcItems.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold text-orange-700 mb-3">
+                    Non-AC Detailed Item-wise Report
+                    <span className="ml-2 text-xs font-normal text-gray-500">(admin-entered · database-driven · editable rows)</span>
+                  </h3>
+                  <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                    <table className="w-full text-xs min-w-[900px]">
+                      <thead className="bg-orange-50">
                         <tr>
-                          <td colSpan={8} className="px-3 py-8 text-center text-gray-400">No categories with activity on this date.</td>
+                          <th className="text-center px-2 py-2 font-bold text-orange-700 uppercase tracking-wide w-10">S.No</th>
+                          <th className="text-left px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Item Name</th>
+                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Qty (ml)</th>
+                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Sale (btl)</th>
+                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Purchase Cost</th>
+                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Consumption</th>
+                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Selling Price</th>
+                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Sale Amount</th>
+                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Profit</th>
                         </tr>
-                      ) : (
-                        computed.categories.map((c) => (
-                          <tr key={c.categoryName} className="border-t border-gray-50 hover:bg-gray-50">
-                            <td className="px-3 py-2 text-gray-800 font-medium">{c.categoryName}</td>
-                            <td className="px-3 py-2 text-right text-gray-700">{fmtMl(c.openingMl)}</td>
-                            <td className="px-3 py-2 text-right text-gray-700">{fmtMl(c.purchasedMl)}</td>
-                            <td className="px-3 py-2 text-right text-gray-700">{fmtMl(c.physicalConsumptionMl)}</td>
-                            <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtMl(c.closingMl)}</td>
-                            <td className="px-3 py-2 text-right text-gray-700">{fmtMl(c.systemConsumptionMl)}</td>
-                            <td className="px-3 py-2 text-right">
-                              <span className={Math.abs(c.varianceMl) > 1 ? 'text-red-600 font-bold' : 'text-gray-700'}>
-                                {fmtMl(c.varianceMl)}
-                              </span>
+                      </thead>
+                      <tbody>
+                        {computedNonAcItems.map((item) => (
+                          <tr key={`nonac-${item.itemId}`} className="border-t border-gray-50 hover:bg-orange-50/30">
+                            <td className="px-2 py-2 text-center text-gray-500">{item.sno}</td>
+                            <td className="px-3 py-2 text-gray-800 font-medium">
+                              {item.itemName}
+                              {item.hasMissingPrice && <span className="ml-1 text-[9px] text-red-500" title="Missing purchase cost">⚠</span>}
+                              {item.hasMissingSellingPrice && <span className="ml-1 text-[9px] text-red-500" title="Missing selling price">⚠</span>}
                             </td>
-                            <td className="px-3 py-2 text-right text-gray-700">{fmtInr(c.stockValue)}</td>
+                            {/* Qty (ml) — editable */}
+                            <td className="px-3 py-2 text-right bg-orange-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={nonAcItemEdits[item.itemId]?.qty ?? ''}
+                                onChange={(e) => handleNonAcItemChange(item.itemId, 'qty', e.target.value)}
+                                className="w-20 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Sale (btl) — editable */}
+                            <td className="px-3 py-2 text-right bg-orange-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={nonAcItemEdits[item.itemId]?.sale ?? ''}
+                                onChange={(e) => handleNonAcItemChange(item.itemId, 'sale', e.target.value)}
+                                className="w-20 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Purchase Cost — editable */}
+                            <td className="px-3 py-2 text-right bg-orange-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={nonAcItemEdits[item.itemId]?.purchaseCost ?? ''}
+                                onChange={(e) => handleNonAcItemChange(item.itemId, 'purchaseCost', e.target.value)}
+                                className="w-24 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Consumption — auto-calculated: Sale × Purchase Cost */}
+                            <td className="px-3 py-2 text-right text-gray-700">{fmtInr(item.consumption)}</td>
+                            {/* Selling Price — editable */}
+                            <td className="px-3 py-2 text-right bg-orange-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={nonAcItemEdits[item.itemId]?.sellingPrice ?? ''}
+                                onChange={(e) => handleNonAcItemChange(item.itemId, 'sellingPrice', e.target.value)}
+                                className="w-24 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Sale Amount — auto-calculated: Sale × Selling Price */}
+                            <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.saleAmount)}</td>
+                            {/* Profit — auto-calculated: Sale Amount − Consumption */}
+                            <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.profit)}</td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                    {computed.categories && computed.categories.length > 0 && (
+                        ))}
+                      </tbody>
                       <tfoot>
-                        <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
-                          <td className="px-3 py-2 text-gray-900">TOTAL</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtMl(computed.categories.reduce((s, c) => s + c.openingMl, 0))}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtMl(computed.categories.reduce((s, c) => s + c.purchasedMl, 0))}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtMl(computed.categories.reduce((s, c) => s + c.physicalConsumptionMl, 0))}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtMl(computed.categories.reduce((s, c) => s + c.closingMl, 0))}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtMl(computed.categories.reduce((s, c) => s + c.systemConsumptionMl, 0))}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtMl(computed.categories.reduce((s, c) => s + c.varianceMl, 0))}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computed.summary.totalClosingStockValue)}</td>
+                        <tr className="border-t-2 border-orange-200 bg-orange-50 font-bold">
+                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL</td>
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.consumption)}</td>
+                          <td className="px-3 py-2 text-right text-gray-400"></td>
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.saleAmount)}</td>
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.profit)}</td>
+                        </tr>
+                        <tr className="bg-orange-50/50">
+                          <td colSpan={8} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
+                          <td className="px-3 py-1 text-right text-xs text-gray-900 font-bold">{fmtPct(computedNonAcTotals.profitMarginPct)}</td>
                         </tr>
                       </tfoot>
-                    )}
-                  </table>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Category-wise Sales & Profitability — AC + Non-AC editable */}
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-3">
-                  Category-wise Sales & Profitability
-                  <span className="ml-2 text-xs font-normal text-gray-500">
-                    (AC + Non-AC editable in preview · Only Non-AC is saved to manual store)
-                  </span>
-                </h3>
-                <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                  <table className="w-full text-xs min-w-[1100px]">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Category</th>
-                        <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">AC Sales</th>
-                        <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">AC Landing Cost</th>
-                        <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Non-AC Sales</th>
-                        <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Non-AC Landing Cost</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Total Sales</th>
-                        <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">AC Profit</th>
-                        <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Non-AC Profit</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Total Profit</th>
-                        <th className="text-right px-3 py-2 font-bold text-gray-600 uppercase tracking-wide">Total Profit %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {computed.categories && computed.categories.map((c) => (
-                        <tr key={c.categoryName} className="border-t border-gray-50 hover:bg-gray-50">
-                          <td className="px-3 py-2 text-gray-800 font-medium">{c.categoryName}</td>
-                          {/* AC Sales — editable */}
-                          <td className="px-3 py-2 text-right bg-blue-50/50">
-                            <input
-                              type="number"
-                              min="0"
-                              value={edits[c.categoryName]?.acSales ?? ''}
-                              onChange={(e) => handleChange(c.categoryName, 'acSales', e.target.value)}
-                              className="w-24 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
-                              placeholder="0"
-                            />
-                          </td>
-                          {/* AC Landing Cost — editable */}
-                          <td className="px-3 py-2 text-right bg-blue-50/50">
-                            <input
-                              type="number"
-                              min="0"
-                              value={edits[c.categoryName]?.acLandingCost ?? ''}
-                              onChange={(e) => handleChange(c.categoryName, 'acLandingCost', e.target.value)}
-                              className="w-24 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
-                              placeholder="0"
-                            />
-                          </td>
-                          {/* Non-AC Sales — editable */}
-                          <td className="px-3 py-2 text-right bg-orange-50/50">
-                            <input
-                              type="number"
-                              min="0"
-                              value={edits[c.categoryName]?.nonAcSales ?? ''}
-                              onChange={(e) => handleChange(c.categoryName, 'nonAcSales', e.target.value)}
-                              className="w-24 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
-                              placeholder="0"
-                            />
-                          </td>
-                          {/* Non-AC Landing Cost — editable */}
-                          <td className="px-3 py-2 text-right bg-orange-50/50">
-                            <input
-                              type="number"
-                              min="0"
-                              value={edits[c.categoryName]?.nonAcLandingCost ?? ''}
-                              onChange={(e) => handleChange(c.categoryName, 'nonAcLandingCost', e.target.value)}
-                              className="w-24 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
-                              placeholder="0"
-                            />
-                          </td>
-                          {/* Computed fields */}
-                          <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(c.sales)}</td>
-                          <td className="px-3 py-2 text-right text-blue-700 font-bold">{fmtInr(c.acProfit)}</td>
-                          <td className="px-3 py-2 text-right text-orange-700 font-bold">{fmtInr(c.nonAcProfit)}</td>
-                          <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(c.totalProfit)}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{fmtPct(c.totalProfitPct)}</td>
+              {/* ── Item-wise AC Bar Table (editable rows) ── */}
+              {computedAcItems.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold text-blue-700 mb-3">
+                    AC Bar Detailed Item-wise Report
+                    <span className="ml-2 text-xs font-normal text-gray-500">(POS billing · database-driven · editable rows)</span>
+                  </h3>
+                  <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                    <table className="w-full text-xs min-w-[900px]">
+                      <thead className="bg-blue-50">
+                        <tr>
+                          <th className="text-center px-2 py-2 font-bold text-blue-700 uppercase tracking-wide w-10">S.No</th>
+                          <th className="text-left px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Item Name</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Qty (ml)</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale (btl)</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Purchase Cost</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Consumption</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Selling Price</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale Amount</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Profit</th>
                         </tr>
-                      ))}
-                    </tbody>
-                    {computed.categories && computed.categories.length > 0 && (
+                      </thead>
+                      <tbody>
+                        {computedAcItems.map((item) => (
+                          <tr key={`ac-${item.itemId}`} className="border-t border-gray-50 hover:bg-blue-50/30">
+                            <td className="px-2 py-2 text-center text-gray-500">{item.sno}</td>
+                            <td className="px-3 py-2 text-gray-800 font-medium">
+                              {item.itemName}
+                              {item.hasMissingPrice && <span className="ml-1 text-[9px] text-red-500" title="Missing purchase cost">⚠</span>}
+                              {item.hasMissingBottleSize && <span className="ml-1 text-[9px] text-red-500" title="Missing bottle size">⚠</span>}
+                            </td>
+                            {/* Qty (ml) — editable */}
+                            <td className="px-3 py-2 text-right bg-blue-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={acItemEdits[item.itemId]?.qty ?? ''}
+                                onChange={(e) => handleAcItemChange(item.itemId, 'qty', e.target.value)}
+                                className="w-20 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Sale (btl) — editable */}
+                            <td className="px-3 py-2 text-right bg-blue-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={acItemEdits[item.itemId]?.sale ?? ''}
+                                onChange={(e) => handleAcItemChange(item.itemId, 'sale', e.target.value)}
+                                className="w-20 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Purchase Cost — editable */}
+                            <td className="px-3 py-2 text-right bg-blue-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={acItemEdits[item.itemId]?.purchaseCost ?? ''}
+                                onChange={(e) => handleAcItemChange(item.itemId, 'purchaseCost', e.target.value)}
+                                className="w-24 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Consumption — auto-calculated: Sale × Purchase Cost (30ML cost logic) */}
+                            <td className="px-3 py-2 text-right text-gray-700">{fmtInr(item.consumption)}</td>
+                            {/* Selling Price — editable */}
+                            <td className="px-3 py-2 text-right bg-blue-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={acItemEdits[item.itemId]?.sellingPrice ?? ''}
+                                onChange={(e) => handleAcItemChange(item.itemId, 'sellingPrice', e.target.value)}
+                                className="w-24 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Sale Amount — auto-calculated: Sale × Selling Price */}
+                            <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.saleAmount)}</td>
+                            {/* Profit — auto-calculated: Sale Amount − Consumption */}
+                            <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.profit)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
                       <tfoot>
-                        <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
-                          <td className="px-3 py-2 text-gray-900">TOTAL</td>
-                          <td className="px-3 py-2 text-right text-blue-700">{fmtInr(computed.summary.totalAcRevenue)}</td>
-                          <td className="px-3 py-2 text-right text-blue-700">{fmtInr(computed.summary.totalAcConsumptionCost)}</td>
-                          <td className="px-3 py-2 text-right text-orange-700">{fmtInr(computed.summary.totalNonAcRevenue)}</td>
-                          <td className="px-3 py-2 text-right text-orange-700">{fmtInr(computed.summary.totalNonAcConsumptionCost)}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computed.summary.netSales)}</td>
-                          <td className="px-3 py-2 text-right text-blue-700">{fmtInr(computed.summary.totalAcProfit)}</td>
-                          <td className="px-3 py-2 text-right text-orange-700">{fmtInr(computed.summary.totalNonAcProfit)}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computed.summary.totalProfit)}</td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtPct(computed.summary.totalProfitPct)}</td>
+                        <tr className="border-t-2 border-blue-200 bg-blue-50 font-bold">
+                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL</td>
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.consumption)}</td>
+                          <td className="px-3 py-2 text-right text-gray-400"></td>
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.saleAmount)}</td>
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.profit)}</td>
+                        </tr>
+                        <tr className="bg-blue-50/50">
+                          <td colSpan={8} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
+                          <td className="px-3 py-1 text-right text-xs text-gray-900 font-bold">{fmtPct(computedAcTotals.profitMarginPct)}</td>
                         </tr>
                       </tfoot>
-                    )}
-                  </table>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           ) : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, badge }) {
-  return (
-    <div className="bg-gray-50 rounded-lg p-2 sm:p-3 min-w-0">
-      <div className="flex items-center gap-1">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wide font-bold truncate">{label}</div>
-        {badge && (
-          <span className={`text-[8px] px-1 py-0.5 rounded font-bold ${badge === 'POS' || badge === 'AC' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-            {badge}
-          </span>
-        )}
-      </div>
-      <div className="text-sm sm:text-lg font-black text-gray-900 mt-1 truncate">{value}</div>
     </div>
   );
 }
@@ -602,44 +793,41 @@ function EditableSummaryCard({ label, field, value, edits, onChange, suffix, bad
 // AC = System/POS (blue), Non-AC = Manual (orange).
 // ─────────────────────────────────────────────────────────────────────────────
 function buildPrintHtml(data) {
-  const { outletName, outletWing, date, summary, categories, hasAnyPhysicalCount } = data;
+  const { outletName, outletWing, date, nonAcItems, acItems, nonAcItemTotals, acItemTotals } = data;
 
   const fmtInrP = (n) => n == null ? '—' : `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
-  const fmtMlP = (n) => n == null ? '—' : `${Number(n).toFixed(0)} ml`;
   const fmtPctP = (n) => n == null ? '—' : `${Number(n).toFixed(1)}%`;
 
-  const categoryRows = (categories || []).map((c) => `
+  const fmtQtyP = (n) => n == null || n <= 0 ? '—' : `${Number(n).toFixed(0)} ml`;
+  const fmtBtlP = (n) => n == null || n <= 0 ? '—' : Number(n).toFixed(2);
+
+  // ── Item-wise Non-AC rows ──
+  const nonAcItemRows = (nonAcItems || []).map((item) => `
     <tr>
-      <td class="cat">${escapeHtml(c.categoryName)}</td>
-      <td class="num">${fmtMlP(c.openingMl)}</td>
-      <td class="num">${fmtMlP(c.purchasedMl)}</td>
-      <td class="num">${fmtMlP(c.physicalConsumptionMl)}</td>
-      <td class="num bold">${fmtMlP(c.closingMl)}</td>
-      <td class="num">${fmtMlP(c.systemConsumptionMl)}</td>
-      <td class="num ${Math.abs(c.varianceMl) > 1 ? 'variance-warn' : ''}">${fmtMlP(c.varianceMl)}</td>
-      <td class="num">${fmtInrP(c.stockValue)}</td>
+      <td class="num">${item.sno}</td>
+      <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingSellingPrice ? ' <span class="warn">⚠</span>' : ''}</td>
+      <td class="num">${fmtQtyP(item.qty)}</td>
+      <td class="num">${fmtBtlP(item.sale)}</td>
+      <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
+      <td class="num">${fmtInrP(item.consumption)}</td>
+      <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
+      <td class="num bold">${fmtInrP(item.saleAmount)}</td>
+      <td class="num bold">${fmtInrP(item.profit)}</td>
     </tr>
   `).join('');
 
-  const totalOpening = (categories || []).reduce((s, c) => s + c.openingMl, 0);
-  const totalPurchases = (categories || []).reduce((s, c) => s + c.purchasedMl, 0);
-  const totalClosing = (categories || []).reduce((s, c) => s + c.closingMl, 0);
-  const totalPhysCons = (categories || []).reduce((s, c) => s + c.physicalConsumptionMl, 0);
-  const totalSysCons = (categories || []).reduce((s, c) => s + c.systemConsumptionMl, 0);
-  const totalVariance = (categories || []).reduce((s, c) => s + c.varianceMl, 0);
-
-  const profitRows = (categories || []).map((c) => `
+  // ── Item-wise AC rows (30ML Cost column removed — matches exact column spec) ──
+  const acItemRows = (acItems || []).map((item) => `
     <tr>
-      <td class="cat">${escapeHtml(c.categoryName)}</td>
-      <td class="num ac">${fmtInrP(c.acRevenue)}</td>
-      <td class="num ac">${fmtInrP(c.acConsumptionCost)}</td>
-      <td class="num nonac">${fmtInrP(c.nonAcRevenue)}</td>
-      <td class="num nonac">${fmtInrP(c.nonAcConsumptionCost)}</td>
-      <td class="num bold">${fmtInrP(c.sales)}</td>
-      <td class="num ac bold">${fmtInrP(c.acProfit)}</td>
-      <td class="num nonac bold">${fmtInrP(c.nonAcProfit)}</td>
-      <td class="num bold">${fmtInrP(c.totalProfit)}</td>
-      <td class="num">${fmtPctP(c.totalProfitPct)}</td>
+      <td class="num">${item.sno}</td>
+      <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingBottleSize ? ' <span class="warn">⚠</span>' : ''}</td>
+      <td class="num">${fmtQtyP(item.qty)}</td>
+      <td class="num">${fmtBtlP(item.sale)}</td>
+      <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
+      <td class="num">${fmtInrP(item.consumption)}</td>
+      <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
+      <td class="num bold">${fmtInrP(item.saleAmount)}</td>
+      <td class="num bold">${fmtInrP(item.profit)}</td>
     </tr>
   `).join('');
 
@@ -670,16 +858,6 @@ function buildPrintHtml(data) {
   .header .sub { font-size: 10px; color: #555; margin-top: 1px; }
   .header .date { font-size: 9px; color: #777; margin-top: 1px; }
 
-  .banner {
-    background: #fef3c7;
-    border: 1px solid #f59e0b;
-    border-radius: 3px;
-    padding: 4px 8px;
-    margin-bottom: 8px;
-    font-size: 8px;
-    color: #92400e;
-  }
-
   .info-banner {
     background: #eff6ff;
     border: 1px solid #bfdbfe;
@@ -699,63 +877,6 @@ function buildPrintHtml(data) {
     padding-bottom: 2px;
   }
   .section-title.first { margin-top: 0; }
-
-  .stock-position {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    margin-bottom: 6px;
-  }
-  .stock-card {
-    background: #eef2ff;
-    border: 1px solid #c7d2fe;
-    border-radius: 3px;
-    padding: 5px 7px;
-  }
-  .stock-card .label {
-    font-size: 7px;
-    text-transform: uppercase;
-    font-weight: 700;
-    color: #4338ca;
-    letter-spacing: 0.4px;
-  }
-  .stock-card .value {
-    font-size: 13px;
-    font-weight: 800;
-    color: #1a1a1a;
-    margin-top: 1px;
-  }
-
-  .sales-position {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 4px;
-    margin-bottom: 8px;
-  }
-  .sales-card {
-    background: #f5f5f5;
-    border-radius: 3px;
-    padding: 4px 6px;
-  }
-  .sales-card .label {
-    font-size: 7px;
-    text-transform: uppercase;
-    font-weight: 700;
-    color: #666;
-    letter-spacing: 0.4px;
-  }
-  .sales-card .value {
-    font-size: 11px;
-    font-weight: 800;
-    color: #1a1a1a;
-    margin-top: 1px;
-  }
-  .sales-card.highlight { background: #ecfdf5; border: 1px solid #a7f3d0; }
-  .sales-card.highlight .label { color: #065f46; }
-  .sales-card.ac { background: #eff6ff; border: 1px solid #bfdbfe; }
-  .sales-card.ac .label { color: #1e40af; }
-  .sales-card.nonac { background: #fff7ed; border: 1px solid #fed7aa; }
-  .sales-card.nonac .label { color: #9a3412; }
 
   table {
     width: 100%;
@@ -793,6 +914,7 @@ function buildPrintHtml(data) {
   td.ac { background: #eff6ff; color: #1e40af; }
   td.nonac { background: #fff7ed; color: #9a3412; }
   .variance-warn { color: #dc2626; font-weight: 700; }
+  .warn { color: #dc2626; font-size: 7px; }
 
   tfoot td {
     background: #f3f4f6;
@@ -826,130 +948,109 @@ function buildPrintHtml(data) {
 </div>
 
 <div class="info-banner">
-  AC (System) = automatically from POS billing · Non-AC (Manual) = admin-entered for outlets without our POS.
-  Non-AC data is NOT included in official POS Total Sales, AOV, billing, or inventory.
+  Non-AC = admin-entered, database-driven · AC Bar = POS billing, database-driven.
+  All values reflect the latest saved database data.
 </div>
 
-${!hasAnyPhysicalCount ? '<div class="banner">⚠ No physical count taken on this date. Variance shown is wastage-adjusted only (Physical Consumption − System Consumption).</div>' : ''}
-
-<div class="section-title first">Business Position — Stock</div>
-<div class="stock-position">
-  <div class="stock-card"><div class="label">Opening Stock Value</div><div class="value">${fmtInrP(summary.totalOpeningStockValue)}</div></div>
-  <div class="stock-card"><div class="label">Purchase Value</div><div class="value">${fmtInrP(summary.totalPurchasesValue)}</div></div>
-  <div class="stock-card"><div class="label">Consumption / Landing Cost</div><div class="value">${fmtInrP(summary.totalConsumptionCost)}</div></div>
-  <div class="stock-card"><div class="label">Closing Stock Value</div><div class="value">${fmtInrP(summary.totalClosingStockValue)}</div></div>
-</div>
-
-<div class="section-title">Business Position — Sales &amp; Profitability</div>
-<div class="sales-position">
-  <div class="sales-card"><div class="label">Total Liquor Sales (Gross)</div><div class="value">${fmtInrP(summary.totalGrossSales)}</div></div>
-  <div class="sales-card"><div class="label">Discounts</div><div class="value">${fmtInrP(summary.totalDiscounts)}</div></div>
-  <div class="sales-card"><div class="label">Net Sales (AC + Non-AC)</div><div class="value">${fmtInrP(summary.netSales)}</div></div>
-  <div class="sales-card highlight"><div class="label">Gross Profit After Liquor Cost</div><div class="value">${fmtInrP(summary.totalGrossProfit)}</div></div>
-  <div class="sales-card ac"><div class="label">AC Sales (System)</div><div class="value">${fmtInrP(summary.totalAcRevenue)}</div></div>
-  <div class="sales-card nonac"><div class="label">Non-AC Sales (Manual)</div><div class="value">${fmtInrP(summary.totalNonAcRevenue)}</div></div>
-  <div class="sales-card ac"><div class="label">AC Profit</div><div class="value">${fmtInrP(summary.totalAcProfit)}</div></div>
-  <div class="sales-card nonac"><div class="label">Non-AC Profit</div><div class="value">${fmtInrP(summary.totalNonAcProfit)}</div></div>
-  <div class="sales-card highlight"><div class="label">Total Profit</div><div class="value">${fmtInrP(summary.totalProfit)}</div></div>
-  <div class="sales-card"><div class="label">Physical Consumption</div><div class="value">${fmtMlP(summary.totalPhysicalConsumption)}</div></div>
-  <div class="sales-card"><div class="label">System Consumption</div><div class="value">${fmtMlP(summary.totalSystemConsumption)}</div></div>
-  <div class="sales-card"><div class="label">Variance</div><div class="value">${fmtMlP(summary.totalVarianceMl)}</div></div>
-</div>
-
-<div class="section-title">Category-wise Stock, Consumption &amp; Sales</div>
+${/* ── Item-wise Non-AC Table (FIRST) ── */ ''}
+<div class="section-title first">Non-AC Detailed Item-wise Report</div>
+${(nonAcItems && nonAcItems.length > 0) ? `
 <table>
   <colgroup>
-    <col style="width: 14%">
+    <col style="width: 4%">
+    <col style="width: 18%">
+    <col style="width: 8%">
+    <col style="width: 8%">
+    <col style="width: 10%">
     <col style="width: 11%">
     <col style="width: 11%">
-    <col style="width: 13%">
-    <col style="width: 12%">
-    <col style="width: 13%">
     <col style="width: 11%">
-    <col style="width: 15%">
+    <col style="width: 11%">
   </colgroup>
   <thead>
     <tr>
-      <th class="cat">Category</th>
-      <th>Opening Stock</th>
-      <th>Purchases</th>
+      <th>S.No</th>
+      <th class="cat">Item Name</th>
+      <th>Qty (ml)</th>
+      <th>Sale (btl)</th>
+      <th>Purchase Cost</th>
       <th>Consumption</th>
-      <th>Closing Stock</th>
-      <th>System Consumption</th>
-      <th>Variance</th>
-      <th>Closing Stock Value</th>
+      <th>Selling Price</th>
+      <th>Sale Amount</th>
+      <th>Profit</th>
     </tr>
   </thead>
   <tbody>
-    ${categoryRows || '<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">No categories with activity on this date.</td></tr>'}
+    ${nonAcItemRows}
   </tbody>
-  ${categories && categories.length > 0 ? `
   <tfoot>
     <tr>
-      <td class="cat">TOTAL</td>
-      <td class="num">${fmtMlP(totalOpening)}</td>
-      <td class="num">${fmtMlP(totalPurchases)}</td>
-      <td class="num">${fmtMlP(totalPhysCons)}</td>
-      <td class="num">${fmtMlP(totalClosing)}</td>
-      <td class="num">${fmtMlP(totalSysCons)}</td>
-      <td class="num">${fmtMlP(totalVariance)}</td>
-      <td class="num">${fmtInrP(summary.totalClosingStockValue)}</td>
+      <td colspan="5" class="cat">TOTAL</td>
+      <td class="num">${fmtInrP(nonAcItemTotals?.consumption || 0)}</td>
+      <td class="num"></td>
+      <td class="num">${fmtInrP(nonAcItemTotals?.saleAmount || 0)}</td>
+      <td class="num">${fmtInrP(nonAcItemTotals?.profit || 0)}</td>
     </tr>
-  </tfoot>` : ''}
+    <tr>
+      <td colspan="8" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
+      <td class="num" style="font-weight:700;">${fmtPctP(nonAcItemTotals?.profitMarginPct || 0)}</td>
+    </tr>
+  </tfoot>
 </table>
+` : '<p style="font-size:8px;color:#999;padding:6px 0;">No Non-AC items with activity on this date.</p>'}
 
-<div class="section-title">Category-wise Sales &amp; Profitability</div>
+${/* ── Item-wise AC Bar Table (SECOND) ── */ ''}
+<div class="section-title" style="margin-top:12px;">AC Bar Detailed Item-wise Report</div>
+${(acItems && acItems.length > 0) ? `
 <table>
   <colgroup>
+    <col style="width: 4%">
+    <col style="width: 18%">
+    <col style="width: 8%">
+    <col style="width: 8%">
+    <col style="width: 10%">
     <col style="width: 11%">
-    <col style="width: 9%">
-    <col style="width: 9%">
-    <col style="width: 9%">
-    <col style="width: 9%">
-    <col style="width: 9%">
-    <col style="width: 9%">
-    <col style="width: 9%">
-    <col style="width: 9%">
-    <col style="width: 7%">
+    <col style="width: 11%">
+    <col style="width: 11%">
+    <col style="width: 11%">
   </colgroup>
   <thead>
     <tr>
-      <th class="cat">Category</th>
-      <th class="ac">AC Sales</th>
-      <th class="ac">AC Landing Cost</th>
-      <th class="nonac">Non-AC Sales</th>
-      <th class="nonac">Non-AC Landing Cost</th>
-      <th>Total Sales</th>
-      <th class="ac">AC Profit</th>
-      <th class="nonac">Non-AC Profit</th>
-      <th>Total Profit</th>
-      <th>Total Profit %</th>
+      <th>S.No</th>
+      <th class="cat">Item Name</th>
+      <th>Qty (ml)</th>
+      <th>Sale (btl)</th>
+      <th>Purchase Cost</th>
+      <th>Consumption</th>
+      <th>Selling Price</th>
+      <th>Sale Amount</th>
+      <th>Profit</th>
     </tr>
   </thead>
   <tbody>
-    ${profitRows || '<tr><td colspan="10" style="text-align:center;color:#999;padding:12px;">No data.</td></tr>'}
+    ${acItemRows}
   </tbody>
-  ${categories && categories.length > 0 ? `
   <tfoot>
     <tr>
-      <td class="cat">TOTAL</td>
-      <td class="num ac">${fmtInrP(summary.totalAcRevenue)}</td>
-      <td class="num ac">${fmtInrP(summary.totalAcConsumptionCost)}</td>
-      <td class="num nonac">${fmtInrP(summary.totalNonAcRevenue)}</td>
-      <td class="num nonac">${fmtInrP(summary.totalNonAcConsumptionCost)}</td>
-      <td class="num">${fmtInrP(summary.netSales)}</td>
-      <td class="num ac">${fmtInrP(summary.totalAcProfit)}</td>
-      <td class="num nonac">${fmtInrP(summary.totalNonAcProfit)}</td>
-      <td class="num">${fmtInrP(summary.totalProfit)}</td>
-      <td class="num">${fmtPctP(summary.totalProfitPct)}</td>
+      <td colspan="5" class="cat">TOTAL</td>
+      <td class="num">${fmtInrP(acItemTotals?.consumption || 0)}</td>
+      <td class="num"></td>
+      <td class="num">${fmtInrP(acItemTotals?.saleAmount || 0)}</td>
+      <td class="num">${fmtInrP(acItemTotals?.profit || 0)}</td>
     </tr>
-  </tfoot>` : ''}
+    <tr>
+      <td colspan="8" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
+      <td class="num" style="font-weight:700;">${fmtPctP(acItemTotals?.profitMarginPct || 0)}</td>
+    </tr>
+  </tfoot>
 </table>
+` : '<p style="font-size:8px;color:#999;padding:6px 0;">No AC items with sales on this date.</p>'}
 
 <div class="footer">
-  AC (System) = automatically from POS billing · Non-AC (Manual) = admin-entered for outlets without our POS.<br>
-  AC Profit = AC Sales − AC Landing Cost · Non-AC Profit = Non-AC Sales − Non-AC Landing Cost · Total Profit = AC Profit + Non-AC Profit<br>
-  Non-AC data is NOT included in official POS Total Sales, AOV, billing, or inventory.
+  Non-AC: Consumption = Sale × Purchase Cost · Sale Amount = Sale × Selling Price · Profit = Sale Amount − Consumption<br>
+  AC Bar: Consumption = Sale × Purchase Cost (30ML cost logic) · Sale Amount = Sale × Selling Price · Profit = Sale Amount − Consumption<br>
+  Profit Margin % = (Total Profit ÷ Total Consumption) × 100 · ⚠ = missing data (purchase cost, selling price, or bottle size)<br>
+  All values reflect the latest saved database data. AC adjustments are stored separately from POS billing data.
 </div>
 
 </body>

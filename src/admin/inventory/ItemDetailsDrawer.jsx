@@ -131,22 +131,6 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
                       : 'Cost not configured'}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">AC Selling / ML</span>
-                  <span className="font-medium text-gray-900">
-                    {item.acSellingPerMl != null
-                      ? `₹${Number(item.acSellingPerMl).toFixed(2)} (override)`
-                      : 'auto-derived from venue pricing'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Non-AC Selling / ML</span>
-                  <span className="font-medium text-gray-900">
-                    {item.nonAcSellingPerMl != null
-                      ? `₹${Number(item.nonAcSellingPerMl).toFixed(2)} (override)`
-                      : 'auto-derived from venue pricing'}
-                  </span>
-                </div>
               </div>
             </div>
           )}

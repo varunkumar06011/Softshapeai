@@ -237,3 +237,115 @@ export async function fetchBarDeductionCheck(orderId) {
   });
   return parseResponse(res);
 }
+
+// ─── Non-AC Bar Inventory (separate stock pool) ───────────────────────────
+
+// Fetch combined AC + Non-AC inventory view
+export async function fetchCombinedInventory(date = '') {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  let url = `/api/bar/inventory/non-ac/combined?restaurantId=${rId}`;
+  if (date) url += `&date=${encodeURIComponent(date)}`;
+  const res = await fetch(apiUrl(url), {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
+  });
+  const data = await parseResponse(res);
+  return data;
+}
+
+// Fetch Non-AC items only
+export async function fetchNonAcItems(date = '') {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  let url = `/api/bar/inventory/non-ac/items?restaurantId=${rId}`;
+  if (date) url += `&date=${encodeURIComponent(date)}`;
+  const res = await fetch(apiUrl(url), {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
+  });
+  return parseResponse(res);
+}
+
+// Record Non-AC deduction (admin manual entry)
+export async function recordNonAcDeduction({ itemId, adminDeduction, receivedBottles, date, reason }) {
+  const res = await fetch(apiUrl('/api/bar/inventory/non-ac/deduct'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({
+      itemId,
+      adminDeduction,
+      receivedBottles: receivedBottles || 0,
+      date,
+      reason,
+      restaurantId: getCurrentRestaurantId(),
+    }),
+  });
+  return parseResponse(res);
+}
+
+// Edit Non-AC daily entry (opening, sale, closing) — persists to database
+export async function updateNonAcEntry({ itemId, date, openingBottles, saleBottles, closingBottles, receivedBottles, reason }) {
+  const res = await fetch(apiUrl('/api/bar/inventory/non-ac/entry'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({
+      itemId,
+      date,
+      openingBottles,
+      saleBottles,
+      closingBottles,
+      receivedBottles: receivedBottles || 0,
+      reason,
+      restaurantId: getCurrentRestaurantId(),
+    }),
+  });
+  return parseResponse(res);
+}
+
+// Fetch Non-AC audit trail
+export async function fetchNonAcAuditTrail({ itemId, date, startDate, endDate } = {}) {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  const params = new URLSearchParams({ restaurantId: rId });
+  if (itemId) params.set('itemId', itemId);
+  if (date) params.set('date', date);
+  if (startDate) params.set('startDate', startDate);
+  if (endDate) params.set('endDate', endDate);
+  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/audit-trail?${params}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// Create Non-AC inventory item
+export async function createNonAcItem(data) {
+  const res = await fetch(apiUrl('/api/bar/inventory/non-ac/items'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
+  });
+  return parseResponse(res);
+}
+
+// Update Non-AC inventory item (e.g., set selling price, confirm flagged item)
+export async function updateNonAcItem(id, data) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/items/${id}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  return parseResponse(res);
+}
+
+// Fetch Non-AC dashboard metrics
+export async function fetchNonAcDashboard() {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/dashboard?restaurantId=${rId}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}

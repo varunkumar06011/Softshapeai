@@ -6,13 +6,14 @@
 // enabledModules checks and outlet switching behavior.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { TAB_BAR, TAB_KITCHEN, TAB_RECONCILIATION } from './inventoryConstants';
 import { useInventoryData } from './useInventoryData';
 import { InventorySummaryCards } from './InventorySummaryCards';
 import { InventoryToolbar } from './InventoryToolbar';
 import { InventoryTable } from './InventoryTable';
+import { CombinedBarTable } from './CombinedBarTable';
 import { InventoryReconciliation } from './InventoryReconciliation';
 import { AddItemModal } from './AddItemModal';
 import { EditItemModal } from './EditItemModal';
@@ -21,6 +22,9 @@ import { StockAdjustmentModal } from './StockAdjustmentModal';
 import { ItemDetailsDrawer } from './ItemDetailsDrawer';
 import { StockSheetPrintModal } from './StockSheetPrintModal';
 import LiquorDailyReportModal from './LiquorDailyReportModal';
+import { NonAcDeductionModal } from './NonAcDeductionModal';
+import { fetchCombinedInventory, fetchNonAcDashboard } from '../../services/barInventoryApi';
+import { getKolkataDateString } from '../../shared/utils/dateFormat';
 
 export function InventoryPage() {
   const { restaurant } = useAuth();
@@ -44,9 +48,39 @@ export function InventoryPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [printSheetOpen, setPrintSheetOpen] = useState(false);
   const [liquorReportOpen, setLiquorReportOpen] = useState(false);
+  const [nonAcDeductItem, setNonAcDeductItem] = useState(null);
+  const [nonAcDeductOpen, setNonAcDeductOpen] = useState(false);
+
+  // Combined bar inventory (AC + Non-AC)
+  const [combinedItems, setCombinedItems] = useState([]);
+  const [combinedLoading, setCombinedLoading] = useState(false);
+  const [nonAcDashboard, setNonAcDashboard] = useState(null);
 
   // Data hook
   const inventory = useInventoryData(tab, restaurant);
+
+  // Fetch combined bar inventory when tab is bar
+  const fetchCombined = useCallback(async () => {
+    if (tab !== TAB_BAR || !restaurant?.id) return;
+    setCombinedLoading(true);
+    try {
+      const date = inventory.fromDate || getKolkataDateString();
+      const data = await fetchCombinedInventory(date);
+      setCombinedItems(data?.items || []);
+    } catch {
+      setCombinedItems([]);
+    } finally {
+      setCombinedLoading(false);
+    }
+  }, [tab, restaurant?.id, inventory.fromDate]);
+
+  useEffect(() => { fetchCombined(); }, [fetchCombined]);
+
+  // Fetch Non-AC dashboard metrics
+  useEffect(() => {
+    if (tab !== TAB_BAR || !restaurant?.id) return;
+    fetchNonAcDashboard().then(setNonAcDashboard).catch(() => {});
+  }, [tab, restaurant?.id, combinedItems]);
 
   const handleAddItem = () => setAddItemOpen(true);
   const handleRecordPurchase = () => {
@@ -76,6 +110,15 @@ export function InventoryPage() {
   const handlePrintSheet = () => setPrintSheetOpen(true);
   const handleLiquorReport = () => setLiquorReportOpen(true);
 
+  const handleNonAcDeduct = (item) => {
+    setNonAcDeductItem(item);
+    setNonAcDeductOpen(true);
+  };
+
+  const handleNonAcSaved = () => {
+    fetchCombined();
+  };
+
   const handleEdit = (item) => {
     setEditItem(item);
     setEditOpen(true);
@@ -102,6 +145,7 @@ export function InventoryPage() {
 
   const handleSaved = () => {
     inventory.refresh();
+    fetchCombined();
   };
 
   // Food-only outlet: no tab bar needed
@@ -117,6 +161,10 @@ export function InventoryPage() {
         onPrintSheet={handlePrintSheet}
         onEdit={handleEdit}
         onView={handleView}
+        combinedItems={[]}
+        combinedLoading={false}
+        nonAcDashboard={null}
+        onNonAcDeduct={null}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_KITCHEN} onSaved={handleSaved} />
@@ -145,15 +193,20 @@ export function InventoryPage() {
         onLiquorReport={handleLiquorReport}
         onEdit={handleEdit}
         onView={handleView}
+        combinedItems={combinedItems}
+        combinedLoading={combinedLoading}
+        nonAcDashboard={nonAcDashboard}
+        onNonAcDeduct={handleNonAcDeduct}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} onSaved={handleSaved} />
-            <EditItemModal open={editOpen} item={editItem} tab={TAB_BAR} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
+            <EditItemModal open={editOpen} item={editItem} tab={TAB_BAR} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={TAB_BAR} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_BAR} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} />
+            <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
           </>
         }
       />
@@ -205,15 +258,20 @@ export function InventoryPage() {
         onLiquorReport={handleLiquorReport}
         onEdit={handleEdit}
         onView={handleView}
+        combinedItems={combinedItems}
+        combinedLoading={combinedLoading}
+        nonAcDashboard={nonAcDashboard}
+        onNonAcDeduct={handleNonAcDeduct}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} onSaved={handleSaved} />
-            <EditItemModal open={editOpen} item={editItem} tab={tab} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
+            <EditItemModal open={editOpen} item={editItem} tab={tab} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={tab} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={tab} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} />
+            <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
           </>
         }
       />
@@ -223,7 +281,7 @@ export function InventoryPage() {
 }
 
 // Inner content component (shared between all outlet types)
-function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals }) {
+function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, nonAcDashboard, onNonAcDeduct }) {
   const { loading, error } = inventory;
 
   return (
@@ -234,6 +292,40 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
         filterStatus={inventory.filterStatus}
         setFilterStatus={inventory.setFilterStatus}
       />
+
+      {/* Non-AC dashboard metrics (bar only) */}
+      {tab === 'bar' && nonAcDashboard && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4">
+            <div className="text-xs font-medium text-blue-500 uppercase">Total AC Stock</div>
+            <div className="text-2xl font-bold text-blue-700 mt-1">
+              {Math.round(nonAcDashboard.ac?.totalStockMl || 0).toLocaleString('en-IN')}
+              <span className="text-sm font-normal text-gray-400 ml-1">ml</span>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-orange-100 p-4">
+            <div className="text-xs font-medium text-orange-500 uppercase">Total Non-AC Stock</div>
+            <div className="text-2xl font-bold text-orange-700 mt-1">
+              {Math.round(nonAcDashboard.nonAc?.totalStockBottles || 0).toLocaleString('en-IN')}
+              <span className="text-sm font-normal text-gray-400 ml-1">btl</span>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4">
+            <div className="text-xs font-medium text-blue-500 uppercase">Today's AC Usage</div>
+            <div className="text-2xl font-bold text-blue-700 mt-1">
+              {Math.round(nonAcDashboard.ac?.todayUsage || 0).toLocaleString('en-IN')}
+              <span className="text-sm font-normal text-gray-400 ml-1">ml</span>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-orange-100 p-4">
+            <div className="text-xs font-medium text-orange-500 uppercase">Today's Non-AC Deduction</div>
+            <div className="text-2xl font-bold text-orange-700 mt-1">
+              {Math.round(nonAcDashboard.nonAc?.todayDeduction || 0).toLocaleString('en-IN')}
+              <span className="text-sm font-normal text-gray-400 ml-1">btl</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toolbar */}
       <InventoryToolbar
@@ -262,12 +354,20 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
       )}
 
       {/* Loading state */}
-      {loading ? (
+      {loading || (tab === 'bar' && combinedLoading) ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center text-gray-400">
           Loading inventory...
         </div>
+      ) : tab === 'bar' ? (
+        /* Combined AC + Non-AC table for bar */
+        <CombinedBarTable
+          items={combinedItems}
+          onNonAcDeduct={onNonAcDeduct}
+          onEdit={onEdit}
+          onView={onView}
+        />
       ) : (
-        /* Table */
+        /* Kitchen table */
         <InventoryTable
           items={inventory.pagedItems}
           tab={tab}
