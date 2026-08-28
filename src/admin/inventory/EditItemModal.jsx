@@ -35,6 +35,8 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
   const [openingStock, setOpeningStock] = useState(0);
   const [openingStockReason, setOpeningStockReason] = useState('');
   const [originalOpeningStock, setOriginalOpeningStock] = useState(0);
+  const [acSellingPrice, setAcSellingPrice] = useState('');
+  const [isHiddenFromReport, setIsHiddenFromReport] = useState(false);
 
   // Kitchen fields
   const [name, setName] = useState('');
@@ -60,6 +62,8 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
         setOpeningStock(todayOpening);
         setOriginalOpeningStock(todayOpening);
         setOpeningStockReason('');
+        setAcSellingPrice(item.acSellingPrice != null ? String(item.acSellingPrice) : '');
+        setIsHiddenFromReport(item.isHiddenFromReport === true);
       } else {
         setName(item.name || '');
         setCategory(item.category || '');
@@ -92,6 +96,8 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
           bottleSize: bottleSize !== '' ? Number(bottleSize) : undefined,
           reorderLevel,
           costPerBottle: costPerBottle !== '' ? Number(costPerBottle) : null,
+          acSellingPrice: acSellingPrice !== '' ? Number(acSellingPrice) : null,
+          isHiddenFromReport,
         };
         if (Math.abs(openingStock - originalOpeningStock) > 0.01) {
           payload.openingStock = openingStock;
@@ -264,6 +270,34 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
                   placeholder="enter cost"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">AC Selling Price (₹ per bottle)</label>
+                <input
+                  type="number"
+                  value={acSellingPrice}
+                  onChange={(e) => setAcSellingPrice(e.target.value)}
+                  placeholder="enter selling price"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Persistent selling price used in the Liquor Stock &amp; Sales Report. Saved once, reused on all future reports.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                <button
+                  type="button"
+                  onClick={() => setIsHiddenFromReport(!isHiddenFromReport)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isHiddenFromReport ? 'bg-orange-500' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isHiddenFromReport ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+                <div>
+                  <div className="text-sm font-medium text-gray-700">Hide from Report</div>
+                  <div className="text-xs text-gray-400">
+                    {isHiddenFromReport ? 'Hidden from Liquor PDF report & totals' : 'Visible in Liquor PDF report'}
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

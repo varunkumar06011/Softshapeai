@@ -18,9 +18,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
+import { updateInventoryItem } from '../../services/barInventoryApi';
 import { MOBILE_BREAKPOINT } from './inventoryConstants';
 
-export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, onView }) {
+export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, onView, onRefresh }) {
   const isMobile = useMediaQuery();
 
   if (isMobile) {
@@ -43,6 +44,8 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
               {tab === 'bar' && <th className="text-right px-4 py-3 font-semibold">Closing (Bottles)</th>}
               <th className="text-right px-4 py-3 font-semibold">Low Stock</th>
               <th className="text-right px-4 py-3 font-semibold">Purchase Rate</th>
+              {tab === 'bar' && <th className="text-right px-4 py-3 font-semibold">Sell Price</th>}
+              {tab === 'bar' && <th className="text-center px-4 py-3 font-semibold">Report</th>}
               <th className="text-right px-4 py-3 font-semibold">Stock Value</th>
               <th className="text-center px-4 py-3 font-semibold">Actions</th>
             </tr>
@@ -50,7 +53,7 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
           <tbody className="divide-y divide-gray-100">
             {items.length === 0 ? (
               <tr>
-                <td colSpan={tab === 'bar' ? 14 : 9} className="text-center py-12 text-gray-400">
+                <td colSpan={tab === 'bar' ? 16 : 9} className="text-center py-12 text-gray-400">
                   No items found
                 </td>
               </tr>
@@ -120,6 +123,31 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                       )}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600">{rate > 0 ? `₹${rate.toFixed(2)}` : '—'}</td>
+                    {tab === 'bar' && (
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {Number(item.acSellingPrice) > 0 ? `₹${Number(item.acSellingPrice).toFixed(2)}` : <span className="text-orange-500 text-xs">not set</span>}
+                      </td>
+                    )}
+                    {tab === 'bar' && (
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={async () => {
+                            try {
+                              await updateInventoryItem(item.id, { isHiddenFromReport: !item.isHiddenFromReport });
+                              if (onRefresh) onRefresh();
+                            } catch (e) { /* ignore */ }
+                          }}
+                          className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                            item.isHiddenFromReport
+                              ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                              : 'bg-green-100 text-green-700 hover:bg-green-200'
+                          }`}
+                          title={item.isHiddenFromReport ? 'Hidden from Liquor PDF Report — click to show' : 'Visible in Liquor PDF Report — click to hide'}
+                        >
+                          {item.isHiddenFromReport ? 'Hidden' : 'Visible'}
+                        </button>
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right text-gray-600">₹{stockValue.toFixed(2)}</td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center gap-1">

@@ -12,8 +12,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react';
+import { updateInventoryItem } from '../../services/barInventoryApi';
 
-export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView }) {
+export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefresh }) {
   const [showNonAcOnly, setShowNonAcOnly] = useState(false);
 
   const filtered = showNonAcOnly ? items.filter(i => i.hasNonAc) : items;
@@ -55,6 +56,8 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView }) {
               <th className="text-right px-3 py-3 font-semibold text-orange-600">Non-AC Closing</th>
               <th className="text-right px-3 py-3 font-semibold">Total Closing</th>
               <th className="text-right px-3 py-3 font-semibold">Purchase Rate</th>
+              <th className="text-right px-3 py-3 font-semibold text-purple-600">Sell Price</th>
+              <th className="text-center px-3 py-3 font-semibold">Report</th>
               <th className="text-right px-3 py-3 font-semibold">Stock Value</th>
               <th className="text-center px-3 py-3 font-semibold">Actions</th>
             </tr>
@@ -62,7 +65,7 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView }) {
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={13} className="text-center py-12 text-gray-400">No items found</td>
+                <td colSpan={15} className="text-center py-12 text-gray-400">No items found</td>
               </tr>
             ) : (
               filtered.map((item) => {
@@ -135,6 +138,33 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView }) {
                     {/* Purchase Rate */}
                     <td className="px-3 py-2 text-right text-gray-600 text-xs">
                       {item.purchaseRate ? `₹${Number(item.purchaseRate).toFixed(0)}` : '—'}
+                    </td>
+                    {/* AC Selling Price (admin-managed, persistent) */}
+                    <td className="px-3 py-2 text-right text-purple-700 text-xs">
+                      {item.hasAc && Number(item.acSellingPrice) > 0
+                        ? `₹${Number(item.acSellingPrice).toFixed(0)}`
+                        : <span className="text-orange-500 text-[10px]">not set</span>}
+                    </td>
+                    {/* Report visibility toggle (AC items only) */}
+                    <td className="px-3 py-2 text-center">
+                      {item.hasAc ? (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await updateInventoryItem(item.id, { isHiddenFromReport: !item.isHiddenFromReport });
+                              if (onRefresh) onRefresh();
+                            } catch (e) { /* ignore */ }
+                          }}
+                          className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                            item.isHiddenFromReport
+                              ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                              : 'bg-green-100 text-green-700 hover:bg-green-200'
+                          }`}
+                          title={item.isHiddenFromReport ? 'Hidden from Liquor PDF Report — click to show' : 'Visible in Liquor PDF Report — click to hide'}
+                        >
+                          {item.isHiddenFromReport ? 'Hidden' : 'Visible'}
+                        </button>
+                      ) : '—'}
                     </td>
                     {/* Stock Value */}
                     <td className="px-3 py-2 text-right text-gray-700 font-medium text-xs">

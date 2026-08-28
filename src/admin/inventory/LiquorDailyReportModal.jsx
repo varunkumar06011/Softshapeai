@@ -37,7 +37,7 @@ function fmtPct(n) {
 
 const SAFE_DIV = (a, b) => (b > 0 ? a / b * 100 : 0);
 
-export default function LiquorDailyReportModal({ open, date, onClose }) {
+export default function LiquorDailyReportModal({ open, date, onClose, onSaved }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -390,6 +390,9 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
       setTimeout(() => setSavedMsg(false), 3000);
       // Reload data to reflect saved state
       loadData();
+      // Notify parent (original inventory screen) to refresh its data
+      // so both screens stay synchronized.
+      if (onSaved) onSaved();
       return true;
     } catch (err) {
       setError(err.message || 'Failed to save data');

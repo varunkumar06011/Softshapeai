@@ -165,6 +165,7 @@ export function InventoryPage() {
         combinedLoading={false}
         nonAcDashboard={null}
         onNonAcDeduct={null}
+        onRefresh={handleSaved}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_KITCHEN} onSaved={handleSaved} />
@@ -197,6 +198,7 @@ export function InventoryPage() {
         combinedLoading={combinedLoading}
         nonAcDashboard={nonAcDashboard}
         onNonAcDeduct={handleNonAcDeduct}
+        onRefresh={handleSaved}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} onSaved={handleSaved} />
@@ -205,7 +207,7 @@ export function InventoryPage() {
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_BAR} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
-            <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} />
+            <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
             <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
           </>
         }
@@ -262,6 +264,7 @@ export function InventoryPage() {
         combinedLoading={combinedLoading}
         nonAcDashboard={nonAcDashboard}
         onNonAcDeduct={handleNonAcDeduct}
+        onRefresh={handleSaved}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} onSaved={handleSaved} />
@@ -270,7 +273,7 @@ export function InventoryPage() {
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={tab} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
-            <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} />
+            <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
             <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
           </>
         }
@@ -281,7 +284,7 @@ export function InventoryPage() {
 }
 
 // Inner content component (shared between all outlet types)
-function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, nonAcDashboard, onNonAcDeduct }) {
+function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, nonAcDashboard, onNonAcDeduct, onRefresh }) {
   const { loading, error } = inventory;
 
   return (
@@ -365,6 +368,7 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
           onNonAcDeduct={onNonAcDeduct}
           onEdit={onEdit}
           onView={onView}
+          onRefresh={onRefresh}
         />
       ) : (
         /* Kitchen table */
@@ -376,6 +380,7 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
           setPage={inventory.setPage}
           onEdit={onEdit}
           onView={onView}
+          onRefresh={onRefresh}
         />
       )}
 
