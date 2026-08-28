@@ -5,8 +5,8 @@
 //   1. Non-AC Detailed Item-wise Report (admin-entered · database-driven · editable)
 //   2. AC Bar Detailed Item-wise Report (POS billing · database-driven · editable)
 //
-// Both tables have columns: S.No | Item Name | Qty (ml) | Sale (btl) | Purchase Cost
-//   | Consumption | Selling Price | Sale Amount | Profit
+// Both tables have columns: S.No | Item Name | Qty (ml) | Opening | Received | Stock
+//   | Sold | Closing | Purchase Cost | Consumption | Selling Price | Sale Amount | Profit
 //
 // Every row is editable in the admin preview. Calculated fields auto-recalculate:
 //   Consumption = Sale × Purchase Cost
@@ -35,12 +35,21 @@ function fmtPct(n) {
   return `${Number(n).toFixed(1)}%`;
 }
 
+// Format bottle quantity (e.g., 20, 20.5, 0)
+function fmtQty(n) {
+  if (n == null || Number.isNaN(Number(n))) return '0';
+  const v = Number(n);
+  return v % 1 === 0 ? String(v) : v.toFixed(2);
+}
+
 const SAFE_DIV = (a, b) => (b > 0 ? a / b * 100 : 0);
 
 export default function LiquorDailyReportModal({ open, date, onClose, onSaved }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Date range — endDate is optional. When set, the report aggregates across the range.
+  const [endDate, setEndDate] = useState('');
   // Editable entries: { [categoryName]: { acSales, acLandingCost, nonAcSales, nonAcLandingCost } }
   const [edits, setEdits] = useState({});
   // Editable summary overrides
@@ -103,6 +112,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     setError(null);
     try {
       const params = new URLSearchParams({ date });
+      if (endDate && endDate !== date) {
+        params.set('endDate', endDate);
+      }
       const res = await fetch(apiUrl(`/api/bar/inventory/liquor-daily-report?${params.toString()}`), {
         headers: { ...getAuthHeaders() },
       });
@@ -144,6 +156,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           sale: item.sale ?? 0,
           purchaseCost: item.purchaseCost ?? 0,
           sellingPrice: item.sellingPrice ?? 0,
+          opening: item.opening ?? 0,
+          received: item.received ?? 0,
+          sold: item.sold ?? 0,
         };
         nonAcHiddenInit[item.itemId] = item.isHidden === true;
       }
@@ -158,6 +173,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           sale: item.sale ?? 0,
           purchaseCost: item.purchaseCost ?? 0,
           sellingPrice: item.sellingPrice ?? 0,
+          opening: item.opening ?? 0,
+          received: item.received ?? 0,
+          sold: item.sold ?? 0,
         };
         acHiddenInit[item.itemId] = item.isHidden === true;
       }
@@ -212,7 +230,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     } finally {
       setLoading(false);
     }
-  }, [open, date]);
+  }, [open, date, endDate]);
 
   useEffect(() => {
     loadData();
@@ -240,112 +258,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     });
   }, [open, data, pendingKey, nonAcItemEdits, acItemEdits, nonAcHiddenFlags, acHiddenFlags, edits, summaryEdits, savePendingToStorage]);
 
-  // ── Live recalculation with AC + Non-AC edits ──
-  const computed = useMemo(() => {
-    if (!data) return null;
-    const cats = (data.categories || []).map((c) => {
-      const edit = edits[c.categoryName] || { acSales: c.acRevenue, acLandingCost: c.acConsumptionCost, nonAcSales: 0, nonAcLandingCost: 0 };
-      const acRevenue = Number(edit.acSales) || 0;
-      const acConsumptionCost = Number(edit.acLandingCost) || 0;
-      const nonAcSales = Number(edit.nonAcSales) || 0;
-      const nonAcLandingCost = Number(edit.nonAcLandingCost) || 0;
-      const totalSales = acRevenue + nonAcSales;
-      const acProfit = acRevenue - acConsumptionCost;
-      const nonAcProfit = nonAcSales - nonAcLandingCost;
-      const totalProfit = acProfit + nonAcProfit;
-      return {
-        ...c,
-        acRevenue,
-        acConsumptionCost,
-        nonAcRevenue: nonAcSales,
-        nonAcConsumptionCost: nonAcLandingCost,
-        sales: totalSales,
-        acProfit: Math.round(acProfit * 100) / 100,
-        nonAcProfit: Math.round(nonAcProfit * 100) / 100,
-        totalProfit: Math.round(totalProfit * 100) / 100,
-        acProfitPct: Math.round(SAFE_DIV(acProfit, acRevenue) * 100) / 100,
-        nonAcProfitPct: Math.round(SAFE_DIV(nonAcProfit, nonAcSales) * 100) / 100,
-        totalProfitPct: Math.round(SAFE_DIV(totalProfit, totalSales) * 100) / 100,
-      };
-    });
-
-    // Add categories that only exist in edits (not in POS)
-    for (const [catName, edit] of Object.entries(edits)) {
-      if (!cats.find(c => c.categoryName === catName) && (Number(edit.nonAcSales) > 0 || Number(edit.nonAcLandingCost) > 0 || Number(edit.acSales) > 0)) {
-        const acRevenue = Number(edit.acSales) || 0;
-        const acConsumptionCost = Number(edit.acLandingCost) || 0;
-        const nonAcSales = Number(edit.nonAcSales) || 0;
-        const nonAcLandingCost = Number(edit.nonAcLandingCost) || 0;
-        const totalSales = acRevenue + nonAcSales;
-        const acProfit = acRevenue - acConsumptionCost;
-        const nonAcProfit = nonAcSales - nonAcLandingCost;
-        cats.push({
-          categoryName: catName,
-          openingMl: 0, purchasedMl: 0, closingMl: 0,
-          physicalConsumptionMl: 0, systemConsumptionMl: 0, varianceMl: 0,
-          stockValue: 0,
-          acRevenue, acConsumptionCost,
-          nonAcRevenue: nonAcSales, nonAcConsumptionCost: nonAcLandingCost,
-          sales: totalSales,
-          acProfit: Math.round(acProfit * 100) / 100,
-          nonAcProfit: Math.round(nonAcProfit * 100) / 100,
-          totalProfit: Math.round((acProfit + nonAcProfit) * 100) / 100,
-          acProfitPct: Math.round(SAFE_DIV(acProfit, acRevenue) * 100) / 100,
-          nonAcProfitPct: Math.round(SAFE_DIV(nonAcProfit, nonAcSales) * 100) / 100,
-          totalProfitPct: Math.round(SAFE_DIV(acProfit + nonAcProfit, totalSales) * 100) / 100,
-        });
-      }
-    }
-
-    const totalAcRevenue = cats.reduce((s, c) => s + c.acRevenue, 0);
-    const totalNonAcRevenue = cats.reduce((s, c) => s + c.nonAcRevenue, 0);
-    const totalAcConsumptionCost = cats.reduce((s, c) => s + c.acConsumptionCost, 0);
-    const totalNonAcConsumptionCost = cats.reduce((s, c) => s + c.nonAcConsumptionCost, 0);
-    const totalAcProfit = Math.round((totalAcRevenue - totalAcConsumptionCost) * 100) / 100;
-    const totalNonAcProfit = Math.round((totalNonAcRevenue - totalNonAcConsumptionCost) * 100) / 100;
-    const totalProfit = totalAcProfit + totalNonAcProfit;
-    const netSales = totalAcRevenue + totalNonAcRevenue;
-
-    // Apply summary overrides — every business position card is editable.
-    // If a field has been edited, use the edited value; otherwise use computed.
-    const s = summaryEdits;
-    const pick = (field, fallback) => (s[field] != null && s[field] !== '' && !Number.isNaN(Number(s[field]))) ? Number(s[field]) : fallback;
-
-    const summary = {
-      ...data.summary,
-      totalOpeningStockValue: Math.round(pick('totalOpeningStockValue', data.summary.totalOpeningStockValue) * 100) / 100,
-      totalPurchasesValue: Math.round(pick('totalPurchasesValue', data.summary.totalPurchasesValue) * 100) / 100,
-      totalClosingStockValue: Math.round(pick('totalClosingStockValue', data.summary.totalClosingStockValue) * 100) / 100,
-      totalGrossSales: Math.round(pick('totalGrossSales', data.summary.totalGrossSales) * 100) / 100,
-      totalDiscounts: Math.round(pick('totalDiscounts', data.summary.totalDiscounts) * 100) / 100,
-      totalPhysicalConsumption: Math.round(pick('totalPhysicalConsumption', data.summary.totalPhysicalConsumption) * 100) / 100,
-      totalSystemConsumption: Math.round(pick('totalSystemConsumption', data.summary.totalSystemConsumption) * 100) / 100,
-      totalConsumptionCost: Math.round(pick('totalConsumptionCost', totalAcConsumptionCost + totalNonAcConsumptionCost) * 100) / 100,
-      netSales: Math.round(pick('netSales', netSales) * 100) / 100,
-      totalGrossProfit: Math.round(pick('totalGrossProfit', totalProfit) * 100) / 100,
-      totalAcRevenue: Math.round(pick('totalAcRevenue', totalAcRevenue) * 100) / 100,
-      totalNonAcRevenue: Math.round(pick('totalNonAcRevenue', totalNonAcRevenue) * 100) / 100,
-      totalAcConsumptionCost: Math.round(pick('totalAcConsumptionCost', totalAcConsumptionCost) * 100) / 100,
-      totalNonAcConsumptionCost: Math.round(pick('totalNonAcConsumptionCost', totalNonAcConsumptionCost) * 100) / 100,
-      totalAcProfit: Math.round(pick('totalAcProfit', totalAcProfit) * 100) / 100,
-      totalNonAcProfit: Math.round(pick('totalNonAcProfit', totalNonAcProfit) * 100) / 100,
-      totalProfit: Math.round(pick('totalProfit', totalProfit) * 100) / 100,
-      totalAcProfitPct: Math.round(pick('totalAcProfitPct', SAFE_DIV(totalAcProfit, totalAcRevenue)) * 100) / 100,
-      totalNonAcProfitPct: Math.round(pick('totalNonAcProfitPct', SAFE_DIV(totalNonAcProfit, totalNonAcRevenue)) * 100) / 100,
-      totalProfitPct: Math.round(pick('totalProfitPct', SAFE_DIV(totalProfit, netSales)) * 100) / 100,
-      totalVarianceMl: Math.round(pick('totalVarianceMl', pick('totalPhysicalConsumption', data.summary.totalPhysicalConsumption) - pick('totalSystemConsumption', data.summary.totalSystemConsumption)) * 100) / 100,
-    };
-
-    return { ...data, categories: cats, summary };
-  }, [data, edits, summaryEdits]);
-
   // ── Computed item-wise values with live recalculation from edits ──
   // For each item: Consumption = Sale × Purchase Cost, Sale Amount = Sale × Selling Price, Profit = Sale Amount − Consumption
   // All Non-AC items (including hidden ones for data preservation)
   const allComputedNonAcItems = useMemo(() => {
     if (!data) return [];
     return (data.nonAcItems || []).map((item) => {
-      const edit = nonAcItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice };
+      const edit = nonAcItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice, opening: item.opening, received: item.received, sold: item.sold };
       const sale = Number(edit.sale) || 0;
       const purchaseCost = Number(edit.purchaseCost) || 0;
       const sellingPrice = Number(edit.sellingPrice) || 0;
@@ -354,6 +273,12 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
       const profit = Math.round((saleAmount - consumption) * 100) / 100;
       const isHidden = nonAcHiddenFlags[item.itemId] === true;
+      // Stock flow — opening/received/sold editable, stock/closing auto-calc
+      const opening = Number(edit.opening ?? item.opening) || 0;
+      const received = Number(edit.received ?? item.received) || 0;
+      const stock = Math.round((opening + received) * 100) / 100;
+      const sold = Number(edit.sold ?? sale) || 0;
+      const closing = Math.round((stock - sold) * 100) / 100;
       return {
         ...item,
         qty,
@@ -366,6 +291,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         isHidden,
         hasMissingPrice: purchaseCost <= 0,
         hasMissingSellingPrice: sellingPrice <= 0,
+        opening,
+        received,
+        stock,
+        sold,
+        closing,
       };
     });
   }, [data, nonAcItemEdits, nonAcHiddenFlags]);
@@ -379,7 +309,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const allComputedAcItems = useMemo(() => {
     if (!data) return [];
     return (data.acItems || []).map((item) => {
-      const edit = acItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice };
+      const edit = acItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice, opening: item.opening, received: item.received, sold: item.sold };
       const sale = Number(edit.sale) || 0;
       const purchaseCost = Number(edit.purchaseCost) || 0;
       const sellingPrice = Number(edit.sellingPrice) || 0;
@@ -389,6 +319,12 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
       const profit = Math.round((saleAmount - consumption) * 100) / 100;
       const isHidden = acHiddenFlags[item.itemId] === true;
+      // Stock flow — opening/received/sold editable, stock/closing auto-calc
+      const opening = Number(edit.opening ?? item.opening) || 0;
+      const received = Number(edit.received ?? item.received) || 0;
+      const stock = Math.round((opening + received) * 100) / 100;
+      const sold = Number(edit.sold ?? sale) || 0;
+      const closing = Math.round((stock - sold) * 100) / 100;
       return {
         ...item,
         qty,
@@ -401,6 +337,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         isHidden,
         hasMissingPrice: purchaseCost <= 0,
         hasMissingBottleSize: qty <= 0,
+        opening,
+        received,
+        stock,
+        sold,
+        closing,
       };
     });
   }, [data, acItemEdits, acHiddenFlags]);
@@ -416,7 +357,12 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     const saleAmount = Math.round(computedNonAcItems.reduce((s, i) => s + i.saleAmount, 0) * 100) / 100;
     const profit = Math.round(computedNonAcItems.reduce((s, i) => s + i.profit, 0) * 100) / 100;
     const profitMarginPct = consumption > 0 ? Math.round(profit / consumption * 100 * 100) / 100 : 0;
-    return { consumption, saleAmount, profit, profitMarginPct };
+    const opening = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.opening) || 0), 0) * 100) / 100;
+    const received = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.received) || 0), 0) * 100) / 100;
+    const stock = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.stock) || 0), 0) * 100) / 100;
+    const sold = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.sold) || 0), 0) * 100) / 100;
+    const closing = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.closing) || 0), 0) * 100) / 100;
+    return { consumption, saleAmount, profit, profitMarginPct, opening, received, stock, sold, closing };
   }, [computedNonAcItems]);
 
   // AC totals — ONLY visible items (hidden items excluded from all calculations)
@@ -425,8 +371,69 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     const saleAmount = Math.round(computedAcItems.reduce((s, i) => s + i.saleAmount, 0) * 100) / 100;
     const profit = Math.round(computedAcItems.reduce((s, i) => s + i.profit, 0) * 100) / 100;
     const profitMarginPct = consumption > 0 ? Math.round(profit / consumption * 100 * 100) / 100 : 0;
-    return { consumption, saleAmount, profit, profitMarginPct };
+    const opening = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.opening) || 0), 0) * 100) / 100;
+    const received = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.received) || 0), 0) * 100) / 100;
+    const stock = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.stock) || 0), 0) * 100) / 100;
+    const sold = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.sold) || 0), 0) * 100) / 100;
+    const closing = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.closing) || 0), 0) * 100) / 100;
+    return { consumption, saleAmount, profit, profitMarginPct, opening, received, stock, sold, closing };
   }, [computedAcItems]);
+
+  // ── Business Position — derived from item-wise totals (live) ──
+  // The Business Position cards derive from the item-wise AC + Non-AC tables
+  // so that editing any item row (sale, purchase cost, selling price, stock) updates
+  // the summary cards simultaneously. Summary overrides (manual card edits)
+  // still take precedence via the pick() helper.
+  const computed = useMemo(() => {
+    if (!data) return null;
+
+    // Item-wise totals drive the Business Position
+    const totalAcRevenue = computedAcTotals.saleAmount;
+    const totalNonAcRevenue = computedNonAcTotals.saleAmount;
+    const totalAcConsumptionCost = computedAcTotals.consumption;
+    const totalNonAcConsumptionCost = computedNonAcTotals.consumption;
+    const totalAcProfit = computedAcTotals.profit;
+    const totalNonAcProfit = computedNonAcTotals.profit;
+
+    // Opening Stock Value = sum(opening bottles × purchase cost) across all visible items
+    const computedOpeningStockValue = Math.round(
+      [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
+        return s + (Number(i.opening) || 0) * (Number(i.purchaseCost) || 0);
+      }, 0) * 100
+    ) / 100;
+
+    // Closing Stock Value = sum(closing bottles × purchase cost) across all visible items
+    const computedClosingStockValue = Math.round(
+      [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
+        return s + (Number(i.closing) || 0) * (Number(i.purchaseCost) || 0);
+      }, 0) * 100
+    ) / 100;
+
+    // Total Liquor Sales (Gross) = AC Sales + Non-AC Sales
+    const computedGrossSales = Math.round((totalAcRevenue + totalNonAcRevenue) * 100) / 100;
+    // Gross Profit After Liquor Cost = AC Profit + Non-AC Profit
+    const computedGrossProfit = Math.round((totalAcProfit + totalNonAcProfit) * 100) / 100;
+
+    // Apply summary overrides — every business position card is editable.
+    // If a field has been edited, use the edited value; otherwise use computed.
+    const s = summaryEdits;
+    const pick = (field, fallback) => (s[field] != null && s[field] !== '' && !Number.isNaN(Number(s[field]))) ? Number(s[field]) : fallback;
+
+    const summary = {
+      ...data.summary,
+      // ── 8 retained fields (auto-fill from item-wise data, editable override) ──
+      totalOpeningStockValue: Math.round(pick('totalOpeningStockValue', computedOpeningStockValue) * 100) / 100,
+      totalClosingStockValue: Math.round(pick('totalClosingStockValue', computedClosingStockValue) * 100) / 100,
+      totalGrossSales: Math.round(pick('totalGrossSales', computedGrossSales) * 100) / 100,
+      totalGrossProfit: Math.round(pick('totalGrossProfit', computedGrossProfit) * 100) / 100,
+      totalAcRevenue: Math.round(pick('totalAcRevenue', totalAcRevenue) * 100) / 100,
+      totalNonAcRevenue: Math.round(pick('totalNonAcRevenue', totalNonAcRevenue) * 100) / 100,
+      totalAcProfit: Math.round(pick('totalAcProfit', totalAcProfit) * 100) / 100,
+      totalNonAcProfit: Math.round(pick('totalNonAcProfit', totalNonAcProfit) * 100) / 100,
+    };
+
+    return { ...data, categories: data.categories || [], summary };
+  }, [data, summaryEdits, computedAcTotals, computedNonAcTotals, computedAcItems, computedNonAcItems]);
 
   // ── Save item-wise edits to backend + summary overrides ──
   // Returns true on success, false on failure
@@ -436,30 +443,54 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     setSavedMsg(false);
     setError(null);
     try {
+      // Helper: convert edit value to number, or undefined if empty/invalid.
+      // Sending undefined (instead of 0) ensures the backend does NOT overwrite
+      // previously saved persistent values (purchaseCost, sellingPrice) with 0
+      // when the admin hasn't entered anything for that field.
+      const numOrUndef = (v) => {
+        if (v == null || v === '') return undefined;
+        const n = Number(v);
+        return Number.isNaN(n) ? undefined : n;
+      };
+
       // Build item-wise payloads from edits
       // Non-AC payload — include ALL items (visible + hidden) so that
       // selling prices and hide/show flags are persisted for every item.
-      const nonAcItemsPayload = allComputedNonAcItems.map((item) => ({
-        itemId: item.itemId,
-        bottleSize: Number(nonAcItemEdits[item.itemId]?.qty ?? item.qty) || 0,
-        sale: Number(nonAcItemEdits[item.itemId]?.sale ?? item.sale) || 0,
-        purchaseRate: Number(nonAcItemEdits[item.itemId]?.purchaseCost ?? item.purchaseCost) || 0,
-        sellingPrice: Number(nonAcItemEdits[item.itemId]?.sellingPrice ?? item.sellingPrice) || 0,
-        isHidden: nonAcHiddenFlags[item.itemId] === true,
-      }));
+      // IMPORTANT: Only send fields that have a valid value. Empty/undefined
+      // fields are sent as undefined so the backend skips them and preserves
+      // previously saved values.
+      const nonAcItemsPayload = allComputedNonAcItems.map((item) => {
+        const e = nonAcItemEdits[item.itemId] || {};
+        return {
+          itemId: item.itemId,
+          bottleSize: numOrUndef(e.qty ?? item.qty),
+          sale: numOrUndef(e.sale ?? item.sale) ?? 0,
+          purchaseRate: numOrUndef(e.purchaseCost ?? item.purchaseCost),
+          sellingPrice: numOrUndef(e.sellingPrice ?? item.sellingPrice),
+          isHidden: nonAcHiddenFlags[item.itemId] === true,
+          opening: numOrUndef(e.opening ?? item.opening) ?? 0,
+          received: numOrUndef(e.received ?? item.received) ?? 0,
+        };
+      });
       // AC adjustments payload — include ALL items (visible + hidden) so that
       // selling prices and hide/show flags are persisted for every item.
-      const acAdjustmentsPayload = allComputedAcItems.map((item) => ({
-        itemId: item.itemId,
-        adjustedSaleBtl: Number(acItemEdits[item.itemId]?.sale ?? item.sale) || 0,
-        adjustedPurchaseCost: Number(acItemEdits[item.itemId]?.purchaseCost ?? item.purchaseCost) || 0,
-        adjustedSellingPrice: Number(acItemEdits[item.itemId]?.sellingPrice ?? item.sellingPrice) || 0,
-        adjustedBottleSize: Number(acItemEdits[item.itemId]?.qty ?? item.qty) || 0,
-        adjustedConsumption: item.consumption,
-        adjustedSaleAmount: item.saleAmount,
-        adjustedProfit: item.profit,
-        isHidden: acHiddenFlags[item.itemId] === true,
-      }));
+      const acAdjustmentsPayload = allComputedAcItems.map((item) => {
+        const e = acItemEdits[item.itemId] || {};
+        return {
+          itemId: item.itemId,
+          adjustedSaleBtl: numOrUndef(e.sale ?? item.sale) ?? 0,
+          adjustedPurchaseCost: numOrUndef(e.purchaseCost ?? item.purchaseCost),
+          adjustedSellingPrice: numOrUndef(e.sellingPrice ?? item.sellingPrice),
+          adjustedBottleSize: numOrUndef(e.qty ?? item.qty),
+          adjustedConsumption: item.consumption,
+          adjustedSaleAmount: item.saleAmount,
+          adjustedProfit: item.profit,
+          isHidden: acHiddenFlags[item.itemId] === true,
+          adjustedOpeningBtl: numOrUndef(e.opening ?? item.opening) ?? 0,
+          adjustedReceivedBtl: numOrUndef(e.received ?? item.received) ?? 0,
+          adjustedClosingBtl: Number(item.closing) || 0,
+        };
+      });
 
       // Save item-wise edits (Non-AC to inventory + daily entries, AC to adjustment table)
       // Use AbortController with a 90s timeout so the user gets a clear error
@@ -471,7 +502,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         itemWiseRes = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ date, nonAcItems: nonAcItemsPayload, acAdjustments: acAdjustmentsPayload }),
+          body: JSON.stringify({ date, endDate: endDate && endDate !== date ? endDate : undefined, nonAcItems: nonAcItemsPayload, acAdjustments: acAdjustmentsPayload }),
           signal: saveController.signal,
         });
       } catch (fetchErr) {
@@ -633,13 +664,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     setSummaryEdits(prev => ({ ...prev, [field]: value === '' ? '' : Math.max(0, Number(value) || 0) }));
   };
 
-  // Item-wise edit handlers — editable fields: qty, sale, purchaseCost, sellingPrice
-  // Calculated fields (consumption, saleAmount, profit) auto-recalculate via useMemo
+  // Item-wise edit handlers — editable fields: qty, sale, purchaseCost, sellingPrice, opening, received, sold
+  // Calculated fields (consumption, saleAmount, profit, stock, closing) auto-recalculate via useMemo
   const handleNonAcItemChange = (itemId, field, value) => {
     setNonAcItemEdits(prev => ({
       ...prev,
       [itemId]: {
-        ...(prev[itemId] || { qty: 0, sale: 0, purchaseCost: 0, sellingPrice: 0 }),
+        ...(prev[itemId] || { qty: 0, sale: 0, purchaseCost: 0, sellingPrice: 0, opening: 0, received: 0, sold: 0 }),
         [field]: value === '' ? '' : Math.max(0, Number(value) || 0),
       },
     }));
@@ -649,7 +680,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     setAcItemEdits(prev => ({
       ...prev,
       [itemId]: {
-        ...(prev[itemId] || { qty: 0, sale: 0, purchaseCost: 0, sellingPrice: 0 }),
+        ...(prev[itemId] || { qty: 0, sale: 0, purchaseCost: 0, sellingPrice: 0, opening: 0, received: 0, sold: 0 }),
         [field]: value === '' ? '' : Math.max(0, Number(value) || 0),
       },
     }));
@@ -689,11 +720,40 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
             <div className="min-w-0">
               <h2 className="text-base sm:text-lg font-bold text-gray-900 truncate">Liquor Stock & Sales Report</h2>
               <p className="text-xs text-gray-500 mt-0.5 truncate">
-                {outletName} — Wing: {outletWing} — {date}
+                {outletName} — Wing: {outletWing} — {date}{endDate && endDate !== date ? ` → ${endDate}` : ''}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Date range picker */}
+            <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1">
+              <span className="text-xs text-gray-500 font-medium">Range:</span>
+              <input
+                type="date"
+                value={date || ''}
+                disabled
+                className="text-xs text-gray-600 bg-transparent border-none outline-none w-[7rem]"
+                title="Start date (set from main inventory date)"
+              />
+              <span className="text-xs text-gray-400">→</span>
+              <input
+                type="date"
+                value={endDate}
+                min={date || undefined}
+                onChange={(e) => { setEndDate(e.target.value); setSavedMsg(false); }}
+                className="text-xs text-gray-700 bg-transparent border-none outline-none w-[7rem] cursor-pointer"
+                title="End date (optional — leave empty for single date)"
+              />
+              {endDate && (
+                <button
+                  onClick={() => { setEndDate(''); setSavedMsg(false); }}
+                  className="text-xs text-gray-400 hover:text-red-500"
+                  title="Clear end date"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
             {hasPendingEdits && !savedMsg && (
               <span className="flex items-center gap-1 text-xs text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded-lg" title="You have unsaved changes. They are preserved even if you refresh the page.">
                 <AlertTriangle size={14} /> Unsaved
@@ -778,24 +838,14 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
                   {/* Stock Position */}
                   <EditableSummaryCard label="Opening Stock Value" field="totalOpeningStockValue" value={computed.summary.totalOpeningStockValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Purchase Value" field="totalPurchasesValue" value={computed.summary.totalPurchasesValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Consumption / Landing Cost" field="totalConsumptionCost" value={computed.summary.totalConsumptionCost} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
                   <EditableSummaryCard label="Closing Stock Value" field="totalClosingStockValue" value={computed.summary.totalClosingStockValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
                   {/* Sales / Profitability */}
                   <EditableSummaryCard label="Total Liquor Sales (Gross)" field="totalGrossSales" value={computed.summary.totalGrossSales} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Discounts" field="totalDiscounts" value={computed.summary.totalDiscounts} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Net Sales (AC + Non-AC)" field="netSales" value={computed.summary.netSales} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
                   <EditableSummaryCard label="Gross Profit After Liquor Cost" field="totalGrossProfit" value={computed.summary.totalGrossProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
                   <EditableSummaryCard label="AC Sales" field="totalAcRevenue" value={computed.summary.totalAcRevenue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" badge="AC" />
                   <EditableSummaryCard label="Non-AC Sales" field="totalNonAcRevenue" value={computed.summary.totalNonAcRevenue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" badge="Manual" />
                   <EditableSummaryCard label="AC Profit" field="totalAcProfit" value={computed.summary.totalAcProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
                   <EditableSummaryCard label="Non-AC Profit" field="totalNonAcProfit" value={computed.summary.totalNonAcProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Total Profit" field="totalProfit" value={computed.summary.totalProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Total Profit %" field="totalProfitPct" value={computed.summary.totalProfitPct} edits={summaryEdits} onChange={handleSummaryChange} suffix="%" />
-                  {/* Consumption ML */}
-                  <EditableSummaryCard label="Physical Consumption" field="totalPhysicalConsumption" value={computed.summary.totalPhysicalConsumption} edits={summaryEdits} onChange={handleSummaryChange} suffix="ml" />
-                  <EditableSummaryCard label="System Consumption" field="totalSystemConsumption" value={computed.summary.totalSystemConsumption} edits={summaryEdits} onChange={handleSummaryChange} suffix="ml" />
-                  <EditableSummaryCard label="Variance" field="totalVarianceMl" value={computed.summary.totalVarianceMl} edits={summaryEdits} onChange={handleSummaryChange} suffix="ml" />
                 </div>
               </div>
 
@@ -812,13 +862,17 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                     )}
                   </h3>
                   <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                    <table className="w-full text-xs min-w-[960px]">
+                    <table className="w-full text-xs min-w-[1400px]">
                       <thead className="bg-orange-50">
                         <tr>
                           <th className="text-center px-2 py-2 font-bold text-orange-700 uppercase tracking-wide w-10">S.No</th>
                           <th className="text-left px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Item Name</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Qty (ml)</th>
-                          <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Sale (btl)</th>
+                          <th className="text-right px-2 py-2 font-bold text-orange-700 uppercase tracking-wide">Opening</th>
+                          <th className="text-right px-2 py-2 font-bold text-orange-700 uppercase tracking-wide">Received</th>
+                          <th className="text-right px-2 py-2 font-bold text-orange-700 uppercase tracking-wide">Stock</th>
+                          <th className="text-right px-2 py-2 font-bold text-orange-700 uppercase tracking-wide">Sold</th>
+                          <th className="text-right px-2 py-2 font-bold text-orange-700 uppercase tracking-wide">Closing</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Purchase Cost</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Consumption</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Selling Price</th>
@@ -848,18 +902,42 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                                 placeholder="0"
                               />
                             </td>
-                            {/* Sale (btl) — editable */}
-                            <td className="px-3 py-2 text-right bg-orange-50/30">
+                            {/* Stock flow — Opening/Received/Sold editable, Stock/Closing auto-calc */}
+                            <td className="px-2 py-2 text-right bg-orange-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={nonAcItemEdits[item.itemId]?.opening ?? ''}
+                                onChange={(e) => handleNonAcItemChange(item.itemId, 'opening', e.target.value)}
+                                className="w-16 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-2 py-2 text-right bg-orange-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={nonAcItemEdits[item.itemId]?.received ?? ''}
+                                onChange={(e) => handleNonAcItemChange(item.itemId, 'received', e.target.value)}
+                                className="w-16 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-2 py-2 text-right text-gray-700 font-medium">{fmtQty(item.stock)}</td>
+                            <td className="px-2 py-2 text-right bg-orange-50/30">
                               <input
                                 type="number"
                                 min="0"
                                 step="any"
                                 value={nonAcItemEdits[item.itemId]?.sale ?? ''}
                                 onChange={(e) => handleNonAcItemChange(item.itemId, 'sale', e.target.value)}
-                                className="w-20 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                className="w-16 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
                                 placeholder="0"
                               />
                             </td>
+                            <td className="px-2 py-2 text-right text-gray-700 font-medium">{fmtQty(item.closing)}</td>
                             {/* Purchase Cost — editable */}
                             <td className="px-3 py-2 text-right bg-orange-50/30">
                               <input
@@ -910,7 +988,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-orange-200 bg-orange-50 font-bold">
-                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL (visible items only)</td>
+                          <td colSpan={3} className="px-3 py-2 text-gray-900">TOTAL (visible items only)</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedNonAcTotals.opening)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedNonAcTotals.received)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedNonAcTotals.stock)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedNonAcTotals.sold)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedNonAcTotals.closing)}</td>
+                          <td className="px-3 py-2 text-right text-gray-400"></td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.consumption)}</td>
                           <td className="px-3 py-2 text-right text-gray-400"></td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.saleAmount)}</td>
@@ -941,13 +1025,17 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                     )}
                   </h3>
                   <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                    <table className="w-full text-xs min-w-[960px]">
+                    <table className="w-full text-xs min-w-[1400px]">
                       <thead className="bg-blue-50">
                         <tr>
                           <th className="text-center px-2 py-2 font-bold text-blue-700 uppercase tracking-wide w-10">S.No</th>
                           <th className="text-left px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Item Name</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Qty (ml)</th>
-                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale (btl)</th>
+                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Opening</th>
+                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Received</th>
+                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Stock</th>
+                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Sold</th>
+                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Closing</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Purchase Cost</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Consumption</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Selling Price</th>
@@ -978,18 +1066,42 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                                 placeholder="0"
                               />
                             </td>
-                            {/* Sale (btl) — editable */}
-                            <td className="px-3 py-2 text-right bg-blue-50/30">
+                            {/* Stock flow — Opening/Received/Sold editable, Stock/Closing auto-calc */}
+                            <td className="px-2 py-2 text-right bg-blue-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={acItemEdits[item.itemId]?.opening ?? ''}
+                                onChange={(e) => handleAcItemChange(item.itemId, 'opening', e.target.value)}
+                                className="w-16 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-2 py-2 text-right bg-blue-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={acItemEdits[item.itemId]?.received ?? ''}
+                                onChange={(e) => handleAcItemChange(item.itemId, 'received', e.target.value)}
+                                className="w-16 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-2 py-2 text-right text-gray-700 font-medium">{fmtQty(item.stock)}</td>
+                            <td className="px-2 py-2 text-right bg-blue-50/30">
                               <input
                                 type="number"
                                 min="0"
                                 step="any"
                                 value={acItemEdits[item.itemId]?.sale ?? ''}
                                 onChange={(e) => handleAcItemChange(item.itemId, 'sale', e.target.value)}
-                                className="w-20 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                className="w-16 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                                 placeholder="0"
                               />
                             </td>
+                            <td className="px-2 py-2 text-right text-gray-700 font-medium">{fmtQty(item.closing)}</td>
                             {/* Purchase Cost — editable */}
                             <td className="px-3 py-2 text-right bg-blue-50/30">
                               <input
@@ -1040,7 +1152,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-blue-200 bg-blue-50 font-bold">
-                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL (visible items only)</td>
+                          <td colSpan={3} className="px-3 py-2 text-gray-900">TOTAL (visible items only)</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedAcTotals.opening)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedAcTotals.received)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedAcTotals.stock)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedAcTotals.sold)}</td>
+                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedAcTotals.closing)}</td>
+                          <td className="px-3 py-2 text-right text-gray-400"></td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.consumption)}</td>
                           <td className="px-3 py-2 text-right text-gray-400"></td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.saleAmount)}</td>
@@ -1048,7 +1166,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                           <td className="px-2 py-2"></td>
                         </tr>
                         <tr className="bg-blue-50/50">
-                          <td colSpan={8} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
+                          <td colSpan={13} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
                           <td className="px-3 py-1 text-right text-xs text-gray-900 font-bold">{fmtPct(computedAcTotals.profitMarginPct)}</td>
                           <td className="px-2 py-1"></td>
                         </tr>
@@ -1100,13 +1218,15 @@ function EditableSummaryCard({ label, field, value, edits, onChange, suffix, bad
 // AC = System/POS (blue), Non-AC = Manual (orange).
 // ─────────────────────────────────────────────────────────────────────────────
 function buildPrintHtml(data) {
-  const { outletName, outletWing, date, nonAcItems, acItems, nonAcItemTotals, acItemTotals, summary } = data;
+  const { outletName, outletWing, date, endDate, nonAcItems, acItems, nonAcItemTotals, acItemTotals, summary } = data;
 
   const fmtInrP = (n) => n == null ? '—' : `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
   const fmtPctP = (n) => n == null ? '—' : `${Number(n).toFixed(1)}%`;
 
   const fmtQtyP = (n) => n == null || n <= 0 ? '—' : `${Number(n).toFixed(0)} ml`;
   const fmtBtlP = (n) => n == null || n <= 0 ? '—' : Number(n).toFixed(2);
+  // Stock flow bottle quantity (show 0 explicitly, not —, for stock columns)
+  const fmtStockP = (n) => n == null || Number.isNaN(Number(n)) ? '0' : Number(n).toFixed(2);
 
   // ── Business Position summary cards (matches the admin preview) ──
   // Grouped exactly like the on-screen EditableSummaryCard grid:
@@ -1121,22 +1241,13 @@ function buildPrintHtml(data) {
 <div class="section-title first">Business Position</div>
 <div class="bp-grid">
   ${summaryCard('Opening Stock Value', summary.totalOpeningStockValue, '₹')}
-  ${summaryCard('Purchase Value', summary.totalPurchasesValue, '₹')}
-  ${summaryCard('Consumption / Landing Cost', summary.totalConsumptionCost, '₹')}
   ${summaryCard('Closing Stock Value', summary.totalClosingStockValue, '₹')}
   ${summaryCard('Total Liquor Sales (Gross)', summary.totalGrossSales, '₹')}
-  ${summaryCard('Discounts', summary.totalDiscounts, '₹')}
-  ${summaryCard('Net Sales (AC + Non-AC)', summary.netSales, '₹')}
   ${summaryCard('Gross Profit After Liquor Cost', summary.totalGrossProfit, '₹')}
   ${summaryCard('AC Sales', summary.totalAcRevenue, '₹', 'AC')}
   ${summaryCard('Non-AC Sales', summary.totalNonAcRevenue, '₹', 'Manual')}
   ${summaryCard('AC Profit', summary.totalAcProfit, '₹')}
   ${summaryCard('Non-AC Profit', summary.totalNonAcProfit, '₹')}
-  ${summaryCard('Total Profit', summary.totalProfit, '₹')}
-  ${summaryCard('Total Profit %', summary.totalProfitPct, '%')}
-  ${summaryCard('Physical Consumption', summary.totalPhysicalConsumption, 'ml')}
-  ${summaryCard('System Consumption', summary.totalSystemConsumption, 'ml')}
-  ${summaryCard('Variance', summary.totalVarianceMl, 'ml')}
 </div>` : '';
 
   // ── Item-wise Non-AC rows ──
@@ -1145,7 +1256,11 @@ function buildPrintHtml(data) {
       <td class="num">${item.sno}</td>
       <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingSellingPrice ? ' <span class="warn">⚠</span>' : ''}</td>
       <td class="num">${fmtQtyP(item.qty)}</td>
+      <td class="num">${fmtStockP(item.opening)}</td>
+      <td class="num">${fmtStockP(item.received)}</td>
+      <td class="num">${fmtStockP(item.stock)}</td>
       <td class="num">${fmtBtlP(item.sale)}</td>
+      <td class="num">${fmtStockP(item.closing)}</td>
       <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
       <td class="num">${fmtInrP(item.consumption)}</td>
       <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
@@ -1160,7 +1275,11 @@ function buildPrintHtml(data) {
       <td class="num">${item.sno}</td>
       <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingBottleSize ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingSellingPrice ? ' <span class="warn">⚠</span>' : ''}</td>
       <td class="num">${fmtQtyP(item.qty)}</td>
+      <td class="num">${fmtStockP(item.opening)}</td>
+      <td class="num">${fmtStockP(item.received)}</td>
+      <td class="num">${fmtStockP(item.stock)}</td>
       <td class="num">${fmtBtlP(item.sale)}</td>
+      <td class="num">${fmtStockP(item.closing)}</td>
       <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
       <td class="num">${fmtInrP(item.consumption)}</td>
       <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
@@ -1328,7 +1447,7 @@ function buildPrintHtml(data) {
 <div class="header">
   <h1>Liquor Stock &amp; Sales Report</h1>
   <div class="sub">${escapeHtml(outletName)} — Wing: ${escapeHtml(outletWing || '—')}</div>
-  <div class="date">Report Date: ${date}</div>
+  <div class="date">Report Date: ${date}${endDate && endDate !== date ? ` → ${endDate}` : ''}</div>
 </div>
 
 <div class="info-banner">
@@ -1345,22 +1464,30 @@ ${/* ── Detailed Item-wise Tables (Non-AC + AC together on one page) ── 
 ${(nonAcItems && nonAcItems.length > 0) ? `
 <table>
   <colgroup>
-    <col style="width: 4%">
-    <col style="width: 18%">
+    <col style="width: 3%">
+    <col style="width: 14%">
+    <col style="width: 6%">
+    <col style="width: 5%">
+    <col style="width: 5%">
+    <col style="width: 5%">
+    <col style="width: 5%">
+    <col style="width: 5%">
     <col style="width: 8%">
+    <col style="width: 9%">
     <col style="width: 8%">
-    <col style="width: 10%">
-    <col style="width: 11%">
-    <col style="width: 11%">
-    <col style="width: 11%">
-    <col style="width: 11%">
+    <col style="width: 9%">
+    <col style="width: 9%">
   </colgroup>
   <thead>
     <tr>
       <th>S.No</th>
       <th class="cat">Item Name</th>
       <th>Qty (ml)</th>
-      <th>Sale (btl)</th>
+      <th>Opening</th>
+      <th>Received</th>
+      <th>Stock</th>
+      <th>Sold</th>
+      <th>Closing</th>
       <th>Purchase Cost</th>
       <th>Consumption</th>
       <th>Selling Price</th>
@@ -1373,14 +1500,20 @@ ${(nonAcItems && nonAcItems.length > 0) ? `
   </tbody>
   <tfoot>
     <tr>
-      <td colspan="5" class="cat">TOTAL</td>
+      <td colspan="3" class="cat">TOTAL</td>
+      <td class="num">${fmtStockP(nonAcItemTotals?.opening || 0)}</td>
+      <td class="num">${fmtStockP(nonAcItemTotals?.received || 0)}</td>
+      <td class="num">${fmtStockP(nonAcItemTotals?.stock || 0)}</td>
+      <td class="num">${fmtStockP(nonAcItemTotals?.sold || 0)}</td>
+      <td class="num">${fmtStockP(nonAcItemTotals?.closing || 0)}</td>
+      <td class="num"></td>
       <td class="num">${fmtInrP(nonAcItemTotals?.consumption || 0)}</td>
       <td class="num"></td>
       <td class="num">${fmtInrP(nonAcItemTotals?.saleAmount || 0)}</td>
       <td class="num">${fmtInrP(nonAcItemTotals?.profit || 0)}</td>
     </tr>
     <tr>
-      <td colspan="8" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
+      <td colspan="12" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
       <td class="num" style="font-weight:700;">${fmtPctP(nonAcItemTotals?.profitMarginPct || 0)}</td>
     </tr>
   </tfoot>
@@ -1392,22 +1525,30 @@ ${/* ── Item-wise AC Bar Table ── */ ''}
 ${(acItems && acItems.length > 0) ? `
 <table>
   <colgroup>
-    <col style="width: 4%">
-    <col style="width: 18%">
+    <col style="width: 3%">
+    <col style="width: 14%">
+    <col style="width: 6%">
+    <col style="width: 5%">
+    <col style="width: 5%">
+    <col style="width: 5%">
+    <col style="width: 5%">
+    <col style="width: 5%">
     <col style="width: 8%">
+    <col style="width: 9%">
     <col style="width: 8%">
-    <col style="width: 10%">
-    <col style="width: 11%">
-    <col style="width: 11%">
-    <col style="width: 11%">
-    <col style="width: 11%">
+    <col style="width: 9%">
+    <col style="width: 9%">
   </colgroup>
   <thead>
     <tr>
       <th>S.No</th>
       <th class="cat">Item Name</th>
       <th>Qty (ml)</th>
-      <th>Sale (btl)</th>
+      <th>Opening</th>
+      <th>Received</th>
+      <th>Stock</th>
+      <th>Sold</th>
+      <th>Closing</th>
       <th>Purchase Cost</th>
       <th>Consumption</th>
       <th>Selling Price</th>
@@ -1420,14 +1561,20 @@ ${(acItems && acItems.length > 0) ? `
   </tbody>
   <tfoot>
     <tr>
-      <td colspan="5" class="cat">TOTAL</td>
+      <td colspan="3" class="cat">TOTAL</td>
+      <td class="num">${fmtStockP(acItemTotals?.opening || 0)}</td>
+      <td class="num">${fmtStockP(acItemTotals?.received || 0)}</td>
+      <td class="num">${fmtStockP(acItemTotals?.stock || 0)}</td>
+      <td class="num">${fmtStockP(acItemTotals?.sold || 0)}</td>
+      <td class="num">${fmtStockP(acItemTotals?.closing || 0)}</td>
+      <td class="num"></td>
       <td class="num">${fmtInrP(acItemTotals?.consumption || 0)}</td>
       <td class="num"></td>
       <td class="num">${fmtInrP(acItemTotals?.saleAmount || 0)}</td>
       <td class="num">${fmtInrP(acItemTotals?.profit || 0)}</td>
     </tr>
     <tr>
-      <td colspan="8" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
+      <td colspan="12" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
       <td class="num" style="font-weight:700;">${fmtPctP(acItemTotals?.profitMarginPct || 0)}</td>
     </tr>
   </tfoot>
