@@ -462,11 +462,26 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       }));
 
       // Save item-wise edits (Non-AC to inventory + daily entries, AC to adjustment table)
-      const itemWiseRes = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ date, nonAcItems: nonAcItemsPayload, acAdjustments: acAdjustmentsPayload }),
-      });
+      // Use AbortController with a 90s timeout so the user gets a clear error
+      // instead of a generic "Failed to fetch" if the server is slow.
+      const saveController = new AbortController();
+      const saveTimeout = setTimeout(() => saveController.abort(), 90000);
+      let itemWiseRes;
+      try {
+        itemWiseRes = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ date, nonAcItems: nonAcItemsPayload, acAdjustments: acAdjustmentsPayload }),
+          signal: saveController.signal,
+        });
+      } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') {
+          throw new Error('Save timed out — the server took too long. Your edits are preserved. Please try again.');
+        }
+        throw new Error('Network error during save — please check your connection and try again. Your edits are preserved.');
+      } finally {
+        clearTimeout(saveTimeout);
+      }
       if (!itemWiseRes.ok) {
         const body = await itemWiseRes.json().catch(() => ({}));
         throw new Error(body.error || `Item-wise save failed (${itemWiseRes.status})`);
