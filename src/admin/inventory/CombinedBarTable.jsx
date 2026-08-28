@@ -56,7 +56,6 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
               <th className="text-right px-3 py-3 font-semibold text-orange-600">Non-AC Closing</th>
               <th className="text-right px-3 py-3 font-semibold">Total Closing</th>
               <th className="text-right px-3 py-3 font-semibold">Purchase Rate</th>
-              <th className="text-right px-3 py-3 font-semibold text-purple-600">Sell Price</th>
               <th className="text-center px-3 py-3 font-semibold">Report</th>
               <th className="text-right px-3 py-3 font-semibold">Stock Value</th>
               <th className="text-center px-3 py-3 font-semibold">Actions</th>
@@ -65,7 +64,7 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={15} className="text-center py-12 text-gray-400">No items found</td>
+                <td colSpan={14} className="text-center py-12 text-gray-400">No items found</td>
               </tr>
             ) : (
               filtered.map((item) => {
@@ -138,12 +137,6 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
                     {/* Purchase Rate */}
                     <td className="px-3 py-2 text-right text-gray-600 text-xs">
                       {item.purchaseRate ? `₹${Number(item.purchaseRate).toFixed(0)}` : '—'}
-                    </td>
-                    {/* AC Selling Price (admin-managed, persistent) */}
-                    <td className="px-3 py-2 text-right text-purple-700 text-xs">
-                      {item.hasAc && Number(item.acSellingPrice) > 0
-                        ? `₹${Number(item.acSellingPrice).toFixed(0)}`
-                        : <span className="text-orange-500 text-[10px]">not set</span>}
                     </td>
                     {/* Report visibility toggle (AC items only) */}
                     <td className="px-3 py-2 text-center">
