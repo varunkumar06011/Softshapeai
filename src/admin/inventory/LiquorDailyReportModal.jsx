@@ -21,6 +21,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Printer, AlertTriangle, FileText, Save, CheckCircle } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { apiUrl, getAuthHeaders } from '../../services/apiConfig';
 
 function fmtInr(n) {
@@ -45,8 +47,12 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
   const [summaryEdits, setSummaryEdits] = useState({});
   // Item-wise edits for Non-AC: { [itemId]: { qty, sale, purchaseCost, sellingPrice } }
   const [nonAcItemEdits, setNonAcItemEdits] = useState({});
+  // Non-AC item hide/show flags: { [itemId]: boolean } — persisted on NonAcInventoryItem.isHiddenFromReport
+  const [nonAcHiddenFlags, setNonAcHiddenFlags] = useState({});
   // Item-wise edits for AC: { [itemId]: { qty, sale, purchaseCost, sellingPrice } }
   const [acItemEdits, setAcItemEdits] = useState({});
+  // AC item hide/show flags: { [itemId]: boolean } — persisted on InventoryItem.isHiddenFromReport
+  const [acHiddenFlags, setAcHiddenFlags] = useState({});
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
 
@@ -90,6 +96,7 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
 
       // Initialize item-wise edits from database data
       const nonAcInit = {};
+      const nonAcHiddenInit = {};
       for (const item of (json.nonAcItems || [])) {
         nonAcInit[item.itemId] = {
           qty: item.qty ?? 0,
@@ -97,10 +104,13 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
           purchaseCost: item.purchaseCost ?? 0,
           sellingPrice: item.sellingPrice ?? 0,
         };
+        nonAcHiddenInit[item.itemId] = item.isHidden === true;
       }
       setNonAcItemEdits(nonAcInit);
+      setNonAcHiddenFlags(nonAcHiddenInit);
 
       const acInit = {};
+      const acHiddenInit = {};
       for (const item of (json.acItems || [])) {
         acInit[item.itemId] = {
           qty: item.qty ?? 0,
@@ -108,8 +118,10 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
           purchaseCost: item.purchaseCost ?? 0,
           sellingPrice: item.sellingPrice ?? 0,
         };
+        acHiddenInit[item.itemId] = item.isHidden === true;
       }
       setAcItemEdits(acInit);
+      setAcHiddenFlags(acHiddenInit);
 
       // Restore summary overrides from the response (already applied to summary by backend)
       // We don't set summaryEdits here because the backend already applied them to summary values.
@@ -226,7 +238,8 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
 
   // ── Computed item-wise values with live recalculation from edits ──
   // For each item: Consumption = Sale × Purchase Cost, Sale Amount = Sale × Selling Price, Profit = Sale Amount − Consumption
-  const computedNonAcItems = useMemo(() => {
+  // All Non-AC items (including hidden ones for data preservation)
+  const allComputedNonAcItems = useMemo(() => {
     if (!data) return [];
     return (data.nonAcItems || []).map((item) => {
       const edit = nonAcItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice };
@@ -237,6 +250,7 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
       const consumption = Math.round(sale * purchaseCost * 100) / 100;
       const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
       const profit = Math.round((saleAmount - consumption) * 100) / 100;
+      const isHidden = nonAcHiddenFlags[item.itemId] === true;
       return {
         ...item,
         qty,
@@ -246,13 +260,20 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
         consumption,
         saleAmount,
         profit,
+        isHidden,
         hasMissingPrice: purchaseCost <= 0,
         hasMissingSellingPrice: sellingPrice <= 0,
       };
     });
-  }, [data, nonAcItemEdits]);
+  }, [data, nonAcItemEdits, nonAcHiddenFlags]);
 
-  const computedAcItems = useMemo(() => {
+  // Only visible (non-hidden) Non-AC items for display totals and PDF
+  const computedNonAcItems = useMemo(() => {
+    return allComputedNonAcItems.filter(i => !i.isHidden);
+  }, [allComputedNonAcItems]);
+
+  // All AC items with computed values (including hidden ones for data preservation)
+  const allComputedAcItems = useMemo(() => {
     if (!data) return [];
     return (data.acItems || []).map((item) => {
       const edit = acItemEdits[item.itemId] || { qty: item.qty, sale: item.sale, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice };
@@ -264,6 +285,7 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
       const consumption = Math.round(sale * purchaseCost * 100) / 100;
       const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
       const profit = Math.round((saleAmount - consumption) * 100) / 100;
+      const isHidden = acHiddenFlags[item.itemId] === true;
       return {
         ...item,
         qty,
@@ -273,11 +295,17 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
         consumption,
         saleAmount,
         profit,
+        isHidden,
         hasMissingPrice: purchaseCost <= 0,
         hasMissingBottleSize: qty <= 0,
       };
     });
-  }, [data, acItemEdits]);
+  }, [data, acItemEdits, acHiddenFlags]);
+
+  // Only visible (non-hidden) AC items for display and PDF
+  const computedAcItems = useMemo(() => {
+    return allComputedAcItems.filter(i => !i.isHidden);
+  }, [allComputedAcItems]);
 
   // Item-wise totals (recalculated from edited values)
   const computedNonAcTotals = useMemo(() => {
@@ -288,6 +316,7 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
     return { consumption, saleAmount, profit, profitMarginPct };
   }, [computedNonAcItems]);
 
+  // AC totals — ONLY visible items (hidden items excluded from all calculations)
   const computedAcTotals = useMemo(() => {
     const consumption = Math.round(computedAcItems.reduce((s, i) => s + i.consumption, 0) * 100) / 100;
     const saleAmount = Math.round(computedAcItems.reduce((s, i) => s + i.saleAmount, 0) * 100) / 100;
@@ -305,14 +334,19 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
     setError(null);
     try {
       // Build item-wise payloads from edits
-      const nonAcItemsPayload = computedNonAcItems.map((item) => ({
+      // Non-AC payload — include ALL items (visible + hidden) so that
+      // selling prices and hide/show flags are persisted for every item.
+      const nonAcItemsPayload = allComputedNonAcItems.map((item) => ({
         itemId: item.itemId,
         bottleSize: Number(nonAcItemEdits[item.itemId]?.qty ?? item.qty) || 0,
         sale: Number(nonAcItemEdits[item.itemId]?.sale ?? item.sale) || 0,
         purchaseRate: Number(nonAcItemEdits[item.itemId]?.purchaseCost ?? item.purchaseCost) || 0,
         sellingPrice: Number(nonAcItemEdits[item.itemId]?.sellingPrice ?? item.sellingPrice) || 0,
+        isHidden: nonAcHiddenFlags[item.itemId] === true,
       }));
-      const acAdjustmentsPayload = computedAcItems.map((item) => ({
+      // AC adjustments payload — include ALL items (visible + hidden) so that
+      // selling prices and hide/show flags are persisted for every item.
+      const acAdjustmentsPayload = allComputedAcItems.map((item) => ({
         itemId: item.itemId,
         adjustedSaleBtl: Number(acItemEdits[item.itemId]?.sale ?? item.sale) || 0,
         adjustedPurchaseCost: Number(acItemEdits[item.itemId]?.purchaseCost ?? item.purchaseCost) || 0,
@@ -320,6 +354,7 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
         adjustedConsumption: item.consumption,
         adjustedSaleAmount: item.saleAmount,
         adjustedProfit: item.profit,
+        isHidden: acHiddenFlags[item.itemId] === true,
       }));
 
       // Save item-wise edits (Non-AC to inventory + daily entries, AC to adjustment table)
@@ -364,38 +399,106 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
     }
   };
 
-  // ── Save & Generate PDF: save to backend first, then generate PDF ──
+  // ── Save & Generate PDF: save to backend first, then generate a real PDF ──
+  // No window.print(), no system print dialog, no popup dependency.
+  // Flow: save edits → wait for success → render report HTML off-screen →
+  // html2canvas capture → jsPDF → download .pdf directly.
   const handleSaveAndPrint = async () => {
     if (!computed) return;
+    setSaving(true);
+    setError(null);
+
+    // 1. Persist current edits and WAIT for the save to complete.
+    //    handleSave manages its own saving state, so we reset ours after.
     const success = await handleSave();
-    if (!success) return;
-    const html = buildPrintHtml({
-      ...computed,
-      nonAcItems: computedNonAcItems,
-      acItems: computedAcItems,
-      nonAcItemTotals: computedNonAcTotals,
-      acItemTotals: computedAcTotals,
-    });
-    const printWin = window.open('', '_blank', 'width=1200,height=800');
-    if (!printWin) {
-      alert('Please allow pop-ups to generate the PDF.');
+    if (!success) {
+      // Save failed — handleSave already set the error message.
+      // Do NOT generate a PDF from failed/unpersisted data.
+      setSaving(false);
       return;
     }
-    printWin.document.open();
-    printWin.document.write(html);
-    printWin.document.close();
-    printWin.onload = () => {
-      setTimeout(() => {
-        printWin.focus();
-        printWin.print();
-      }, 300);
-    };
-    setTimeout(() => {
-      try {
-        printWin.focus();
-        printWin.print();
-      } catch { /* already printed or closed */ }
-    }, 1000);
+
+    try {
+      // 2. Build the report HTML from the just-saved edited values.
+      const html = buildPrintHtml({
+        ...computed,
+        nonAcItems: computedNonAcItems,
+        acItems: computedAcItems,
+        nonAcItemTotals: computedNonAcTotals,
+        acItemTotals: computedAcTotals,
+      });
+
+      // 3. Render the HTML into an off-screen iframe so html2canvas can
+      //    capture it at a controlled width without affecting the UI.
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '0';
+      iframe.style.width = '1400px';
+      iframe.style.height = '1000px';
+      iframe.style.border = 'none';
+      iframe.style.background = '#ffffff';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      // Wait for the iframe content (fonts/layout) to settle.
+      await new Promise(resolve => setTimeout(resolve, 400));
+
+      const targetEl = doc.body;
+
+      // 4. Capture the rendered report with html2canvas.
+      const canvas = await html2canvas(targetEl, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 1400,
+      });
+
+      // Remove the off-screen iframe now that we have the canvas.
+      document.body.removeChild(iframe);
+
+      // 5. Convert the canvas to a real PDF with jsPDF (A4 landscape).
+      const imgData = canvas.toDataURL('image/png');
+      const pdfWidth = 297;  // A4 landscape width in mm
+      const pdfHeight = 210; // A4 landscape height in mm
+      const margin = 5;
+      const usableWidth = pdfWidth - 2 * margin;
+      const imgHeight = (canvas.height * usableWidth) / canvas.width;
+
+      const pdf = new jsPDF('l', 'mm', 'a4');
+      if (imgHeight <= pdfHeight - 2 * margin) {
+        pdf.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight);
+      } else {
+        // Multi-page: split the tall image across pages.
+        let remainingHeight = imgHeight;
+        let yOffset = 0;
+        const pageContentHeight = pdfHeight - 2 * margin;
+        while (remainingHeight > 0) {
+          pdf.addImage(imgData, 'PNG', margin, margin - yOffset, usableWidth, imgHeight);
+          remainingHeight -= pageContentHeight;
+          if (remainingHeight > 0) {
+            pdf.addPage();
+            yOffset += pageContentHeight;
+          }
+        }
+      }
+
+      // 6. Download the generated PDF directly — no print dialog.
+      const filename = `Liquor-Stock-Sales-Report-${date}.pdf`;
+      pdf.save(filename);
+
+      setSavedMsg(true);
+      setTimeout(() => setSavedMsg(false), 3000);
+    } catch (err) {
+      setError(err?.message || 'Failed to generate PDF. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSummaryChange = (field, value) => {
@@ -421,6 +524,22 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
         ...(prev[itemId] || { qty: 0, sale: 0, purchaseCost: 0, sellingPrice: 0 }),
         [field]: value === '' ? '' : Math.max(0, Number(value) || 0),
       },
+    }));
+  };
+
+  // Toggle hide/show for an AC item — persisted on InventoryItem.isHiddenFromReport
+  const handleAcItemToggleHide = (itemId) => {
+    setAcHiddenFlags(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
+  };
+
+  // Toggle hide/show for a Non-AC item — persisted on NonAcInventoryItem.isHiddenFromReport
+  const handleNonAcItemToggleHide = (itemId) => {
+    setNonAcHiddenFlags(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId],
     }));
   };
 
@@ -540,14 +659,19 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
               </div>
 
               {/* ── Item-wise Non-AC Table (editable rows) ── */}
-              {computedNonAcItems.length > 0 && (
+              {allComputedNonAcItems.length > 0 && (
                 <div>
                   <h3 className="text-sm font-bold text-orange-700 mb-3">
                     Non-AC Detailed Item-wise Report
                     <span className="ml-2 text-xs font-normal text-gray-500">(admin-entered · database-driven · editable rows)</span>
+                    {allComputedNonAcItems.some(i => i.isHidden) && (
+                      <span className="ml-2 text-xs font-normal text-amber-600">
+                        ({allComputedNonAcItems.filter(i => i.isHidden).length} hidden)
+                      </span>
+                    )}
                   </h3>
                   <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                    <table className="w-full text-xs min-w-[900px]">
+                    <table className="w-full text-xs min-w-[960px]">
                       <thead className="bg-orange-50">
                         <tr>
                           <th className="text-center px-2 py-2 font-bold text-orange-700 uppercase tracking-wide w-10">S.No</th>
@@ -559,11 +683,12 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Selling Price</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Sale Amount</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Profit</th>
+                          <th className="text-center px-2 py-2 font-bold text-orange-700 uppercase tracking-wide w-16">Hide</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {computedNonAcItems.map((item) => (
-                          <tr key={`nonac-${item.itemId}`} className="border-t border-gray-50 hover:bg-orange-50/30">
+                        {allComputedNonAcItems.map((item) => (
+                          <tr key={`nonac-${item.itemId}`} className={`border-t border-gray-50 hover:bg-orange-50/30 ${item.isHidden ? 'opacity-40 bg-gray-50' : ''}`}>
                             <td className="px-2 py-2 text-center text-gray-500">{item.sno}</td>
                             <td className="px-3 py-2 text-gray-800 font-medium">
                               {item.itemName}
@@ -624,20 +749,37 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
                             <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.saleAmount)}</td>
                             {/* Profit — auto-calculated: Sale Amount − Consumption */}
                             <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.profit)}</td>
+                            {/* Hide/Show toggle — persists on NonAcInventoryItem.isHiddenFromReport */}
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleNonAcItemToggleHide(item.itemId)}
+                                className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${
+                                  item.isHidden
+                                    ? 'bg-gray-200 text-gray-600 hover:bg-green-100 hover:text-green-700'
+                                    : 'bg-orange-100 text-orange-700 hover:bg-gray-200 hover:text-gray-600'
+                                }`}
+                                title={item.isHidden ? 'Click to show in PDF' : 'Click to hide from PDF'}
+                              >
+                                {item.isHidden ? 'Show' : 'Hide'}
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-orange-200 bg-orange-50 font-bold">
-                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL</td>
+                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL (visible items only)</td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.consumption)}</td>
                           <td className="px-3 py-2 text-right text-gray-400"></td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.saleAmount)}</td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedNonAcTotals.profit)}</td>
+                          <td className="px-2 py-2"></td>
                         </tr>
                         <tr className="bg-orange-50/50">
                           <td colSpan={8} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
                           <td className="px-3 py-1 text-right text-xs text-gray-900 font-bold">{fmtPct(computedNonAcTotals.profitMarginPct)}</td>
+                          <td className="px-2 py-1"></td>
                         </tr>
                       </tfoot>
                     </table>
@@ -646,14 +788,19 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
               )}
 
               {/* ── Item-wise AC Bar Table (editable rows) ── */}
-              {computedAcItems.length > 0 && (
+              {allComputedAcItems.length > 0 && (
                 <div>
                   <h3 className="text-sm font-bold text-blue-700 mb-3">
                     AC Bar Detailed Item-wise Report
                     <span className="ml-2 text-xs font-normal text-gray-500">(POS billing · database-driven · editable rows)</span>
+                    {allComputedAcItems.some(i => i.isHidden) && (
+                      <span className="ml-2 text-xs font-normal text-amber-600">
+                        ({allComputedAcItems.filter(i => i.isHidden).length} hidden)
+                      </span>
+                    )}
                   </h3>
                   <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                    <table className="w-full text-xs min-w-[900px]">
+                    <table className="w-full text-xs min-w-[960px]">
                       <thead className="bg-blue-50">
                         <tr>
                           <th className="text-center px-2 py-2 font-bold text-blue-700 uppercase tracking-wide w-10">S.No</th>
@@ -665,16 +812,18 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Selling Price</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale Amount</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Profit</th>
+                          <th className="text-center px-2 py-2 font-bold text-blue-700 uppercase tracking-wide w-16">Hide</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {computedAcItems.map((item) => (
-                          <tr key={`ac-${item.itemId}`} className="border-t border-gray-50 hover:bg-blue-50/30">
+                        {allComputedAcItems.map((item) => (
+                          <tr key={`ac-${item.itemId}`} className={`border-t border-gray-50 hover:bg-blue-50/30 ${item.isHidden ? 'opacity-40 bg-gray-50' : ''}`}>
                             <td className="px-2 py-2 text-center text-gray-500">{item.sno}</td>
                             <td className="px-3 py-2 text-gray-800 font-medium">
                               {item.itemName}
                               {item.hasMissingPrice && <span className="ml-1 text-[9px] text-red-500" title="Missing purchase cost">⚠</span>}
                               {item.hasMissingBottleSize && <span className="ml-1 text-[9px] text-red-500" title="Missing bottle size">⚠</span>}
+                              {item.hasMissingSellingPrice && <span className="ml-1 text-[9px] text-red-500" title="No selling price set">⚠</span>}
                             </td>
                             {/* Qty (ml) — editable */}
                             <td className="px-3 py-2 text-right bg-blue-50/30">
@@ -714,7 +863,7 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
                             </td>
                             {/* Consumption — auto-calculated: Sale × Purchase Cost (30ML cost logic) */}
                             <td className="px-3 py-2 text-right text-gray-700">{fmtInr(item.consumption)}</td>
-                            {/* Selling Price — editable */}
+                            {/* Selling Price — editable (admin-managed, persistent) */}
                             <td className="px-3 py-2 text-right bg-blue-50/30">
                               <input
                                 type="number"
@@ -730,20 +879,37 @@ export default function LiquorDailyReportModal({ open, date, onClose }) {
                             <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.saleAmount)}</td>
                             {/* Profit — auto-calculated: Sale Amount − Consumption */}
                             <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.profit)}</td>
+                            {/* Hide/Show toggle — persists on InventoryItem.isHiddenFromReport */}
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleAcItemToggleHide(item.itemId)}
+                                className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${
+                                  item.isHidden
+                                    ? 'bg-gray-200 text-gray-600 hover:bg-green-100 hover:text-green-700'
+                                    : 'bg-blue-100 text-blue-700 hover:bg-gray-200 hover:text-gray-600'
+                                }`}
+                                title={item.isHidden ? 'Click to show in PDF' : 'Click to hide from PDF'}
+                              >
+                                {item.isHidden ? 'Show' : 'Hide'}
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-blue-200 bg-blue-50 font-bold">
-                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL</td>
+                          <td colSpan={5} className="px-3 py-2 text-gray-900">TOTAL (visible items only)</td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.consumption)}</td>
                           <td className="px-3 py-2 text-right text-gray-400"></td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.saleAmount)}</td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.profit)}</td>
+                          <td className="px-2 py-2"></td>
                         </tr>
                         <tr className="bg-blue-50/50">
                           <td colSpan={8} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
                           <td className="px-3 py-1 text-right text-xs text-gray-900 font-bold">{fmtPct(computedAcTotals.profitMarginPct)}</td>
+                          <td className="px-2 py-1"></td>
                         </tr>
                       </tfoot>
                     </table>
@@ -793,13 +959,44 @@ function EditableSummaryCard({ label, field, value, edits, onChange, suffix, bad
 // AC = System/POS (blue), Non-AC = Manual (orange).
 // ─────────────────────────────────────────────────────────────────────────────
 function buildPrintHtml(data) {
-  const { outletName, outletWing, date, nonAcItems, acItems, nonAcItemTotals, acItemTotals } = data;
+  const { outletName, outletWing, date, nonAcItems, acItems, nonAcItemTotals, acItemTotals, summary } = data;
 
   const fmtInrP = (n) => n == null ? '—' : `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
   const fmtPctP = (n) => n == null ? '—' : `${Number(n).toFixed(1)}%`;
 
   const fmtQtyP = (n) => n == null || n <= 0 ? '—' : `${Number(n).toFixed(0)} ml`;
   const fmtBtlP = (n) => n == null || n <= 0 ? '—' : Number(n).toFixed(2);
+
+  // ── Business Position summary cards (matches the admin preview) ──
+  // Grouped exactly like the on-screen EditableSummaryCard grid:
+  //   Stock Position → Sales/Profitability → Consumption ML
+  const summaryCard = (label, value, suffix, badge) => `
+    <div class="bp-card${badge ? ` bp-${badge.toLowerCase()}` : ''}">
+      <div class="bp-label">${label}${badge ? ` <span class="bp-badge bp-${badge.toLowerCase()}">${badge}</span>` : ''}</div>
+      <div class="bp-value">${value == null ? '—' : `${suffix === '₹' ? '₹' : ''}${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 1 })}${suffix === 'ml' ? ' ml' : ''}${suffix === '%' ? '%' : ''}`}</div>
+    </div>`;
+
+  const businessPositionHtml = summary ? `
+<div class="section-title first">Business Position</div>
+<div class="bp-grid">
+  ${summaryCard('Opening Stock Value', summary.totalOpeningStockValue, '₹')}
+  ${summaryCard('Purchase Value', summary.totalPurchasesValue, '₹')}
+  ${summaryCard('Consumption / Landing Cost', summary.totalConsumptionCost, '₹')}
+  ${summaryCard('Closing Stock Value', summary.totalClosingStockValue, '₹')}
+  ${summaryCard('Total Liquor Sales (Gross)', summary.totalGrossSales, '₹')}
+  ${summaryCard('Discounts', summary.totalDiscounts, '₹')}
+  ${summaryCard('Net Sales (AC + Non-AC)', summary.netSales, '₹')}
+  ${summaryCard('Gross Profit After Liquor Cost', summary.totalGrossProfit, '₹')}
+  ${summaryCard('AC Sales', summary.totalAcRevenue, '₹', 'AC')}
+  ${summaryCard('Non-AC Sales', summary.totalNonAcRevenue, '₹', 'Manual')}
+  ${summaryCard('AC Profit', summary.totalAcProfit, '₹')}
+  ${summaryCard('Non-AC Profit', summary.totalNonAcProfit, '₹')}
+  ${summaryCard('Total Profit', summary.totalProfit, '₹')}
+  ${summaryCard('Total Profit %', summary.totalProfitPct, '%')}
+  ${summaryCard('Physical Consumption', summary.totalPhysicalConsumption, 'ml')}
+  ${summaryCard('System Consumption', summary.totalSystemConsumption, 'ml')}
+  ${summaryCard('Variance', summary.totalVarianceMl, 'ml')}
+</div>` : '';
 
   // ── Item-wise Non-AC rows ──
   const nonAcItemRows = (nonAcItems || []).map((item) => `
@@ -820,7 +1017,7 @@ function buildPrintHtml(data) {
   const acItemRows = (acItems || []).map((item) => `
     <tr>
       <td class="num">${item.sno}</td>
-      <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingBottleSize ? ' <span class="warn">⚠</span>' : ''}</td>
+      <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingBottleSize ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingSellingPrice ? ' <span class="warn">⚠</span>' : ''}</td>
       <td class="num">${fmtQtyP(item.qty)}</td>
       <td class="num">${fmtBtlP(item.sale)}</td>
       <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
@@ -925,6 +1122,52 @@ function buildPrintHtml(data) {
 
   .page-break { page-break-before: always; }
 
+  /* Keep both detailed item-wise tables together on one page,
+     starting on a fresh page after the Business Position summary. */
+  .detailed-section {
+    page-break-before: always;
+    page-break-inside: avoid;
+  }
+
+  /* Business Position summary cards */
+  .bp-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .bp-card {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 3px;
+    padding: 4px 6px;
+  }
+  .bp-card.bp-ac { background: #eff6ff; border-color: #bfdbfe; }
+  .bp-card.bp-manual { background: #fff7ed; border-color: #fed7aa; }
+  .bp-label {
+    font-size: 6.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    color: #6b7280;
+  }
+  .bp-badge {
+    display: inline-block;
+    font-size: 5.5px;
+    padding: 0 3px;
+    border-radius: 2px;
+    font-weight: 700;
+    margin-left: 2px;
+  }
+  .bp-badge.bp-ac { background: #dbeafe; color: #1e40af; }
+  .bp-badge.bp-manual { background: #ffedd5; color: #9a3412; }
+  .bp-value {
+    font-size: 11px;
+    font-weight: 800;
+    color: #111827;
+    margin-top: 1px;
+  }
+
   .footer {
     margin-top: 10px;
     padding-top: 5px;
@@ -952,8 +1195,12 @@ function buildPrintHtml(data) {
   All values reflect the latest saved database data.
 </div>
 
-${/* ── Item-wise Non-AC Table (FIRST) ── */ ''}
-<div class="section-title first">Non-AC Detailed Item-wise Report</div>
+${/* ── Business Position summary (FIRST) ── */ ''}
+${businessPositionHtml}
+
+${/* ── Detailed Item-wise Tables (Non-AC + AC together on one page) ── */ ''}
+<div class="detailed-section">
+<div class="section-title">Non-AC Detailed Item-wise Report</div>
 ${(nonAcItems && nonAcItems.length > 0) ? `
 <table>
   <colgroup>
@@ -999,7 +1246,7 @@ ${(nonAcItems && nonAcItems.length > 0) ? `
 </table>
 ` : '<p style="font-size:8px;color:#999;padding:6px 0;">No Non-AC items with activity on this date.</p>'}
 
-${/* ── Item-wise AC Bar Table (SECOND) ── */ ''}
+${/* ── Item-wise AC Bar Table ── */ ''}
 <div class="section-title" style="margin-top:12px;">AC Bar Detailed Item-wise Report</div>
 ${(acItems && acItems.length > 0) ? `
 <table>
@@ -1045,6 +1292,7 @@ ${(acItems && acItems.length > 0) ? `
   </tfoot>
 </table>
 ` : '<p style="font-size:8px;color:#999;padding:6px 0;">No AC items with sales on this date.</p>'}
+</div><!-- /.detailed-section -->
 
 <div class="footer">
   Non-AC: Consumption = Sale × Purchase Cost · Sale Amount = Sale × Selling Price · Profit = Sale Amount − Consumption<br>
