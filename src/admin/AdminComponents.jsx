@@ -18914,7 +18914,7 @@ export function StaffManagement({ role }) {
   const isManagerReadOnly = false;
 
   const DESIGNATIONS = [
-    'helper', 'cleaning', 'master', 'assistant', 'family cleaning', 'washroom cleaning', 'supervisor',
+    'CAPTAIN', 'helper', 'cleaning', 'master', 'assistant', 'family cleaning', 'washroom cleaning', 'supervisor',
     'delivery and supervisor', 'arcel counter', 'store', 'family counter', 'bar counter', 'pick up', 'kitchen',
     'parcel counter', 'accountans', 'manager', 'security', 'site security', 'purchase', 'electrician', 'counter',
     'waiter', 'family', 'bar', 'bar cleaning'
@@ -19373,7 +19373,13 @@ export function StaffManagement({ role }) {
 
                   value={form.role}
 
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  onChange={(e) => {
+                    const newRole = e.target.value;
+                    // When role is CAPTAIN, auto-default designation to CAPTAIN
+                    // so the new captain appears in analytics leaderboards.
+                    // The admin can still change it if needed.
+                    setForm({ ...form, role: newRole, ...(newRole === 'CAPTAIN' && !form.designation ? { designation: 'CAPTAIN' } : {}) });
+                  }}
 
                   className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
 

@@ -55,6 +55,47 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const [acHiddenFlags, setAcHiddenFlags] = useState({});
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
+  // Track whether there are unsaved (pending) edits restored from localStorage
+  const [hasPendingEdits, setHasPendingEdits] = useState(false);
+
+  // ── localStorage persistence for failure-safe saves ──
+  // Key: unique per date + restaurant. Stores ALL edit state so it survives
+  // page refresh, timeout, network failure, or any other save failure.
+  // Only cleared after a confirmed successful save.
+  const pendingKey = open && date ? `liquorReportPending:${date}` : '';
+  const savePendingToStorage = useCallback((state) => {
+    if (!pendingKey) return;
+    try {
+      localStorage.setItem(pendingKey, JSON.stringify({
+        ...state,
+        savedAt: Date.now(),
+      }));
+      setHasPendingEdits(true);
+    } catch { /* localStorage may be full or disabled */ }
+  }, [pendingKey]);
+
+  const clearPendingFromStorage = useCallback(() => {
+    if (!pendingKey) return;
+    try {
+      localStorage.removeItem(pendingKey);
+      setHasPendingEdits(false);
+    } catch { /* ignore */ }
+  }, [pendingKey]);
+
+  const loadPendingFromStorage = useCallback(() => {
+    if (!pendingKey) return null;
+    try {
+      const raw = localStorage.getItem(pendingKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Expire pending edits after 7 days to avoid stale data
+      if (parsed.savedAt && Date.now() - parsed.savedAt > 7 * 24 * 60 * 60 * 1000) {
+        localStorage.removeItem(pendingKey);
+        return null;
+      }
+      return parsed;
+    } catch { return null; }
+  }, [pendingKey]);
 
   const loadData = useCallback(async () => {
     if (!open) return;
@@ -123,6 +164,46 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setAcItemEdits(acInit);
       setAcHiddenFlags(acHiddenInit);
 
+      // ── Restore pending edits from localStorage (failure-safe) ──
+      // If a previous save failed or timed out, the admin's entered values
+      // are still in localStorage. Restore them OVER the server data so the
+      // admin sees their unsaved changes and can retry saving.
+      const pending = loadPendingFromStorage();
+      if (pending) {
+        // Merge pending item edits over server-initialized edits
+        if (pending.nonAcItemEdits) {
+          for (const [itemId, vals] of Object.entries(pending.nonAcItemEdits)) {
+            if (nonAcInit[itemId]) {
+              nonAcInit[itemId] = { ...nonAcInit[itemId], ...vals };
+            }
+          }
+          setNonAcItemEdits({ ...nonAcInit });
+        }
+        if (pending.acItemEdits) {
+          for (const [itemId, vals] of Object.entries(pending.acItemEdits)) {
+            if (acInit[itemId]) {
+              acInit[itemId] = { ...acInit[itemId], ...vals };
+            }
+          }
+          setAcItemEdits({ ...acInit });
+        }
+        if (pending.nonAcHiddenFlags) {
+          setNonAcHiddenFlags(prev => ({ ...prev, ...pending.nonAcHiddenFlags }));
+        }
+        if (pending.acHiddenFlags) {
+          setAcHiddenFlags(prev => ({ ...prev, ...pending.acHiddenFlags }));
+        }
+        if (pending.edits) {
+          setEdits(prev => ({ ...prev, ...pending.edits }));
+        }
+        if (pending.summaryEdits) {
+          setSummaryEdits(pending.summaryEdits);
+        }
+        setHasPendingEdits(true);
+      } else {
+        setHasPendingEdits(false);
+      }
+
       // Restore summary overrides from the response (already applied to summary by backend)
       // We don't set summaryEdits here because the backend already applied them to summary values.
       // The inputs will show the backend-provided values (which include overrides).
@@ -136,6 +217,28 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ── Auto-save edit state to localStorage on every change ──
+  // This ensures pending edits survive page refresh, timeout, or any failure.
+  // Only runs after data is loaded (don't save empty initial state).
+  useEffect(() => {
+    if (!open || !data || !pendingKey) return;
+    // Don't save if all edit states are empty (initial load before any edit)
+    const hasAnyEdit =
+      Object.keys(nonAcItemEdits).length > 0 ||
+      Object.keys(acItemEdits).length > 0 ||
+      Object.keys(edits).length > 0 ||
+      Object.keys(summaryEdits).length > 0;
+    if (!hasAnyEdit) return;
+    savePendingToStorage({
+      nonAcItemEdits,
+      acItemEdits,
+      nonAcHiddenFlags,
+      acHiddenFlags,
+      edits,
+      summaryEdits,
+    });
+  }, [open, data, pendingKey, nonAcItemEdits, acItemEdits, nonAcHiddenFlags, acHiddenFlags, edits, summaryEdits, savePendingToStorage]);
 
   // ── Live recalculation with AC + Non-AC edits ──
   const computed = useMemo(() => {
@@ -351,6 +454,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         adjustedSaleBtl: Number(acItemEdits[item.itemId]?.sale ?? item.sale) || 0,
         adjustedPurchaseCost: Number(acItemEdits[item.itemId]?.purchaseCost ?? item.purchaseCost) || 0,
         adjustedSellingPrice: Number(acItemEdits[item.itemId]?.sellingPrice ?? item.sellingPrice) || 0,
+        adjustedBottleSize: Number(acItemEdits[item.itemId]?.qty ?? item.qty) || 0,
         adjustedConsumption: item.consumption,
         adjustedSaleAmount: item.saleAmount,
         adjustedProfit: item.profit,
@@ -388,6 +492,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 3000);
+      // ── ONLY clear pending edits after confirmed successful save ──
+      clearPendingFromStorage();
       // Reload data to reflect saved state
       loadData();
       // Notify parent (original inventory screen) to refresh its data
@@ -395,7 +501,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       if (onSaved) onSaved();
       return true;
     } catch (err) {
-      setError(err.message || 'Failed to save data');
+      // ── Save FAILED: do NOT clear pending edits ──
+      // The admin's entered values are still in localStorage (auto-saved
+      // on every change). They will be restored on page refresh.
+      // The admin can click Save again to retry.
+      setError(err.message || 'Failed to save data. Your changes are preserved — click Save to retry.');
       return false;
     } finally {
       setSaving(false);
@@ -569,6 +679,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {hasPendingEdits && !savedMsg && (
+              <span className="flex items-center gap-1 text-xs text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded-lg" title="You have unsaved changes. They are preserved even if you refresh the page.">
+                <AlertTriangle size={14} /> Unsaved
+              </span>
+            )}
             {savedMsg && (
               <span className="flex items-center gap-1 text-xs text-green-600 font-bold">
                 <CheckCircle size={14} /> Saved
@@ -596,7 +711,15 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
         <div className="p-4 sm:p-5 space-y-6">
           {error && (
-            <div className="bg-red-50 text-red-600 text-sm rounded-lg p-3">{error}</div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="text-red-600 text-sm font-medium">{error}</div>
+              {hasPendingEdits && (
+                <div className="text-amber-700 text-xs mt-1.5 flex items-center gap-1">
+                  <AlertTriangle size={12} />
+                  Your entered values are preserved. Click <strong>Save Changes</strong> to retry. Changes will remain even if you refresh the page.
+                </div>
+              )}
+            </div>
           )}
 
           {/* AC/Non-AC info banner */}
