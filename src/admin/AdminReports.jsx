@@ -38,7 +38,6 @@ import {
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
-import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import OperationsDashboard from './OperationsDashboard';
 import AdditionalSalesPage from './AdditionalSalesPage';
 import { safeGetJSON } from '../utils/safeParseJSON';
@@ -72,16 +71,21 @@ function normalizeBeverageNameForAnalytics(name) {
 }
 
 function getReportCategoryFromAnalytics(item) {
+  if (item.reportCategory && ['Food', 'Beverages', 'Liquor'].includes(item.reportCategory)) {
+    return item.reportCategory;
+  }
   if (item.type === 'liquor') return 'Liquor';
   const normalizedName = normalizeBeverageNameForAnalytics(String(item.name || ''));
   if (BEVERAGE_KEYWORDS.some((k) => normalizedName.includes(k))) return 'Beverages';
   return 'Food';
 }
 
-async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all') {
-  const restaurantId = getCurrentRestaurantId();
+async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all', outletId = 'all') {
+  // Use outletId (not restaurantId) so resolveOutletFilter on the backend
+  // honours the selected outlet. Sending restaurantId was a bug that caused
+  // the backend to ignore the param and return ALL outlets' data.
   const outletParam = categoryFilter !== 'all' ? `&outletType=${categoryFilter}` : '';
-  const url = `${API_BASE}/api/reports/itemwise-sales?restaurantId=${restaurantId}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
+  const url = `${API_BASE}/api/reports/itemwise-sales?outletId=${outletId}&startDate=${startDate}&endDate=${endDate}${outletParam}`;
   const res = await fetch(url, { headers: getAuthHeaders(), cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch itemwise sales report');
   const raw = await res.json();
@@ -118,11 +122,14 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
     items = items.filter((it) => it.reportCategory === 'Beverages');
   }
 
-  const totalRevenueAll = items.reduce((s, it) => s + it.totalRevenue, 0);
-  const totalQuantityAll = items.reduce((s, it) => s + it.quantitySold, 0);
-  const foodRevenue = items.filter((it) => it.reportCategory === 'Food').reduce((s, it) => s + it.totalRevenue, 0);
-  const liquorRevenue = items.filter((it) => it.reportCategory === 'Liquor').reduce((s, it) => s + it.totalRevenue, 0);
-  const beveragesRevenue = items.filter((it) => it.reportCategory === 'Beverages').reduce((s, it) => s + it.totalRevenue, 0);
+  // Use the backend's summary directly — it is already scaled to
+  // Transaction.grandTotal and is the single source of truth shared with the
+  // Dashboard and Category-wise report. Only recompute the filtered subtotal
+  // for the visible items list; the summary category revenues always reflect
+  // the full day (all categories), matching the Dashboard exactly.
+  const backendSummary = raw.summary || {};
+  const visibleTotalRevenue = items.reduce((s, it) => s + it.totalRevenue, 0);
+  const visibleTotalQuantity = items.reduce((s, it) => s + it.quantitySold, 0);
 
   const finalItems = items
     .map((it) => ({
@@ -134,7 +141,9 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
       quantitySold: it.quantitySold,
       unitPrice: it.quantitySold > 0 ? it.totalRevenue / it.quantitySold : 0,
       totalRevenue: it.totalRevenue,
-      revenuePercent: totalRevenueAll > 0 ? (it.totalRevenue / totalRevenueAll) * 100 : 0,
+      revenuePercent: backendSummary.totalRevenue > 0
+        ? (it.totalRevenue / backendSummary.totalRevenue) * 100
+        : (visibleTotalRevenue > 0 ? (it.totalRevenue / visibleTotalRevenue) * 100 : 0),
       orderCount: it.orderCount,
     }))
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
@@ -143,11 +152,11 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
     items: finalItems,
     summary: {
       totalItems: finalItems.length,
-      totalQuantity: totalQuantityAll,
-      totalRevenue: totalRevenueAll,
-      foodRevenue,
-      liquorRevenue,
-      beveragesRevenue,
+      totalQuantity: visibleTotalQuantity,
+      totalRevenue: backendSummary.totalRevenue || visibleTotalRevenue,
+      foodRevenue: backendSummary.foodRevenue || 0,
+      liquorRevenue: backendSummary.liquorRevenue || 0,
+      beveragesRevenue: backendSummary.beveragesRevenue || 0,
     },
     dateRange: raw.dateRange,
   };
@@ -1004,10 +1013,10 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
 
   const fetchData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchItemwiseAnalytics(dateFilter.startDate, dateFilter.endDate, outletType); setData(res); }
+    try { const res = await fetchItemwiseAnalytics(dateFilter.startDate, dateFilter.endDate, outletType, outletId); setData(res); }
     catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchData(); }, [dateFilter, outletType]);
+  useEffect(() => { fetchData(); }, [dateFilter, outletType, outletId]);
 
   const dateRangeText = `${dateFilter.startDate} to ${dateFilter.endDate}`;
   const doPDF = () => {

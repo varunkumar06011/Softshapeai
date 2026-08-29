@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Loader2, Plus, Trash2, Save, Store, Package, ArrowLeft,
@@ -86,8 +86,15 @@ export default function AdminPurchases() {
   const [pendingVendorRowIndex, setPendingVendorRowIndex] = useState(null);
   const [backendOnline, setBackendOnline] = useState(isBackendReachable());
 
-  // Per-tenant draft key — no 'default' fallback to prevent cross-tenant leakage
-  const DRAFT_KEY = `dailyPurchaseDraft_${restaurant?.id || user?.id || 'unknown'}`;
+  // Per-tenant, per-outlet, per-date draft key — prevents cross-tenant/cross-outlet leakage
+  const getDraftKey = useCallback((outlet, date) =>
+    `dailyPurchaseDraft_${restaurant?.id || user?.id || 'unknown'}_${outlet || 'all'}_${date}`,
+    [restaurant?.id, user?.id]
+  );
+  const DRAFT_KEY = useMemo(() => getDraftKey(outletId, dailyEntryDate),
+    [getDraftKey, outletId, dailyEntryDate]
+  );
+  const lastLoadedKey = useRef('');
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('');
@@ -111,40 +118,29 @@ export default function AdminPurchases() {
     return unsub;
   }, []);
 
-  // Load draft from localStorage if no saved entries exist (today only)
+  // Save draft to localStorage whenever dailyRows changes (any date, any outlet).
+  // The lastLoadedKey ref prevents saving stale rows from a previous date/outlet
+  // during the brief transition before loadDailyEntries populates the new date.
   useEffect(() => {
     if (view !== 'daily-entry') return;
-    const today = getKolkataDateString();
-    if (dailyEntryDate !== today) return;
-    const draft = localStorage.getItem(DRAFT_KEY);
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        if (parsed.date === today && parsed.rows?.length > 0) {
-          apiFetch(`/api/purchase-orders/daily?date=${today}${outletId ? `&outletId=${outletId}` : ''}`, { timeout: API_TIMEOUT_SHORT_MS })
-            .then((data) => { if (!data || data.length === 0) setDailyRows(parsed.rows); })
-            .catch(() => setDailyRows(parsed.rows));
-        }
-      } catch { /* invalid draft */ }
-    }
-  }, [view, dailyEntryDate, DRAFT_KEY]);
-
-  // Save draft to localStorage whenever dailyRows changes (today only)
-  useEffect(() => {
-    if (view !== 'daily-entry') return;
-    const today = getKolkataDateString();
-    if (dailyEntryDate !== today) return;
+    const currentKey = `${outletId || 'all'}_${dailyEntryDate}`;
+    if (lastLoadedKey.current !== currentKey) return;
     const hasData = dailyRows.some((r) => r.itemName?.trim());
     if (hasData) {
+      const draftRaw = localStorage.getItem(DRAFT_KEY);
+      let batchId = null;
+      if (draftRaw) { try { batchId = JSON.parse(draftRaw).batchId; } catch {} }
       localStorage.setItem(DRAFT_KEY, JSON.stringify({
-        date: today,
+        date: dailyEntryDate,
+        outletId: outletId || 'all',
+        batchId,
         rows: dailyRows.map(({ _showSuggestions, ...rest }) => rest),
         savedAt: new Date().toISOString(),
       }));
     } else {
       localStorage.removeItem(DRAFT_KEY);
     }
-  }, [dailyRows, view, dailyEntryDate, DRAFT_KEY]);
+  }, [dailyRows, view, dailyEntryDate, DRAFT_KEY, outletId]);
 
   // ── Load vendors ─────────────────────────────────────────────────────────────
   const loadVendors = useCallback(async () => {
@@ -490,13 +486,30 @@ export default function AdminPurchases() {
   const loadDailyEntries = useCallback(async (date) => {
     setLoading(true);
     setError('');
+    const draftKey = getDraftKey(outletId, date);
     try {
       const data = await apiFetch(`/api/purchase-orders/daily?date=${date}${outletId ? `&outletId=${outletId}` : ''}`);
 
+      // Load draft from localStorage (any date, any outlet)
+      let draftRows = [];
+      const draftRaw = localStorage.getItem(draftKey);
+      if (draftRaw) {
+        try {
+          const parsed = JSON.parse(draftRaw);
+          if (parsed.date === date && parsed.rows?.length > 0) {
+            draftRows = parsed.rows;
+          }
+        } catch { /* invalid draft */ }
+      }
+
+      const emptyRow = { itemName: '', kitchenInventoryItemId: null, vendorId: '', categoryId: null, categoryName: null, quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' };
+
       if (data.length === 0) {
-        setDailyRows([{ itemName: '', kitchenInventoryItemId: null, vendorId: '', categoryId: null, categoryName: null, quantity: '', unit: '', unitPrice: '', previousPrice: null, paymentStatus: 'PENDING', paymentMethod: 'CASH' }]);
+        // No saved entries — use draft rows if available, otherwise placeholder
+        setDailyRows(draftRows.length > 0 ? draftRows : [emptyRow]);
       } else {
-        setDailyRows(data.map((e) => ({
+        // Merge: backend rows as base, draft overrides for saved rows (by id), unsaved draft rows appended
+        const backendRows = data.map((e) => ({
           id: e.id,
           itemName: e.itemName,
           kitchenInventoryItemId: e.kitchenInventoryItemId || null,
@@ -511,15 +524,31 @@ export default function AdminPurchases() {
           previousPrice: e.previousPrice || null,
           paymentStatus: e.paymentStatus || 'PENDING',
           paymentMethod: e.paymentMethod || 'CASH',
-        })));
+        }));
+        const savedDraftMap = new Map(draftRows.filter(r => r.id).map(r => [r.id, r]));
+        const unsavedDraftRows = draftRows.filter(r => !r.id && r.itemName?.trim());
+        const merged = backendRows.map(r => savedDraftMap.get(r.id) || r);
+        setDailyRows([...merged, ...unsavedDraftRows]);
       }
+      lastLoadedKey.current = `${outletId || 'all'}_${date}`;
       setDailyEntryReadOnly(false);
     } catch (err) {
       setError(err.message || 'Failed to load daily entries');
+      // On backend failure, restore from draft so user doesn't lose unsaved data
+      const draftRaw = localStorage.getItem(draftKey);
+      if (draftRaw) {
+        try {
+          const parsed = JSON.parse(draftRaw);
+          if (parsed.date === date && parsed.rows?.length > 0) {
+            setDailyRows(parsed.rows);
+            lastLoadedKey.current = `${outletId || 'all'}_${date}`;
+          }
+        } catch {}
+      }
     } finally {
       setLoading(false);
     }
-  }, [outletId]);
+  }, [outletId, getDraftKey]);
 
   useEffect(() => {
     if (view === 'daily-entry') {
@@ -735,11 +764,32 @@ export default function AdminPurchases() {
       const kitchenRows = validRows.filter((r) => !r.isBarItem);
       const barRows = validRows.filter((r) => r.isBarItem);
 
-      const results = [];
+      // Generate or reuse batchId for bar deduplication.
+      // The batchId is persisted in the draft so that retrying Save after a
+      // timeout/uncertain response does NOT create duplicate bar purchases.
+      // The kitchen endpoint is already idempotent (diff/update), so it
+      // doesn't need a batchId — re-sending the same rows is safe.
+      const draftRaw = localStorage.getItem(DRAFT_KEY);
+      let batchId = null;
+      if (draftRaw) {
+        try { batchId = JSON.parse(draftRaw).batchId; } catch {}
+      }
+      if (!batchId) {
+        batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+        // Persist batchId in draft so retry reuses the same one
+        try {
+          const draftData = draftRaw ? JSON.parse(draftRaw) : { date: dailyEntryDate, outletId, rows: [] };
+          draftData.batchId = batchId;
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
+        } catch {}
+      }
 
-      // Save kitchen rows via the existing endpoint
+      let kitchenSavedCount = 0;
+      let barSavedCount = 0;
+
+      // Save kitchen rows (idempotent via diff/update — safe to retry)
       if (kitchenRows.length > 0) {
-        const kitchenResult = await apiFetch('/api/purchase-orders/daily', {
+        await apiFetch('/api/purchase-orders/daily', {
           method: 'POST',
           timeout: API_TIMEOUT_SAVE_DAILY_MS,
           body: JSON.stringify({
@@ -758,17 +808,18 @@ export default function AdminPurchases() {
             })),
           }),
         });
-        results.push(...(Array.isArray(kitchenResult) ? kitchenResult : []));
+        kitchenSavedCount = kitchenRows.length;
       }
 
-      // Save bar rows via the new bar endpoint
+      // Save bar rows with batchId for deduplication
       if (barRows.length > 0) {
-        const barResult = await apiFetch('/api/purchase-orders/daily/bar', {
+        await apiFetch('/api/purchase-orders/daily/bar', {
           method: 'POST',
           timeout: API_TIMEOUT_SAVE_DAILY_MS,
           body: JSON.stringify({
             date: dailyEntryDate,
             outletId: outletId && outletId !== 'all' ? outletId : undefined,
+            batchId,
             rows: barRows.map((r) => ({
               menuItemId: r.menuItemId,
               itemName: r.itemName.trim(),
@@ -777,19 +828,19 @@ export default function AdminPurchases() {
             })),
           }),
         });
-        results.push(...(Array.isArray(barResult) ? barResult : []));
+        barSavedCount = barRows.length;
       }
 
-      const totalSaved = kitchenRows.length + barRows.length;
-      showSuccess(`${totalSaved} entries saved (${kitchenRows.length} kitchen, ${barRows.length} bar)`);
+      const totalSaved = kitchenSavedCount + barSavedCount;
+      showSuccess(`${totalSaved} entries saved (${kitchenSavedCount} kitchen, ${barSavedCount} bar)`);
       localStorage.removeItem(DRAFT_KEY);
       loadDailyEntries(dailyEntryDate);
     } catch (err) {
       const isConnectionError = err.message?.includes('timed out') || err.message?.includes('ERR_CONNECTION') || err.message?.includes('Failed to fetch');
       if (isConnectionError) {
-        setError('Connection failed — your entries are preserved on this screen. Check network and try again. Do NOT refresh or your entries will be lost.');
+        setError('Connection failed — your entries are safely preserved. You can refresh the page or retry Save without losing any data.');
       } else {
-        setError(err.message || 'Failed to save daily entries');
+        setError(err.message || 'Failed to save daily entries. Your entries are preserved — try again.');
       }
     } finally {
       setDailySaving(false);

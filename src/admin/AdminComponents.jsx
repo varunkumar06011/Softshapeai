@@ -909,11 +909,12 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   }, [dashboardScope, accessibleOutlets, restaurant]);
 
   // ── Category mix (Food / Beverages / Liquor / Combo) from itemwise-sales ──
-  // Proportions come from itemwise-sales (accurate per-item classification).
-  // Amounts are scaled to match todayRevenue from daily-sales (Transaction.grandTotal)
-  // so that Food + Bev + Liquor + Combo = Total Sales KPI.
-  // Additional / Offline Sales are shown separately on the card — they do NOT affect
-  // the card amount, Total Sales, AOV, or any official calculation.
+  // The backend scales category revenues to match Transaction.grandTotal so
+  // that Food + Beverages + Liquor + Combo = Total Sales exactly. We use the
+  // backend's summary values directly — NO local rescaling — so the Dashboard
+  // always matches the Item-wise and Category-wise reports (single source of
+  // truth). Additional / Offline Sales are shown separately on the card; they
+  // do NOT affect the card amount, Total Sales, AOV, or any official calc.
   // Offline badge is shown ONLY in "All Outlets" scope to avoid confusion on
   // individual outlet cards (offline sales are cross-outlet reference figures).
   const showOfflineBadge = dashboardScope === 'all';
@@ -921,21 +922,18 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
   const offlineLabelFor = (cat) => showOfflineBadge ? offlineLabels[cat] : '';
   const itemSummary = itemwiseData?.today?.summary || {};
   const lastItemSummary = itemwiseData?.lastWeek?.summary || {};
-  const itemwiseTotal = Number(itemSummary.totalRevenue || 0);
-  const lastItemwiseTotal = Number(lastItemSummary.totalRevenue || 0);
-  const scaleFactor = itemwiseTotal > 0 ? todayRevenue / itemwiseTotal : 1;
-  const lastScaleFactor = lastItemwiseTotal > 0 ? lastWeekRevenue / lastItemwiseTotal : 1;
+  // Use backend-scaled values directly — no local rescaling.
   const mixRevenue = {
-    food: Math.round(Number(itemSummary.foodRevenue || 0) * scaleFactor),
-    beverages: Math.round(Number(itemSummary.beveragesRevenue || 0) * scaleFactor),
-    liquor: Math.round(Number(itemSummary.liquorRevenue || 0) * scaleFactor),
-    combo: Math.round(Number(itemSummary.comboRevenue || 0) * scaleFactor),
+    food: Math.round(Number(itemSummary.foodRevenue || 0)),
+    beverages: Math.round(Number(itemSummary.beveragesRevenue || 0)),
+    liquor: Math.round(Number(itemSummary.liquorRevenue || 0)),
+    combo: Math.round(Number(itemSummary.comboRevenue || 0)),
   };
   const lastMixRevenue = {
-    food: Math.round(Number(lastItemSummary.foodRevenue || 0) * lastScaleFactor),
-    beverages: Math.round(Number(lastItemSummary.beveragesRevenue || 0) * lastScaleFactor),
-    liquor: Math.round(Number(lastItemSummary.liquorRevenue || 0) * lastScaleFactor),
-    combo: Math.round(Number(lastItemSummary.comboRevenue || 0) * lastScaleFactor),
+    food: Math.round(Number(lastItemSummary.foodRevenue || 0)),
+    beverages: Math.round(Number(lastItemSummary.beveragesRevenue || 0)),
+    liquor: Math.round(Number(lastItemSummary.liquorRevenue || 0)),
+    combo: Math.round(Number(lastItemSummary.comboRevenue || 0)),
   };
 
   // Outlet config drives the default, but actual revenue data is used as a
@@ -2308,7 +2306,7 @@ export function MenuPage({ onAddDish }) {
 
 
 
-      const res = await fetch(url, { headers: { ...getAuthHeaders() } });
+      const res = await fetch(url, { headers: { ...getAuthHeaders() }, cache: 'no-store' });
 
       if (!res.ok) throw new Error('Admin fetch failed');
 
@@ -2350,6 +2348,8 @@ export function MenuPage({ onAddDish }) {
         gstEnabled: item.menuType === 'LIQUOR' || item.menuType === 'BAR'
           ? false
           : item.gstEnabled !== false,
+
+        reportCategory: item.reportCategory || null,
 
       })));
 
@@ -2440,6 +2440,10 @@ export function MenuPage({ onAddDish }) {
   const [togglingId, setTogglingId] = useState(null);
 
   const [togglingMenuTypeId, setTogglingMenuTypeId] = useState(null);
+
+  const [selectedItemIds, setSelectedItemIds] = useState(new Set());
+  const [togglingReportCatId, setTogglingReportCatId] = useState(null);
+  const [bulkReportCatLoading, setBulkReportCatLoading] = useState(false);
 
 
 
@@ -2624,6 +2628,76 @@ export function MenuPage({ onAddDish }) {
       setTogglingMenuTypeId(null);
     }
   }, [togglingMenuTypeId, refreshMenu, activeOutlet, allPrinterOptions, liveAgentData]);
+
+
+  // ── Report category management (Food / Beverages / Liquor) ───────────
+  const REPORT_CATEGORIES = ['Food', 'Beverages', 'Liquor'];
+
+  const handleReportCategoryChange = useCallback(async (item, newCategory) => {
+    if (!newCategory || !REPORT_CATEGORIES.includes(newCategory)) return;
+    if (item.reportCategory === newCategory) return;
+    setTogglingReportCatId(item.id);
+    // Optimistic update
+    setAdminItems(prev => prev.map(i => i.id === item.id ? { ...i, reportCategory: newCategory } : i));
+    try {
+      await apiFetch(`/api/menu/admin/items/${item.id}/report-category`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportCategory: newCategory }),
+      });
+    } catch (err) {
+      console.error('[MenuPage] Report category update failed:', err);
+      setAdminItems(prev => prev.map(i => i.id === item.id ? { ...i, reportCategory: item.reportCategory } : i));
+      alert('Could not update report category: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setTogglingReportCatId(null);
+    }
+  }, []);
+
+  const handleBulkReportCategory = useCallback(async (newCategory) => {
+    if (!newCategory || !REPORT_CATEGORIES.includes(newCategory)) return;
+    if (selectedItemIds.size === 0) return;
+    setBulkReportCatLoading(true);
+    const idsToUpdate = Array.from(selectedItemIds);
+    console.log('[MenuPage] Bulk report category update START:', { idsToUpdate, newCategory, count: idsToUpdate.length });
+    // Optimistic update
+    setAdminItems(prev => prev.map(i => selectedItemIds.has(i.id) ? { ...i, reportCategory: newCategory } : i));
+    try {
+      const result = await apiFetch(`/api/menu/admin/items/bulk/report-category`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemIds: idsToUpdate, reportCategory: newCategory }),
+      });
+      console.log('[MenuPage] Bulk report category update SUCCESS:', result);
+      setSelectedItemIds(new Set());
+      // Reload from server to confirm persistence
+      fetchAdminItems();
+    } catch (err) {
+      console.error('[MenuPage] Bulk report category update FAILED:', err);
+      alert('Could not bulk update report category: ' + (err?.message || 'Unknown error'));
+      // Revert by reloading from server
+      refreshMenu();
+      fetchAdminItems();
+    } finally {
+      setBulkReportCatLoading(false);
+    }
+  }, [selectedItemIds, refreshMenu, fetchAdminItems]);
+
+  const toggleItemSelection = useCallback((itemId) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedItemIds(prev => {
+      if (prev.size === adminItems.length) return new Set();
+      return new Set(adminItems.map(i => i.id));
+    });
+  }, [adminItems]);
 
 
 
@@ -4109,6 +4183,37 @@ export function MenuPage({ onAddDish }) {
     </div>
 
 
+    {selectedItemIds.size > 0 && (
+      <div className="flex items-center gap-3 px-4 py-2 bg-[#FFF3E0] border border-[#FFB74D] rounded-lg mb-2">
+        <span className="text-xs font-bold text-[#E65100]">
+          {selectedItemIds.size} item{selectedItemIds.size > 1 ? 's' : ''} selected
+        </span>
+        <span className="text-[10px] text-gray-500 font-medium">Set Sales Category:</span>
+        {['Food', 'Beverages', 'Liquor'].map((cat) => (
+          <button
+            key={cat}
+            onClick={() => handleBulkReportCategory(cat)}
+            disabled={bulkReportCatLoading}
+            className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-all disabled:opacity-40 ${
+              cat === 'Liquor'
+                ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                : cat === 'Beverages'
+                  ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+            }`}
+          >
+            {bulkReportCatLoading ? '…' : cat}
+          </button>
+        ))}
+        <button
+          onClick={() => setSelectedItemIds(new Set())}
+          className="ml-auto text-xs font-bold text-gray-500 hover:text-gray-700"
+        >
+          Clear selection
+        </button>
+      </div>
+    )}
+
 
     <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar" data-tour="admin-menu-items">
 
@@ -4117,6 +4222,15 @@ export function MenuPage({ onAddDish }) {
         <thead className="sticky top-0 bg-white z-10">
 
           <tr className="border-b border-[#FFCDD2]">
+
+            <th className="px-4 py-2 w-8">
+              <input
+                type="checkbox"
+                checked={adminItems.length > 0 && selectedItemIds.size === adminItems.length}
+                onChange={toggleSelectAll}
+                className="accent-[#E53935] w-4 h-4 cursor-pointer"
+              />
+            </th>
 
             <th className="px-4 py-2">Image</th>
 
@@ -4134,6 +4248,8 @@ export function MenuPage({ onAddDish }) {
 
             <th className="px-4 py-2 text-left text-xs font-black uppercase text-gray-500">KOT Type</th>
 
+            <th className="px-4 py-2 text-left text-xs font-black uppercase text-gray-500">Sales Category</th>
+
             <th className="px-4 py-2">Available</th>
 
             <th className="px-4 py-2">Action</th>
@@ -4148,7 +4264,7 @@ export function MenuPage({ onAddDish }) {
 
             <tr>
 
-              <td colSpan={8} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+              <td colSpan={10} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
 
                 Syncing menu from server…
 
@@ -4160,7 +4276,7 @@ export function MenuPage({ onAddDish }) {
 
             <tr>
 
-              <td colSpan={8} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+              <td colSpan={10} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
 
                 {filter.trim()
 
@@ -4177,6 +4293,15 @@ export function MenuPage({ onAddDish }) {
           items.map((item) => (
 
             <tr key={item.id || item.n} className={`border-b border-[#FFEBEE] hover:bg-[#FFF5F5] transition-opacity ${item.isAvailable ? '' : 'opacity-60'}`}>
+
+              <td className="px-4 py-2">
+                <input
+                  type="checkbox"
+                  checked={selectedItemIds.has(item.id)}
+                  onChange={() => toggleItemSelection(item.id)}
+                  className="accent-[#E53935] w-4 h-4 cursor-pointer"
+                />
+              </td>
 
               <td className="px-4 py-2">
 
@@ -4230,6 +4355,25 @@ export function MenuPage({ onAddDish }) {
 
                 </span>
 
+              </td>
+
+              <td className="px-4 py-2">
+                <select
+                  value={item.reportCategory || (item.menuType === 'LIQUOR' ? 'Liquor' : 'Food')}
+                  onChange={(e) => handleReportCategoryChange(item, e.target.value)}
+                  disabled={togglingReportCatId === item.id}
+                  className={`text-xs font-bold px-2 py-1 rounded-md border cursor-pointer disabled:opacity-40 ${
+                    (item.reportCategory || (item.menuType === 'LIQUOR' ? 'Liquor' : 'Food')) === 'Liquor'
+                      ? 'border-purple-300 bg-purple-50 text-purple-700'
+                      : (item.reportCategory || (item.menuType === 'LIQUOR' ? 'Liquor' : 'Food')) === 'Beverages'
+                        ? 'border-blue-300 bg-blue-50 text-blue-700'
+                        : 'border-green-300 bg-green-50 text-green-700'
+                  }`}
+                >
+                  <option value="Food">Food</option>
+                  <option value="Beverages">Beverages</option>
+                  <option value="Liquor">Liquor</option>
+                </select>
               </td>
 
               <td className="px-4 py-2">

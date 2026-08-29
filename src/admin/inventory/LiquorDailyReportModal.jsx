@@ -27,7 +27,7 @@ import { apiUrl, getAuthHeaders } from '../../services/apiConfig';
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
+  return `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtPct(n) {
@@ -269,16 +269,16 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const purchaseCost = Number(edit.purchaseCost) || 0;
       const sellingPrice = Number(edit.sellingPrice) || 0;
       const qty = Number(edit.qty) || 0;
-      const consumption = Math.round(sale * purchaseCost * 100) / 100;
-      const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
-      const profit = Math.round((saleAmount - consumption) * 100) / 100;
+      const consumption = sale * purchaseCost;
+      const saleAmount = sale * sellingPrice;
+      const profit = saleAmount - consumption;
       const isHidden = nonAcHiddenFlags[item.itemId] === true;
       // Stock flow — opening/received/sold editable, stock/closing auto-calc
       const opening = Number(edit.opening ?? item.opening) || 0;
       const received = Number(edit.received ?? item.received) || 0;
-      const stock = Math.round((opening + received) * 100) / 100;
+      const stock = opening + received;
       const sold = Number(edit.sold ?? sale) || 0;
-      const closing = Math.round((stock - sold) * 100) / 100;
+      const closing = stock - sold;
       return {
         ...item,
         qty,
@@ -315,16 +315,16 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const sellingPrice = Number(edit.sellingPrice) || 0;
       const qty = Number(edit.qty) || 0;
       // AC uses 30ML cost logic: Consumption = Sale × Purchase Cost (mathematically equivalent to pegs × 30ML_cost)
-      const consumption = Math.round(sale * purchaseCost * 100) / 100;
-      const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
-      const profit = Math.round((saleAmount - consumption) * 100) / 100;
+      const consumption = sale * purchaseCost;
+      const saleAmount = sale * sellingPrice;
+      const profit = saleAmount - consumption;
       const isHidden = acHiddenFlags[item.itemId] === true;
       // Stock flow — opening/received/sold editable, stock/closing auto-calc
       const opening = Number(edit.opening ?? item.opening) || 0;
       const received = Number(edit.received ?? item.received) || 0;
-      const stock = Math.round((opening + received) * 100) / 100;
+      const stock = opening + received;
       const sold = Number(edit.sold ?? sale) || 0;
-      const closing = Math.round((stock - sold) * 100) / 100;
+      const closing = stock - sold;
       return {
         ...item,
         qty,
@@ -353,29 +353,29 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
   // Item-wise totals (recalculated from edited values)
   const computedNonAcTotals = useMemo(() => {
-    const consumption = Math.round(computedNonAcItems.reduce((s, i) => s + i.consumption, 0) * 100) / 100;
-    const saleAmount = Math.round(computedNonAcItems.reduce((s, i) => s + i.saleAmount, 0) * 100) / 100;
-    const profit = Math.round(computedNonAcItems.reduce((s, i) => s + i.profit, 0) * 100) / 100;
-    const profitMarginPct = consumption > 0 ? Math.round(profit / consumption * 100 * 100) / 100 : 0;
-    const opening = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.opening) || 0), 0) * 100) / 100;
-    const received = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.received) || 0), 0) * 100) / 100;
-    const stock = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.stock) || 0), 0) * 100) / 100;
-    const sold = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.sold) || 0), 0) * 100) / 100;
-    const closing = Math.round(computedNonAcItems.reduce((s, i) => s + (Number(i.closing) || 0), 0) * 100) / 100;
+    const consumption = computedNonAcItems.reduce((s, i) => s + i.consumption, 0);
+    const saleAmount = computedNonAcItems.reduce((s, i) => s + i.saleAmount, 0);
+    const profit = computedNonAcItems.reduce((s, i) => s + i.profit, 0);
+    const profitMarginPct = consumption > 0 ? (profit / consumption) * 100 : 0;
+    const opening = computedNonAcItems.reduce((s, i) => s + (Number(i.opening) || 0), 0);
+    const received = computedNonAcItems.reduce((s, i) => s + (Number(i.received) || 0), 0);
+    const stock = computedNonAcItems.reduce((s, i) => s + (Number(i.stock) || 0), 0);
+    const sold = computedNonAcItems.reduce((s, i) => s + (Number(i.sold) || 0), 0);
+    const closing = computedNonAcItems.reduce((s, i) => s + (Number(i.closing) || 0), 0);
     return { consumption, saleAmount, profit, profitMarginPct, opening, received, stock, sold, closing };
   }, [computedNonAcItems]);
 
   // AC totals — ONLY visible items (hidden items excluded from all calculations)
   const computedAcTotals = useMemo(() => {
-    const consumption = Math.round(computedAcItems.reduce((s, i) => s + i.consumption, 0) * 100) / 100;
-    const saleAmount = Math.round(computedAcItems.reduce((s, i) => s + i.saleAmount, 0) * 100) / 100;
-    const profit = Math.round(computedAcItems.reduce((s, i) => s + i.profit, 0) * 100) / 100;
-    const profitMarginPct = consumption > 0 ? Math.round(profit / consumption * 100 * 100) / 100 : 0;
-    const opening = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.opening) || 0), 0) * 100) / 100;
-    const received = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.received) || 0), 0) * 100) / 100;
-    const stock = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.stock) || 0), 0) * 100) / 100;
-    const sold = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.sold) || 0), 0) * 100) / 100;
-    const closing = Math.round(computedAcItems.reduce((s, i) => s + (Number(i.closing) || 0), 0) * 100) / 100;
+    const consumption = computedAcItems.reduce((s, i) => s + i.consumption, 0);
+    const saleAmount = computedAcItems.reduce((s, i) => s + i.saleAmount, 0);
+    const profit = computedAcItems.reduce((s, i) => s + i.profit, 0);
+    const profitMarginPct = consumption > 0 ? (profit / consumption) * 100 : 0;
+    const opening = computedAcItems.reduce((s, i) => s + (Number(i.opening) || 0), 0);
+    const received = computedAcItems.reduce((s, i) => s + (Number(i.received) || 0), 0);
+    const stock = computedAcItems.reduce((s, i) => s + (Number(i.stock) || 0), 0);
+    const sold = computedAcItems.reduce((s, i) => s + (Number(i.sold) || 0), 0);
+    const closing = computedAcItems.reduce((s, i) => s + (Number(i.closing) || 0), 0);
     return { consumption, saleAmount, profit, profitMarginPct, opening, received, stock, sold, closing };
   }, [computedAcItems]);
 
@@ -384,6 +384,12 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   // so that editing any item row (sale, purchase cost, selling price, stock) updates
   // the summary cards simultaneously. Summary overrides (manual card edits)
   // still take precedence via the pick() helper.
+  //
+  // 16 fields per spec:
+  //   Opening Stock Value, Purchase Value, Consumption, Closing Stock Value,
+  //   AC Sales, AC Consumption, AC Profit, AC Profit %,
+  //   Non-AC Sales, Non-AC Consumption, Non-AC Profit, Non-AC Profit %,
+  //   AC + Non-AC Sales, AC + Non-AC Consumption, AC + Non-AC Profit, AC + Non-AC Profit %
   const computed = useMemo(() => {
     if (!data) return null;
 
@@ -396,23 +402,36 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     const totalNonAcProfit = computedNonAcTotals.profit;
 
     // Opening Stock Value = sum(opening bottles × purchase cost) across all visible items
-    const computedOpeningStockValue = Math.round(
-      [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
-        return s + (Number(i.opening) || 0) * (Number(i.purchaseCost) || 0);
-      }, 0) * 100
-    ) / 100;
+    const computedOpeningStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
+      return s + (Number(i.opening) || 0) * (Number(i.purchaseCost) || 0);
+    }, 0);
+
+    // Purchase Value = sum(received bottles × purchase cost) across all visible items
+    const computedPurchaseValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
+      return s + (Number(i.received) || 0) * (Number(i.purchaseCost) || 0);
+    }, 0);
+
+    // Consumption = sum(sold bottles × purchase cost) across all visible items
+    const computedConsumption = totalAcConsumptionCost + totalNonAcConsumptionCost;
 
     // Closing Stock Value = sum(closing bottles × purchase cost) across all visible items
-    const computedClosingStockValue = Math.round(
-      [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
-        return s + (Number(i.closing) || 0) * (Number(i.purchaseCost) || 0);
-      }, 0) * 100
-    ) / 100;
+    const computedClosingStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
+      return s + (Number(i.closing) || 0) * (Number(i.purchaseCost) || 0);
+    }, 0);
 
-    // Total Liquor Sales (Gross) = AC Sales + Non-AC Sales
-    const computedGrossSales = Math.round((totalAcRevenue + totalNonAcRevenue) * 100) / 100;
-    // Gross Profit After Liquor Cost = AC Profit + Non-AC Profit
-    const computedGrossProfit = Math.round((totalAcProfit + totalNonAcProfit) * 100) / 100;
+    // AC Profit % = AC Profit ÷ AC Sales × 100
+    const computedAcProfitPct = totalAcRevenue > 0 ? (totalAcProfit / totalAcRevenue) * 100 : 0;
+    // Non-AC Profit % = Non-AC Profit ÷ Non-AC Sales × 100
+    const computedNonAcProfitPct = totalNonAcRevenue > 0 ? (totalNonAcProfit / totalNonAcRevenue) * 100 : 0;
+
+    // Total Sales = AC Sales + Non-AC Sales
+    const computedTotalSales = totalAcRevenue + totalNonAcRevenue;
+    // Total Consumption = AC Consumption + Non-AC Consumption
+    const computedTotalConsumption = computedConsumption;
+    // Total Profit = AC Profit + Non-AC Profit
+    const computedTotalProfit = totalAcProfit + totalNonAcProfit;
+    // Total Profit % = Total Profit ÷ Total Sales × 100
+    const computedTotalProfitPct = computedTotalSales > 0 ? (computedTotalProfit / computedTotalSales) * 100 : 0;
 
     // Apply summary overrides — every business position card is editable.
     // If a field has been edited, use the edited value; otherwise use computed.
@@ -421,15 +440,23 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
     const summary = {
       ...data.summary,
-      // ── 8 retained fields (auto-fill from item-wise data, editable override) ──
-      totalOpeningStockValue: Math.round(pick('totalOpeningStockValue', computedOpeningStockValue) * 100) / 100,
-      totalClosingStockValue: Math.round(pick('totalClosingStockValue', computedClosingStockValue) * 100) / 100,
-      totalGrossSales: Math.round(pick('totalGrossSales', computedGrossSales) * 100) / 100,
-      totalGrossProfit: Math.round(pick('totalGrossProfit', computedGrossProfit) * 100) / 100,
-      totalAcRevenue: Math.round(pick('totalAcRevenue', totalAcRevenue) * 100) / 100,
-      totalNonAcRevenue: Math.round(pick('totalNonAcRevenue', totalNonAcRevenue) * 100) / 100,
-      totalAcProfit: Math.round(pick('totalAcProfit', totalAcProfit) * 100) / 100,
-      totalNonAcProfit: Math.round(pick('totalNonAcProfit', totalNonAcProfit) * 100) / 100,
+      // ── 16 Business Position fields ──
+      openingStockValue: pick('openingStockValue', computedOpeningStockValue),
+      purchaseValue: pick('purchaseValue', computedPurchaseValue),
+      consumption: pick('consumption', computedConsumption),
+      closingStockValue: pick('closingStockValue', computedClosingStockValue),
+      acSales: pick('acSales', totalAcRevenue),
+      acConsumption: pick('acConsumption', totalAcConsumptionCost),
+      acProfit: pick('acProfit', totalAcProfit),
+      acProfitPct: pick('acProfitPct', computedAcProfitPct),
+      nonAcSales: pick('nonAcSales', totalNonAcRevenue),
+      nonAcConsumption: pick('nonAcConsumption', totalNonAcConsumptionCost),
+      nonAcProfit: pick('nonAcProfit', totalNonAcProfit),
+      nonAcProfitPct: pick('nonAcProfitPct', computedNonAcProfitPct),
+      totalSales: pick('totalSales', computedTotalSales),
+      totalConsumption: pick('totalConsumption', computedTotalConsumption),
+      totalProfit: pick('totalProfit', computedTotalProfit),
+      totalProfitPct: pick('totalProfitPct', computedTotalProfitPct),
     };
 
     return { ...data, categories: data.categories || [], summary };
@@ -1220,7 +1247,7 @@ function EditableSummaryCard({ label, field, value, edits, onChange, suffix, bad
 function buildPrintHtml(data) {
   const { outletName, outletWing, date, endDate, nonAcItems, acItems, nonAcItemTotals, acItemTotals, summary } = data;
 
-  const fmtInrP = (n) => n == null ? '—' : `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
+  const fmtInrP = (n) => n == null ? '—' : `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtPctP = (n) => n == null ? '—' : `${Number(n).toFixed(1)}%`;
 
   const fmtQtyP = (n) => n == null || n <= 0 ? '—' : `${Number(n).toFixed(0)} ml`;
@@ -1234,7 +1261,7 @@ function buildPrintHtml(data) {
   const summaryCard = (label, value, suffix, badge) => `
     <div class="bp-card${badge ? ` bp-${badge.toLowerCase()}` : ''}">
       <div class="bp-label">${label}${badge ? ` <span class="bp-badge bp-${badge.toLowerCase()}">${badge}</span>` : ''}</div>
-      <div class="bp-value">${value == null ? '—' : `${suffix === '₹' ? '₹' : ''}${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 1 })}${suffix === 'ml' ? ' ml' : ''}${suffix === '%' ? '%' : ''}`}</div>
+      <div class="bp-value">${value == null ? '—' : (suffix === '₹' ? `₹${Number(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 1 })}${suffix === 'ml' ? ' ml' : ''}${suffix === '%' ? '%' : ''}`)}</div>
     </div>`;
 
   const businessPositionHtml = summary ? `

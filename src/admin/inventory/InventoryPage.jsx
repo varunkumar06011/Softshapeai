@@ -23,7 +23,7 @@ import { ItemDetailsDrawer } from './ItemDetailsDrawer';
 import { StockSheetPrintModal } from './StockSheetPrintModal';
 import LiquorDailyReportModal from './LiquorDailyReportModal';
 import { NonAcDeductionModal } from './NonAcDeductionModal';
-import { fetchCombinedInventory, fetchNonAcDashboard } from '../../services/barInventoryApi';
+import { fetchCombinedInventory } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
 
 export function InventoryPage() {
@@ -53,8 +53,8 @@ export function InventoryPage() {
 
   // Combined bar inventory (AC + Non-AC)
   const [combinedItems, setCombinedItems] = useState([]);
+  const [combinedSummary, setCombinedSummary] = useState(null);
   const [combinedLoading, setCombinedLoading] = useState(false);
-  const [nonAcDashboard, setNonAcDashboard] = useState(null);
 
   // Data hook
   const inventory = useInventoryData(tab, restaurant);
@@ -67,20 +67,16 @@ export function InventoryPage() {
       const date = inventory.fromDate || getKolkataDateString();
       const data = await fetchCombinedInventory(date);
       setCombinedItems(data?.items || []);
+      setCombinedSummary(data?.summary || null);
     } catch {
       setCombinedItems([]);
+      setCombinedSummary(null);
     } finally {
       setCombinedLoading(false);
     }
   }, [tab, restaurant?.id, inventory.fromDate]);
 
   useEffect(() => { fetchCombined(); }, [fetchCombined]);
-
-  // Fetch Non-AC dashboard metrics
-  useEffect(() => {
-    if (tab !== TAB_BAR || !restaurant?.id) return;
-    fetchNonAcDashboard().then(setNonAcDashboard).catch(() => {});
-  }, [tab, restaurant?.id, combinedItems]);
 
   const handleAddItem = () => setAddItemOpen(true);
   const handleRecordPurchase = () => {
@@ -163,7 +159,7 @@ export function InventoryPage() {
         onView={handleView}
         combinedItems={[]}
         combinedLoading={false}
-        nonAcDashboard={null}
+        combinedSummary={null}
         onNonAcDeduct={null}
         onRefresh={handleSaved}
         modals={
@@ -196,7 +192,7 @@ export function InventoryPage() {
         onView={handleView}
         combinedItems={combinedItems}
         combinedLoading={combinedLoading}
-        nonAcDashboard={nonAcDashboard}
+        combinedSummary={combinedSummary}
         onNonAcDeduct={handleNonAcDeduct}
         onRefresh={handleSaved}
         modals={
@@ -262,7 +258,7 @@ export function InventoryPage() {
         onView={handleView}
         combinedItems={combinedItems}
         combinedLoading={combinedLoading}
-        nonAcDashboard={nonAcDashboard}
+        combinedSummary={combinedSummary}
         onNonAcDeduct={handleNonAcDeduct}
         onRefresh={handleSaved}
         modals={
@@ -284,50 +280,14 @@ export function InventoryPage() {
 }
 
 // Inner content component (shared between all outlet types)
-function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, nonAcDashboard, onNonAcDeduct, onRefresh }) {
+function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, combinedSummary, onNonAcDeduct, onRefresh }) {
   const { loading, error } = inventory;
 
   return (
     <div className="space-y-4">
-      {/* Summary cards */}
-      <InventorySummaryCards
-        summary={inventory.summary}
-        filterStatus={inventory.filterStatus}
-        setFilterStatus={inventory.setFilterStatus}
-      />
-
-      {/* Non-AC dashboard metrics (bar only) */}
-      {tab === 'bar' && nonAcDashboard && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4">
-            <div className="text-xs font-medium text-blue-500 uppercase">Total AC Stock</div>
-            <div className="text-2xl font-bold text-blue-700 mt-1">
-              {Math.round(nonAcDashboard.ac?.totalStockMl || 0).toLocaleString('en-IN')}
-              <span className="text-sm font-normal text-gray-400 ml-1">ml</span>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-orange-100 p-4">
-            <div className="text-xs font-medium text-orange-500 uppercase">Total Non-AC Stock</div>
-            <div className="text-2xl font-bold text-orange-700 mt-1">
-              {Math.round(nonAcDashboard.nonAc?.totalStockBottles || 0).toLocaleString('en-IN')}
-              <span className="text-sm font-normal text-gray-400 ml-1">btl</span>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4">
-            <div className="text-xs font-medium text-blue-500 uppercase">Today's AC Usage</div>
-            <div className="text-2xl font-bold text-blue-700 mt-1">
-              {Math.round(nonAcDashboard.ac?.todayUsage || 0).toLocaleString('en-IN')}
-              <span className="text-sm font-normal text-gray-400 ml-1">ml</span>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-orange-100 p-4">
-            <div className="text-xs font-medium text-orange-500 uppercase">Today's Non-AC Deduction</div>
-            <div className="text-2xl font-bold text-orange-700 mt-1">
-              {Math.round(nonAcDashboard.nonAc?.todayDeduction || 0).toLocaleString('en-IN')}
-              <span className="text-sm font-normal text-gray-400 ml-1">btl</span>
-            </div>
-          </div>
-        </div>
+      {/* Business Position summary cards (bar only — 16 cards) */}
+      {tab === 'bar' && combinedSummary && (
+        <InventorySummaryCards summary={combinedSummary} />
       )}
 
       {/* Toolbar */}
@@ -369,6 +329,7 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
           onEdit={onEdit}
           onView={onView}
           onRefresh={onRefresh}
+          date={inventory.fromDate || undefined}
         />
       ) : (
         /* Kitchen table */
