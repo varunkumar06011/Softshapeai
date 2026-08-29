@@ -241,11 +241,17 @@ export async function fetchBarDeductionCheck(orderId) {
 // ─── Non-AC Bar Inventory (separate stock pool) ───────────────────────────
 
 // Fetch combined AC + Non-AC inventory view
-export async function fetchCombinedInventory(date = '') {
+// Supports date-range queries via fromDate/toDate, or single date for backward compat.
+export async function fetchCombinedInventory(dateOrOpts = '') {
   const rId = getCurrentRestaurantId();
   if (!rId) throw new Error('No restaurant context');
   let url = `/api/bar/inventory/non-ac/combined?restaurantId=${rId}`;
-  if (date) url += `&date=${encodeURIComponent(date)}`;
+  if (typeof dateOrOpts === 'object' && dateOrOpts !== null) {
+    if (dateOrOpts.fromDate) url += `&fromDate=${encodeURIComponent(dateOrOpts.fromDate)}`;
+    if (dateOrOpts.toDate) url += `&toDate=${encodeURIComponent(dateOrOpts.toDate)}`;
+  } else if (dateOrOpts) {
+    url += `&date=${encodeURIComponent(dateOrOpts)}`;
+  }
   const res = await fetch(apiUrl(url), {
     cache: 'no-store',
     headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },

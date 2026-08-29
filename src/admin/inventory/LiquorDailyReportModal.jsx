@@ -1231,7 +1231,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
 function EditableSummaryCard({ label, field, value, edits, onChange, suffix, badge }) {
   const editValue = edits[field];
-  const displayVal = editValue != null ? editValue : value;
+  const rawVal = editValue != null ? editValue : value;
+  const displayVal = (rawVal != null && rawVal !== '' && !Number.isNaN(Number(rawVal))) ? Math.ceil(Number(rawVal)) : rawVal;
   return (
     <div className="bg-gray-50 rounded-lg p-2 sm:p-3 min-w-0 border border-gray-200">
       <div className="flex items-center gap-1">
@@ -1274,27 +1275,54 @@ function buildPrintHtml(data) {
   // Stock flow bottle quantity (show 0 explicitly, not —, for stock columns)
   const fmtStockP = (n) => n == null || Number.isNaN(Number(n)) ? '0' : Number(n).toFixed(2);
 
-  // ── Business Position summary cards (matches the admin preview) ──
-  // Grouped exactly like the on-screen EditableSummaryCard grid:
-  //   Stock Position → Sales/Profitability → Consumption ML
-  const summaryCard = (label, value, suffix, badge) => `
+  // ── Business Position summary cards (matches the admin preview — 16 cards) ──
+  const ceilVal = (v) => (v != null && !Number.isNaN(Number(v))) ? Math.ceil(Number(v)) : v;
+  const summaryCard = (label, value, suffix, badge) => {
+    const rv = ceilVal(value);
+    return `
     <div class="bp-card${badge ? ` bp-${badge.toLowerCase()}` : ''}">
       <div class="bp-label">${label}${badge ? ` <span class="bp-badge bp-${badge.toLowerCase()}">${badge}</span>` : ''}</div>
-      <div class="bp-value">${value == null ? '—' : (suffix === '₹' ? `₹${Number(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 1 })}${suffix === 'ml' ? ' ml' : ''}${suffix === '%' ? '%' : ''}`)}</div>
+      <div class="bp-value">${rv == null ? '—' : (suffix === '₹' ? `₹${Number(rv).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : (suffix === '%' ? `${Number(rv).toFixed(0)}%` : `${Number(rv).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`))}</div>
     </div>`;
+  };
 
-  const businessPositionHtml = summary ? `
-<div class="section-title first">Business Position</div>
+  const stockPositionHtml = summary ? `
+<div class="section-title first">Business Position — Stock</div>
 <div class="bp-grid">
-  ${summaryCard('Opening Stock Value', summary.totalOpeningStockValue, '₹')}
-  ${summaryCard('Closing Stock Value', summary.totalClosingStockValue, '₹')}
-  ${summaryCard('Total Liquor Sales (Gross)', summary.totalGrossSales, '₹')}
-  ${summaryCard('Gross Profit After Liquor Cost', summary.totalGrossProfit, '₹')}
-  ${summaryCard('AC Sales', summary.totalAcRevenue, '₹', 'AC')}
-  ${summaryCard('Non-AC Sales', summary.totalNonAcRevenue, '₹', 'Manual')}
-  ${summaryCard('AC Profit', summary.totalAcProfit, '₹')}
-  ${summaryCard('Non-AC Profit', summary.totalNonAcProfit, '₹')}
+  ${summaryCard('Opening Stock Value', summary.openingStockValue, '₹')}
+  ${summaryCard('Purchase Value', summary.purchaseValue, '₹')}
+  ${summaryCard('Consumption', summary.consumption, '₹')}
+  ${summaryCard('Closing Stock Value', summary.closingStockValue, '₹')}
 </div>` : '';
+
+  const acPositionHtml = summary ? `
+<div class="section-title">Business Position — AC (POS)</div>
+<div class="bp-grid">
+  ${summaryCard('AC Sales', summary.acSales, '₹', 'AC')}
+  ${summaryCard('AC Consumption', summary.acConsumption, '₹')}
+  ${summaryCard('AC Profit', summary.acProfit, '₹')}
+  ${summaryCard('AC Profit %', summary.acProfitPct, '%')}
+</div>` : '';
+
+  const nonAcPositionHtml = summary ? `
+<div class="section-title">Business Position — Non-AC (Admin)</div>
+<div class="bp-grid">
+  ${summaryCard('Non-AC Sales', summary.nonAcSales, '₹', 'Manual')}
+  ${summaryCard('Non-AC Consumption', summary.nonAcConsumption, '₹')}
+  ${summaryCard('Non-AC Profit', summary.nonAcProfit, '₹')}
+  ${summaryCard('Non-AC Profit %', summary.nonAcProfitPct, '%')}
+</div>` : '';
+
+  const totalPositionHtml = summary ? `
+<div class="section-title">Business Position — AC + Non-AC</div>
+<div class="bp-grid">
+  ${summaryCard('AC + Non-AC Sales', summary.totalSales, '₹')}
+  ${summaryCard('AC + Non-AC Consumption', summary.totalConsumption, '₹')}
+  ${summaryCard('AC + Non-AC Profit', summary.totalProfit, '₹')}
+  ${summaryCard('AC + Non-AC Profit %', summary.totalProfitPct, '%')}
+</div>` : '';
+
+  const businessPositionHtml = [stockPositionHtml, acPositionHtml, nonAcPositionHtml, totalPositionHtml].join('\n');
 
   // ── Item-wise Non-AC rows ──
   const nonAcItemRows = (nonAcItems || []).map((item) => `
@@ -1629,10 +1657,9 @@ ${(acItems && acItems.length > 0) ? `
 </div><!-- /.detailed-section -->
 
 <div class="footer">
-  Non-AC: Consumption = Sale × Purchase Cost · Sale Amount = Sale × Selling Price · Profit = Sale Amount − Consumption<br>
-  AC Bar: Consumption = Sale × Purchase Cost (30ML cost logic) · Sale Amount = Sale × Selling Price · Profit = Sale Amount − Consumption<br>
-  Profit Margin % = (Total Profit ÷ Total Consumption) × 100 · ⚠ = missing data (purchase cost, selling price, or bottle size)<br>
-  All values reflect the latest saved database data. AC adjustments are stored separately from POS billing data.
+  Stock Position: Opening Stock Value = Opening × Purchase Rate · Purchase Value = Purchases × Purchase Rate · Consumption = Sold × Purchase Rate · Closing Stock Value = Closing × Purchase Rate<br>
+  Profitability: AC Profit = AC Sales − AC Consumption · Non-AC Profit = Non-AC Sales − Non-AC Consumption · Total Profit = AC Profit + Non-AC Profit · Profit % = Profit ÷ Sales × 100<br>
+  AC = POS billing (Vgrand Lounge) · Non-AC = Admin-entered · All values reflect the latest saved database data.
 </div>
 
 </body>

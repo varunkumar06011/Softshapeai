@@ -80,7 +80,7 @@ export function useInventoryData(tab, restaurant) {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [tab, restaurant?.id, fromDate]);
+  }, [tab, restaurant?.id, fromDate, toDate]);
 
   // Initial fetch + refetch on tab/restaurant change
   useEffect(() => {

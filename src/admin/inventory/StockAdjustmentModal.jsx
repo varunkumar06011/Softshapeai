@@ -22,8 +22,9 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   // is adjusted — never falls back to items[0].
   const [selectedItem, setSelectedItem] = useState(null);
   const [itemSearch, setItemSearch] = useState('');
-  const [adjustType, setAdjustType] = useState('+'); // '+' or '-'
+  const [adjustType, setAdjustType] = useState('+'); // '+' or '-' or 'opening'
   const [amount, setAmount] = useState(0);
+  const [openingUnit, setOpeningUnit] = useState('ml'); // 'ml' or 'btl' — unit for opening stock entry
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -38,6 +39,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
       setItemSearch('');
       setAdjustType('+');
       setAmount(0);
+      setOpeningUnit('ml');
       setReason('');
       setNotes('');
       setError(null);
@@ -60,6 +62,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     setItemSearch('');
     setAdjustType('+');
     setAmount(0);
+    setOpeningUnit('ml');
     setReason('');
     setNotes('');
     setError(null);
@@ -81,10 +84,10 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
       return;
     }
     if (amount <= 0) {
-      setError('Amount must be greater than 0');
+      setError(adjustType === 'opening' ? 'Opening stock must be greater than 0' : 'Amount must be greater than 0');
       return;
     }
-    if (!reason) {
+    if (!reason && adjustType !== 'opening') {
       setError('Reason is required');
       return;
     }
@@ -98,8 +101,24 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
 
     try {
       if (tab === 'bar') {
-        const quantityChange = adjustType === '+' ? amount : -amount;
-        const type = reason === 'wastage' || reason === 'breakage' ? 'WASTAGE' : 'ADJUSTMENT';
+        // OPENING: set opening stock directly (positive amount = the opening stock value)
+        // WASTAGE/ADJUSTMENT: + adds stock, - removes stock
+        let quantityChange, type;
+        if (adjustType === 'opening') {
+          // Opening stock entry: set the absolute stock value
+          // The backend OPENING type sets openingStock = stockAfter in the snapshot.
+          // If the admin entered bottles, convert to ml using the item's bottleSize.
+          const bottleSize = Number(selectedItem.bottleSize) || 0;
+          if (openingUnit === 'btl' && bottleSize > 0) {
+            quantityChange = Math.round(amount * bottleSize * 100) / 100; // bottles → ml
+          } else {
+            quantityChange = amount; // already in ml
+          }
+          type = 'OPENING';
+        } else {
+          quantityChange = adjustType === '+' ? amount : -amount;
+          type = reason === 'wastage' || reason === 'breakage' ? 'WASTAGE' : 'ADJUSTMENT';
+        }
         await adjustStock({
           itemId: selectedItem.id,
           quantityChange,
@@ -146,6 +165,8 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     ? (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name)
     : '';
   const currentStock = Number(selectedItem?.currentStock) || 0;
+  const bottleSize = Number(selectedItem?.bottleSize) || 0;
+  const currentStockBtl = bottleSize > 0 ? currentStock / bottleSize : 0;
   const unit = selectedItem
     ? (tab === 'bar' ? 'ml' : selectedItem.unit)
     : '';
@@ -251,6 +272,11 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                 <div className="text-sm font-semibold text-gray-900 mt-0.5">{itemName}</div>
                 <div className="text-xs text-gray-500 mt-1">
                   Current: {currentStock.toFixed(2)} {unit}
+                  {tab === 'bar' && bottleSize > 0 && (
+                    <span className="ml-2 text-gray-400">
+                      ({currentStockBtl.toFixed(2)} btl)
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -273,11 +299,52 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                   >
                     − Remove Stock
                   </button>
+                  {tab === 'bar' && (
+                    <button
+                      onClick={() => setAdjustType('opening')}
+                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                        adjustType === 'opening' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      Opening Stock
+                    </button>
+                  )}
                 </div>
+                {adjustType === 'opening' && (
+                  <p className="text-xs text-purple-600 mt-1.5">
+                    Sets the opening stock for today. The entered value becomes the item's opening stock in the daily snapshot.
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount ({unit}) <span className="text-red-500">*</span></label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    {adjustType === 'opening' ? `Opening Stock` : `Amount (${unit})`} <span className="text-red-500">*</span>
+                  </label>
+                  {adjustType === 'opening' && tab === 'bar' && bottleSize > 0 && (
+                    <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => { setOpeningUnit('ml'); setAmount(0); }}
+                        className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                          openingUnit === 'ml' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        ml
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setOpeningUnit('btl'); setAmount(0); }}
+                        className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                          openingUnit === 'btl' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Bottles
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <input
                   type="number"
                   value={amount}
@@ -285,10 +352,19 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                   placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
+                {adjustType === 'opening' && tab === 'bar' && bottleSize > 0 && amount > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {openingUnit === 'btl'
+                      ? `= ${Math.round(amount * bottleSize).toLocaleString('en-IN')} ml (${bottleSize} ml per bottle)`
+                      : `= ${(amount / bottleSize).toFixed(2)} bottles (${bottleSize} ml per bottle)`}
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason {adjustType === 'opening' ? '(optional)' : '*'}
+                </label>
                 <select
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}

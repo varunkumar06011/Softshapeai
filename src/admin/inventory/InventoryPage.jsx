@@ -64,8 +64,12 @@ export function InventoryPage() {
     if (tab !== TAB_BAR || !restaurant?.id) return;
     setCombinedLoading(true);
     try {
-      const date = inventory.fromDate || getKolkataDateString();
-      const data = await fetchCombinedInventory(date);
+      const today = getKolkataDateString();
+      const opts = {
+        fromDate: inventory.fromDate || today,
+        toDate: inventory.toDate || inventory.fromDate || today,
+      };
+      const data = await fetchCombinedInventory(opts);
       setCombinedItems(data?.items || []);
       setCombinedSummary(data?.summary || null);
     } catch {
@@ -74,7 +78,7 @@ export function InventoryPage() {
     } finally {
       setCombinedLoading(false);
     }
-  }, [tab, restaurant?.id, inventory.fromDate]);
+  }, [tab, restaurant?.id, inventory.fromDate, inventory.toDate]);
 
   useEffect(() => { fetchCombined(); }, [fetchCombined]);
 
