@@ -4359,13 +4359,13 @@ export function MenuPage({ onAddDish }) {
 
               <td className="px-4 py-2">
                 <select
-                  value={item.reportCategory || (item.menuType === 'LIQUOR' ? 'Liquor' : 'Food')}
+                  value={item.reportCategory || 'Food'}
                   onChange={(e) => handleReportCategoryChange(item, e.target.value)}
                   disabled={togglingReportCatId === item.id}
                   className={`text-xs font-bold px-2 py-1 rounded-md border cursor-pointer disabled:opacity-40 ${
-                    (item.reportCategory || (item.menuType === 'LIQUOR' ? 'Liquor' : 'Food')) === 'Liquor'
+                    (item.reportCategory || 'Food') === 'Liquor'
                       ? 'border-purple-300 bg-purple-50 text-purple-700'
-                      : (item.reportCategory || (item.menuType === 'LIQUOR' ? 'Liquor' : 'Food')) === 'Beverages'
+                      : (item.reportCategory || 'Food') === 'Beverages'
                         ? 'border-blue-300 bg-blue-50 text-blue-700'
                         : 'border-green-300 bg-green-50 text-green-700'
                   }`}

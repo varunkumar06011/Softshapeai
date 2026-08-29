@@ -71,12 +71,17 @@ function normalizeBeverageNameForAnalytics(name) {
 }
 
 function getReportCategoryFromAnalytics(item) {
+  // 1. Priority: admin-set reportCategory from the MenuItem record.
   if (item.reportCategory && ['Food', 'Beverages', 'Liquor'].includes(item.reportCategory)) {
     return item.reportCategory;
   }
-  if (item.type === 'liquor') return 'Liquor';
-  const normalizedName = normalizeBeverageNameForAnalytics(String(item.name || ''));
-  if (BEVERAGE_KEYWORDS.some((k) => normalizedName.includes(k))) return 'Beverages';
+  // 2. Fallback: derive from the MenuItem's saved Category.name.
+  //    Do NOT use item name, item type, or hardcoded keyword lists.
+  const catName = String(item.category || '').trim().toLowerCase();
+  if (catName === 'liquor') return 'Liquor';
+  if (catName === 'beverages' || catName === 'beverage') return 'Beverages';
+  if (catName === 'food') return 'Food';
+  // 3. Last resort: default to Food.
   return 'Food';
 }
 
@@ -139,7 +144,7 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
       menuType: it.menuType,
       reportCategory: it.reportCategory,
       quantitySold: it.quantitySold,
-      unitPrice: it.quantitySold > 0 ? it.totalRevenue / it.quantitySold : 0,
+      unitPrice: it.unitPrice,
       totalRevenue: it.totalRevenue,
       revenuePercent: backendSummary.totalRevenue > 0
         ? (it.totalRevenue / backendSummary.totalRevenue) * 100
@@ -1123,7 +1128,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                       it.reportCategory === 'Beverages' ? 'bg-blue-100 text-blue-700' :
                       'bg-green-100 text-green-700'
                     }`}>
-                      {it.reportCategory || it.menuType}
+                      {it.reportCategory || 'Food'}
                     </span>
                   </td>
                   <td className="px-3 py-3 text-right font-bold text-gray-700">{it.quantitySold}</td>

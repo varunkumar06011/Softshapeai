@@ -79,10 +79,10 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
         if (Math.abs(diffMl) > 0.01) {
           await adjustStock({
             itemId: item.acItemId,
-            quantity: Math.abs(diffMl),
+            quantityChange: Math.abs(diffMl),
             type: 'ADJUSTMENT',
-            source: 'PHYSICAL_COUNT',
-            reason: `Admin closing stock edit: ${currentClosingBtl.toFixed(2)} → ${newClosingBtl.toFixed(2)} btl`,
+            notes: `Admin closing stock edit: ${currentClosingBtl.toFixed(2)} → ${newClosingBtl.toFixed(2)} btl`,
+            createdBy: 'Admin',
             date,
           });
         }
