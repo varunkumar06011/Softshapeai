@@ -5,8 +5,8 @@
 //   S.No | Item | Purchase Rate | Opening Stock | Purchases | Total Stock |
 //   AC Sale | Non-AC Sale | Closing Stock | Closing Value
 //
-// Opening Stock  = AC + Non-AC combined (bottles)
-// Purchases      = AC received + Non-AC received (bottles)
+// Opening Stock  = single physical opening stock (bottles) — NOT AC+Non-AC summed
+// Purchases      = single physical purchases (bottles) — NOT summed
 // Total Stock    = Opening Stock + Purchases
 // AC Sale        = POS liquor sales (bottles) — from Vgrand Lounge POS only
 // Non-AC Sale    = Admin-entered Non-AC sales (bottles) — NOT from POS
@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react';
-import { updateInventoryItem, adjustStock, updateNonAcEntry } from '../../services/barInventoryApi';
+import { updateInventoryItem, adjustStock, updateNonAcEntry, saveItemWiseEdits } from '../../services/barInventoryApi';
 
 function fmtQty(n) {
   if (n == null || Number.isNaN(Number(n))) return '0';
@@ -38,9 +38,12 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
 
   const handleStartEdit = (item) => {
     const btlSize = Number(item.bottleSize) || 0;
-    const acClosingBtl = Number(item.acClosingBottles) || 0;
-    const nonAcClosingBtl = Number(item.nonAcClosing) || 0;
-    const currentClosing = acClosingBtl + nonAcClosingBtl;
+    // Closing = Opening + Purchases - AC Sale - Non-AC Sale (single physical stock)
+    const openingBtl = Number(item.openingStockBottles) || 0;
+    const purchasesBtl = Number(item.purchasesBottles) || 0;
+    const acSaleBtl = Number(item.acSaleBottles) || (btlSize > 0 ? (Number(item.acSale) || 0) / btlSize : 0);
+    const nonAcSaleBtl = Number(item.nonAcDeduction) || 0;
+    const currentClosing = openingBtl + purchasesBtl - acSaleBtl - nonAcSaleBtl;
     setEditingClosing(item.id);
     setClosingInput(String(currentClosing.toFixed(2)));
   };
@@ -48,44 +51,62 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
   const handleSaveClosing = async (item) => {
     const newClosingBtl = Number(closingInput) || 0;
     const btlSize = Number(item.bottleSize) || 0;
-    const acClosingBtl = Number(item.acClosingBottles) || 0;
-    const nonAcClosingBtl = Number(item.nonAcClosing) || 0;
-    const currentClosingBtl = acClosingBtl + nonAcClosingBtl;
+    // Use single physical stock values
+    const openingBtl = Number(item.openingStockBottles) || 0;
+    const purchasesBtl = Number(item.purchasesBottles) || 0;
+    const totalStockBtl = openingBtl + purchasesBtl;
+    const acSaleBtl = Number(item.acSaleBottles) || (btlSize > 0 ? (Number(item.acSale) || 0) / btlSize : 0);
+    const nonAcSaleBtl = Number(item.nonAcDeduction) || 0;
+    const currentClosingBtl = totalStockBtl - acSaleBtl - nonAcSaleBtl;
     if (Math.abs(newClosingBtl - currentClosingBtl) < 0.01) {
       setEditingClosing(null);
       return;
     }
     setSaving(true);
     try {
+      // Calculate new total sold = Total Stock - New Closing
+      // This ensures both snapshot.sold and snapshot.closing are updated,
+      // so the PDF preview (which calculates closing = totalStock - sold)
+      // shows the same value as the Inventory page.
+      const newTotalSoldBtl = Math.max(0, Math.round((totalStockBtl - newClosingBtl) * 100) / 100);
+
       if (item.hasNonAc && item.nonAcItemId) {
-        // Non-AC item: update closingBottles via NonAcDailyEntry
-        const openingBtl = Number(item.openingNonAc) || 0;
-        const receivedBtl = Number(item.nonAcReceived) || 0;
-        const saleBtl = Number(item.nonAcDeduction) || 0;
+        // Non-AC item: calculate new Non-AC deduction = Total Sold - AC Sale
+        // (AC sale stays the same, Non-AC deduction absorbs the difference)
+        const newNonAcSold = Math.max(0, Math.round((newTotalSoldBtl - acSaleBtl) * 100) / 100);
+        const nonAcOpening = Number(item.openingStockBottles) || 0;
+        const nonAcReceived = Number(item.purchasesBottles) || 0;
         await updateNonAcEntry({
           itemId: item.nonAcItemId,
           date,
-          openingBottles: openingBtl,
-          saleBottles: saleBtl,
+          openingBottles: nonAcOpening,
+          saleBottles: newNonAcSold,
           closingBottles: newClosingBtl,
-          receivedBottles: receivedBtl,
+          receivedBottles: nonAcReceived,
           reason: 'Admin closing stock edit',
         });
-      } else if (item.hasAc && item.acItemId) {
-        // AC item: adjust stock to match new closing
-        const newClosingMl = btlSize > 0 ? newClosingBtl * btlSize : newClosingBtl;
-        const currentClosingMl = Number(item.acClosing) || 0;
-        const diffMl = newClosingMl - currentClosingMl;
-        if (Math.abs(diffMl) > 0.01) {
-          await adjustStock({
-            itemId: item.acItemId,
-            quantityChange: Math.abs(diffMl),
-            type: 'ADJUSTMENT',
-            notes: `Admin closing stock edit: ${currentClosingBtl.toFixed(2)} → ${newClosingBtl.toFixed(2)} btl`,
-            createdBy: 'Admin',
+        // Also sync AC snapshot if this item has both AC + Non-AC
+        if (item.hasAc && item.acItemId) {
+          await saveItemWiseEdits({
             date,
+            acAdjustments: [{
+              itemId: item.acItemId,
+              adjustedSaleBtl: acSaleBtl,
+              adjustedClosingBtl: newClosingBtl,
+            }],
           });
         }
+      } else if (item.hasAc && item.acItemId) {
+        // AC item only: use the same item-wise endpoint as PDF preview
+        // This updates both sold and closing in the snapshot, ensuring sync
+        await saveItemWiseEdits({
+          date,
+          acAdjustments: [{
+            itemId: item.acItemId,
+            adjustedSaleBtl: newTotalSoldBtl,
+            adjustedClosingBtl: newClosingBtl,
+          }],
+        });
       }
       setEditingClosing(null);
       if (onRefresh) onRefresh();
@@ -143,21 +164,19 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
               filtered.map((item, idx) => {
                 const btlSize = Number(item.bottleSize) || 0;
                 const purchaseRate = Number(item.purchaseRate) || 0;
-                // Opening Stock = AC + Non-AC combined (bottles)
-                const openingBtl = (Number(item.openingAcBottles) || 0) + (Number(item.openingNonAc) || 0);
-                // Purchases = AC received (ml→btl) + Non-AC received (btl)
-                const acReceivedBtl = Number(item.acReceivedBottles) || (btlSize > 0 ? (Number(item.acReceived) || 0) / btlSize : 0);
-                const purchasesBtl = acReceivedBtl + (Number(item.nonAcReceived) || 0);
+                // SINGLE physical opening stock — NOT summed AC + Non-AC.
+                // AC and Non-AC share the same physical inventory.
+                const openingBtl = Number(item.openingStockBottles) || 0;
+                // SINGLE purchases value — NOT summed
+                const purchasesBtl = Number(item.purchasesBottles) || 0;
                 // Total Stock = Opening + Purchases
                 const totalStockBtl = openingBtl + purchasesBtl;
-                // AC Sale = POS liquor sales (bottles)
+                // AC Sale = POS liquor sales (bottles) — separate sales channel
                 const acSaleBtl = Number(item.acSaleBottles) || (btlSize > 0 ? (Number(item.acSale) || 0) / btlSize : 0);
-                // Non-AC Sale = Admin-entered (bottles)
+                // Non-AC Sale = Admin-entered (bottles) — separate sales channel
                 const nonAcSaleBtl = Number(item.nonAcDeduction) || 0;
                 // Closing Stock = Total Stock − AC Sale − Non-AC Sale
-                const acClosingBtl = Number(item.acClosingBottles) || 0;
-                const nonAcClosingBtl = Number(item.nonAcClosing) || 0;
-                const closingBtl = acClosingBtl + nonAcClosingBtl;
+                const closingBtl = totalStockBtl - acSaleBtl - nonAcSaleBtl;
                 // Closing Value = Closing Stock × Purchase Rate
                 const closingValue = closingBtl * purchaseRate;
                 const isEditing = editingClosing === item.id;

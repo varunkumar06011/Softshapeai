@@ -345,6 +345,19 @@ export async function updateNonAcItem(id, data) {
   return parseResponse(res);
 }
 
+// Save item-wise edits (same endpoint as PDF preview — ensures bidirectional sync)
+// Used by CombinedBarTable when admin edits closing stock on the Inventory page.
+// This updates both DailyInventorySnapshot (sold + closing) and AcReportAdjustment,
+// so the PDF preview and Inventory page always show the same values.
+export async function saveItemWiseEdits({ date, nonAcItems, acAdjustments }) {
+  const res = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ date, nonAcItems, acAdjustments }),
+  });
+  return parseResponse(res);
+}
+
 // Fetch Non-AC dashboard metrics
 export async function fetchNonAcDashboard() {
   const rId = getCurrentRestaurantId();
