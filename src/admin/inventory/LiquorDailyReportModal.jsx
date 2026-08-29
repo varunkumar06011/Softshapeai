@@ -856,23 +856,42 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                 </div>
               )}
 
-              {/* Business Position — Stock first, then Sales/Profit */}
+              {/* Business Position — 16 cards per spec */}
               <div>
                 <h3 className="text-sm font-bold text-gray-900 mb-3">
                   Business Position
                   <span className="ml-2 text-xs font-normal text-gray-500">(all editable in preview)</span>
                 </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
-                  {/* Stock Position */}
-                  <EditableSummaryCard label="Opening Stock Value" field="totalOpeningStockValue" value={computed.summary.totalOpeningStockValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Closing Stock Value" field="totalClosingStockValue" value={computed.summary.totalClosingStockValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  {/* Sales / Profitability */}
-                  <EditableSummaryCard label="Total Liquor Sales (Gross)" field="totalGrossSales" value={computed.summary.totalGrossSales} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Gross Profit After Liquor Cost" field="totalGrossProfit" value={computed.summary.totalGrossProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="AC Sales" field="totalAcRevenue" value={computed.summary.totalAcRevenue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" badge="AC" />
-                  <EditableSummaryCard label="Non-AC Sales" field="totalNonAcRevenue" value={computed.summary.totalNonAcRevenue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" badge="Manual" />
-                  <EditableSummaryCard label="AC Profit" field="totalAcProfit" value={computed.summary.totalAcProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
-                  <EditableSummaryCard label="Non-AC Profit" field="totalNonAcProfit" value={computed.summary.totalNonAcProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                {/* Stock Position */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3">
+                  <EditableSummaryCard label="Opening Stock Value" field="openingStockValue" value={computed.summary.openingStockValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="Purchase Value" field="purchaseValue" value={computed.summary.purchaseValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="Consumption" field="consumption" value={computed.summary.consumption} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="Closing Stock Value" field="closingStockValue" value={computed.summary.closingStockValue} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                </div>
+                {/* AC */}
+                <div className="text-[10px] font-bold text-blue-400 uppercase mb-1">AC (POS)</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3">
+                  <EditableSummaryCard label="AC Sales" field="acSales" value={computed.summary.acSales} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" badge="AC" />
+                  <EditableSummaryCard label="AC Consumption" field="acConsumption" value={computed.summary.acConsumption} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="AC Profit" field="acProfit" value={computed.summary.acProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="AC Profit %" field="acProfitPct" value={computed.summary.acProfitPct} edits={summaryEdits} onChange={handleSummaryChange} suffix="%" />
+                </div>
+                {/* Non-AC */}
+                <div className="text-[10px] font-bold text-orange-400 uppercase mb-1">Non-AC (Admin)</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3">
+                  <EditableSummaryCard label="Non-AC Sales" field="nonAcSales" value={computed.summary.nonAcSales} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" badge="Manual" />
+                  <EditableSummaryCard label="Non-AC Consumption" field="nonAcConsumption" value={computed.summary.nonAcConsumption} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="Non-AC Profit" field="nonAcProfit" value={computed.summary.nonAcProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="Non-AC Profit %" field="nonAcProfitPct" value={computed.summary.nonAcProfitPct} edits={summaryEdits} onChange={handleSummaryChange} suffix="%" />
+                </div>
+                {/* Total */}
+                <div className="text-[10px] font-bold text-green-500 uppercase mb-1">AC + Non-AC</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                  <EditableSummaryCard label="AC + Non-AC Sales" field="totalSales" value={computed.summary.totalSales} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="AC + Non-AC Consumption" field="totalConsumption" value={computed.summary.totalConsumption} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="AC + Non-AC Profit" field="totalProfit" value={computed.summary.totalProfit} edits={summaryEdits} onChange={handleSummaryChange} suffix="₹" />
+                  <EditableSummaryCard label="AC + Non-AC Profit %" field="totalProfitPct" value={computed.summary.totalProfitPct} edits={summaryEdits} onChange={handleSummaryChange} suffix="%" />
                 </div>
               </div>
 
