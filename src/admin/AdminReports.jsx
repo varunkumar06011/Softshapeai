@@ -2030,7 +2030,7 @@ export default function AdminReports() {
       </div>
 
       {/* Mobile sidebar toggle */}
-      <div className="md:hidden bg-white border-b border-[#FFCDD2] px-4 py-2">
+      <div className="md:hidden bg-white border-b border-[#FFCDD2] px-4 py-2 sticky top-[73px] z-10">
         <button
           onClick={() => setMobileSidebarOpen((v) => !v)}
           className="flex items-center gap-2 text-xs font-bold text-gray-600 hover:text-[#B71C1C] transition-colors"
@@ -2042,7 +2042,8 @@ export default function AdminReports() {
 
       <div className="flex flex-col md:flex-row">
         {/* Left Sidebar */}
-        <aside className={`w-full md:w-56 flex-shrink-0 bg-white border-r border-[#FFCDD2] md:min-h-[calc(100vh-73px)] ${mobileSidebarOpen ? 'block' : 'hidden'} md:block`}>
+        {/* Mobile: scrollable overlay panel with max-height to prevent clipping */}
+        <aside className={`w-full md:w-56 flex-shrink-0 bg-white border-r border-[#FFCDD2] md:min-h-[calc(100vh-73px)] ${mobileSidebarOpen ? 'block max-h-[60vh] overflow-y-auto overscroll-contain' : 'hidden'} md:block md:max-h-none md:overflow-visible`}>
           <div className="p-4 space-y-6">
             {filteredCategories.map((cat) => (
               <div key={cat.key}>
