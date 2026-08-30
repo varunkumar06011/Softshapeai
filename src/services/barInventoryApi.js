@@ -161,6 +161,19 @@ export async function adjustStock(data) {
   return normalizeInventoryItem(item);
 }
 
+// Get opening stock preview for a specific item
+// Returns today's sold/purchased/wastage/adjusted so the frontend can show
+// a live preview of the resulting closing stock before saving.
+export async function getOpeningPreview(itemId, date) {
+  const params = new URLSearchParams();
+  if (date) params.set('date', date);
+  const qs = params.toString();
+  const res = await fetch(apiUrl(`/api/bar/inventory/opening-preview/${itemId}${qs ? `?${qs}` : ''}`), {
+    headers: { ...getAuthHeaders() },
+  });
+  return parseResponse(res);
+}
+
 // Record purchase
 // data.requestId (optional) — UUID for idempotency; if provided, server deduplicates
 // retries with the same requestId via ProcessedRequest.

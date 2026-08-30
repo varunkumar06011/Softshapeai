@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo } from 'react';
-import { adjustStock, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
+import { adjustStock, getOrCreateRequestId, clearRequestId, getOpeningPreview } from '../../services/barInventoryApi';
 import { createKitchenEntry } from '../../services/kitchenInventoryApi';
 
 export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved }) {
@@ -29,6 +29,9 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // Opening stock live preview: today's sold/purchased/wastage for the selected item
+  const [openingPreview, setOpeningPreview] = useState(null);
+  const [openingPreviewLoading, setOpeningPreviewLoading] = useState(false);
 
   // Reset state whenever the modal opens. If a pre-selected `item` is provided
   // (drawer launch), use it directly and skip the picker step. Otherwise start
@@ -66,7 +69,31 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     setReason('');
     setNotes('');
     setError(null);
+    setOpeningPreview(null);
   };
+
+  // ── Fetch opening preview when an item is selected in bar tab ──
+  // Shows today's sold/purchased/wastage so the admin can see the resulting
+  // closing stock before saving the opening stock value.
+  useEffect(() => {
+    if (!open || tab !== 'bar' || !selectedItem?.id) {
+      setOpeningPreview(null);
+      return;
+    }
+    let cancelled = false;
+    setOpeningPreviewLoading(true);
+    getOpeningPreview(selectedItem.id)
+      .then((data) => {
+        if (!cancelled) setOpeningPreview(data);
+      })
+      .catch(() => {
+        if (!cancelled) setOpeningPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setOpeningPreviewLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, tab, selectedItem?.id]);
 
   const handleBackToPicker = () => {
     setSelectedItem(null);
@@ -312,7 +339,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                 </div>
                 {adjustType === 'opening' && (
                   <p className="text-xs text-purple-600 mt-1.5">
-                    Sets the opening stock for today. The entered value becomes the item's opening stock in the daily snapshot.
+                    Enter the total opening stock for today. The system automatically deducts today's settled bills and shows the closing stock.
                   </p>
                 )}
               </div>
@@ -358,6 +385,63 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                       ? `= ${Math.round(amount * bottleSize).toLocaleString('en-IN')} ml (${bottleSize} ml per bottle)`
                       : `= ${(amount / bottleSize).toFixed(2)} bottles (${bottleSize} ml per bottle)`}
                   </p>
+                )}
+                {adjustType === 'opening' && tab === 'bar' && (
+                  <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-1.5">
+                    {openingPreviewLoading ? (
+                      <p className="text-xs text-purple-500">Loading today's activity...</p>
+                    ) : openingPreview ? (
+                      <>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600 font-medium">Today's Sold (from settled bills):</span>
+                          <span className="text-red-600 font-bold">{Number(openingPreview.todaySoldMl).toLocaleString('en-IN')} ml</span>
+                        </div>
+                        {Number(openingPreview.todayPurchasedMl) > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600 font-medium">Today's Purchases:</span>
+                            <span className="text-green-600 font-bold">+{Number(openingPreview.todayPurchasedMl).toLocaleString('en-IN')} ml</span>
+                          </div>
+                        )}
+                        {Number(openingPreview.todayWastageMl) > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600 font-medium">Today's Wastage:</span>
+                            <span className="text-orange-600 font-bold">-{Number(openingPreview.todayWastageMl).toLocaleString('en-IN')} ml</span>
+                          </div>
+                        )}
+                        {Number(openingPreview.todayAdjustedMl) !== 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600 font-medium">Today's Adjustments:</span>
+                            <span className={`font-bold ${Number(openingPreview.todayAdjustedMl) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {Number(openingPreview.todayAdjustedMl) > 0 ? '+' : ''}{Number(openingPreview.todayAdjustedMl).toLocaleString('en-IN')} ml
+                            </span>
+                          </div>
+                        )}
+                        {amount > 0 && (() => {
+                          const openingMl = openingUnit === 'btl' && bottleSize > 0 ? amount * bottleSize : amount;
+                          const closing = openingMl
+                            + Number(openingPreview.todayPurchasedMl)
+                            - Number(openingPreview.todaySoldMl)
+                            - Number(openingPreview.todayWastageMl)
+                            + Number(openingPreview.todayAdjustedMl);
+                          return (
+                            <div className="flex justify-between text-xs pt-1.5 border-t border-purple-200">
+                              <span className="text-purple-700 font-bold">Closing Stock (for tomorrow):</span>
+                              <span className={`font-bold ${closing < 0 ? 'text-red-600' : 'text-purple-700'}`}>
+                                {closing.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ml
+                                {bottleSize > 0 && (
+                                  <span className="text-gray-400 font-normal ml-1">
+                                    ({(closing / bottleSize).toFixed(2)} btl)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-400">Unable to load today's activity.</p>
+                    )}
+                  </div>
                 )}
               </div>
 
