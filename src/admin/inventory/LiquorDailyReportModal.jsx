@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Printer, AlertTriangle, FileText, Save, CheckCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -310,7 +311,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const allComputedAcItems = useMemo(() => {
     if (!data) return [];
     return (data.acItems || []).map((item) => {
-      const edit = acItemEdits[item.itemId] || { qty: item.qty, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice, sold: item.sold };
+      const itemEdit = acItemEdits[item.itemId];
+      const edit = itemEdit || { qty: item.qty, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice, sold: item.sold };
       const purchaseCost = Number(edit.purchaseCost) || 0;
       const sellingPrice = Number(edit.sellingPrice) || 0;
       const qty = Number(edit.qty) || 0;
@@ -324,7 +326,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const closing = totalStock - sold;
       // AC uses 30ML cost logic: Consumption = Sale × Purchase Cost (mathematically equivalent to pegs × 30ML_cost)
       const consumption = sale * purchaseCost;
-      const saleAmount = sale * sellingPrice;
+      // Sale Amount: use backend POS revenue when no edits to sold/sellingPrice.
+      // Only recalculate from sale × sellingPrice when user has edited those fields.
+      // This ensures the PDF Sale Amount matches the dashboard AC Sales perfectly.
+      const hasSoldOrPriceEdit = itemEdit != null && (itemEdit.sold != null || itemEdit.sellingPrice != null);
+      const saleAmount = hasSoldOrPriceEdit ? sale * sellingPrice : (Number(item.saleAmount) || 0);
       const profit = saleAmount - consumption;
       const isHidden = acHiddenFlags[item.itemId] === true;
       return {
@@ -447,7 +453,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       purchaseValue: pick('purchaseValue', computedPurchaseValue),
       consumption: pick('consumption', computedConsumption),
       closingStockValue: pick('closingStockValue', computedClosingStockValue),
-      acSales: pick('acSales', totalAcRevenue),
+      acSales: pick('acSales', data.summary?.acSales ?? totalAcRevenue),
       acConsumption: pick('acConsumption', totalAcConsumptionCost),
       acProfit: pick('acProfit', totalAcProfit),
       acProfitPct: pick('acProfitPct', computedAcProfitPct),
@@ -703,13 +709,23 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   };
 
   const handleAcItemChange = (itemId, field, value) => {
-    setAcItemEdits(prev => ({
-      ...prev,
-      [itemId]: {
-        ...(prev[itemId] || { qty: 0, purchaseCost: 0, sellingPrice: 0, sold: 0 }),
-        [field]: value === '' ? '' : Math.max(0, Number(value) || 0),
-      },
-    }));
+    setAcItemEdits(prev => {
+      const item = (data?.acItems || []).find(i => i.itemId === itemId);
+      const defaults = {
+        qty: item?.qty ?? 0,
+        purchaseCost: item?.purchaseCost ?? 0,
+        sellingPrice: item?.sellingPrice ?? 0,
+        sold: item?.sold ?? 0,
+      };
+      return {
+        ...prev,
+        [itemId]: {
+          ...defaults,
+          ...(prev[itemId] || {}),
+          [field]: value === '' ? '' : Math.max(0, Number(value) || 0),
+        },
+      };
+    });
   };
 
   // Toggle hide/show for an AC item — persisted on InventoryItem.isHiddenFromReport
@@ -733,10 +749,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const outletName = data?.outletName || 'Outlet';
   const outletWing = data?.outletWing || '—';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-2 sm:p-4"
+      onClick={onClose}
+    >
       <div
-        className="bg-white rounded-2xl shadow-xl w-full max-w-6xl mx-4 max-h-[95vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl mx-auto max-h-[95vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -1168,7 +1187,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
