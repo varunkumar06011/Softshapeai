@@ -21,15 +21,140 @@ import { useState, useEffect } from 'react';
 import { updateInventoryItem } from '../../services/barInventoryApi';
 import { MOBILE_BREAKPOINT } from './inventoryConstants';
 
+// Normalize an item name to its base product name (without size suffixes).
+// Mirrors the backend normalizeProductBaseName() in barMatching.ts.
+function normalizeProductBaseName(name) {
+  if (!name) return '';
+  return String(name).toLowerCase()
+    .replace(/\s*\(.*?\)\s*/g, ' ')
+    .replace(/\s*\d+\s*(?:ml|l(?:tr|itre|iter)?|l)\b/gi, ' ')
+    .replace(/\s*(full\s+bottle|bottle|tin|can)\s*/gi, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Group bar inventory items by normalized base name and aggregate per-bottle-size stock.
+function groupByBrand(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const name = item.menuItem?.name || item.name || '';
+    const base = normalizeProductBaseName(name);
+    if (!base) continue;
+    if (!groups.has(base)) {
+      groups.set(base, { brand: base, displayName: name, sizes: {}, totalStock: 0, totalBottles: 0, items: [] });
+    }
+    const g = groups.get(base);
+    const bottleSize = Number(item.bottleSize) || 0;
+    const closing = Number(item.todayEntry?.closingStock) || Number(item.currentStock) || 0;
+    const sizeKey = `${bottleSize}ml`;
+    if (!g.sizes[sizeKey]) {
+      g.sizes[sizeKey] = { bottleSize, stockMl: 0, bottles: 0, itemId: item.id };
+    }
+    g.sizes[sizeKey].stockMl += closing;
+    g.sizes[sizeKey].bottles += bottleSize > 0 ? closing / bottleSize : 0;
+    g.totalStock += closing;
+    g.totalBottles += bottleSize > 0 ? closing / bottleSize : 0;
+    g.items.push(item);
+    // Use the shortest non-peg name as display name (e.g., "Mansion House 750ml" over "Mansion House 30ml")
+    if (name.length < g.displayName.length || /\b(30|60|90)\s*ml/i.test(g.displayName)) {
+      g.displayName = name;
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => a.brand.localeCompare(b.brand));
+}
+
 export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, onView, onRefresh }) {
   const isMobile = useMediaQuery();
+  const [groupByBrandMode, setGroupByBrandMode] = useState(false);
 
   if (isMobile) {
     return <MobileCardList items={items} tab={tab} onEdit={onEdit} onView={onView} page={page} totalPages={totalPages} setPage={setPage} />;
   }
 
+  // Grouped-by-brand view (bar tab only)
+  if (tab === 'bar' && groupByBrandMode) {
+    const grouped = groupByBrand(items);
+    const SIZES = [750, 375, 180];
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Grouped by Brand</h3>
+          <button
+            onClick={() => setGroupByBrandMode(false)}
+            className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold uppercase hover:bg-gray-200 transition-colors"
+          >
+            Show Individual
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                <th className="text-left px-4 py-3 font-semibold">Brand</th>
+                {SIZES.map(s => <th key={s} className="text-right px-4 py-3 font-semibold">{s}ml (btl / ml)</th>)}
+                <th className="text-right px-4 py-3 font-semibold">Other (btl / ml)</th>
+                <th className="text-right px-4 py-3 font-semibold">Total (btl / ml)</th>
+                <th className="text-right px-4 py-3 font-semibold">Total Bottles</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {grouped.length === 0 ? (
+                <tr>
+                  <td colSpan={SIZES.length + 4} className="text-center py-12 text-gray-400">No items found</td>
+                </tr>
+              ) : (
+                grouped.map((g) => (
+                  <tr key={g.brand} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-900">{g.displayName}</td>
+                    {SIZES.map(s => {
+                      const sz = g.sizes[`${s}ml`];
+                      return (
+                        <td key={s} className="px-4 py-3 text-right text-gray-600">
+                          {sz ? (
+                            <>
+                              {sz.bottles.toFixed(2)}
+                              <span className="text-xs text-gray-400 ml-1">({sz.stockMl.toFixed(0)} ml)</span>
+                            </>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-3 text-right text-gray-500 text-xs">
+                      {Object.entries(g.sizes).filter(([k]) => !SIZES.includes(parseInt(k))).map(([k, v]) => (
+                        <div key={k}>{k}: {v.bottles.toFixed(2)} ({v.stockMl.toFixed(0)} ml)</div>
+                      ))}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-gray-700">
+                      {g.totalBottles.toFixed(2)}
+                      <span className="text-xs text-gray-400 ml-1">({g.totalStock.toFixed(0)} ml)</span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-gray-700">{g.totalBottles.toFixed(2)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {totalPages > 1 && <Pagination page={page} totalPages={totalPages} setPage={setPage} />}
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      {tab === 'bar' && (
+        <div className="flex justify-end px-4 py-2 border-b border-gray-100">
+          <button
+            onClick={() => setGroupByBrandMode(true)}
+            className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-bold uppercase hover:bg-amber-200 transition-colors"
+          >
+            Group by Brand
+          </button>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

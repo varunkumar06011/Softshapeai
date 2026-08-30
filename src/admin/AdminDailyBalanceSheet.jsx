@@ -814,6 +814,8 @@ export default function AdminDailyBalanceSheet() {
       amountInWords: numberToWords(balanceCalc.closingBalance),
       grossSales: totalSales,
       aggregatorSales: round2(computedSales.swiggy + computedSales.zomato),
+      swiggySale: round2(computedSales.swiggy || 0),
+      zomatoSale: round2(computedSales.zomato || 0),
       venueSales: [
         { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
         { icon: null, label: 'Non-AC Bar', amount: computedSales.nonAcBar, color: '#F59E0B' },
@@ -952,6 +954,8 @@ export default function AdminDailyBalanceSheet() {
         amountInWords: numberToWords(balanceCalc.closingBalance),
         grossSales: totalSales,
         aggregatorSales: round2(computedSales.swiggy + computedSales.zomato),
+        swiggySale: round2(computedSales.swiggy || 0),
+        zomatoSale: round2(computedSales.zomato || 0),
         venueSales: [
           { icon: null, label: 'Lounge Sales', amount: computedSales.acBar, color: '#E63946' },
           { icon: null, label: 'Non-AC Bar', amount: computedSales.nonAcBar, color: '#F59E0B' },
@@ -1275,18 +1279,34 @@ export default function AdminDailyBalanceSheet() {
         <div className="mb-3">
           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Balance Calculation</h4>
         </div>
+
         <div className="space-y-3">
           {balanceCalc.steps.map((step, i) => {
             const isNetSales = step.label.startsWith('= Net Sales');
+            const isOpeningBalance = step.label === 'Opening Balance';
             return (
               <div key={i}>
                 <div className="flex items-center justify-between">
                   <span className={`text-sm font-bold ${isNetSales ? 'text-blue-400' : 'text-gray-300'}`}>
                     {step.label}
                   </span>
-                  <span className={`font-black ${isNetSales ? 'text-lg text-blue-400' : 'text-lg text-gray-200'}`}>
-                    ₹{Number(step.amount).toLocaleString('en-IN')}
-                  </span>
+                  {isOpeningBalance ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-500">₹</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={overrides.openingBalance ?? 0}
+                        onChange={(e) => handleFieldChange('openingBalance', parseFloat(e.target.value) || 0)}
+                        disabled={isLocked}
+                        className="w-28 rounded border border-gray-600 bg-gray-700 px-2 py-0.5 text-right text-lg font-black text-amber-300 focus:border-amber-400 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                  ) : (
+                    <span className={`font-black ${isNetSales ? 'text-lg text-blue-400' : 'text-lg text-gray-200'}`}>
+                      ₹{Number(step.amount).toLocaleString('en-IN')}
+                    </span>
+                  )}
                 </div>
               </div>
             );

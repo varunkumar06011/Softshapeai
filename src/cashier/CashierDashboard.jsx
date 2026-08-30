@@ -82,6 +82,8 @@ import { useTableSync, clearTerminatedTable } from '../services/tableSyncService
 
 import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createOrder, updateOrderItems, updateOrderStatus, editBill, swapTable, transferItems, deleteTransaction, requestBilling, cancelOrderItem, cancelOrderItems, printBill, printWalkinBill, settleOrder, generateRequestId, reserveKotNumber, confirmPayment, drainSettlementQueue } from '../services/orderApi';
 
+import { getBottlesForMenuItem } from '../services/barInventoryApi';
+
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
@@ -147,6 +149,8 @@ import { httpFetch } from '../utils/httpClient';
 import { getItemCategory } from '../utils/itemHelpers';
 
 import QuantityPicker from '../shared/components/LiquorQtyPicker';
+
+import BottlePicker from '../shared/components/BottlePicker';
 
 import DateInputButton from '../shared/components/DateInputButton';
 
@@ -1303,6 +1307,12 @@ const CashierDashboard = ({ onLogout }) => {
   const [showLiquorQtyPicker, setShowLiquorQtyPicker] = useState(false);
 
   const [liquorQtyItem, setLiquorQtyItem] = useState(null);
+
+  // Bottle picker state — for liquor pegs (30/60/90ml)
+  const [showBottlePicker, setShowBottlePicker] = useState(false);
+  const [bottlePickerItem, setBottlePickerItem] = useState(null);
+  const [bottlePickerQty, setBottlePickerQty] = useState(1);
+  const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH');
 
@@ -10411,6 +10421,48 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (!liquorQtyItem) return;
 
+    // Check if this is a liquor peg (30/60/90ml) — if so, show bottle picker
+    const PEG_SIZES = [30, 60, 90];
+    const itemName = liquorQtyItem.n || liquorQtyItem.name || '';
+    const mlMatch = itemName.match(/(\d+)\s*ml/i);
+    const menuSize = mlMatch ? parseInt(mlMatch[1], 10) : null;
+    const menuType = String(liquorQtyItem.menuType || liquorQtyItem.mt || 'FOOD').toUpperCase();
+    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PEG_SIZES.includes(menuSize);
+
+    if (isLiquorPeg) {
+      // Fetch bottles and show the bottle picker
+      setBottlePickerItem(liquorQtyItem);
+      setBottlePickerQty(qty);
+      setBottlePickerBottles([]);
+      setShowBottlePicker(true);
+      setShowLiquorQtyPicker(false);
+      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId)
+        .then((res) => {
+          if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
+            setBottlePickerBottles(res.bottles);
+          } else {
+            // Not a peg or no bottles configured — skip picker, add directly
+            addToCart(liquorQtyItem, qty);
+            setShowBottlePicker(false);
+            setBottlePickerItem(null);
+            setSearchQuery('');
+            setSelectedCategory('All');
+            setActiveDiet('All');
+          }
+        })
+        .catch(() => {
+          // Offline or error — skip picker, add directly (fallback to auto deduction)
+          addToCart(liquorQtyItem, qty);
+          setShowBottlePicker(false);
+          setBottlePickerItem(null);
+          setSearchQuery('');
+          setSelectedCategory('All');
+          setActiveDiet('All');
+        });
+      setLiquorQtyItem(null);
+      return;
+    }
+
     addToCart(liquorQtyItem, qty);
 
     setShowLiquorQtyPicker(false);
@@ -10423,6 +10475,37 @@ const CashierDashboard = ({ onLogout }) => {
 
     setActiveDiet('All');
 
+  };
+
+
+
+  // ── Bottle picker handlers ──────────────────────────────────────────────
+  const handleBottleSelect = (inventoryItemId) => {
+    if (!bottlePickerItem) return;
+    addToCart(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: inventoryItemId });
+    setShowBottlePicker(false);
+    setBottlePickerItem(null);
+    setBottlePickerBottles([]);
+    setSearchQuery('');
+    setSelectedCategory('All');
+    setActiveDiet('All');
+  };
+
+  const handleBottleSkip = () => {
+    if (!bottlePickerItem) return;
+    addToCart(bottlePickerItem, bottlePickerQty);
+    setShowBottlePicker(false);
+    setBottlePickerItem(null);
+    setBottlePickerBottles([]);
+    setSearchQuery('');
+    setSelectedCategory('All');
+    setActiveDiet('All');
+  };
+
+  const handleBottleClose = () => {
+    setShowBottlePicker(false);
+    setBottlePickerItem(null);
+    setBottlePickerBottles([]);
   };
 
 
@@ -10515,7 +10598,7 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-  const addToCart = (item, quantity = 1) => {
+  const addToCart = (item, quantity = 1, opts = {}) => {
 
     kotRequestIdRef.current = null;
 
@@ -10533,15 +10616,20 @@ const CashierDashboard = ({ onLogout }) => {
 
     }
 
+    const pourFromInventoryItemId = opts.pourFromInventoryItemId || null;
+    const pourKey = pourFromInventoryItemId || 'auto';
+
     setCart(prev => {
 
       const itemId = String(item.id || item.menuItemId || '');
 
       const existing = prev.find(i => {
 
-        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n) return true;
+        const iPourKey = i.pourFromInventoryItemId || 'auto';
 
-        if (!itemId && i.n === item.n) return true;
+        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n && iPourKey === pourKey) return true;
+
+        if (!itemId && i.n === item.n && iPourKey === pourKey) return true;
 
         return false;
 
@@ -10549,15 +10637,17 @@ const CashierDashboard = ({ onLogout }) => {
 
       if (existing) return prev.map(i => {
 
-        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n) return { ...i, q: i.q + quantity };
+        const iPourKey = i.pourFromInventoryItemId || 'auto';
 
-        if (!itemId && i.n === item.n) return { ...i, q: i.q + quantity };
+        if (itemId && String(i.id || i.menuItemId || '') === itemId && i.n === item.n && iPourKey === pourKey) return { ...i, q: i.q + quantity };
+
+        if (!itemId && i.n === item.n && iPourKey === pourKey) return { ...i, q: i.q + quantity };
 
         return i;
 
       });
 
-      return [...prev, { ...item, q: quantity }];
+      return [...prev, { ...item, q: quantity, pourFromInventoryItemId }];
 
     });
 
@@ -20360,6 +20450,24 @@ const CashierDashboard = ({ onLogout }) => {
         onSelect={handleQtySelect}
 
         onClose={() => { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); }}
+
+      />
+
+      <BottlePicker
+
+        isOpen={showBottlePicker}
+
+        itemName={bottlePickerItem?.n || bottlePickerItem?.name || ''}
+
+        quantity={bottlePickerQty}
+
+        bottles={bottlePickerBottles}
+
+        onSelect={handleBottleSelect}
+
+        onSkip={handleBottleSkip}
+
+        onClose={handleBottleClose}
 
       />
 

@@ -154,6 +154,8 @@ export function toOrderItems(items) {
 
       menuType: ['LIQUOR', 'BAR'].includes(String(item.menuType || 'FOOD').toUpperCase()) ? 'LIQUOR' : 'FOOD',
 
+      pourFromInventoryItemId: item.pourFromInventoryItemId || null,
+
     }))
 
     .filter(i => !!i.menuItemId);  // drop items with no valid DB ID

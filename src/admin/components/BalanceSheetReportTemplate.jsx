@@ -11,6 +11,7 @@ import {
 const inr = (n) =>
   '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inrPlain = (n) => '₹' + Math.round(Number(n)).toLocaleString('en-IN');
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 const STATUS_STYLES = {
   DRAFT: { background: '#FEF3C7', color: '#B45309' },
@@ -214,12 +215,8 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
       <div className="mt-6">
         <SectionBadge n={3}>CALCULATION SUMMARY</SectionBadge>
         <div className="flex flex-wrap items-center gap-2">
-          {(data.openingBalance || 0) > 0 && (
-            <>
-              <CalcBox label="Opening Balance" value={data.openingBalance} />
-              <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
-            </>
-          )}
+          <CalcBox label="Opening Balance" value={data.openingBalance || 0} />
+          <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
           <CalcBox label="Net Sales" value={data.netSales} />
           <span className="text-lg font-black" style={{ color: '#D1D5DB' }}>+</span>
           <CalcBox label="Other Income" value={data.otherIncome || 0} />
@@ -235,6 +232,39 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
           <CalcBox label="Net Closing Balance" value={data.netClosingBalance} highlight />
         </div>
         <div className="mt-2 text-center text-[10px]" style={{ color: '#9CA3AF' }}>All amounts are in Indian Rupees (₹)</div>
+
+        {/* ── Detailed Balance Calculation Breakdown ── */}
+        <div className="mt-4 rounded-xl border p-4" style={{ borderColor: '#E5E7EB', background: '#F9FAFB' }}>
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280' }}>
+            Balance Calculation Breakdown
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs font-semibold" style={{ color: '#334155' }}>Opening Balance</span>
+              <span className="text-xs font-black" style={{ color: '#1E293B' }}>{inr(data.openingBalance || 0)}</span>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs font-semibold" style={{ color: '#334155' }}>+ Gross Sales</span>
+              <span className="text-xs font-black" style={{ color: '#1E293B' }}>{inr(data.grossSales || data.totalSales || 0)}</span>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs font-semibold" style={{ color: '#334155' }}>− Swiggy</span>
+              <span className="text-xs font-bold" style={{ color: '#EF4444' }}>{inr(data.swiggySale || 0)}</span>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs font-semibold" style={{ color: '#334155' }}>− Zomato</span>
+              <span className="text-xs font-bold" style={{ color: '#EF4444' }}>{inr(data.zomatoSale || 0)}</span>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs font-semibold" style={{ color: '#334155' }}>− Expenditure</span>
+              <span className="text-xs font-bold" style={{ color: '#EF4444' }}>{inr(data.totalExpenditure || 0)}</span>
+            </div>
+            <div className="flex items-center justify-between pt-2 mt-1" style={{ borderTop: '2px solid #E2E8F0' }}>
+              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#15803D' }}>= Final Closing Balance</span>
+              <span className="text-sm font-black" style={{ color: '#15803D' }}>{inr(data.netClosingBalance || 0)}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── Footer band ────────────────────────────────────────────── */}

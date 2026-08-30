@@ -45,8 +45,11 @@ import { useTableSync } from '../services/tableSyncService';
 import { useLongPress } from '../hooks/useLongPress';
 import KotConfirmModal from '../shared/components/KotConfirmModal';
 import QuantityPicker from '../shared/components/LiquorQtyPicker';
+import BottlePicker from '../shared/components/BottlePicker';
 
 import { createOrder, requestBilling, updateOrderItems, fetchTransactions, cancelOrderItem, swapTable, reserveKotNumber, reprintKot } from '../services/orderApi';
+
+import { getBottlesForMenuItem } from '../services/barInventoryApi';
 
 import { calculateSessionBill, calculateOrderTotal, calculateTableBill, getTableItems, getBillableItems } from '../shared/utils/billing';
 
@@ -1350,6 +1353,12 @@ export default function CaptainApp({ onLogout }) {
   const [showKotConfirm, setShowKotConfirm] = useState(false);
   const [showLiquorQtyPicker, setShowLiquorQtyPicker] = useState(false);
   const [liquorQtyItem, setLiquorQtyItem] = useState(null);
+
+  // Bottle picker state — for liquor pegs (30/60/90ml)
+  const [showBottlePicker, setShowBottlePicker] = useState(false);
+  const [bottlePickerItem, setBottlePickerItem] = useState(null);
+  const [bottlePickerQty, setBottlePickerQty] = useState(1);
+  const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
 
 
 
@@ -2993,7 +3002,7 @@ export default function CaptainApp({ onLogout }) {
 
   // This prevents the cashier from seeing a table as occupied before any order is confirmed.
 
-  const addItemToSession = (item, quantity = 1) => {
+  const addItemToSession = (item, quantity = 1, opts = {}) => {
     if (!activeTableId) {
       console.warn('[CaptainApp] addItemToSession blocked: no activeTableId. Item:', item?.n, 'view:', view);
       return; // no active table, do nothing
@@ -3006,6 +3015,8 @@ export default function CaptainApp({ onLogout }) {
 
     const finalPrice = item.p;
     const finalName = item.n;
+    const pourFromInventoryItemId = opts.pourFromInventoryItemId || null;
+    const pourKey = pourFromInventoryItemId || 'auto';
 
 
 
@@ -3013,17 +3024,17 @@ export default function CaptainApp({ onLogout }) {
 
       const currentCart = prev[activeTableId] ?? [];
 
-      const existing = currentCart.find(i => i.n === finalName);
+      const existing = currentCart.find(i => i.n === finalName && (i.pourFromInventoryItemId || 'auto') === pourKey);
 
       let updatedCart;
 
       if (existing) {
 
-        updatedCart = currentCart.map(i => i.n === finalName ? { ...i, q: i.q + quantity } : i);
+        updatedCart = currentCart.map(i => (i.n === finalName && (i.pourFromInventoryItemId || 'auto') === pourKey) ? { ...i, q: i.q + quantity } : i);
 
       } else {
 
-        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: quantity, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD' }];
+        updatedCart = [...currentCart, { ...item, n: finalName, p: finalPrice, q: quantity, notes: null, s: 'Pending', menuType: item.menuType || 'FOOD', pourFromInventoryItemId }];
 
       }
 
@@ -3050,9 +3061,65 @@ export default function CaptainApp({ onLogout }) {
 
   const handleQtySelect = (qty) => {
     if (!liquorQtyItem) return;
+    // Check if this is a liquor peg (30/60/90ml) — if so, show bottle picker
+    const PEG_SIZES = [30, 60, 90];
+    const itemName = liquorQtyItem.n || liquorQtyItem.name || '';
+    const mlMatch = itemName.match(/(\d+)\s*ml/i);
+    const menuSize = mlMatch ? parseInt(mlMatch[1], 10) : null;
+    const menuType = String(liquorQtyItem.menuType || liquorQtyItem.mt || 'FOOD').toUpperCase();
+    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PEG_SIZES.includes(menuSize);
+
+    if (isLiquorPeg) {
+      setBottlePickerItem(liquorQtyItem);
+      setBottlePickerQty(qty);
+      setBottlePickerBottles([]);
+      setShowBottlePicker(true);
+      setShowLiquorQtyPicker(false);
+      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId)
+        .then((res) => {
+          if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
+            setBottlePickerBottles(res.bottles);
+          } else {
+            addItemToSession(liquorQtyItem, qty);
+            setShowBottlePicker(false);
+            setBottlePickerItem(null);
+          }
+        })
+        .catch(() => {
+          addItemToSession(liquorQtyItem, qty);
+          setShowBottlePicker(false);
+          setBottlePickerItem(null);
+        });
+      setLiquorQtyItem(null);
+      return;
+    }
+
     addItemToSession(liquorQtyItem, qty);
     setShowLiquorQtyPicker(false);
     setLiquorQtyItem(null);
+  };
+
+  // ── Bottle picker handlers ──────────────────────────────────────────────
+  const handleBottleSelect = (inventoryItemId) => {
+    if (!bottlePickerItem) return;
+    addItemToSession(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: inventoryItemId });
+    setShowBottlePicker(false);
+    setBottlePickerItem(null);
+    setBottlePickerBottles([]);
+  };
+
+  const handleBottleSkip = () => {
+    if (!bottlePickerItem) return;
+    addItemToSession(bottlePickerItem, bottlePickerQty);
+    setShowBottlePicker(false);
+    setBottlePickerItem(null);
+    setBottlePickerBottles([]);
+  };
+
+  const handleBottleClose = () => {
+    setShowBottlePicker(false);
+    setBottlePickerItem(null);
+    setBottlePickerBottles([]);
   };
 
   const cancelSession = () => {
@@ -3284,6 +3351,7 @@ export default function CaptainApp({ onLogout }) {
       if (showMoveModal) { setShowMoveModal(false); return; }
       if (showKotConfirm) { setShowKotConfirm(false); return; }
       if (showLiquorQtyPicker) { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); return; }
+      if (showBottlePicker) { handleBottleClose(); return; }
       if (showEdgeSettings) { setShowEdgeSettings(false); return; }
       if (view === 'session') { setView('tables'); setActiveSection('floor'); return; }
       if (activeSection === 'menu') { setActiveSection('floor'); return; }
@@ -7164,6 +7232,15 @@ export default function CaptainApp({ onLogout }) {
         itemName={liquorQtyItem?.n || ''}
         onSelect={handleQtySelect}
         onClose={() => { setShowLiquorQtyPicker(false); setLiquorQtyItem(null); }}
+      />
+      <BottlePicker
+        isOpen={showBottlePicker}
+        itemName={bottlePickerItem?.n || bottlePickerItem?.name || ''}
+        quantity={bottlePickerQty}
+        bottles={bottlePickerBottles}
+        onSelect={handleBottleSelect}
+        onSkip={handleBottleSkip}
+        onClose={handleBottleClose}
       />
       <KotConfirmModal
         isOpen={showKotConfirm}

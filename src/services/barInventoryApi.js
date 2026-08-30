@@ -115,6 +115,17 @@ export async function fetchBarInventory(date = '') {
   }
 }
 
+// Get available bottle sizes for a liquor peg menu item (30/60/90ml)
+// Used by the BottlePicker to show bottle choices at the POS.
+// Returns { menuItemId, menuName, isPeg, bottles: [{ inventoryItemId, label, bottleSize }] }
+// No stock quantities returned — captain should not see stock levels.
+export async function getBottlesForMenuItem(menuItemId) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/bottles-for-menu/${menuItemId}`), {
+    headers: { ...getAuthHeaders() },
+  });
+  return parseResponse(res);
+}
+
 // Create new inventory item
 export async function createInventoryItem(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/items'), {
