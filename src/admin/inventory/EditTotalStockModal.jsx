@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { adjustStock, getOrCreateRequestId, clearRequestId, updateNonAcEntry } from '../../services/barInventoryApi';
 
 export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
-  const [addBottles, setAddBottles] = useState('');
+  const [newOpeningInput, setNewOpeningInput] = useState('');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (open) {
-      setAddBottles('');
+      setNewOpeningInput('');
       setReason('');
       setError(null);
     }
@@ -33,14 +33,23 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
   const currentOpeningBtl = Number(item.openingStockBottles) || 0;
   const currentPurchasesBtl = Number(item.purchasesBottles) || 0;
   const currentTotalBtl = currentOpeningBtl + currentPurchasesBtl;
-  const addNum = addBottles === '' ? 0 : Number(addBottles);
-  const newOpeningBtl = currentOpeningBtl + addNum;
+  const newOpeningBtl = newOpeningInput === '' ? currentOpeningBtl : Number(newOpeningInput);
   const newTotalBtl = newOpeningBtl + currentPurchasesBtl;
   const newOpeningValue = newOpeningBtl * purchaseRate;
+  const hasChange = newOpeningInput !== '' && Math.abs(newOpeningBtl - currentOpeningBtl) > 0.001;
+  const isDecrease = newOpeningBtl < currentOpeningBtl;
 
   const handleSave = async () => {
-    if (addNum <= 0) {
-      setError('Added stock must be greater than 0');
+    if (newOpeningInput === '') {
+      setError('Please enter a new opening stock value');
+      return;
+    }
+    if (newOpeningBtl < 0) {
+      setError('Opening stock cannot be negative');
+      return;
+    }
+    if (!hasChange) {
+      setError('New value is the same as current opening stock');
       return;
     }
 
@@ -53,7 +62,7 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
         await updateNonAcEntry({
           itemId: nonAcItemId,
           openingBottles: Math.round(newOpeningBtl * 100) / 100,
-          reason: reason.trim() || 'Edit Total Stock — add bottles to opening',
+          reason: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
         });
       } else {
         const acItemId = item.acItemId || item.id;
@@ -67,7 +76,7 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
           itemId: acItemId,
           quantityChange: newOpeningMl,
           type: 'OPENING',
-          notes: reason.trim() || 'Edit Total Stock — add bottles to opening',
+          notes: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
           createdBy: 'Admin',
           requestId,
           date,
@@ -126,28 +135,31 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Add Bottles <span className="text-red-500">*</span>
+              New Opening Stock (bottles) <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
               min="0"
               step="0.01"
-              value={addBottles}
-              onChange={(e) => setAddBottles(e.target.value)}
-              placeholder="e.g. 20"
+              value={newOpeningInput}
+              onChange={(e) => setNewOpeningInput(e.target.value)}
+              placeholder={String(currentOpeningBtl)}
               autoFocus
               className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
             />
             <p className="text-xs text-gray-400 mt-1">
-              This will increase Opening Stock by the entered amount.
+              Set the new absolute opening stock value. Can be higher or lower than current.
             </p>
           </div>
 
-          {addNum > 0 && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1.5">
+          {hasChange && (
+            <div className={`border rounded-lg p-3 space-y-1.5 ${isDecrease ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">New Opening Stock:</span>
-                <span className="font-bold text-gray-900">{newOpeningBtl.toFixed(2)} btl</span>
+                <span className="font-bold text-gray-900">{newOpeningBtl.toFixed(2)} btl
+                  {isDecrease && <span className="text-orange-600 ml-1">(−{(currentOpeningBtl - newOpeningBtl).toFixed(2)})</span>}
+                  {!isDecrease && <span className="text-green-600 ml-1">(+{(newOpeningBtl - currentOpeningBtl).toFixed(2)})</span>}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">New Total Stock:</span>
@@ -187,10 +199,10 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || addNum <= 0}
+            disabled={saving || !hasChange}
             className="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {saving ? 'Saving...' : 'Add Stock'}
+            {saving ? 'Saving...' : 'Save Opening Stock'}
           </button>
         </div>
       </div>
