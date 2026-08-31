@@ -1,15 +1,15 @@
 {
   "name": "softshape-cashier-android",
-  "version": "23.12.26",
+  "version": "23.12.27",
   "description": "SoftShape Cashier Android App (Capacitor)",
   "private": true,
   "type": "module",
   "scripts": {
-    "build:web": "cd ../.. && npx vite build",
-    "sync": "npx cap sync android",
-    "build": "npm run build:web && npx cap sync android",
+    "build:web": "cd ../.. && npx vite build --mode cashier-android",
+    "sync": "npx cap sync android && node native/sync-native.mjs",
+    "build": "npm run build:web && npm run sync",
     "open": "npx cap open android",
-    "apk": "npm run build:web && npx cap sync android && npx cap build android --apk"
+    "apk": "npm run build:web && npm run sync && npx cap build android --androidreleasetype APK"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",

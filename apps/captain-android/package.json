@@ -1,11 +1,11 @@
 {
   "name": "softshape-captain-android",
-  "version": "23.12.26",
+  "version": "23.12.27",
   "description": "SoftShape Captain Android App (Capacitor)",
   "private": true,
   "type": "module",
   "scripts": {
-    "build:web": "cd ../.. && npx vite build",
+    "build:web": "cd ../.. && npx vite build --mode captain-android",
     "sync": "npx cap sync android && bash native/sync-native.sh",
     "build": "npm run build:web && npx cap sync android && bash native/sync-native.sh",
     "open": "npx cap open android",
