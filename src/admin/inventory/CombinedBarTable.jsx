@@ -75,7 +75,7 @@ function groupByBrand(items) {
   return Array.from(groups.values()).sort((a, b) => a.brand.localeCompare(b.brand));
 }
 
-export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView, onRefresh, date }) {
+export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView, onRefresh, date, onDelete, onEditStock }) {
   const [showNonAcOnly, setShowNonAcOnly] = useState(false);
   const [editingClosing, setEditingClosing] = useState(null); // item.id being edited
   const [closingInput, setClosingInput] = useState('');
@@ -84,7 +84,8 @@ export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView,
   const [groupByBrandMode, setGroupByBrandMode] = useState(false);
   const [expandedBrand, setExpandedBrand] = useState(null);
   const [editingStock, setEditingStock] = useState({}); // { [itemId]: bottleCount }
-  const [savingStock, setSavingStock] = useState(null); // itemId being saved
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // item being deleted
+  const [deleting, setDeleting] = useState(false);
 
   // Handle save of edited stock for a specific size
   async function handleSaveStock(itemId, bottleSize) {
@@ -103,6 +104,18 @@ export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView,
       setSavingStock(null);
     }
   }
+
+  const handleDelete = async (item) => {
+    setDeleting(true);
+    try {
+      await onDelete(item);
+      setDeleteConfirm(null);
+    } catch (e) {
+      alert('Failed to delete item: ' + (e.message || 'Unknown error'));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Apply search filter (case-insensitive, partial match on item name)
   const searchFiltered = search?.trim()
@@ -350,12 +363,13 @@ export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView,
               <th className="text-right px-3 py-3 font-semibold text-orange-600">Non-AC Sale</th>
               <th className="text-right px-3 py-3 font-semibold">Closing Stock</th>
               <th className="text-right px-3 py-3 font-semibold">Closing Value</th>
+              <th className="text-center px-3 py-3 font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-gray-400">No items found</td>
+                <td colSpan={12} className="text-center py-12 text-gray-400">No items found</td>
               </tr>
             ) : (
               filtered.map((item, idx) => {
@@ -491,6 +505,31 @@ export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView,
                     <td className="px-3 py-2 text-right text-gray-700 font-medium text-xs">
                       {fmtInr(closingValue)}
                     </td>
+                    {/* Actions */}
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onEditStock?.(item)}
+                          className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="Edit Total Stock"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirm(item)}
+                          className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                          title="Delete"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })
@@ -498,6 +537,46 @@ export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView,
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => !deleting && setDeleteConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Delete Item?</h3>
+                <p className="text-sm text-gray-500 mt-0.5">{deleteConfirm.itemName}</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              This will archive the inventory item and remove it from the table. Historical transactions and audit records are preserved.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(deleteConfirm)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

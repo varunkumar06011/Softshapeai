@@ -23,7 +23,8 @@ import { ItemDetailsDrawer } from './ItemDetailsDrawer';
 import { StockSheetPrintModal } from './StockSheetPrintModal';
 import LiquorDailyReportModal from './LiquorDailyReportModal';
 import { NonAcDeductionModal } from './NonAcDeductionModal';
-import { fetchCombinedInventory } from '../../services/barInventoryApi';
+import { EditTotalStockModal } from './EditTotalStockModal';
+import { fetchCombinedInventory, deleteInventoryItem } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
 
 export function InventoryPage() {
@@ -50,6 +51,8 @@ export function InventoryPage() {
   const [liquorReportOpen, setLiquorReportOpen] = useState(false);
   const [nonAcDeductItem, setNonAcDeductItem] = useState(null);
   const [nonAcDeductOpen, setNonAcDeductOpen] = useState(false);
+  const [editStockItem, setEditStockItem] = useState(null);
+  const [editStockOpen, setEditStockOpen] = useState(false);
 
   // Combined bar inventory (AC + Non-AC)
   const [combinedItems, setCombinedItems] = useState([]);
@@ -129,6 +132,20 @@ export function InventoryPage() {
     setViewOpen(true);
   };
 
+  const handleDelete = async (item) => {
+    const itemId = item.acItemId || item.id;
+    if (!itemId || itemId.startsWith('nonac-')) {
+      throw new Error('Standalone Non-AC items cannot be deleted from here. Use the Non-AC items management.');
+    }
+    await deleteInventoryItem(itemId);
+    handleSaved();
+  };
+
+  const handleEditStock = (item) => {
+    setEditStockItem(item);
+    setEditStockOpen(true);
+  };
+
   // Per-item actions from the drawer — close drawer, set the item, open modal
   const handleDrawerPurchase = (item) => {
     setViewItem(null);
@@ -199,6 +216,8 @@ export function InventoryPage() {
         combinedSummary={combinedSummary}
         onNonAcDeduct={handleNonAcDeduct}
         onRefresh={handleSaved}
+        onDelete={handleDelete}
+        onEditStock={handleEditStock}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} onSaved={handleSaved} />
@@ -209,6 +228,7 @@ export function InventoryPage() {
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
             <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
+            <EditTotalStockModal open={editStockOpen} item={editStockItem} date={inventory.fromDate || undefined} onClose={() => setEditStockOpen(false)} onSaved={handleSaved} />
           </>
         }
       />
@@ -265,6 +285,8 @@ export function InventoryPage() {
         combinedSummary={combinedSummary}
         onNonAcDeduct={handleNonAcDeduct}
         onRefresh={handleSaved}
+        onDelete={handleDelete}
+        onEditStock={handleEditStock}
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} onSaved={handleSaved} />
@@ -275,6 +297,7 @@ export function InventoryPage() {
             <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
             <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
+            <EditTotalStockModal open={editStockOpen} item={editStockItem} date={inventory.fromDate || undefined} onClose={() => setEditStockOpen(false)} onSaved={handleSaved} />
           </>
         }
       />
@@ -284,7 +307,7 @@ export function InventoryPage() {
 }
 
 // Inner content component (shared between all outlet types)
-function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, combinedSummary, onNonAcDeduct, onRefresh }) {
+function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, combinedSummary, onNonAcDeduct, onRefresh, onDelete, onEditStock }) {
   const { loading, error } = inventory;
 
   return (
@@ -335,6 +358,8 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
           onView={onView}
           onRefresh={onRefresh}
           date={inventory.fromDate || undefined}
+          onDelete={onDelete}
+          onEditStock={onEditStock}
         />
       ) : (
         /* Kitchen table */
