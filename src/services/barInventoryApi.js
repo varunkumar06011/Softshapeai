@@ -148,6 +148,17 @@ export async function updateInventoryItem(id, data) {
   return normalizeInventoryItem(item);
 }
 
+// Set absolute stock for a specific inventory item (per-size editing)
+// Body: { stockMl: number, notes?: string }
+export async function setItemStock(itemId, stockMl, notes) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/${itemId}/stock`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ stockMl, notes }),
+  });
+  return parseResponse(res);
+}
+
 // Delete inventory item
 export async function deleteInventoryItem(id) {
   const res = await fetch(apiUrl(`/api/bar/inventory/items/${id}`), {

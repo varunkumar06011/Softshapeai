@@ -18,7 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { updateInventoryItem } from '../../services/barInventoryApi';
+import { updateInventoryItem, setItemStock } from '../../services/barInventoryApi';
 import { MOBILE_BREAKPOINT } from './inventoryConstants';
 
 // Normalize an item name to its base product name (without size suffixes).
@@ -67,9 +67,32 @@ function groupByBrand(items) {
 export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, onView, onRefresh }) {
   const isMobile = useMediaQuery();
   const [groupByBrandMode, setGroupByBrandMode] = useState(false);
+  const [expandedBrand, setExpandedBrand] = useState(null);
+  const [editingStock, setEditingStock] = useState({}); // { [itemId]: bottleCount }
+  const [savingStock, setSavingStock] = useState(null); // itemId being saved
 
   if (isMobile) {
     return <MobileCardList items={items} tab={tab} onEdit={onEdit} onView={onView} page={page} totalPages={totalPages} setPage={setPage} />;
+  }
+
+  // Handle save of edited stock for a specific size
+  async function handleSaveStock(itemId, bottleSize, brand) {
+    const bottleCount = editingStock[itemId];
+    if (bottleCount === undefined || bottleSize <= 0) return;
+    const stockMl = Math.round(Number(bottleCount) * bottleSize);
+    setSavingStock(itemId);
+    try {
+      await setItemStock(itemId, stockMl, `Per-size edit: ${bottleSize}ml × ${bottleCount} btl`);
+      // Clear edit state
+      setEditingStock(prev => { const next = { ...prev }; delete next[itemId]; return next; });
+      // Refresh inventory data
+      if (onRefresh) onRefresh();
+    } catch (e) {
+      console.error('Failed to save stock:', e);
+      alert('Failed to save stock. Please try again.');
+    } finally {
+      setSavingStock(null);
+    }
   }
 
   // Grouped-by-brand view (bar tab only)
@@ -104,36 +127,102 @@ export function InventoryTable({ items, tab, page, totalPages, setPage, onEdit, 
                   <td colSpan={SIZES.length + 4} className="text-center py-12 text-gray-400">No items found</td>
                 </tr>
               ) : (
-                grouped.map((g) => (
-                  <tr key={g.brand} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 font-medium text-gray-900">{g.displayName}</td>
-                    {SIZES.map(s => {
-                      const sz = g.sizes[`${s}ml`];
-                      return (
-                        <td key={s} className="px-4 py-3 text-right text-gray-600">
-                          {sz ? (
-                            <>
-                              {sz.bottles.toFixed(2)}
-                              <span className="text-xs text-gray-400 ml-1">({sz.stockMl.toFixed(0)} ml)</span>
-                            </>
-                          ) : (
-                            <span className="text-gray-300">—</span>
-                          )}
+                grouped.flatMap((g) => {
+                  const isExpanded = expandedBrand === g.brand;
+                  const rows = [
+                    <tr
+                      key={g.brand}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => setExpandedBrand(isExpanded ? null : g.brand)}
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <span className="inline-flex items-center gap-2">
+                          <span className={`text-gray-400 transition-transform text-xs ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                          {g.displayName}
+                        </span>
+                      </td>
+                      {SIZES.map(s => {
+                        const sz = g.sizes[`${s}ml`];
+                        return (
+                          <td key={s} className="px-4 py-3 text-right text-gray-600">
+                            {sz ? (
+                              <>
+                                {sz.bottles.toFixed(2)}
+                                <span className="text-xs text-gray-400 ml-1">({sz.stockMl.toFixed(0)} ml)</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="px-4 py-3 text-right text-gray-500 text-xs">
+                        {Object.entries(g.sizes).filter(([k]) => !SIZES.includes(parseInt(k))).map(([k, v]) => (
+                          <div key={k}>{k}: {v.bottles.toFixed(2)} ({v.stockMl.toFixed(0)} ml)</div>
+                        ))}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-700">
+                        {g.totalBottles.toFixed(2)}
+                        <span className="text-xs text-gray-400 ml-1">({g.totalStock.toFixed(0)} ml)</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-700">{g.totalBottles.toFixed(2)}</td>
+                    </tr>,
+                  ];
+
+                  // Expanded row: show editable per-size stock fields
+                  if (isExpanded) {
+                    rows.push(
+                      <tr key={`${g.brand}-expanded`} className="bg-amber-50">
+                        <td colSpan={SIZES.length + 4} className="px-4 py-4">
+                          <div className="flex flex-wrap gap-6 items-end">
+                            {SIZES.map(s => {
+                              const sz = g.sizes[`${s}ml`];
+                              const itemId = sz?.itemId;
+                              const isEditing = editingStock[itemId] !== undefined;
+                              const currentBottles = sz ? sz.bottles.toFixed(2) : '0.00';
+                              const editValue = isEditing ? editingStock[itemId] : currentBottles;
+                              const isSaving = savingStock === itemId;
+                              return (
+                                <div key={s} className="flex flex-col gap-1">
+                                  <label className="text-xs font-bold text-gray-600 uppercase">{s}ml Stock (bottles)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      className="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                      value={editValue}
+                                      onChange={(e) => setEditingStock(prev => ({ ...prev, [itemId]: e.target.value }))}
+                                      placeholder={currentBottles}
+                                      disabled={!itemId || isSaving}
+                                    />
+                                    <span className="text-xs text-gray-400">
+                                      {sz ? `= ${Math.round(Number(editValue || 0) * s)} ml` : 'no item'}
+                                    </span>
+                                    {itemId && isEditing && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleSaveStock(itemId, s, g.brand); }}
+                                        disabled={isSaving}
+                                        className="px-2 py-1 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                                      >
+                                        {isSaving ? 'Saving...' : 'Save'}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <div className="text-xs text-gray-500 ml-auto">
+                              Total: {g.totalBottles.toFixed(2)} btl ({g.totalStock.toFixed(0)} ml)
+                            </div>
+                          </div>
                         </td>
-                      );
-                    })}
-                    <td className="px-4 py-3 text-right text-gray-500 text-xs">
-                      {Object.entries(g.sizes).filter(([k]) => !SIZES.includes(parseInt(k))).map(([k, v]) => (
-                        <div key={k}>{k}: {v.bottles.toFixed(2)} ({v.stockMl.toFixed(0)} ml)</div>
-                      ))}
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-gray-700">
-                      {g.totalBottles.toFixed(2)}
-                      <span className="text-xs text-gray-400 ml-1">({g.totalStock.toFixed(0)} ml)</span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-gray-700">{g.totalBottles.toFixed(2)}</td>
-                  </tr>
-                ))
+                      </tr>
+                    );
+                  }
+
+                  return rows;
+                })
               )}
             </tbody>
           </table>
