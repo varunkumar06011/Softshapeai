@@ -137,12 +137,47 @@ export async function fetchBarInventory(date = '') {
 // Returns { menuItemId, menuName, isPeg, bottles: [{ inventoryItemId, label, bottleSize }] }
 // No stock quantities returned — captain should not see stock levels.
 //
-// Tries the cloud API first. If unreachable (e.g. edge-local auth with no
-// preauth token, or backend down), falls back to deriving bottles from the
-// bar menu items already loaded on the device. The fallback uses menuItemId
-// as the bottle identifier — the backend's inventoryService accepts both
-// inventory item IDs and menu item IDs for pourFromInventoryItemId.
+// PRIMARY: derive bottles from the bar menu items already loaded in memory
+// (instant, no network call). The menu items already have bottle sizes in
+// their names ("Royal Stag 180ml", "Royal Stag 375ml", etc.).
+// Uses menuItemId as the bottle identifier — the backend's inventoryService
+// accepts both inventory item IDs and menu item IDs for pourFromInventoryItemId.
 export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
+  // ── Primary: derive from loaded menu items (instant) ─────────────────
+  const tapped = menuItems.find((i) => i.id === menuItemId);
+  if (tapped) {
+    const tapName = (tapped.n || tapped.name || '').toLowerCase();
+    const tapMl = parseMlFromName(tapName);
+    if (tapMl) {
+      const tapBase = normalizeBaseName(tapName);
+      const PEG_SIZES = [30, 60, 90];
+      if (PEG_SIZES.includes(tapMl)) {
+        const bottles = menuItems
+          .filter((i) => {
+            const name = (i.n || i.name || '').toLowerCase();
+            const ml = parseMlFromName(name);
+            return ml && ml > tapMl && normalizeBaseName(name) === tapBase;
+          })
+          .map((i) => {
+            const ml = parseMlFromName((i.n || i.name || '').toLowerCase());
+            return {
+              inventoryItemId: i.id,
+              label: `${ml}ml`,
+              bottleSize: ml,
+            };
+          })
+          .sort((a, b) => b.bottleSize - a.bottleSize);
+        return {
+          menuItemId,
+          menuName: tapped.n || tapped.name,
+          isPeg: true,
+          bottles,
+        };
+      }
+    }
+  }
+
+  // ── Fallback: cloud API (if menu items not available) ────────────────
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
   try {
@@ -151,39 +186,6 @@ export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
       signal: controller.signal,
     });
     return parseResponse(res);
-  } catch (err) {
-    // ── Offline fallback: derive bottles from loaded menu items ──────────
-    // Find the tapped item, then find all items with the same base brand
-    // name and a larger bottle size. These are the bottles the peg can be
-    // poured from.
-    const tapped = menuItems.find((i) => i.id === menuItemId);
-    if (!tapped) throw err;
-    const tapName = (tapped.n || tapped.name || '').toLowerCase();
-    const tapMl = parseMlFromName(tapName);
-    if (!tapMl) throw err;
-    const tapBase = normalizeBaseName(tapName);
-    const PEG_SIZES = [30, 60, 90];
-    if (!PEG_SIZES.includes(tapMl)) throw err;
-
-    const bottles = menuItems
-      .filter((i) => {
-        const name = (i.n || i.name || '').toLowerCase();
-        const ml = parseMlFromName(name);
-        return ml && ml > tapMl && normalizeBaseName(name) === tapBase;
-      })
-      .map((i) => ({
-        inventoryItemId: i.id,  // menu item ID — backend resolves via menuItemId fallback
-        label: `${parseMlFromName((i.n || i.name || '').toLowerCase())}ml`,
-        bottleSize: parseMlFromName((i.n || i.name || '').toLowerCase()),
-      }))
-      .sort((a, b) => b.bottleSize - a.bottleSize);
-
-    return {
-      menuItemId,
-      menuName: tapped.n || tapped.name,
-      isPeg: true,
-      bottles,
-    };
   } finally {
     clearTimeout(timeoutId);
   }

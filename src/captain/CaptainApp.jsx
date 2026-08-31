@@ -1360,6 +1360,11 @@ export default function CaptainApp({ onLogout }) {
   const [bottlePickerQty, setBottlePickerQty] = useState(1);
   const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
 
+  // Sticky bottle selection per menu item — remembers which bottle the captain
+  // picked for each peg item so they don't have to pick again on every tap.
+  // Cleared when KOT is sent (cart cleared). Keyed by menuItemId.
+  const stickyBottleRef = useRef({});
+
 
 
   // Move-table swap state
@@ -2974,6 +2979,7 @@ export default function CaptainApp({ onLogout }) {
       }
     }
     setTableCarts(prev => ({ ...prev, [table.id]: [] }));
+    stickyBottleRef.current = {}; // clear sticky bottle selections on table switch
     lastConfirmedItemsRef.current = [];
     activeOrderIdRef.current = null;
     kotRequestIdRef.current = null;
@@ -3105,6 +3111,10 @@ export default function CaptainApp({ onLogout }) {
   // ── Bottle picker handlers ──────────────────────────────────────────────
   const handleBottleSelect = (inventoryItemId) => {
     if (!bottlePickerItem) return;
+    // Remember the bottle selection for this peg item so subsequent taps
+    // skip the picker. Cleared on KOT send.
+    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
+    if (itemId) stickyBottleRef.current[itemId] = inventoryItemId;
     addItemToSession(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: inventoryItemId });
     setShowBottlePicker(false);
     setBottlePickerItem(null);
@@ -3129,6 +3139,7 @@ export default function CaptainApp({ onLogout }) {
 
     setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
 
+    stickyBottleRef.current = {}; // clear sticky bottle selections on cancel
     lastConfirmedItemsRef.current = [];
 
     activeOrderIdRef.current = null;
@@ -3223,11 +3234,19 @@ export default function CaptainApp({ onLogout }) {
     const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PEG_SIZES.includes(menuSize);
 
     if (isLiquorPeg) {
+      const itemId = item.id || item.menuItemId;
+      // If captain already picked a bottle for this peg item, add directly
+      // without showing the picker again.
+      const remembered = stickyBottleRef.current[itemId];
+      if (remembered) {
+        addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
+        return;
+      }
       setBottlePickerItem(item);
       setBottlePickerQty(1);
       setBottlePickerBottles([]);
       setShowBottlePicker(true);
-      getBottlesForMenuItem(item.id || item.menuItemId, activeMenuItemsRef.current)
+      getBottlesForMenuItem(itemId, activeMenuItemsRef.current)
         .then((res) => {
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
             setBottlePickerBottles(res.bottles);
@@ -4017,6 +4036,7 @@ export default function CaptainApp({ onLogout }) {
       const committedSoFar = getTableItems(activeTable);
       lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
       setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
+      stickyBottleRef.current = {}; // clear sticky bottle selections after KOT
       lastAnyItemAddedRef.current = 0;
 
       // Fix 12C: Clear persisted KOT on success

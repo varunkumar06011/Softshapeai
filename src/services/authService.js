@@ -230,6 +230,8 @@ export const authService = {
               email: outlet.email,
               fssai: outlet.fssai,
               logoUrl: outlet.logo_url || outlet.logoUrl,
+              enabledModules: outlet.enabled_modules || outlet.enabledModules || {},
+              restaurantType: outlet.restaurant_type || outlet.restaurantType || null,
             };
             localStorage.setItem('ss_restaurant', JSON.stringify(restaurantConfig));
           }
