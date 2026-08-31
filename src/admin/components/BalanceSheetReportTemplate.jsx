@@ -267,6 +267,29 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
         </div>
       </div>
 
+      {/* ── Bank-wise Collection ─────────────────────────────────────── */}
+      {data.bankCollections && data.bankCollections.length > 0 && (
+        <div className="mt-4 rounded-xl border p-4" style={{ borderColor: '#E5E7EB', background: '#F9FAFB' }}>
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280' }}>
+            Bank-wise Collection
+          </div>
+          <div className="space-y-1.5">
+            {data.bankCollections.map((bank, i) => (
+              <div key={i} className="flex items-center justify-between py-1">
+                <span className="text-xs font-semibold" style={{ color: '#334155' }}>{bank.bankName}</span>
+                <span className="text-xs font-black" style={{ color: '#1E293B' }}>{inr(bank.amount || 0)}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-2 mt-1" style={{ borderTop: '2px solid #E2E8F0' }}>
+              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#1E40AF' }}>Total Bank Collection</span>
+              <span className="text-sm font-black" style={{ color: '#1E40AF' }}>
+                {inr(round2(data.bankCollections.reduce((s, b) => s + (Number(b.amount) || 0), 0)))}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Footer band ────────────────────────────────────────────── */}
       <div className="mt-6 flex items-center justify-between rounded-xl p-5" style={{ background: '#0F172A' }}>
         <div>

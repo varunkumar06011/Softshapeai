@@ -467,6 +467,8 @@ export default function AdminDailyBalanceSheet() {
     zomatoSale: null,
   });
   const [adjustments, setAdjustments] = useState([]);
+  const [bankCollections, setBankCollections] = useState([]);
+  const [newBankName, setNewBankName] = useState('');
   const [dirty, setDirty] = useState(false);
 
   // Refs mirror the latest overrides/adjustments so doSave can read synchronous
@@ -474,6 +476,7 @@ export default function AdminDailyBalanceSheet() {
   // Save while still focused on an input).
   const overridesRef = useRef(overrides);
   const adjustmentsRef = useRef(adjustments);
+  const bankCollectionsRef = useRef(bankCollections);
 
   useEffect(() => {
     if (!sheet) return;
@@ -507,6 +510,14 @@ export default function AdminDailyBalanceSheet() {
       const freshAdjustments = sheet.adjustments || [];
       adjustmentsRef.current = freshAdjustments;
       setAdjustments(freshAdjustments);
+      const freshBanks = (sheet.bankCollections || []).map((b) => ({
+        id: b.id,
+        bankName: b.bankName,
+        amount: Number(b.amount) || 0,
+        sortOrder: b.sortOrder ?? 0,
+      }));
+      bankCollectionsRef.current = freshBanks;
+      setBankCollections(freshBanks);
       setDirty(false);
     }
   }, [sheet]);
@@ -584,6 +595,11 @@ export default function AdminDailyBalanceSheet() {
           sign: a.sign,
           narration: a.narration || null,
           sortOrder: a.sortOrder ?? i,
+        })),
+        bankCollections: bankCollectionsRef.current.map((b, i) => ({
+          bankName: b.bankName,
+          amount: Number(b.amount) || 0,
+          sortOrder: b.sortOrder ?? i,
         })),
       };
       const params = new URLSearchParams();
@@ -680,6 +696,47 @@ export default function AdminDailyBalanceSheet() {
     adjustmentsRef.current = reindexed;
     setAdjustments(reindexed);
     dragItemRef.current = null;
+    setDirty(true);
+  };
+
+  // ── Bank collection handlers ───────────────────────────────────────────────
+  const handleAddBank = () => {
+    if (!newBankName.trim()) return;
+    const entry = {
+      id: `temp-${Date.now()}`,
+      bankName: newBankName.trim(),
+      amount: 0,
+      sortOrder: bankCollectionsRef.current.length,
+    };
+    const updated = [...bankCollectionsRef.current, entry];
+    bankCollectionsRef.current = updated;
+    setBankCollections(updated);
+    setNewBankName('');
+    setDirty(true);
+  };
+
+  const handleBankAmountChange = (id, amount) => {
+    const next = bankCollectionsRef.current.map((b) =>
+      b.id === id ? { ...b, amount: Math.max(0, Number(amount) || 0) } : b
+    );
+    bankCollectionsRef.current = next;
+    setBankCollections(next);
+    setDirty(true);
+  };
+
+  const handleBankNameChange = (id, bankName) => {
+    const next = bankCollectionsRef.current.map((b) =>
+      b.id === id ? { ...b, bankName: bankName.trim() } : b
+    );
+    bankCollectionsRef.current = next;
+    setBankCollections(next);
+    setDirty(true);
+  };
+
+  const handleDeleteBank = (id) => {
+    const next = bankCollectionsRef.current.filter((b) => b.id !== id);
+    bankCollectionsRef.current = next;
+    setBankCollections(next);
     setDirty(true);
   };
 
@@ -834,14 +891,20 @@ export default function AdminDailyBalanceSheet() {
         amount: Number(a.amount),
         narration: a.narration || null,
       })),
+      bankCollections: bankCollections.map(b => ({
+        bankName: b.bankName,
+        amount: Number(b.amount) || 0,
+      })),
     };
 
     // Create off-screen container
     const container = document.createElement('div');
-    container.style.position = 'fixed';
+    container.style.position = 'absolute';
     container.style.left = '-9999px';
     container.style.top = '0';
     container.style.width = '900px';
+    container.style.minWidth = '900px';
+    container.style.overflow = 'visible';
     container.style.background = 'white';
     document.body.appendChild(container);
 
@@ -862,6 +925,8 @@ export default function AdminDailyBalanceSheet() {
       // Capture with html2canvas
       const canvas = await html2canvas(container, {
         scale: 3,
+        width: 900,
+        windowWidth: 900,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
@@ -905,7 +970,7 @@ export default function AdminDailyBalanceSheet() {
       }
       throw err;
     }
-  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, effectiveTotalExpenditures, expenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, balanceCalc.netSales, balanceCalc.nonCashExpenditures, overrides.openingBalance, computedSales, user?.name, logoBase64]);
+  }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, effectiveTotalExpenditures, expenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, balanceCalc.netSales, balanceCalc.nonCashExpenditures, overrides.openingBalance, computedSales, user?.name, logoBase64, bankCollections]);
 
   // ── WhatsApp share: generate PNG and share via Web Share API ───────────────
   const handleWhatsAppShare = async () => {
@@ -974,13 +1039,19 @@ export default function AdminDailyBalanceSheet() {
           amount: Number(a.amount),
           narration: a.narration || null,
         })),
+        bankCollections: bankCollections.map(b => ({
+          bankName: b.bankName,
+          amount: Number(b.amount) || 0,
+        })),
       };
 
       const container = document.createElement('div');
-      container.style.position = 'fixed';
+      container.style.position = 'absolute';
       container.style.left = '-9999px';
       container.style.top = '0';
       container.style.width = '900px';
+      container.style.minWidth = '900px';
+      container.style.overflow = 'visible';
       container.style.background = 'white';
       document.body.appendChild(container);
 
@@ -994,15 +1065,20 @@ export default function AdminDailyBalanceSheet() {
           />
         );
 
+        // Wait for render
         await new Promise(resolve => setTimeout(resolve, 500));
 
+        // Capture with html2canvas
         const canvas = await html2canvas(container, {
           scale: 3,
+          width: 900,
+          windowWidth: 900,
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
         });
 
+        // Cleanup React root
         root.unmount();
         document.body.removeChild(container);
 
@@ -1469,6 +1545,79 @@ export default function AdminDailyBalanceSheet() {
             <div className="mt-1 flex items-center justify-between text-[10px] text-amber-600">
               <span>Cash Expenditures (deducted from closing balance)</span>
               <span className="font-bold">₹{balanceCalc.cashExpenditures.toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Bank-wise Collection entries ─────────────────────────────────── */}
+      <div className="rounded-xl bg-gray-50 p-4 border border-gray-200">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-black text-gray-800">Bank-wise Collection</h3>
+          {!isLocked && (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newBankName}
+                onChange={(e) => setNewBankName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddBank(); }}
+                placeholder="Bank name (e.g. HDFC Bank)"
+                className="rounded-lg border border-gray-300 px-2 py-1 text-sm outline-none focus:border-[#E53935] w-44"
+              />
+              <button
+                onClick={handleAddBank}
+                disabled={!newBankName.trim()}
+                className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={14} /> Add Bank
+              </button>
+            </div>
+          )}
+        </div>
+
+        {bankCollections.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 p-3 text-center text-sm text-gray-400">
+            No bank entries for this date. Add a bank above.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {bankCollections.map((bank) => (
+              <div key={bank.id} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-2">
+                <input
+                  type="text"
+                  value={bank.bankName}
+                  onChange={(e) => handleBankNameChange(bank.id, e.target.value)}
+                  disabled={isLocked}
+                  className="flex-1 rounded border border-gray-200 px-2 py-1 text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-400">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={bank.amount}
+                    onChange={(e) => handleBankAmountChange(bank.id, e.target.value)}
+                    disabled={isLocked}
+                    className="w-28 rounded border border-gray-200 px-2 py-1 text-right text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                </div>
+                {!isLocked && (
+                  <button
+                    onClick={() => handleDeleteBank(bank.id)}
+                    className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                    title="Remove bank"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+              <span className="text-xs font-bold text-gray-600">Total Bank Collection</span>
+              <span className="text-sm font-black text-gray-800">
+                ₹{round2(bankCollections.reduce((s, b) => s + (Number(b.amount) || 0), 0)).toLocaleString('en-IN')}
+              </span>
             </div>
           </div>
         )}
