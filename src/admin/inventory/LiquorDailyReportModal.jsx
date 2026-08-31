@@ -39,6 +39,113 @@ function fmtPct(n) {
   return `${Number(n).toFixed(1)}%`;
 }
 
+// ── Pure function: compute report values from fresh backend JSON ──
+// Used by handleSaveAndPrint to build the PDF from freshly fetched data
+// (after save + refetch), avoiding stale React state.
+// The json already reflects all saved edits (AC adjustments, Non-AC entries,
+// summary overrides), so no edit overlay is needed.
+
+// Helper: prefer backend summary value (includes saved overrides), fall back to computed.
+function pickS(jsonData, field, fallback) {
+  const v = jsonData?.summary?.[field];
+  return (v != null && v !== '' && !Number.isNaN(Number(v))) ? Number(v) : fallback;
+}
+
+function computeReportFromJson(jsonData) {
+  if (!jsonData) return null;
+
+  const computedAcItems = (jsonData.acItems || [])
+    .filter(i => !i.isHidden)
+    .map(item => {
+      const purchaseCost = Number(item.purchaseCost) || 0;
+      const sellingPrice = Number(item.sellingPrice) || 0;
+      const opening = Number(item.opening) || 0;
+      const purchases = Number(item.received) || 0;
+      const totalStock = opening + purchases;
+      const sold = Number(item.sold) || 0;
+      const sale = sold;
+      const closing = totalStock - sold;
+      const consumption = sale * purchaseCost;
+      const saleAmount = Number(item.saleAmount) || (sale * sellingPrice);
+      const profit = saleAmount - consumption;
+      return { ...item, qty: Number(item.qty) || 0, sale, purchaseCost, sellingPrice, consumption, saleAmount, profit, isHidden: false, hasMissingPrice: purchaseCost <= 0, hasMissingBottleSize: (Number(item.qty) || 0) <= 0, hasMissingSellingPrice: sellingPrice <= 0, opening, purchases, totalStock, sold, closing };
+    });
+
+  const computedNonAcItems = (jsonData.nonAcItems || [])
+    .filter(i => !i.isHidden)
+    .map(item => {
+      const purchaseCost = Number(item.purchaseCost) || 0;
+      const sellingPrice = Number(item.sellingPrice) || 0;
+      const opening = Number(item.opening) || 0;
+      const purchases = Number(item.received) || 0;
+      const totalStock = opening + purchases;
+      const sold = Number(item.sold) || 0;
+      const sale = sold;
+      const closing = totalStock - sold;
+      const consumption = sale * purchaseCost;
+      const saleAmount = sale * sellingPrice;
+      const profit = saleAmount - consumption;
+      return { ...item, qty: Number(item.qty) || 0, sale, purchaseCost, sellingPrice, consumption, saleAmount, profit, isHidden: false, hasMissingPrice: purchaseCost <= 0, hasMissingSellingPrice: sellingPrice <= 0, opening, purchases, totalStock, sold, closing };
+    });
+
+  const mkTotals = (items) => {
+    const consumption = items.reduce((s, i) => s + i.consumption, 0);
+    const saleAmount = items.reduce((s, i) => s + i.saleAmount, 0);
+    const profit = items.reduce((s, i) => s + i.profit, 0);
+    const profitMarginPct = consumption > 0 ? (profit / consumption) * 100 : 0;
+    const opening = items.reduce((s, i) => s + (Number(i.opening) || 0), 0);
+    const purchases = items.reduce((s, i) => s + (Number(i.purchases) || 0), 0);
+    const totalStock = items.reduce((s, i) => s + (Number(i.totalStock) || 0), 0);
+    const sold = items.reduce((s, i) => s + (Number(i.sold) || 0), 0);
+    const closing = items.reduce((s, i) => s + (Number(i.closing) || 0), 0);
+    return { consumption, saleAmount, profit, profitMarginPct, opening, purchases, totalStock, sold, closing };
+  };
+
+  const acItemTotals = mkTotals(computedAcItems);
+  const nonAcItemTotals = mkTotals(computedNonAcItems);
+
+  const totalAcRevenue = acItemTotals.saleAmount;
+  const totalNonAcRevenue = nonAcItemTotals.saleAmount;
+  const totalAcConsumptionCost = acItemTotals.consumption;
+  const totalNonAcConsumptionCost = nonAcItemTotals.consumption;
+  const totalAcProfit = acItemTotals.profit;
+  const totalNonAcProfit = nonAcItemTotals.profit;
+
+  const computedOpeningStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => s + (Number(i.opening) || 0) * (Number(i.purchaseCost) || 0), 0);
+  const computedPurchaseValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => s + (Number(i.purchases) || 0) * (Number(i.purchaseCost) || 0), 0);
+  const computedConsumption = totalAcConsumptionCost + totalNonAcConsumptionCost;
+  const computedClosingStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => s + (Number(i.closing) || 0) * (Number(i.purchaseCost) || 0), 0);
+  const computedAcProfitPct = totalAcRevenue > 0 ? (totalAcProfit / totalAcRevenue) * 100 : 0;
+  const computedNonAcProfitPct = totalNonAcRevenue > 0 ? (totalNonAcProfit / totalNonAcRevenue) * 100 : 0;
+  const computedTotalSales = totalAcRevenue + totalNonAcRevenue;
+  const computedTotalProfit = totalAcProfit + totalNonAcProfit;
+  const computedTotalProfitPct = computedTotalSales > 0 ? (computedTotalProfit / computedTotalSales) * 100 : 0;
+
+  const summary = {
+    ...jsonData.summary,
+    // Prefer backend's summary values (which include saved admin overrides),
+    // falling back to computed values only when backend doesn't provide them.
+    openingStockValue: pickS(jsonData, 'openingStockValue', computedOpeningStockValue),
+    purchaseValue: pickS(jsonData, 'purchaseValue', computedPurchaseValue),
+    consumption: pickS(jsonData, 'consumption', computedConsumption),
+    closingStockValue: pickS(jsonData, 'closingStockValue', computedClosingStockValue),
+    acSales: pickS(jsonData, 'acSales', totalAcRevenue),
+    acConsumption: pickS(jsonData, 'acConsumption', totalAcConsumptionCost),
+    acProfit: pickS(jsonData, 'acProfit', totalAcProfit),
+    acProfitPct: pickS(jsonData, 'acProfitPct', computedAcProfitPct),
+    nonAcSales: pickS(jsonData, 'nonAcSales', totalNonAcRevenue),
+    nonAcConsumption: pickS(jsonData, 'nonAcConsumption', totalNonAcConsumptionCost),
+    nonAcProfit: pickS(jsonData, 'nonAcProfit', totalNonAcProfit),
+    nonAcProfitPct: pickS(jsonData, 'nonAcProfitPct', computedNonAcProfitPct),
+    totalSales: pickS(jsonData, 'totalSales', computedTotalSales),
+    totalConsumption: pickS(jsonData, 'totalConsumption', computedConsumption),
+    totalProfit: pickS(jsonData, 'totalProfit', computedTotalProfit),
+    totalProfitPct: pickS(jsonData, 'totalProfitPct', computedTotalProfitPct),
+  };
+
+  return { ...jsonData, categories: jsonData.categories || [], summary, acItems: computedAcItems, nonAcItems: computedNonAcItems, acItemTotals, nonAcItemTotals };
+}
+
 // Format bottle quantity (e.g., 20, 20.5, 0)
 function fmtQty(n) {
   if (n == null || Number.isNaN(Number(n))) return '0';
@@ -123,7 +230,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         params.set('endDate', endDate);
       }
       const res = await fetch(apiUrl(`/api/bar/inventory/liquor-daily-report?${params.toString()}`), {
-        headers: { ...getAuthHeaders() },
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -203,7 +311,10 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         if (pending.acItemEdits) {
           for (const [itemId, vals] of Object.entries(pending.acItemEdits)) {
             if (acInit[itemId]) {
-              acInit[itemId] = { ...acInit[itemId], ...vals };
+              // Exclude system-driven fields (sold, saleMl) — AC sold values
+              // come from POS and must never be overwritten by stale cache.
+              const { sold, saleMl, ...adminEditable } = vals;
+              acInit[itemId] = { ...acInit[itemId], ...adminEditable };
             }
           }
           setAcItemEdits({ ...acInit });
@@ -228,6 +339,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // Restore summary overrides from the response (already applied to summary by backend)
       // We don't set summaryEdits here because the backend already applied them to summary values.
       // The inputs will show the backend-provided values (which include overrides).
+      return json;
     } catch (err) {
       setError(err.message || 'Failed to load report');
     } finally {
@@ -538,7 +650,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   }, [data, summaryEdits, computedAcTotals, computedNonAcTotals, computedAcItems, computedNonAcItems]);
 
   // ── Save item-wise edits to backend + summary overrides ──
-  // Returns true on success, false on failure
+  // Returns fresh JSON on success, false on failure
   const handleSave = async () => {
     if (!data) return false;
     setSaving(true);
@@ -638,12 +750,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setTimeout(() => setSavedMsg(false), 3000);
       // ── ONLY clear pending edits after confirmed successful save ──
       clearPendingFromStorage();
-      // Reload data to reflect saved state
-      loadData();
+      // Reload data to reflect saved state and AWAIT it so the caller
+      // (handleSaveAndPrint) gets the fresh data for PDF generation.
+      const freshJson = await loadData();
       // Notify parent (original inventory screen) to refresh its data
       // so both screens stay synchronized.
       if (onSaved) onSaved();
-      return true;
+      return freshJson;
     } catch (err) {
       // ── Save FAILED: do NOT clear pending edits ──
       // The admin's entered values are still in localStorage (auto-saved
@@ -666,9 +779,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     setError(null);
 
     // 1. Persist current edits and WAIT for the save to complete.
-    //    handleSave manages its own saving state, so we reset ours after.
-    const success = await handleSave();
-    if (!success) {
+    //    handleSave returns the fresh JSON from the refetch (or null on failure).
+    const freshJson = await handleSave();
+    if (!freshJson) {
       // Save failed — handleSave already set the error message.
       // Do NOT generate a PDF from failed/unpersisted data.
       setSaving(false);
@@ -676,13 +789,16 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     }
 
     try {
-      // 2. Build the report HTML from the just-saved edited values.
+      // 2. Build the report HTML from the FRESH backend data (not stale React state).
+      //    handleSave saved edits → awaited loadData() → fresh JSON now reflects
+      //    all saved values including any new AC sales that posted since modal open.
+      const freshComputed = computeReportFromJson(freshJson);
       const html = buildPrintHtml({
-        ...computed,
-        nonAcItems: computedNonAcItems,
-        acItems: computedAcItems,
-        nonAcItemTotals: computedNonAcTotals,
-        acItemTotals: computedAcTotals,
+        ...freshComputed,
+        nonAcItems: freshComputed.nonAcItems,
+        acItems: freshComputed.acItems,
+        nonAcItemTotals: freshComputed.nonAcItemTotals,
+        acItemTotals: freshComputed.acItemTotals,
       });
 
       // 3. Render the HTML into an off-screen iframe so html2canvas can

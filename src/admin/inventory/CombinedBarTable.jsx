@@ -386,8 +386,13 @@ export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView,
                 const acSaleBtl = Number(item.acSaleBottles) || (btlSize > 0 ? (Number(item.acSale) || 0) / btlSize : 0);
                 // Non-AC Sale = Admin-entered (bottles) — separate sales channel
                 const nonAcSaleBtl = Number(item.nonAcDeduction) || 0;
-                // Closing Stock = Total Stock − AC Sale − Non-AC Sale
-                const closingBtl = totalStockBtl - acSaleBtl - nonAcSaleBtl;
+                // Closing Stock = snapshot's closingStock (includes wastage/adjustments),
+                // falling back to formula only when backend value is unavailable.
+                const snapClosingBtl = Number(item.acClosingBottles) || 0;
+                const hasSnapClosing = item.acClosingBottles != null;
+                const closingBtl = hasSnapClosing
+                  ? snapClosingBtl
+                  : (totalStockBtl - acSaleBtl - nonAcSaleBtl);
                 // Closing Value = Closing Stock × Purchase Rate
                 const closingValue = closingBtl * purchaseRate;
                 // Opening Stock Value = Opening Stock (bottles) × Purchase Rate
