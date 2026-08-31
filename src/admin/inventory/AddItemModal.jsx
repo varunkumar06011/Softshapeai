@@ -38,6 +38,16 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     }
   }, [open, tab]);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [open]);
+
   const fetchUnlinkedMenuItems = async () => {
     try {
       const rId = getCurrentRestaurantId();
@@ -59,8 +69,6 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     setOpeningStock('');
     setReorderLevel('');
     setCostPerBottle('');
-    setAcSellingPerMl('');
-    setNonAcSellingPerMl('');
     setName('');
     setCategory('');
     setUnit('gm');
@@ -173,7 +181,7 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
           <h2 className="text-lg font-bold text-gray-900">
             Add {tab === 'bar' ? 'Bar' : 'Kitchen'} Item
           </h2>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600">
+          <button type="button" onClick={handleClose} className="text-gray-400 hover:text-gray-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -320,12 +328,14 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
 
         <div className="flex justify-end gap-2 p-5 border-t border-gray-100">
           <button
+            type="button"
             onClick={handleClose}
             className="px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={tab === 'bar' ? handleSaveBar : handleSaveKitchen}
             disabled={saving}
             className="px-4 py-2.5 rounded-lg bg-[#E53935] text-white text-sm font-semibold hover:bg-[#B71C1C] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
