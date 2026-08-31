@@ -84,6 +84,7 @@ export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView,
   const [groupByBrandMode, setGroupByBrandMode] = useState(false);
   const [expandedBrand, setExpandedBrand] = useState(null);
   const [editingStock, setEditingStock] = useState({}); // { [itemId]: bottleCount }
+  const [savingStock, setSavingStock] = useState(null); // itemId being saved
   const [deleteConfirm, setDeleteConfirm] = useState(null); // item being deleted
   const [deleting, setDeleting] = useState(false);
 
