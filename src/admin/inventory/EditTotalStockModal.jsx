@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { adjustStock, getOrCreateRequestId, clearRequestId, updateNonAcEntry } from '../../services/barInventoryApi';
+import { adjustStock, getOrCreateRequestId, clearRequestId, updateNonAcEntry, updateInventoryItem, updateNonAcItem } from '../../services/barInventoryApi';
 
 export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
   const [newOpeningInput, setNewOpeningInput] = useState('');
+  const [purchaseRateInput, setPurchaseRateInput] = useState('');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -10,6 +11,7 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
   useEffect(() => {
     if (open) {
       setNewOpeningInput('');
+      setPurchaseRateInput('');
       setReason('');
       setError(null);
     }
@@ -35,21 +37,28 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
   const currentTotalBtl = currentOpeningBtl + currentPurchasesBtl;
   const newOpeningBtl = newOpeningInput === '' ? currentOpeningBtl : Number(newOpeningInput);
   const newTotalBtl = newOpeningBtl + currentPurchasesBtl;
-  const newOpeningValue = newOpeningBtl * purchaseRate;
-  const hasChange = newOpeningInput !== '' && Math.abs(newOpeningBtl - currentOpeningBtl) > 0.001;
+  const newPurchaseRate = purchaseRateInput === '' ? purchaseRate : Number(purchaseRateInput);
+  const newOpeningValue = newOpeningBtl * newPurchaseRate;
+  const hasStockChange = newOpeningInput !== '' && Math.abs(newOpeningBtl - currentOpeningBtl) > 0.001;
+  const hasRateChange = purchaseRateInput !== '' && Math.abs(newPurchaseRate - purchaseRate) > 0.001;
+  const hasChange = hasStockChange || hasRateChange;
   const isDecrease = newOpeningBtl < currentOpeningBtl;
 
   const handleSave = async () => {
-    if (newOpeningInput === '') {
-      setError('Please enter a new opening stock value');
+    if (newOpeningInput === '' && !hasRateChange) {
+      setError('Please enter a new opening stock value or purchase rate');
       return;
     }
-    if (newOpeningBtl < 0) {
+    if (newOpeningInput !== '' && newOpeningBtl < 0) {
       setError('Opening stock cannot be negative');
       return;
     }
+    if (hasRateChange && newPurchaseRate < 0) {
+      setError('Purchase rate cannot be negative');
+      return;
+    }
     if (!hasChange) {
-      setError('New value is the same as current opening stock');
+      setError('No changes to save');
       return;
     }
 
@@ -57,37 +66,51 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
     setError(null);
 
     try {
-      if (isNonAcOnly) {
-        const nonAcItemId = item.nonAcItemId || item.id;
-        await updateNonAcEntry({
-          itemId: nonAcItemId,
-          openingBottles: Math.round(newOpeningBtl * 100) / 100,
-          reason: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
-        });
-      } else {
-        const acItemId = item.acItemId || item.id;
-        const actionKey = `bar-edit-stock:${acItemId}`;
-        const requestId = getOrCreateRequestId(actionKey);
-        const newOpeningMl = bottleSize > 0
-          ? Math.round(newOpeningBtl * bottleSize * 100) / 100
-          : Math.round(newOpeningBtl * 100) / 100;
+      // 1. Update purchase rate in DB if changed
+      if (hasRateChange) {
+        if (isNonAcOnly) {
+          const nonAcItemId = item.nonAcItemId || item.id;
+          await updateNonAcItem(nonAcItemId, { purchaseRate: newPurchaseRate });
+        } else {
+          const acItemId = item.acItemId || item.id;
+          await updateInventoryItem(acItemId, { costPerBottle: newPurchaseRate });
+        }
+      }
 
-        await adjustStock({
-          itemId: acItemId,
-          quantityChange: newOpeningMl,
-          type: 'OPENING',
-          notes: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
-          createdBy: 'Admin',
-          requestId,
-          date,
-        });
-        clearRequestId(actionKey);
+      // 2. Update opening stock in DB if changed
+      if (hasStockChange) {
+        if (isNonAcOnly) {
+          const nonAcItemId = item.nonAcItemId || item.id;
+          await updateNonAcEntry({
+            itemId: nonAcItemId,
+            openingBottles: Math.round(newOpeningBtl * 100) / 100,
+            reason: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
+          });
+        } else {
+          const acItemId = item.acItemId || item.id;
+          const actionKey = `bar-edit-stock:${acItemId}`;
+          const requestId = getOrCreateRequestId(actionKey);
+          const newOpeningMl = bottleSize > 0
+            ? Math.round(newOpeningBtl * bottleSize * 100) / 100
+            : Math.round(newOpeningBtl * 100) / 100;
+
+          await adjustStock({
+            itemId: acItemId,
+            quantityChange: newOpeningMl,
+            type: 'OPENING',
+            notes: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
+            createdBy: 'Admin',
+            requestId,
+            date,
+          });
+          clearRequestId(actionKey);
+        }
       }
 
       onSaved?.();
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to update stock');
+      setError(err.message || 'Failed to update');
     } finally {
       setSaving(false);
     }
@@ -114,7 +137,7 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
             <div className="text-xs text-gray-500 uppercase tracking-wide">Item</div>
             <div className="text-sm font-bold text-gray-900">{itemName}</div>
             <div className="text-xs text-gray-500 mt-1">
-              Bottle Size: {bottleSize > 0 ? `${bottleSize}ml` : '—'} · Purchase Rate: {purchaseRate > 0 ? `₹${purchaseRate}` : '—'}
+              Bottle Size: {bottleSize > 0 ? `${bottleSize}ml` : '—'}
             </div>
           </div>
 
@@ -133,34 +156,65 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              New Opening Stock (bottles) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={newOpeningInput}
-              onChange={(e) => setNewOpeningInput(e.target.value)}
-              placeholder={String(currentOpeningBtl)}
-              autoFocus
-              className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Set the new absolute opening stock value. Can be higher or lower than current.
-            </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Opening Stock (btl)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={newOpeningInput}
+                onChange={(e) => setNewOpeningInput(e.target.value)}
+                placeholder={String(currentOpeningBtl)}
+                autoFocus
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Set absolute opening stock.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Purchase Rate (₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={purchaseRateInput}
+                onChange={(e) => setPurchaseRateInput(e.target.value)}
+                placeholder={String(purchaseRate)}
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Cost per bottle.
+              </p>
+            </div>
           </div>
 
           {hasChange && (
             <div className={`border rounded-lg p-3 space-y-1.5 ${isDecrease ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">New Opening Stock:</span>
-                <span className="font-bold text-gray-900">{newOpeningBtl.toFixed(2)} btl
-                  {isDecrease && <span className="text-orange-600 ml-1">(−{(currentOpeningBtl - newOpeningBtl).toFixed(2)})</span>}
-                  {!isDecrease && <span className="text-green-600 ml-1">(+{(newOpeningBtl - currentOpeningBtl).toFixed(2)})</span>}
-                </span>
-              </div>
+              {hasStockChange && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">New Opening Stock:</span>
+                  <span className="font-bold text-gray-900">{newOpeningBtl.toFixed(2)} btl
+                    {isDecrease && <span className="text-orange-600 ml-1">(−{(currentOpeningBtl - newOpeningBtl).toFixed(2)})</span>}
+                    {!isDecrease && <span className="text-green-600 ml-1">(+{(newOpeningBtl - currentOpeningBtl).toFixed(2)})</span>}
+                  </span>
+                </div>
+              )}
+              {hasRateChange && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">New Purchase Rate:</span>
+                  <span className="font-bold text-gray-900">₹{newPurchaseRate}
+                    <span className={newPurchaseRate > purchaseRate ? 'text-green-600' : 'text-orange-600'} ml-1>
+                      ({newPurchaseRate > purchaseRate ? '+' : ''}{(newPurchaseRate - purchaseRate).toFixed(2)})
+                    </span>
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">New Total Stock:</span>
                 <span className="font-bold text-gray-900">{newTotalBtl.toFixed(2)} btl</span>
@@ -202,7 +256,7 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
             disabled={saving || !hasChange}
             className="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {saving ? 'Saving...' : 'Save Opening Stock'}
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
