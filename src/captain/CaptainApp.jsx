@@ -3209,8 +3209,39 @@ export default function CaptainApp({ onLogout }) {
   }, []);
 
   // Direct add (qty 1) — used by card tap. Bypasses the quantity picker.
+  // BUT for liquor pegs (30/60/90ml), still show the bottle picker so the
+  // captain can select which bottle to pour from.
   const stableCardDirectAdd = useCallback((item) => {
-    addItemToSessionRef.current(item, 1);
+    const PEG_SIZES = [30, 60, 90];
+    const itemName = item.n || item.name || '';
+    const mlMatch = itemName.match(/(\d+)\s*ml/i);
+    const menuSize = mlMatch ? parseInt(mlMatch[1], 10) : null;
+    const menuType = String(item.menuType || item.mt || 'FOOD').toUpperCase();
+    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PEG_SIZES.includes(menuSize);
+
+    if (isLiquorPeg) {
+      setBottlePickerItem(item);
+      setBottlePickerQty(1);
+      setBottlePickerBottles([]);
+      setShowBottlePicker(true);
+      getBottlesForMenuItem(item.id || item.menuItemId)
+        .then((res) => {
+          if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
+            setBottlePickerBottles(res.bottles);
+          } else {
+            addItemToSessionRef.current(item, 1);
+            setShowBottlePicker(false);
+            setBottlePickerItem(null);
+          }
+        })
+        .catch(() => {
+          addItemToSessionRef.current(item, 1);
+          setShowBottlePicker(false);
+          setBottlePickerItem(null);
+        });
+    } else {
+      addItemToSessionRef.current(item, 1);
+    }
   }, []);
 
 
