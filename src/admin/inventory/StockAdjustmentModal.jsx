@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo } from 'react';
-import { adjustStock, getOrCreateRequestId, clearRequestId, getOpeningPreview } from '../../services/barInventoryApi';
+import { adjustStock, getOrCreateRequestId, clearRequestId, getOpeningPreview, updateNonAcEntry, recordNonAcDeduction } from '../../services/barInventoryApi';
 import { createKitchenEntry } from '../../services/kitchenInventoryApi';
 
 export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved }) {
@@ -42,7 +42,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
       setItemSearch('');
       setAdjustType('+');
       setAmount('');
-      setOpeningUnit('ml');
+      setOpeningUnit(item && !item.acItemId && (item.nonAcItemId || (item.id || '').startsWith('nonac-')) ? 'btl' : 'ml');
       setReason('');
       setNotes('');
       setError(null);
@@ -65,7 +65,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     setItemSearch('');
     setAdjustType('+');
     setAmount('');
-    setOpeningUnit('ml');
+    setOpeningUnit(!it.acItemId && (it.nonAcItemId || (it.id || '').startsWith('nonac-')) ? 'btl' : 'ml');
     setReason('');
     setNotes('');
     setError(null);
@@ -76,13 +76,13 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   // Shows today's sold/purchased/wastage so the admin can see the resulting
   // closing stock before saving the opening stock value.
   useEffect(() => {
-    if (!open || tab !== 'bar' || !(selectedItem?.acItemId || selectedItem?.id)) {
+    if (!open || tab !== 'bar' || !selectedItem?.acItemId) {
       setOpeningPreview(null);
       return;
     }
     let cancelled = false;
     setOpeningPreviewLoading(true);
-    getOpeningPreview(selectedItem.acItemId || selectedItem.id)
+    getOpeningPreview(selectedItem.acItemId)
       .then((data) => {
         if (!cancelled) setOpeningPreview(data);
       })
@@ -93,7 +93,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
         if (!cancelled) setOpeningPreviewLoading(false);
       });
     return () => { cancelled = true; };
-  }, [open, tab, selectedItem?.acItemId, selectedItem?.id]);
+  }, [open, tab, selectedItem?.acItemId]);
 
   const handleBackToPicker = () => {
     setSelectedItem(null);
@@ -111,12 +111,9 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
       return;
     }
     // For combined bar items, use acItemId (real InventoryItem ID) for adjustStock.
-    // Standalone Non-AC items (hasNonAc only) are not supported via adjustStock.
+    // Standalone Non-AC items use updateNonAcEntry / recordNonAcDeduction instead.
+    const isNonAcOnly = !selectedItem.acItemId && (selectedItem.nonAcItemId || (selectedItem.id || '').startsWith('nonac-'));
     const adjustItemId = selectedItem.acItemId || selectedItem.id;
-    if (!adjustItemId || adjustItemId.startsWith('nonac-')) {
-      setError('Stock adjustment is only available for AC inventory items. Use Non-AC deduction for Non-AC items.');
-      return;
-    }
     if (amountNum <= 0) {
       setError(adjustType === 'opening' ? 'Opening stock must be greater than 0' : 'Amount must be greater than 0');
       return;
@@ -135,33 +132,66 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
 
     try {
       if (tab === 'bar') {
-        // OPENING: set opening stock directly (positive amount = the opening stock value)
-        // WASTAGE/ADJUSTMENT: + adds stock, - removes stock
-        let quantityChange, type;
-        if (adjustType === 'opening') {
-          // Opening stock entry: set the absolute stock value
-          // The backend OPENING type sets openingStock = stockAfter in the snapshot.
-          // If the admin entered bottles, convert to ml using the item's bottleSize.
-          const bottleSize = Number(selectedItem.bottleSize) || 0;
-          if (openingUnit === 'btl' && bottleSize > 0) {
-            quantityChange = Math.round(amountNum * bottleSize * 100) / 100; // bottles → ml
+        if (isNonAcOnly) {
+          // Standalone Non-AC item — use Non-AC APIs
+          const nonAcItemId = selectedItem.nonAcItemId || selectedItem.id;
+          if (adjustType === 'opening') {
+            // Non-AC opening stock is in bottles
+            const openingBottles = openingUnit === 'btl' ? amountNum : (Number(selectedItem.bottleSize) > 0 ? amountNum / Number(selectedItem.bottleSize) : amountNum);
+            await updateNonAcEntry({
+              itemId: nonAcItemId,
+              openingBottles: Math.round(openingBottles * 100) / 100,
+              reason: reason || undefined,
+            });
+          } else if (adjustType === '+') {
+            // Add stock = received bottles
+            const addBottles = openingUnit === 'btl' ? amountNum : (Number(selectedItem.bottleSize) > 0 ? amountNum / Number(selectedItem.bottleSize) : amountNum);
+            await recordNonAcDeduction({
+              itemId: nonAcItemId,
+              receivedBottles: Math.round(addBottles * 100) / 100,
+              adminDeduction: 0,
+              reason: reason || undefined,
+            });
           } else {
-            quantityChange = amountNum; // already in ml
+            // Remove stock = admin deduction
+            const deductBottles = openingUnit === 'btl' ? amountNum : (Number(selectedItem.bottleSize) > 0 ? amountNum / Number(selectedItem.bottleSize) : amountNum);
+            await recordNonAcDeduction({
+              itemId: nonAcItemId,
+              adminDeduction: Math.round(deductBottles * 100) / 100,
+              receivedBottles: 0,
+              reason: reason || undefined,
+            });
           }
-          type = 'OPENING';
         } else {
-          quantityChange = adjustType === '+' ? amountNum : -amountNum;
-          type = reason === 'wastage' || reason === 'breakage' ? 'WASTAGE' : 'ADJUSTMENT';
+          // AC item — use adjustStock
+          // OPENING: set opening stock directly (positive amount = the opening stock value)
+          // WASTAGE/ADJUSTMENT: + adds stock, - removes stock
+          let quantityChange, type;
+          if (adjustType === 'opening') {
+            // Opening stock entry: set the absolute stock value
+            // The backend OPENING type sets openingStock = stockAfter in the snapshot.
+            // If the admin entered bottles, convert to ml using the item's bottleSize.
+            const bottleSize = Number(selectedItem.bottleSize) || 0;
+            if (openingUnit === 'btl' && bottleSize > 0) {
+              quantityChange = Math.round(amountNum * bottleSize * 100) / 100; // bottles → ml
+            } else {
+              quantityChange = amountNum; // already in ml
+            }
+            type = 'OPENING';
+          } else {
+            quantityChange = adjustType === '+' ? amountNum : -amountNum;
+            type = reason === 'wastage' || reason === 'breakage' ? 'WASTAGE' : 'ADJUSTMENT';
+          }
+          await adjustStock({
+            itemId: adjustItemId,
+            quantityChange,
+            type,
+            notes: `${reason}${notes ? ': ' + notes : ''}`,
+            createdBy: 'Admin',
+            requestId,
+          });
+          clearRequestId(actionKey);
         }
-        await adjustStock({
-          itemId: adjustItemId,
-          quantityChange,
-          type,
-          notes: `${reason}${notes ? ': ' + notes : ''}`,
-          createdBy: 'Admin',
-          requestId,
-        });
-        clearRequestId(actionKey);
       } else {
         // Kitchen: use entries endpoint
         const kitchenItemId = selectedItem.id;
@@ -201,11 +231,14 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   const itemName = selectedItem
     ? (selectedItem.itemName || (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name))
     : '';
-  const currentStock = Number(selectedItem?.currentStock || selectedItem?.acClosing) || 0;
+  const isNonAcOnlyItem = selectedItem && !selectedItem.acItemId && (selectedItem.nonAcItemId || (selectedItem.id || '').startsWith('nonac-'));
+  const currentStock = isNonAcOnlyItem
+    ? (Number(selectedItem?.nonAcClosing) || 0)
+    : (Number(selectedItem?.currentStock || selectedItem?.acClosing) || 0);
   const bottleSize = Number(selectedItem?.bottleSize) || 0;
-  const currentStockBtl = bottleSize > 0 ? currentStock / bottleSize : 0;
+  const currentStockBtl = isNonAcOnlyItem ? currentStock : (bottleSize > 0 ? currentStock / bottleSize : 0);
   const unit = selectedItem
-    ? (tab === 'bar' ? 'ml' : selectedItem.unit)
+    ? (isNonAcOnlyItem ? 'btl' : (tab === 'bar' ? 'ml' : selectedItem.unit))
     : '';
 
   return (
