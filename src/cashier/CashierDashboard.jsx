@@ -6298,7 +6298,7 @@ const CashierDashboard = ({ onLogout }) => {
 
           headers: { 'Content-Type': 'application/json' },
 
-          body: JSON.stringify({ orderId: txn.orderId, discountPercent: txn.discountPercent || 0 }),
+          body: JSON.stringify({ orderId: txn.orderId, discountPercent: txn.discountPercent || 0, settledAt: txn.paidAt || null }),
 
         });
 

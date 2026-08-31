@@ -485,8 +485,19 @@ export async function printLocal(job) {
         data: job.data || {},
       };
 
+  // ── KOT job types: print-or-fail (no offline queue) ──
+  // Captain KOTs must either print immediately or fail with a clear error.
+  // They are NOT stored in the offline queue for later printing.
+  const isKotJob = ['KOT', 'BAR_KOT', 'CANCEL_KOT'].includes(jobType);
+
   const agentResult = await tryPrintAgentUrls(body, jobType);
   if (agentResult) {
+    // For KOT jobs: only count as printed if the agent printed immediately.
+    // A queued response from the agent means the printer wasn't ready — treat as failure for KOTs.
+    if (isKotJob && agentResult.queued) {
+      logOfflinePrint({ status: 'error', message: 'Print Agent queued but KOT requires immediate print', detail: 'KOT not printed' });
+      return { printed: false, queued: false, error: 'Printer not ready — KOT not printed' };
+    }
     // printed: true in both immediate-print and durable-queued cases because
     // the edge server has taken ownership of the job. DO NOT change printed
     // to false when queued — the captain uses printed=true to set
@@ -496,6 +507,13 @@ export async function printLocal(job) {
     logOfflinePrint({ status: agentResult.queued ? 'queued' : 'success', message: agentResult.queued ? 'Print Agent queued for retry' : 'Print Agent succeeded', detail: '' });
     return { printed: true, queued: agentResult.queued };
   }
+
+  // KOT jobs: fail immediately — do not queue
+  if (isKotJob) {
+    logOfflinePrint({ status: 'error', message: 'Print Agent unreachable — KOT not printed', detail: jobType });
+    return { printed: false, queued: false, error: 'Printer not reachable — KOT not printed' };
+  }
+
   logOfflinePrint({ status: 'error', message: 'Print Agent unreachable', detail: 'queued' });
 
   // ── Web with QZ Tray: try direct print ──
@@ -573,12 +591,14 @@ export async function printLocal(job) {
 
 // ── Queue management ─────────────────────────────────────────────────────────
 
-// All job types (including KOTs) are durably queued when no printer is
-// reachable. The queue is auto-flushed by syncEngine when connectivity is
-// restored (see flushQueuedPrintJobs below). Duplicate prints are prevented
-// by the Print Agent's eventId dedup — the same eventId is shared between
-// the local queue and the backend's socket emission, so even if both paths
-// deliver the job, the Print Agent only prints once.
+// Only non-KOT job types (bills, receipts, reports, etc.) are durably queued
+// when no printer is reachable. KOT job types (KOT, BAR_KOT, CANCEL_KOT) are
+// NOT queued — they print-or-fail immediately so the captain knows right away
+// if the KOT didn't print. The queue is auto-flushed by syncEngine when
+// connectivity is restored (see flushQueuedPrintJobs below). Duplicate prints
+// are prevented by the Print Agent's eventId dedup — the same eventId is
+// shared between the local queue and the backend's socket emission, so even
+// if both paths deliver the job, the Print Agent only prints once.
 
 async function queuePrintJob(job, text, reason) {
   const jobType = job.type || job.jobType;
