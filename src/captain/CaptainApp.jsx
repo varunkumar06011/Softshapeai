@@ -3464,6 +3464,8 @@ export default function CaptainApp({ onLogout }) {
 
           menuType: ['LIQUOR', 'BAR'].includes(String(i.menuType || 'FOOD').toUpperCase()) ? 'LIQUOR' : 'FOOD',
 
+          pourFromInventoryItemId: i.pourFromInventoryItemId || null,
+
         }))
 
         .filter(i => !!i.menuItemId);

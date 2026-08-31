@@ -10795,6 +10795,8 @@ const CashierDashboard = ({ onLogout }) => {
 
         menuType: (i.menuType || 'FOOD').toUpperCase() === 'LIQUOR' ? 'LIQUOR' : 'FOOD',
 
+        pourFromInventoryItemId: i.pourFromInventoryItemId || null,
+
       }))
 
       .filter(i => !!i.menuItemId);
