@@ -13,6 +13,23 @@
 
 import { apiUrl, getAuthHeaders } from './apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import secureStorage from '../utils/secureStorage';
+
+// Edge-local tokens (offline PIN login) are not cloud JWTs — the cloud backend
+// rejects them with 401. Fall back to the preauth token so captain/cashier POS
+// can still reach cloud-only endpoints (e.g. bottles-for-menu) when logged in
+// via edge PIN. Mirrors the pattern in edgeHealth.js.
+function getCloudAuthHeaders() {
+  const headers = getAuthHeaders();
+  const token = secureStorage.getItem('ss_token');
+  if (token && token.startsWith('edge-local-')) {
+    const preAuthToken = secureStorage.getItem('ss_preauth_token');
+    if (preAuthToken) {
+      headers['Authorization'] = `Bearer ${preAuthToken}`;
+    }
+  }
+  return headers;
+}
 
 export function isOfflineError(err) {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
@@ -121,7 +138,7 @@ export async function fetchBarInventory(date = '') {
 // No stock quantities returned — captain should not see stock levels.
 export async function getBottlesForMenuItem(menuItemId) {
   const res = await fetch(apiUrl(`/api/bar/inventory/bottles-for-menu/${menuItemId}`), {
-    headers: { ...getAuthHeaders() },
+    headers: { ...getCloudAuthHeaders() },
   });
   return parseResponse(res);
 }
