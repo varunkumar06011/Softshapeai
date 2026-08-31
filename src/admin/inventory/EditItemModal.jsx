@@ -30,9 +30,9 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
 
   // Bar (AC) fields
   const [bottleSize, setBottleSize] = useState('');
-  const [reorderLevel, setReorderLevel] = useState(0);
+  const [reorderLevel, setReorderLevel] = useState('');
   const [costPerBottle, setCostPerBottle] = useState('');
-  const [openingStock, setOpeningStock] = useState(0);
+  const [openingStock, setOpeningStock] = useState('');
   const [openingStockReason, setOpeningStockReason] = useState('');
   const [originalOpeningStock, setOriginalOpeningStock] = useState(0);
   const [acSellingPrice, setAcSellingPrice] = useState('');
@@ -43,7 +43,7 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
   const [category, setCategory] = useState('');
   const [unit, setUnit] = useState('gm');
   const [rate, setRate] = useState('');
-  const [lowStockThreshold, setLowStockThreshold] = useState(0);
+  const [lowStockThreshold, setLowStockThreshold] = useState('');
 
   useEffect(() => {
     if (item && open) {
@@ -56,10 +56,13 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
         setNaReason('');
       } else if (tab === 'bar') {
         setBottleSize(item.bottleSize != null ? String(item.bottleSize) : '');
-        setReorderLevel(Number(item.reorderLevel) || 0);
-        setCostPerBottle(item.costPerBottle != null ? String(item.costPerBottle) : '');
-        const todayOpening = Number(item.todayEntry?.openingStock) || Number(item.openingStock) || Number(item.currentStock) || 0;
-        setOpeningStock(todayOpening);
+        setReorderLevel(item.reorderLevel != null ? String(item.reorderLevel) : '');
+        // Combined items use 'purchaseRate', basic items use 'costPerBottle'
+        const costVal = item.costPerBottle != null ? item.costPerBottle : item.purchaseRate;
+        setCostPerBottle(costVal != null ? String(costVal) : '');
+        // Combined items use 'acClosing' (ml), basic items use 'currentStock'/'todayEntry'
+        const todayOpening = Number(item.todayEntry?.openingStock) || Number(item.acClosing) || Number(item.currentStock) || 0;
+        setOpeningStock(String(todayOpening));
         setOriginalOpeningStock(todayOpening);
         setOpeningStockReason('');
         setAcSellingPrice(item.acSellingPrice != null ? String(item.acSellingPrice) : '');
@@ -69,7 +72,7 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
         setCategory(item.category || '');
         setUnit(item.unit || 'gm');
         setRate(item.price != null ? String(item.price) : '');
-        setLowStockThreshold(Number(item.reorderLevel) || 0);
+        setLowStockThreshold(item.reorderLevel != null ? String(item.reorderLevel) : '');
       }
       setError(null);
     }
@@ -94,23 +97,24 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
       } else if (tab === 'bar') {
         const payload = {
           bottleSize: bottleSize !== '' ? Number(bottleSize) : undefined,
-          reorderLevel,
+          reorderLevel: reorderLevel === '' ? 0 : Number(reorderLevel),
           costPerBottle: costPerBottle !== '' ? Number(costPerBottle) : null,
           acSellingPrice: acSellingPrice !== '' ? Number(acSellingPrice) : null,
           isHiddenFromReport,
         };
-        if (Math.abs(openingStock - originalOpeningStock) > 0.01) {
-          payload.openingStock = openingStock;
+        const openingStockNum = openingStock === '' ? 0 : Number(openingStock);
+        if (Math.abs(openingStockNum - originalOpeningStock) > 0.01) {
+          payload.openingStock = openingStockNum;
           payload.notes = openingStockReason.trim() || undefined;
         }
-        await updateInventoryItem(item.id, payload);
+        await updateInventoryItem(item.acItemId || item.id, payload);
       } else {
         await updateKitchenItem(item.id, {
           name: name.trim(),
           category: category.trim(),
           unit: unit.trim(),
           price: rate !== '' ? Number(rate) : 0,
-          reorderLevel: lowStockThreshold,
+          reorderLevel: lowStockThreshold === '' ? 0 : Number(lowStockThreshold),
         });
       }
       onSaved?.();
@@ -238,7 +242,7 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
               <div className="bg-gray-50 rounded-lg p-3">
                 <div className="text-xs text-gray-500 uppercase tracking-wide">Current Stock</div>
                 <div className="text-lg font-bold text-gray-900 mt-0.5">
-                  {Number(item.currentStock || 0).toFixed(2)}
+                  {Number(item.currentStock || item.acClosing || 0).toFixed(2)}
                   <span className="text-sm font-normal text-gray-500 ml-1">ml</span>
                 </div>
               </div>
@@ -257,7 +261,8 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
                 <input
                   type="number"
                   value={reorderLevel}
-                  onChange={(e) => setReorderLevel(Number(e.target.value))}
+                  onChange={(e) => setReorderLevel(e.target.value)}
+                  placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
@@ -302,23 +307,24 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Opening Stock (ml)
-                  {Math.abs(openingStock - originalOpeningStock) > 0.01 && (
+                  {Math.abs((openingStock === '' ? 0 : Number(openingStock)) - originalOpeningStock) > 0.01 && (
                     <span className="text-red-500 ml-1">•</span>
                   )}
                 </label>
                 <input
                   type="number"
                   value={openingStock}
-                  onChange={(e) => setOpeningStock(Number(e.target.value))}
+                  onChange={(e) => setOpeningStock(e.target.value)}
+                  placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
-                {Math.abs(openingStock - originalOpeningStock) > 0.01 && (
+                {Math.abs((openingStock === '' ? 0 : Number(openingStock)) - originalOpeningStock) > 0.01 && (
                   <p className="text-xs text-amber-600 mt-1">
-                    Changing opening stock will update current stock from {originalOpeningStock.toFixed(2)}ml to {(openingStock + (Number(item.todayEntry?.addedStock) || 0) - (Number(item.todayEntry?.consumedStock) || 0)).toFixed(2)}ml.
+                    Changing opening stock will update current stock from {originalOpeningStock.toFixed(2)}ml to {((openingStock === '' ? 0 : Number(openingStock)) + (Number(item.todayEntry?.addedStock) || 0) - (Number(item.todayEntry?.consumedStock) || 0)).toFixed(2)}ml.
                   </p>
                 )}
               </div>
-              {Math.abs(openingStock - originalOpeningStock) > 0.01 && (
+              {Math.abs((openingStock === '' ? 0 : Number(openingStock)) - originalOpeningStock) > 0.01 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Reason <span className="text-gray-400 font-normal">(optional)</span>
@@ -392,7 +398,8 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
                 <input
                   type="number"
                   value={lowStockThreshold}
-                  onChange={(e) => setLowStockThreshold(Number(e.target.value))}
+                  onChange={(e) => setLowStockThreshold(e.target.value)}
+                  placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>

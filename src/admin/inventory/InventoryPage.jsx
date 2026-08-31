@@ -203,8 +203,8 @@ export function InventoryPage() {
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} onSaved={handleSaved} />
             <EditItemModal open={editOpen} item={editItem} tab={TAB_BAR} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
-            <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={TAB_BAR} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
-            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_BAR} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
+            <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
+            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
@@ -269,8 +269,8 @@ export function InventoryPage() {
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} onSaved={handleSaved} />
             <EditItemModal open={editOpen} item={editItem} tab={tab} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
-            <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={tab} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
-            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={tab} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
+            <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
+            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
@@ -329,6 +329,7 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
         /* Combined AC + Non-AC table for bar */
         <CombinedBarTable
           items={combinedItems}
+          search={inventory.search}
           onNonAcDeduct={onNonAcDeduct}
           onEdit={onEdit}
           onView={onView}

@@ -23,7 +23,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   const [selectedItem, setSelectedItem] = useState(null);
   const [itemSearch, setItemSearch] = useState('');
   const [adjustType, setAdjustType] = useState('+'); // '+' or '-' or 'opening'
-  const [amount, setAmount] = useState(0);
+  const [amount, setAmount] = useState('');
   const [openingUnit, setOpeningUnit] = useState('ml'); // 'ml' or 'btl' — unit for opening stock entry
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
@@ -41,7 +41,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
       setSelectedItem(item ?? null);
       setItemSearch('');
       setAdjustType('+');
-      setAmount(0);
+      setAmount('');
       setOpeningUnit('ml');
       setReason('');
       setNotes('');
@@ -55,7 +55,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     const q = itemSearch.trim().toLowerCase();
     if (!q) return searchableItems;
     return searchableItems.filter((it) => {
-      const name = tab === 'bar' ? it.menuItem?.name : it.name;
+      const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
       return name?.toLowerCase().includes(q);
     });
   }, [searchableItems, itemSearch, tab]);
@@ -64,7 +64,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     setSelectedItem(it);
     setItemSearch('');
     setAdjustType('+');
-    setAmount(0);
+    setAmount('');
     setOpeningUnit('ml');
     setReason('');
     setNotes('');
@@ -76,13 +76,13 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   // Shows today's sold/purchased/wastage so the admin can see the resulting
   // closing stock before saving the opening stock value.
   useEffect(() => {
-    if (!open || tab !== 'bar' || !selectedItem?.id) {
+    if (!open || tab !== 'bar' || !(selectedItem?.acItemId || selectedItem?.id)) {
       setOpeningPreview(null);
       return;
     }
     let cancelled = false;
     setOpeningPreviewLoading(true);
-    getOpeningPreview(selectedItem.id)
+    getOpeningPreview(selectedItem.acItemId || selectedItem.id)
       .then((data) => {
         if (!cancelled) setOpeningPreview(data);
       })
@@ -93,11 +93,11 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
         if (!cancelled) setOpeningPreviewLoading(false);
       });
     return () => { cancelled = true; };
-  }, [open, tab, selectedItem?.id]);
+  }, [open, tab, selectedItem?.acItemId, selectedItem?.id]);
 
   const handleBackToPicker = () => {
     setSelectedItem(null);
-    setAmount(0);
+    setAmount('');
     setReason('');
     setNotes('');
     setError(null);
@@ -106,11 +106,18 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   const handleSave = async () => {
     // Validation: item selection is mandatory — never allow saving without a
     // concrete selected item with a real id.
-    if (!selectedItem || !selectedItem.id) {
+    if (!selectedItem) {
       setError('Please select an inventory item first');
       return;
     }
-    if (amount <= 0) {
+    // For combined bar items, use acItemId (real InventoryItem ID) for adjustStock.
+    // Standalone Non-AC items (hasNonAc only) are not supported via adjustStock.
+    const adjustItemId = selectedItem.acItemId || selectedItem.id;
+    if (!adjustItemId || adjustItemId.startsWith('nonac-')) {
+      setError('Stock adjustment is only available for AC inventory items. Use Non-AC deduction for Non-AC items.');
+      return;
+    }
+    if (amountNum <= 0) {
       setError(adjustType === 'opening' ? 'Opening stock must be greater than 0' : 'Amount must be greater than 0');
       return;
     }
@@ -123,7 +130,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     setError(null);
 
     // Idempotency key scoped to the actual selected item id.
-    const actionKey = `bar-adjust:${selectedItem.id}`;
+    const actionKey = `bar-adjust:${adjustItemId}`;
     const requestId = tab === 'bar' ? getOrCreateRequestId(actionKey) : undefined;
 
     try {
@@ -137,17 +144,17 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
           // If the admin entered bottles, convert to ml using the item's bottleSize.
           const bottleSize = Number(selectedItem.bottleSize) || 0;
           if (openingUnit === 'btl' && bottleSize > 0) {
-            quantityChange = Math.round(amount * bottleSize * 100) / 100; // bottles → ml
+            quantityChange = Math.round(amountNum * bottleSize * 100) / 100; // bottles → ml
           } else {
-            quantityChange = amount; // already in ml
+            quantityChange = amountNum; // already in ml
           }
           type = 'OPENING';
         } else {
-          quantityChange = adjustType === '+' ? amount : -amount;
+          quantityChange = adjustType === '+' ? amountNum : -amountNum;
           type = reason === 'wastage' || reason === 'breakage' ? 'WASTAGE' : 'ADJUSTMENT';
         }
         await adjustStock({
-          itemId: selectedItem.id,
+          itemId: adjustItemId,
           quantityChange,
           type,
           notes: `${reason}${notes ? ': ' + notes : ''}`,
@@ -157,16 +164,17 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
         clearRequestId(actionKey);
       } else {
         // Kitchen: use entries endpoint
+        const kitchenItemId = selectedItem.id;
         if (adjustType === '+') {
           await createKitchenEntry({
-            itemId: selectedItem.id,
-            addStock: amount,
+            itemId: kitchenItemId,
+            addStock: amountNum,
             notes: `${reason}${notes ? ': ' + notes : ''}`,
           });
         } else {
           await createKitchenEntry({
-            itemId: selectedItem.id,
-            consumedStock: amount,
+            itemId: kitchenItemId,
+            consumedStock: amountNum,
             notes: `${reason}${notes ? ': ' + notes : ''}`,
           });
         }
@@ -187,11 +195,13 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   // Picker step — shown when no item is pre-selected and none chosen yet.
   const showPicker = !selectedItem;
 
-  // Derive display values for the form step from the selected item.
+  // Derived display values for the form step from the selected item.
+  const amountNum = amount === '' ? 0 : Number(amount);
+
   const itemName = selectedItem
-    ? (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name)
+    ? (selectedItem.itemName || (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name))
     : '';
-  const currentStock = Number(selectedItem?.currentStock) || 0;
+  const currentStock = Number(selectedItem?.currentStock || selectedItem?.acClosing) || 0;
   const bottleSize = Number(selectedItem?.bottleSize) || 0;
   const currentStockBtl = bottleSize > 0 ? currentStock / bottleSize : 0;
   const unit = selectedItem
@@ -264,8 +274,8 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                   </div>
                 ) : (
                   filteredPickerItems.map((it) => {
-                    const name = tab === 'bar' ? it.menuItem?.name : it.name;
-                    const stock = Number(it.currentStock) || 0;
+                    const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
+                    const stock = Number(it.currentStock || it.acClosing) || 0;
                     const itUnit = tab === 'bar' ? 'ml' : it.unit;
                     return (
                       <button
@@ -353,7 +363,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                     <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
                       <button
                         type="button"
-                        onClick={() => { setOpeningUnit('ml'); setAmount(0); }}
+                        onClick={() => { setOpeningUnit('ml'); setAmount(''); }}
                         className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                           openingUnit === 'ml' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                         }`}
@@ -362,7 +372,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setOpeningUnit('btl'); setAmount(0); }}
+                        onClick={() => { setOpeningUnit('btl'); setAmount(''); }}
                         className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                           openingUnit === 'btl' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                         }`}
@@ -375,15 +385,15 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                 <input
                   type="number"
                   value={amount}
-                  onChange={(e) => setAmount(Number(e.target.value))}
+                  onChange={(e) => setAmount(e.target.value)}
                   placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
-                {adjustType === 'opening' && tab === 'bar' && bottleSize > 0 && amount > 0 && (
+                {adjustType === 'opening' && tab === 'bar' && bottleSize > 0 && amount !== '' && amountNum > 0 && (
                   <p className="text-xs text-gray-500 mt-1">
                     {openingUnit === 'btl'
-                      ? `= ${Math.round(amount * bottleSize).toLocaleString('en-IN')} ml (${bottleSize} ml per bottle)`
-                      : `= ${(amount / bottleSize).toFixed(2)} bottles (${bottleSize} ml per bottle)`}
+                      ? `= ${Math.round(amountNum * bottleSize).toLocaleString('en-IN')} ml (${bottleSize} ml per bottle)`
+                      : `= ${(amountNum / bottleSize).toFixed(2)} bottles (${bottleSize} ml per bottle)`}
                   </p>
                 )}
                 {adjustType === 'opening' && tab === 'bar' && (
@@ -416,8 +426,8 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                             </span>
                           </div>
                         )}
-                        {amount > 0 && (() => {
-                          const openingMl = openingUnit === 'btl' && bottleSize > 0 ? amount * bottleSize : amount;
+                        {amount !== '' && amountNum > 0 && (() => {
+                          const openingMl = openingUnit === 'btl' && bottleSize > 0 ? amountNum * bottleSize : amountNum;
                           const closing = openingMl
                             + Number(openingPreview.todayPurchasedMl)
                             - Number(openingPreview.todaySoldMl)

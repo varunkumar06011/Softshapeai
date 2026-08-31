@@ -1,0 +1,12 @@
+feat: size-wise bottle tracking (750/375/180ml) for spirits with inline editing
+
+- CombinedBarTable: Group by Brand toggle with expandable rows, inline
+  editable per-size stock fields that save to backend via PUT /:itemId/stock
+- InventoryTable: same expandable grouped view for kitchen tab
+- LiquorDailyReportModal: editable per-bottle stock summary section in PDF
+  preview, saves to same backend endpoint (one source of truth)
+- barInventoryApi: new setItemStock() function for absolute stock updates
+
+Generated with [Devin](https://devin.ai)
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>

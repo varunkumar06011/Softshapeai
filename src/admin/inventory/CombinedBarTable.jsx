@@ -75,7 +75,7 @@ function groupByBrand(items) {
   return Array.from(groups.values()).sort((a, b) => a.brand.localeCompare(b.brand));
 }
 
-export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefresh, date }) {
+export function CombinedBarTable({ items, search, onNonAcDeduct, onEdit, onView, onRefresh, date }) {
   const [showNonAcOnly, setShowNonAcOnly] = useState(false);
   const [editingClosing, setEditingClosing] = useState(null); // item.id being edited
   const [closingInput, setClosingInput] = useState('');
@@ -104,7 +104,11 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
     }
   }
 
-  const filtered = showNonAcOnly ? items.filter(i => i.hasNonAc) : items;
+  // Apply search filter (case-insensitive, partial match on item name)
+  const searchFiltered = search?.trim()
+    ? items.filter(i => (i.itemName || '').toLowerCase().includes(search.trim().toLowerCase()))
+    : items;
+  const filtered = showNonAcOnly ? searchFiltered.filter(i => i.hasNonAc) : searchFiltered;
 
   const handleStartEdit = (item) => {
     const btlSize = Number(item.bottleSize) || 0;
@@ -339,6 +343,7 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
               <th className="text-left px-3 py-3 font-semibold">Item</th>
               <th className="text-right px-3 py-3 font-semibold">Purchase Rate</th>
               <th className="text-right px-3 py-3 font-semibold">Opening Stock</th>
+              <th className="text-right px-3 py-3 font-semibold">Opening Value</th>
               <th className="text-right px-3 py-3 font-semibold">Purchases</th>
               <th className="text-right px-3 py-3 font-semibold">Total Stock</th>
               <th className="text-right px-3 py-3 font-semibold text-blue-600">AC Sale</th>
@@ -350,7 +355,7 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-gray-400">No items found</td>
+                <td colSpan={11} className="text-center py-12 text-gray-400">No items found</td>
               </tr>
             ) : (
               filtered.map((item, idx) => {
@@ -371,6 +376,8 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
                 const closingBtl = totalStockBtl - acSaleBtl - nonAcSaleBtl;
                 // Closing Value = Closing Stock × Purchase Rate
                 const closingValue = closingBtl * purchaseRate;
+                // Opening Stock Value = Opening Stock (bottles) × Purchase Rate
+                const openingValue = openingBtl * purchaseRate;
                 const isEditing = editingClosing === item.id;
 
                 return (
@@ -394,6 +401,10 @@ export function CombinedBarTable({ items, onNonAcDeduct, onEdit, onView, onRefre
                     <td className="px-3 py-2 text-right text-gray-700 text-xs">
                       {fmtQty(openingBtl)}
                       <span className="text-[10px] text-gray-400 ml-1">btl</span>
+                    </td>
+                    {/* Opening Value */}
+                    <td className="px-3 py-2 text-right text-gray-600 text-xs">
+                      {openingValue > 0 ? fmtInr(openingValue) : '—'}
                     </td>
                     {/* Purchases */}
                     <td className="px-3 py-2 text-right text-gray-700 text-xs">

@@ -42,9 +42,9 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
 
   if (!open || !item) return null;
 
-  const itemName = tab === 'bar' ? item.menuItem?.name : item.name;
-  const category = tab === 'bar' ? item.menuItem?.category?.name : item.category;
-  const currentStock = Number(item.currentStock) || 0;
+  const itemName = item.itemName || (tab === 'bar' ? item.menuItem?.name : item.name);
+  const category = item.category || (tab === 'bar' ? item.menuItem?.category?.name : item.category);
+  const currentStock = Number(item.currentStock || item.acClosing) || 0;
   const reorderLevel = Number(item.reorderLevel) || 0;
   const unit = tab === 'bar' ? 'ml' : item.unit;
   const rate = tab === 'bar' ? Number(item.costPerBottle) || 0 : Number(item.price) || 0;

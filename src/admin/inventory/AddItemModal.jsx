@@ -18,8 +18,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   const [menuItems, setMenuItems] = useState([]);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState('');
   const [bottleSize, setBottleSize] = useState('');
-  const [openingStock, setOpeningStock] = useState(0);
-  const [reorderLevel, setReorderLevel] = useState(0);
+  const [openingStock, setOpeningStock] = useState('');
+  const [reorderLevel, setReorderLevel] = useState('');
   const [costPerBottle, setCostPerBottle] = useState('');
 
   // Kitchen-specific state
@@ -27,8 +27,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   const [category, setCategory] = useState('');
   const [unit, setUnit] = useState('gm');
   const [rate, setRate] = useState('');
-  const [kitchenOpening, setKitchenOpening] = useState(0);
-  const [lowStockThreshold, setLowStockThreshold] = useState(0);
+  const [kitchenOpening, setKitchenOpening] = useState('');
+  const [lowStockThreshold, setLowStockThreshold] = useState('');
   const [image, setImage] = useState('');
 
   // Fetch unlinked LIQUOR menu items for bar
@@ -41,7 +41,7 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   const fetchUnlinkedMenuItems = async () => {
     try {
       const rId = getCurrentRestaurantId();
-      const res = await fetch(apiUrl(`/api/bar/menu?restaurantId=${rId}`), {
+      const res = await fetch(apiUrl(`/api/bar/menu/items?restaurantId=${rId}&_t=${Date.now()}`), {
         headers: getAuthHeaders(),
       });
       const data = await res.json();
@@ -56,8 +56,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   const resetForm = () => {
     setSelectedMenuItemId('');
     setBottleSize('');
-    setOpeningStock(0);
-    setReorderLevel(0);
+    setOpeningStock('');
+    setReorderLevel('');
     setCostPerBottle('');
     setAcSellingPerMl('');
     setNonAcSellingPerMl('');
@@ -65,8 +65,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     setCategory('');
     setUnit('gm');
     setRate('');
-    setKitchenOpening(0);
-    setLowStockThreshold(0);
+    setKitchenOpening('');
+    setLowStockThreshold('');
     setImage('');
     setError(null);
   };
@@ -85,7 +85,9 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
       setError('Bottle size must be greater than 0');
       return;
     }
-    if (openingStock < 0 || reorderLevel < 0) {
+    const openingStockNum = openingStock === '' ? 0 : Number(openingStock);
+    const reorderLevelNum = reorderLevel === '' ? 0 : Number(reorderLevel);
+    if (openingStockNum < 0 || reorderLevelNum < 0) {
       setError('Stock values must be non-negative');
       return;
     }
@@ -97,8 +99,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
         menuItemId: selectedMenuItemId,
         unitOfMeasure: 'ml',
         bottleSize: Number(bottleSize),
-        openingStockBottles: openingStock,
-        reorderLevel,
+        openingStockBottles: openingStockNum,
+        reorderLevel: reorderLevelNum,
         ...(costPerBottle !== '' && { costPerBottle: Number(costPerBottle) }),
       });
       onSaved?.();
@@ -123,7 +125,9 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
       setError('Unit is required');
       return;
     }
-    if ((rate !== '' && Number(rate) < 0) || kitchenOpening < 0 || lowStockThreshold < 0) {
+    const kitchenOpeningNum = kitchenOpening === '' ? 0 : Number(kitchenOpening);
+    const lowStockThresholdNum = lowStockThreshold === '' ? 0 : Number(lowStockThreshold);
+    if ((rate !== '' && Number(rate) < 0) || kitchenOpeningNum < 0 || lowStockThresholdNum < 0) {
       setError('Values must be non-negative');
       return;
     }
@@ -137,13 +141,13 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
         category: category.trim(),
         unit: unit.trim(),
         price: rate !== '' ? Number(rate) : 0,
-        reorderLevel: lowStockThreshold,
+        reorderLevel: lowStockThresholdNum,
         currentStock: 0,
         image: image || undefined,
       });
 
       // Set opening stock via a daily entry
-      if (kitchenOpening > 0 && created?.id) {
+      if (kitchenOpeningNum > 0 && created?.id) {
         await createKitchenEntry({
           itemId: created.id,
           openingStock: kitchenOpening,
@@ -217,7 +221,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
                 <input
                   type="number"
                   value={openingStock}
-                  onChange={(e) => setOpeningStock(Number(e.target.value))}
+                  onChange={(e) => setOpeningStock(e.target.value)}
+                  placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
@@ -226,7 +231,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
                 <input
                   type="number"
                   value={reorderLevel}
-                  onChange={(e) => setReorderLevel(Number(e.target.value))}
+                  onChange={(e) => setReorderLevel(e.target.value)}
+                  placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
@@ -293,7 +299,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
                 <input
                   type="number"
                   value={kitchenOpening}
-                  onChange={(e) => setKitchenOpening(Number(e.target.value))}
+                  onChange={(e) => setKitchenOpening(e.target.value)}
+                  placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
@@ -302,7 +309,8 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
                 <input
                   type="number"
                   value={lowStockThreshold}
-                  onChange={(e) => setLowStockThreshold(Number(e.target.value))}
+                  onChange={(e) => setLowStockThreshold(e.target.value)}
+                  placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>

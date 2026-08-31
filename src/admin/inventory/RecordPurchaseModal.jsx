@@ -55,7 +55,7 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
     const q = itemSearch.trim().toLowerCase();
     if (!q) return searchableItems;
     return searchableItems.filter((it) => {
-      const name = tab === 'bar' ? it.menuItem?.name : it.name;
+      const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
       return name?.toLowerCase().includes(q);
     });
   }, [searchableItems, itemSearch, tab]);
@@ -90,8 +90,14 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
   }, [purchaseBottles, bottleSize]);
 
   const handleSave = async () => {
-    if (!selectedItem || !selectedItem.id) {
+    if (!selectedItem) {
       setError('Please select an inventory item first');
+      return;
+    }
+    // For combined bar items, use acItemId (real InventoryItem ID)
+    const purchaseItemId = selectedItem.acItemId || selectedItem.id;
+    if (!purchaseItemId || purchaseItemId.startsWith('nonac-')) {
+      setError('Purchases can only be recorded for AC inventory items.');
       return;
     }
 
@@ -121,13 +127,13 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
     setSaving(true);
     setError(null);
 
-    const actionKey = `bar-purchase:${selectedItem.id}`;
+    const actionKey = `bar-purchase:${purchaseItemId}`;
     const requestId = tab === 'bar' ? getOrCreateRequestId(actionKey) : undefined;
 
     try {
       if (tab === 'bar') {
         const body = {
-          itemId: selectedItem.id,
+          itemId: purchaseItemId,
           notes: notes || undefined,
           createdBy: 'Admin',
         };
@@ -170,9 +176,9 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
   const showPicker = !selectedItem;
 
   const itemName = selectedItem
-    ? (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name)
+    ? (selectedItem.itemName || (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name))
     : '';
-  const currentStock = Number(selectedItem?.currentStock) || 0;
+  const currentStock = Number(selectedItem?.currentStock || selectedItem?.acClosing) || 0;
   const unit = selectedItem
     ? (tab === 'bar' ? 'ml' : selectedItem.unit)
     : '';
@@ -243,8 +249,8 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
                   </div>
                 ) : (
                   filteredPickerItems.map((it) => {
-                    const name = tab === 'bar' ? it.menuItem?.name : it.name;
-                    const stock = Number(it.currentStock) || 0;
+                    const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
+                    const stock = Number(it.currentStock || it.acClosing) || 0;
                     const itUnit = tab === 'bar' ? 'ml' : it.unit;
                     return (
                       <button
