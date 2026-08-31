@@ -1559,6 +1559,10 @@ export default function CaptainApp({ onLogout }) {
 
   const activeMenuItems = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenu : restaurantMenu;
 
+  // Ref mirror so stableCardDirectAdd (useCallback with [] deps) can read latest menu
+  const activeMenuItemsRef = useRef(activeMenuItems);
+  activeMenuItemsRef.current = activeMenuItems;
+
   const setMenuItems = (activeOutlet === 'bar' || activeOutlet === 'both') ? () => { } : setRestaurantMenu;
 
   const menuLoading = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenuLoading : restaurantMenuLoading;
@@ -3075,20 +3079,19 @@ export default function CaptainApp({ onLogout }) {
       setBottlePickerBottles([]);
       setShowBottlePicker(true);
       setShowLiquorQtyPicker(false);
-      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId)
+      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId, activeMenuItems)
         .then((res) => {
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
             setBottlePickerBottles(res.bottles);
           } else {
-            addItemToSession(liquorQtyItem, qty);
-            setShowBottlePicker(false);
-            setBottlePickerItem(null);
+            // API returned no bottles — show "No bottles configured" with Skip
+            setBottlePickerBottles([]);
           }
         })
-        .catch(() => {
-          addItemToSession(liquorQtyItem, qty);
-          setShowBottlePicker(false);
-          setBottlePickerItem(null);
+        .catch((err) => {
+          console.error('[CaptainApp] getBottlesForMenuItem failed:', err?.message);
+          // Show "No bottles configured" with Skip button instead of silently closing
+          setBottlePickerBottles([]);
         });
       setLiquorQtyItem(null);
       return;
@@ -3224,20 +3227,17 @@ export default function CaptainApp({ onLogout }) {
       setBottlePickerQty(1);
       setBottlePickerBottles([]);
       setShowBottlePicker(true);
-      getBottlesForMenuItem(item.id || item.menuItemId)
+      getBottlesForMenuItem(item.id || item.menuItemId, activeMenuItemsRef.current)
         .then((res) => {
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
             setBottlePickerBottles(res.bottles);
           } else {
-            addItemToSessionRef.current(item, 1);
-            setShowBottlePicker(false);
-            setBottlePickerItem(null);
+            setBottlePickerBottles([]);
           }
         })
-        .catch(() => {
-          addItemToSessionRef.current(item, 1);
-          setShowBottlePicker(false);
-          setBottlePickerItem(null);
+        .catch((err) => {
+          console.error('[CaptainApp] getBottlesForMenuItem (directAdd) failed:', err?.message);
+          setBottlePickerBottles([]);
         });
     } else {
       addItemToSessionRef.current(item, 1);

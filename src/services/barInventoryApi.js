@@ -136,11 +136,72 @@ export async function fetchBarInventory(date = '') {
 // Used by the BottlePicker to show bottle choices at the POS.
 // Returns { menuItemId, menuName, isPeg, bottles: [{ inventoryItemId, label, bottleSize }] }
 // No stock quantities returned — captain should not see stock levels.
-export async function getBottlesForMenuItem(menuItemId) {
-  const res = await fetch(apiUrl(`/api/bar/inventory/bottles-for-menu/${menuItemId}`), {
-    headers: { ...getCloudAuthHeaders() },
-  });
-  return parseResponse(res);
+//
+// Tries the cloud API first. If unreachable (e.g. edge-local auth with no
+// preauth token, or backend down), falls back to deriving bottles from the
+// bar menu items already loaded on the device. The fallback uses menuItemId
+// as the bottle identifier — the backend's inventoryService accepts both
+// inventory item IDs and menu item IDs for pourFromInventoryItemId.
+export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(apiUrl(`/api/bar/inventory/bottles-for-menu/${menuItemId}`), {
+      headers: { ...getCloudAuthHeaders() },
+      signal: controller.signal,
+    });
+    return parseResponse(res);
+  } catch (err) {
+    // ── Offline fallback: derive bottles from loaded menu items ──────────
+    // Find the tapped item, then find all items with the same base brand
+    // name and a larger bottle size. These are the bottles the peg can be
+    // poured from.
+    const tapped = menuItems.find((i) => i.id === menuItemId);
+    if (!tapped) throw err;
+    const tapName = (tapped.n || tapped.name || '').toLowerCase();
+    const tapMl = parseMlFromName(tapName);
+    if (!tapMl) throw err;
+    const tapBase = normalizeBaseName(tapName);
+    const PEG_SIZES = [30, 60, 90];
+    if (!PEG_SIZES.includes(tapMl)) throw err;
+
+    const bottles = menuItems
+      .filter((i) => {
+        const name = (i.n || i.name || '').toLowerCase();
+        const ml = parseMlFromName(name);
+        return ml && ml > tapMl && normalizeBaseName(name) === tapBase;
+      })
+      .map((i) => ({
+        inventoryItemId: i.id,  // menu item ID — backend resolves via menuItemId fallback
+        label: `${parseMlFromName((i.n || i.name || '').toLowerCase())}ml`,
+        bottleSize: parseMlFromName((i.n || i.name || '').toLowerCase()),
+      }))
+      .sort((a, b) => b.bottleSize - a.bottleSize);
+
+    return {
+      menuItemId,
+      menuName: tapped.n || tapped.name,
+      isPeg: true,
+      bottles,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// ── Helpers for offline bottle derivation ──────────────────────────────
+function parseMlFromName(name) {
+  if (!name) return null;
+  const m = name.match(/(\d+)\s*ml\b/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function normalizeBaseName(name) {
+  return name.toLowerCase()
+    .replace(/\s*\d+\s*ml\b/gi, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Create new inventory item
