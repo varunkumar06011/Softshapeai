@@ -450,9 +450,37 @@ export default function AdminDailyBalanceSheet() {
     }
   }, [selectedDate, outletId]);
 
+  // ── Load bank account balances for the date ──────────────────────────────
+  const loadBankBalances = useCallback(async () => {
+    try {
+      const data = await apiFetch(`/api/balance-sheet/${selectedDate}/bank-balances`);
+      const mapped = (data || []).map((b) => ({
+        id: b.id,
+        bankName: b.bankName,
+        accountBalance: Number(b.accountBalance) || 0,
+        minimumBalance: b.minimumBalance != null ? Number(b.minimumBalance) : null,
+        sortOrder: b.sortOrder ?? 0,
+      }));
+      bankBalancesRef.current = mapped;
+      setBankBalances(mapped);
+    } catch (err) {
+      console.error('[BalanceSheet] loadBankBalances failed:', err);
+    }
+  }, [selectedDate]);
+
+  // ── Load liquor consumption ────────────────────────────────────────────────
+  const loadLiquorConsumption = useCallback(async () => {
+    if (!sheet) return;
+    const val = sheet.liquorConsumption != null ? Number(sheet.liquorConsumption) : 0;
+    liquorConsumptionRef.current = val;
+    setLiquorConsumption(val);
+  }, [sheet]);
+
   useEffect(() => { loadSheet(); }, [loadSheet]);
   useEffect(() => { loadExpenditures(); }, [loadExpenditures]);
   useEffect(() => { loadLedgerActivity(); }, [loadLedgerActivity]);
+  useEffect(() => { loadBankBalances(); }, [loadBankBalances]);
+  useEffect(() => { loadLiquorConsumption(); }, [loadLiquorConsumption]);
 
   // ── Local state mirrors for editable fields ────────────────────────────────
   const [overrides, setOverrides] = useState({
@@ -469,6 +497,12 @@ export default function AdminDailyBalanceSheet() {
   const [adjustments, setAdjustments] = useState([]);
   const [bankCollections, setBankCollections] = useState([]);
   const [newBankName, setNewBankName] = useState('');
+
+  // ── Bank Account Balance state (separate from bank collections) ────────────
+  const [bankBalances, setBankBalances] = useState([]);
+  const [newBankBalanceName, setNewBankBalanceName] = useState('');
+  const [liquorConsumption, setLiquorConsumption] = useState(0);
+
   const [dirty, setDirty] = useState(false);
 
   // Refs mirror the latest overrides/adjustments so doSave can read synchronous
@@ -477,6 +511,8 @@ export default function AdminDailyBalanceSheet() {
   const overridesRef = useRef(overrides);
   const adjustmentsRef = useRef(adjustments);
   const bankCollectionsRef = useRef(bankCollections);
+  const bankBalancesRef = useRef(bankBalances);
+  const liquorConsumptionRef = useRef(liquorConsumption);
 
   useEffect(() => {
     if (!sheet) return;
@@ -518,6 +554,10 @@ export default function AdminDailyBalanceSheet() {
       }));
       bankCollectionsRef.current = freshBanks;
       setBankCollections(freshBanks);
+      // liquorConsumption comes from the sheet payload
+      const lc = sheet.liquorConsumption != null ? Number(sheet.liquorConsumption) : 0;
+      liquorConsumptionRef.current = lc;
+      setLiquorConsumption(lc);
       setDirty(false);
     }
   }, [sheet]);
@@ -570,6 +610,21 @@ export default function AdminDailyBalanceSheet() {
     return calculateBalance(overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride, nonCashExpenditures);
   }, [overrides.openingBalance, computedSales, totalExpenditures, adjustments, overrides.totalSalesOverride, overrides.totalExpendituresOverride, nonCashExpenditures]);
 
+  // ── Bank Balance calculations ────────────────────────────────────────────
+  const bankBalanceComputed = useMemo(() => {
+    const rows = bankBalances.map((b) => {
+      const canUse = b.minimumBalance != null
+        ? round2(b.accountBalance - b.minimumBalance)
+        : round2(b.accountBalance);
+      return { ...b, canUse: Math.max(0, canUse) };
+    });
+    const totalAccountBalance = round2(rows.reduce((s, b) => s + b.accountBalance, 0));
+    const totalMinimumBalance = round2(rows.reduce((s, b) => s + (b.minimumBalance || 0), 0));
+    const totalCanUse = round2(rows.reduce((s, b) => s + b.canUse, 0));
+    const finalBalance = round2(totalCanUse - (liquorConsumption || 0));
+    return { rows, totalAccountBalance, totalMinimumBalance, totalCanUse, finalBalance };
+  }, [bankBalances, liquorConsumption]);
+
   // ── Manual save ────────────────────────────────────────────────────────────
   const doSave = useCallback(async () => {
     if (isLocked || !sheet) return;
@@ -601,6 +656,7 @@ export default function AdminDailyBalanceSheet() {
           amount: Number(b.amount) || 0,
           sortOrder: b.sortOrder ?? i,
         })),
+        liquorConsumption: liquorConsumptionRef.current || null,
       };
       const params = new URLSearchParams();
       if (outletId) params.set('outletId', outletId);
@@ -738,6 +794,116 @@ export default function AdminDailyBalanceSheet() {
     bankCollectionsRef.current = next;
     setBankCollections(next);
     setDirty(true);
+  };
+
+  // ── Bank Account Balance handlers (separate from Bank Collection) ────────
+  const handleAddBankBalance = () => {
+    if (!newBankBalanceName.trim()) return;
+    const entry = {
+      id: `temp-${Date.now()}`,
+      bankName: newBankBalanceName.trim(),
+      accountBalance: 0,
+      minimumBalance: null,
+      sortOrder: bankBalancesRef.current.length,
+    };
+    const updated = [...bankBalancesRef.current, entry];
+    bankBalancesRef.current = updated;
+    setBankBalances(updated);
+    setNewBankBalanceName('');
+    setDirty(true);
+  };
+
+  const handleBankBalanceNameChange = (id, bankName) => {
+    const next = bankBalancesRef.current.map((b) =>
+      b.id === id ? { ...b, bankName: bankName.trim() } : b
+    );
+    bankBalancesRef.current = next;
+    setBankBalances(next);
+    setDirty(true);
+  };
+
+  const handleBankBalanceAccountChange = (id, accountBalance) => {
+    const next = bankBalancesRef.current.map((b) =>
+      b.id === id ? { ...b, accountBalance: Math.max(0, Number(accountBalance) || 0) } : b
+    );
+    bankBalancesRef.current = next;
+    setBankBalances(next);
+    setDirty(true);
+  };
+
+  const handleBankBalanceMinimumChange = (id, minimumBalance) => {
+    const val = minimumBalance === '' ? null : Math.max(0, Number(minimumBalance) || 0);
+    const next = bankBalancesRef.current.map((b) =>
+      b.id === id ? { ...b, minimumBalance: val } : b
+    );
+    bankBalancesRef.current = next;
+    setBankBalances(next);
+    setDirty(true);
+  };
+
+  const handleDeleteBankBalance = (id) => {
+    const next = bankBalancesRef.current.filter((b) => b.id !== id);
+    bankBalancesRef.current = next;
+    setBankBalances(next);
+    setDirty(true);
+  };
+
+  const handleLiquorConsumptionChange = (val) => {
+    const num = Math.max(0, Number(val) || 0);
+    liquorConsumptionRef.current = num;
+    setLiquorConsumption(num);
+    setDirty(true);
+  };
+
+  // Persist a single bank balance row to the backend immediately
+  const persistBankBalance = async (row) => {
+    try {
+      const payload = {
+        id: row.id && !String(row.id).startsWith('temp-') ? row.id : undefined,
+        bankName: row.bankName,
+        accountBalance: row.accountBalance,
+        minimumBalance: row.minimumBalance,
+        sortOrder: row.sortOrder ?? 0,
+      };
+      const res = await apiFetch(`/api/balance-sheet/${selectedDate}/bank-balances`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      // Update the id if it was a temp id
+      if (String(row.id).startsWith('temp-')) {
+        const next = bankBalancesRef.current.map((b) =>
+          b.id === row.id ? { ...b, id: res.id } : b
+        );
+        bankBalancesRef.current = next;
+        setBankBalances(next);
+      }
+      return res;
+    } catch (err) {
+      console.error('[BalanceSheet] persistBankBalance failed:', err);
+      throw err;
+    }
+  };
+
+  // Delete a bank balance row from the backend
+  const deleteBankBalanceRemote = async (id) => {
+    if (String(id).startsWith('temp-')) return; // temp rows don't exist remotely
+    try {
+      await apiFetch(`/api/balance-sheet/bank-balances/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('[BalanceSheet] deleteBankBalanceRemote failed:', err);
+    }
+  };
+
+  // Persist liquor consumption immediately
+  const persistLiquorConsumption = async () => {
+    try {
+      await apiFetch(`/api/balance-sheet/${selectedDate}/liquor-consumption`, {
+        method: 'PATCH',
+        body: JSON.stringify({ liquorConsumption: liquorConsumptionRef.current }),
+      });
+    } catch (err) {
+      console.error('[BalanceSheet] persistLiquorConsumption failed:', err);
+    }
   };
 
   // ── Status transitions ─────────────────────────────────────────────────────
@@ -895,6 +1061,20 @@ export default function AdminDailyBalanceSheet() {
         bankName: b.bankName,
         amount: Number(b.amount) || 0,
       })),
+      // Bank-wise Balance (separate from Bank Collection)
+      bankBalances: bankBalanceComputed.rows.map(b => ({
+        bankName: b.bankName,
+        accountBalance: b.accountBalance,
+        minimumBalance: b.minimumBalance,
+        canUse: b.canUse,
+      })),
+      bankBalanceTotals: {
+        totalAccountBalance: bankBalanceComputed.totalAccountBalance,
+        totalMinimumBalance: bankBalanceComputed.totalMinimumBalance,
+        totalCanUse: bankBalanceComputed.totalCanUse,
+      },
+      liquorConsumption: liquorConsumption || 0,
+      finalBalance: bankBalanceComputed.finalBalance,
     };
 
     // Create off-screen container
@@ -1621,6 +1801,166 @@ export default function AdminDailyBalanceSheet() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ── Bank-wise Balance / Minimum Balance ─────────────────────────── */}
+      <div className="rounded-xl bg-white p-4 border border-gray-200">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-black text-gray-800">Bank-wise Balance</h3>
+          {!isLocked && (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newBankBalanceName}
+                onChange={(e) => setNewBankBalanceName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddBankBalance(); }}
+                placeholder="Bank / Account name"
+                className="rounded-lg border border-gray-300 px-2 py-1 text-sm outline-none focus:border-[#E53935] w-44"
+              />
+              <button
+                onClick={handleAddBankBalance}
+                disabled={!newBankBalanceName.trim()}
+                className="flex items-center gap-1 rounded-lg bg-[#FFEBEE] px-2 py-1 text-xs font-bold text-[#B71C1C] hover:bg-[#FFCDD2] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={14} /> Add Account
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Header row */}
+        <div className="hidden sm:grid grid-cols-12 gap-2 pb-1 text-[10px] font-bold uppercase text-gray-400 border-b border-gray-100">
+          <span className="col-span-3">Bank / Account</span>
+          <span className="col-span-3 text-right">Account Balance</span>
+          <span className="col-span-3 text-right">Minimum Balance</span>
+          <span className="col-span-2 text-right">Can Use</span>
+          <span className="col-span-1"></span>
+        </div>
+
+        {bankBalances.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 p-3 text-center text-sm text-gray-400">
+            No bank balance entries for this date. Add an account above.
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {bankBalanceComputed.rows.map((bank) => (
+              <div key={bank.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center rounded-lg border border-gray-100 bg-gray-50/50 p-2">
+                {/* Bank name */}
+                <div className="sm:col-span-3">
+                  <input
+                    type="text"
+                    value={bank.bankName}
+                    onChange={(e) => handleBankBalanceNameChange(bank.id, e.target.value)}
+                    onBlur={() => { if (!String(bank.id).startsWith('temp-')) persistBankBalance(bank); }}
+                    disabled={isLocked}
+                    className="w-full rounded border border-gray-200 px-2 py-1 text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                </div>
+                {/* Account Balance */}
+                <div className="sm:col-span-3 flex items-center justify-end gap-1">
+                  <span className="text-xs text-gray-400">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={bank.accountBalance}
+                    onChange={(e) => handleBankBalanceAccountChange(bank.id, e.target.value)}
+                    onBlur={() => { if (!String(bank.id).startsWith('temp-')) persistBankBalance(bank); }}
+                    disabled={isLocked}
+                    className="w-28 rounded border border-gray-200 px-2 py-1 text-right text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                </div>
+                {/* Minimum Balance */}
+                <div className="sm:col-span-3 flex items-center justify-end gap-1">
+                  <span className="text-xs text-gray-400">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={bank.minimumBalance ?? ''}
+                    onChange={(e) => handleBankBalanceMinimumChange(bank.id, e.target.value)}
+                    onBlur={() => { if (!String(bank.id).startsWith('temp-')) persistBankBalance(bank); }}
+                    disabled={isLocked}
+                    placeholder="—"
+                    className="w-28 rounded border border-gray-200 px-2 py-1 text-right text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed placeholder:text-gray-300"
+                  />
+                </div>
+                {/* Can Use (auto-calculated) */}
+                <div className="sm:col-span-2 text-right">
+                  <span className="text-sm font-black text-gray-800">
+                    ₹{bank.canUse.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {/* Delete */}
+                <div className="sm:col-span-1 flex justify-end">
+                  {!isLocked && (
+                    <button
+                      onClick={() => { handleDeleteBankBalance(bank.id); deleteBankBalanceRemote(bank.id); }}
+                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                      title="Remove account"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {/* Totals row */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center rounded-lg bg-gray-100 p-2 mt-1">
+              <div className="sm:col-span-3 text-xs font-bold uppercase text-gray-600">TOTALS</div>
+              <div className="sm:col-span-3 text-right text-sm font-black text-gray-800">
+                ₹{bankBalanceComputed.totalAccountBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="sm:col-span-3 text-right text-sm font-black text-gray-800">
+                ₹{bankBalanceComputed.totalMinimumBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="sm:col-span-2 text-right text-sm font-black text-green-700">
+                ₹{bankBalanceComputed.totalCanUse.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="sm:col-span-1"></div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Liquor Consumption ────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-white p-4 border border-gray-200">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-black text-gray-800">
+            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()} LIQUOR CONSUMPTION
+          </h3>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">₹</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={liquorConsumption || ''}
+            onChange={(e) => handleLiquorConsumptionChange(e.target.value)}
+            onBlur={() => persistLiquorConsumption()}
+            disabled={isLocked}
+            placeholder="0"
+            className="w-40 rounded border border-gray-200 px-2 py-1 text-right text-lg font-black text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed"
+          />
+        </div>
+      </div>
+
+      {/* ── Final Balance ─────────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-[#0F172A] p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Final Balance</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              TOTAL CAN USE − LIQUOR CONSUMPTION
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-black text-[#4ADE80]">
+              ₹{bankBalanceComputed.finalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── Today's Ledger Activity (read-only informational panel) ──────── */}

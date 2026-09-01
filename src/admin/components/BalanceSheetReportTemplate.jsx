@@ -290,6 +290,79 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
         </div>
       )}
 
+      {/* ── Bank-wise Balance / Minimum Balance ──────────────────────── */}
+      {data.bankBalances && data.bankBalances.length > 0 && (
+        <div className="mt-4 rounded-xl border p-4" style={{ borderColor: '#E5E7EB', background: '#F9FAFB' }}>
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6B7280' }}>
+            Bank-wise Balance
+          </div>
+          {/* Header */}
+          <div className="flex justify-between pb-1 text-[10px] font-bold uppercase" style={{ color: '#9CA3AF' }}>
+            <span className="flex-1">Bank / Account</span>
+            <span className="w-24 text-right">Account Bal</span>
+            <span className="w-24 text-right">Min Bal</span>
+            <span className="w-24 text-right">Can Use</span>
+          </div>
+          {/* Rows */}
+          <div className="space-y-1">
+            {data.bankBalances.map((bank, i) => (
+              <div key={i} className="flex items-center justify-between py-1" style={{ borderBottom: '1px solid #F3F4F6' }}>
+                <span className="flex-1 text-xs font-semibold" style={{ color: '#334155' }}>{bank.bankName}</span>
+                <span className="w-24 text-right text-xs font-bold" style={{ color: '#1E293B' }}>{inr(bank.accountBalance || 0).replace('₹', '')}</span>
+                <span className="w-24 text-right text-xs font-bold" style={{ color: bank.minimumBalance != null ? '#1E293B' : '#9CA3AF' }}>
+                  {bank.minimumBalance != null ? inr(bank.minimumBalance).replace('₹', '') : '—'}
+                </span>
+                <span className="w-24 text-right text-xs font-black" style={{ color: '#15803D' }}>{inr(bank.canUse || 0).replace('₹', '')}</span>
+              </div>
+            ))}
+          </div>
+          {/* Totals */}
+          {data.bankBalanceTotals && (
+            <div className="flex items-center justify-between pt-2 mt-1" style={{ borderTop: '2px solid #E2E8F0' }}>
+              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#334155' }}>TOTALS</span>
+              <span className="w-24 text-right text-xs font-black" style={{ color: '#1E293B' }}>
+                {inr(data.bankBalanceTotals.totalAccountBalance || 0).replace('₹', '')}
+              </span>
+              <span className="w-24 text-right text-xs font-black" style={{ color: '#1E293B' }}>
+                {inr(data.bankBalanceTotals.totalMinimumBalance || 0).replace('₹', '')}
+              </span>
+              <span className="w-24 text-right text-sm font-black" style={{ color: '#15803D' }}>
+                {inr(data.bankBalanceTotals.totalCanUse || 0).replace('₹', '')}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Liquor Consumption ─────────────────────────────────────────── */}
+      {(data.liquorConsumption != null && data.liquorConsumption > 0) && (
+        <div className="mt-4 rounded-xl border p-3" style={{ borderColor: '#E5E7EB', background: '#FEF3C7' }}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#B45309' }}>
+              {data.date} LIQUOR CONSUMPTION
+            </span>
+            <span className="text-sm font-black" style={{ color: '#B45309' }}>
+              {inr(data.liquorConsumption)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Final Balance ────────────────────────────────────────────── */}
+      {(data.finalBalance != null) && (
+        <div className="mt-4 rounded-xl p-4" style={{ background: '#0F172A' }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#9CA3AF' }}>Final Balance</div>
+              <div className="text-xs" style={{ color: '#9CA3AF' }}>TOTAL CAN USE − LIQUOR CONSUMPTION</div>
+            </div>
+            <span className="text-xl font-black" style={{ color: '#4ADE80' }}>
+              {inr(data.finalBalance)}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ── Footer band ────────────────────────────────────────────── */}
       <div className="mt-6 flex items-center justify-between rounded-xl p-5" style={{ background: '#0F172A' }}>
         <div>
