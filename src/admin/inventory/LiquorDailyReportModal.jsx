@@ -925,6 +925,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   // The hidden status is stored on the item master (not per-date), so it persists
   // across all dates, refreshes, and logout/login cycles.
   const handleAcItemToggleHide = async (itemId) => {
+    // Skip unmapped POS items — they have no InventoryItem record to update
+    if (!itemId || itemId.startsWith('unmapped:')) {
+      alert('This item has no inventory record. Create it in Main Inventory first.');
+      return;
+    }
     const newHidden = !acHiddenFlags[itemId];
     // Optimistic update: toggle immediately in UI
     setAcHiddenFlags(prev => ({ ...prev, [itemId]: newHidden }));
@@ -1372,12 +1377,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                               <button
                                 type="button"
                                 onClick={() => handleAcItemToggleHide(item.itemId)}
-                                className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${
+                                disabled={!item.itemId || item.itemId.startsWith('unmapped:')}
+                                className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
                                   item.isHidden
                                     ? 'bg-gray-200 text-gray-600 hover:bg-green-100 hover:text-green-700'
                                     : 'bg-blue-100 text-blue-700 hover:bg-gray-200 hover:text-gray-600'
                                 }`}
-                                title={item.isHidden ? 'Click to show in PDF' : 'Click to hide from PDF'}
+                                title={!item.itemId || item.itemId.startsWith('unmapped:') ? 'No inventory record — create in Main Inventory first' : (item.isHidden ? 'Click to show in PDF' : 'Click to hide from PDF')}
                               >
                                 {item.isHidden ? 'Show' : 'Hide'}
                               </button>
