@@ -27,7 +27,6 @@ import { X, Printer, AlertTriangle, FileText, Save, CheckCircle } from 'lucide-r
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { apiUrl, getAuthHeaders } from '../../services/apiConfig';
-import { setItemStock } from '../../services/barInventoryApi';
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
@@ -175,9 +174,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const [acHiddenFlags, setAcHiddenFlags] = useState({});
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
-  // Per-bottle stock edits: { [itemId]: bottleCount } — saves directly to backend via setItemStock
-  const [perBottleEdits, setPerBottleEdits] = useState({});
-  const [perBottleSaving, setPerBottleSaving] = useState(null); // itemId being saved
   // Track whether there are unsaved (pending) edits restored from localStorage
   const [hasPendingEdits, setHasPendingEdits] = useState(false);
 
@@ -502,69 +498,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     const closing = computedAcItems.reduce((s, i) => s + (Number(i.closing) || 0), 0);
     return { consumption, saleAmount, profit, profitMarginPct, opening, purchases, totalStock, sold, closing };
   }, [computedAcItems]);
-
-  // ── Per-bottle stock grouped by brand (for editable section) ──
-  // Groups AC + Non-AC items by normalized brand name, aggregates per-size stock.
-  // Uses itemId from the report data to enable per-size editing.
-  const SIZES_750_375_180 = [750, 375, 180];
-  const perBottleGrouped = useMemo(() => {
-    if (!data) return [];
-    const normalizeName = (name) => {
-      if (!name) return '';
-      return String(name).toLowerCase()
-        .replace(/\s*\(.*?\)\s*/g, ' ')
-        .replace(/\s*\d+\s*(?:ml|l(?:tr|itre|iter)?|l)\b/gi, ' ')
-        .replace(/\s*(full\s+bottle|bottle|tin|can)\s*/gi, ' ')
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-    const allItems = [...(data.acItems || []), ...(data.nonAcItems || [])];
-    const groups = new Map();
-    for (const item of allItems) {
-      const base = normalizeName(item.itemName);
-      if (!base) continue;
-      // Skip peg items (30/60/90ml) — they're not bottle-size stock items
-      const mlMatch = (item.itemName || '').match(/(\d+)\s*ml/i);
-      if (mlMatch && [30, 60, 90].includes(parseInt(mlMatch[1], 10))) continue;
-      if (!groups.has(base)) {
-        groups.set(base, { brand: base, displayName: item.itemName, sizes: {}, totalStock: 0, totalBottles: 0 });
-      }
-      const g = groups.get(base);
-      const bottleSize = Number(item.qty || item.bottleSize || 0);
-      const closingBtl = Number(item.closing) || 0;
-      const closingMl = bottleSize > 0 ? closingBtl * bottleSize : 0;
-      const sizeKey = `${bottleSize}ml`;
-      if (!g.sizes[sizeKey]) g.sizes[sizeKey] = { bottleSize, stockMl: 0, bottles: 0, itemId: item.itemId };
-      g.sizes[sizeKey].stockMl += closingMl;
-      g.sizes[sizeKey].bottles += closingBtl;
-      g.totalStock += closingMl;
-      g.totalBottles += closingBtl;
-      if (item.itemName && (g.displayName === base || /\b(30|60|90)\s*ml/i.test(g.displayName))) {
-        g.displayName = item.itemName;
-      }
-    }
-    return Array.from(groups.values()).sort((a, b) => a.brand.localeCompare(b.brand));
-  }, [data]);
-
-  // Handle per-bottle stock save
-  async function handlePerBottleSave(itemId, bottleSize) {
-    const bottleCount = perBottleEdits[itemId];
-    if (bottleCount === undefined || bottleSize <= 0) return;
-    const stockMl = Math.round(Number(bottleCount) * bottleSize);
-    setPerBottleSaving(itemId);
-    try {
-      await setItemStock(itemId, stockMl, `Per-bottle edit from PDF preview: ${bottleSize}ml × ${bottleCount} btl`);
-      setPerBottleEdits(prev => { const next = { ...prev }; delete next[itemId]; return next; });
-      // Reload report data to reflect updated stock
-      if (onSaved) onSaved();
-    } catch (e) {
-      console.error('Failed to save per-bottle stock:', e);
-      alert('Failed to save stock. Please try again.');
-    } finally {
-      setPerBottleSaving(null);
-    }
-  }
 
   // ── Business Position — derived from item-wise totals (live) ──
   // The Business Position cards derive from the item-wise AC + Non-AC tables
@@ -1367,88 +1300,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                 </div>
               )}
 
-              {/* ── Per-Bottle Stock Summary (editable, grouped by brand) ── */}
-              {perBottleGrouped.length > 0 && (
-                <div className="mt-6">
-                  <h3 className="text-sm font-bold text-purple-700 mb-3">
-                    Per-Bottle Stock Summary (Grouped by Brand)
-                    <span className="ml-2 text-xs font-normal text-gray-500">(editable · saves to inventory · reflects on main screen)</span>
-                  </h3>
-                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-purple-50 text-gray-600 text-xs uppercase tracking-wide">
-                          <th className="text-left px-4 py-3 font-semibold">Brand</th>
-                          {SIZES_750_375_180.map(s => (
-                            <th key={s} className="text-right px-4 py-3 font-semibold">{s}ml (btl / ml)</th>
-                          ))}
-                          <th className="text-right px-4 py-3 font-semibold">Other (btl / ml)</th>
-                          <th className="text-right px-4 py-3 font-semibold">Total (btl / ml)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {perBottleGrouped.map((g) => (
-                          <tr key={g.brand} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-3 font-medium text-gray-900">{g.displayName}</td>
-                            {SIZES_750_375_180.map(s => {
-                              const sz = g.sizes[`${s}ml`];
-                              const itemId = sz?.itemId;
-                              const isEditing = itemId && perBottleEdits[itemId] !== undefined;
-                              const isSaving = perBottleSaving === itemId;
-                              const currentBottles = sz ? sz.bottles.toFixed(2) : '0.00';
-                              return (
-                                <td key={s} className="px-4 py-3 text-right">
-                                  {sz && itemId ? (
-                                    <div className="flex items-center justify-end gap-1">
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                        value={isEditing ? perBottleEdits[itemId] : currentBottles}
-                                        onChange={(e) => setPerBottleEdits(prev => ({ ...prev, [itemId]: e.target.value }))}
-                                        disabled={isSaving}
-                                      />
-                                      <span className="text-xs text-gray-400 whitespace-nowrap">
-                                        ({Math.round(Number(isEditing ? perBottleEdits[itemId] : currentBottles) * s)} ml)
-                                      </span>
-                                      {isEditing && (
-                                        <button
-                                          onClick={() => handlePerBottleSave(itemId, s)}
-                                          disabled={isSaving}
-                                          className="px-1.5 py-0.5 rounded bg-purple-500 text-white text-[10px] font-bold hover:bg-purple-600 disabled:opacity-50"
-                                        >
-                                          {isSaving ? '...' : 'Save'}
-                                        </button>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-gray-300">—</span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                            <td className="px-4 py-3 text-right text-gray-500 text-xs">
-                              {Object.entries(g.sizes)
-                                .filter(([k]) => !SIZES_750_375_180.includes(parseInt(k)))
-                                .map(([k, v]) => (
-                                  <div key={k}>{k}: {v.bottles.toFixed(2)} ({v.stockMl.toFixed(0)} ml)</div>
-                                ))}
-                            </td>
-                            <td className="px-4 py-3 text-right font-bold text-gray-700">
-                              {g.totalBottles.toFixed(2)}
-                              <span className="text-xs text-gray-400 ml-1">({g.totalStock.toFixed(0)} ml)</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Edit bottle counts directly in the 750ml/375ml/180ml columns. Changes save to the inventory database immediately and reflect on the main inventory screen.
-                  </p>
-                </div>
-              )}
+              {/* ── Per-Bottle Stock Summary section removed per admin request ── */}
             </>
           ) : null}
         </div>
@@ -1861,88 +1713,7 @@ ${(acItems && acItems.length > 0) ? `
 ` : '<p style="font-size:8px;color:#999;padding:6px 0;">No AC items with sales on this date.</p>'}
 </div><!-- /.detailed-section -->
 
-${/* ── Per-Bottle Stock Summary (grouped by brand) ── */ ''}
-<div class="detailed-section" style="page-break-before: always;">
-<div class="section-title">Per-Bottle Stock Summary (Grouped by Brand)</div>
-${(() => {
-  const SIZES = [750, 375, 180];
-  const normalizeName = (name) => {
-    if (!name) return '';
-    return String(name).toLowerCase()
-      .replace(/\s*\(.*?\)\s*/g, ' ')
-      .replace(/\s*\d+\s*(?:ml|l(?:tr|itre|iter)?|l)\b/gi, ' ')
-      .replace(/\s*(full\s+bottle|bottle|tin|can)\s*/gi, ' ')
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
-  const allItems = [...(acItems || []), ...(nonAcItems || [])];
-  const groups = new Map();
-  for (const item of allItems) {
-    const base = normalizeName(item.itemName);
-    if (!base) continue;
-    if (!groups.has(base)) groups.set(base, { brand: base, displayName: item.itemName, sizes: {}, totalStock: 0, totalBottles: 0 });
-    const g = groups.get(base);
-    const bottleSize = Number(item.bottleSize || item.qty || 0);
-    // closing is in BOTTLES (from report data: finalClosingBtl). Convert to ml.
-    const closingBtl = Number(item.closing) || 0;
-    const closingMl = bottleSize > 0 ? closingBtl * bottleSize : 0;
-    const sizeKey = `${bottleSize}ml`;
-    if (!g.sizes[sizeKey]) g.sizes[sizeKey] = { bottleSize, stockMl: 0, bottles: 0 };
-    g.sizes[sizeKey].stockMl += closingMl;
-    g.sizes[sizeKey].bottles += closingBtl;
-    g.totalStock += closingMl;
-    g.totalBottles += closingBtl;
-    if (item.itemName && (g.displayName === base || /\b(30|60|90)\s*ml/i.test(g.displayName))) {
-      g.displayName = item.itemName;
-    }
-  }
-  const grouped = Array.from(groups.values()).sort((a, b) => a.brand.localeCompare(b.brand));
-  if (grouped.length === 0) return '<p style="font-size:8px;color:#999;padding:6px 0;">No inventory items to display.</p>';
-  const rows = grouped.map((g) => `
-    <tr>
-      <td class="cat">${escapeHtml(g.displayName)}</td>
-      ${SIZES.map(s => {
-        const sz = g.sizes[`${s}ml`];
-        return `<td class="num">${sz ? `${sz.bottles.toFixed(2)} (${sz.stockMl.toFixed(0)} ml)` : '—'}</td>`;
-      }).join('')}
-      <td class="num">${Object.entries(g.sizes).filter(([k]) => !SIZES.includes(parseInt(k))).map(([k, v]) => `${k}: ${v.bottles.toFixed(2)} (${v.stockMl.toFixed(0)} ml)`).join(', ') || '—'}</td>
-      <td class="num bold">${g.totalBottles.toFixed(2)} (${g.totalStock.toFixed(0)} ml)</td>
-      <td class="num bold">${g.totalBottles.toFixed(2)}</td>
-    </tr>
-  `).join('\n');
-  return `
-<table>
-  <colgroup>
-    <col style="width: 25%">
-    <col style="width: 10%">
-    <col style="width: 10%">
-    <col style="width: 10%">
-    <col style="width: 15%">
-    <col style="width: 15%">
-    <col style="width: 15%">
-  </colgroup>
-  <thead>
-    <tr>
-      <th class="cat">Brand</th>
-      <th class="num">750ml (btl / ml)</th>
-      <th class="num">375ml (btl / ml)</th>
-      <th class="num">180ml (btl / ml)</th>
-      <th class="num">Other (btl / ml)</th>
-      <th class="num">Total (btl / ml)</th>
-      <th class="num">Total Bottles</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${rows}
-  </tbody>
-</table>`;
-})()}
-
-<div class="footer" style="margin-top:12px;">
-  Per-Bottle Stock: Shows closing stock grouped by brand, with separate columns for 750ml, 375ml, and 180ml bottle sizes. "Other Sizes" lists any additional bottle sizes (e.g., 650ml beer). Total Stock = sum of all sizes in ml. Total Bottles = sum of all sizes in bottle count.
-</div>
-</div><!-- /.detailed-section -->
+${/* ── Per-Bottle Stock Summary section removed per admin request ── */ ''}
 
 <div class="footer">
   Stock Position: Opening Stock Value = Opening × Purchase Rate · Purchase Value = Purchases × Purchase Rate · Consumption = Sold × Purchase Rate · Closing Stock Value = Closing × Purchase Rate<br>
