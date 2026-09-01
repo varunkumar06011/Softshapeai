@@ -522,13 +522,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   }, [computedAcItems]);
 
   // ── Business Position — uses the SAME combined API summary as the main Inventory screen ──
-  // The base values come from data.summary (fetched from /non-ac/combined — the same
-  // endpoint the main Inventory screen uses). This ensures both screens show identical
-  // Business Position values for the same outlet + date.
+  // The base values ALWAYS come from data.summary (fetched from /non-ac/combined —
+  // the same endpoint the main Inventory screen uses). This ensures both screens show
+  // identical Business Position values for the same outlet + date.
   //
-  // When the admin edits item rows (sale, purchase cost, selling price, stock), the
-  // summary is recomputed from the live item arrays so the cards update in real time.
-  // When there are no live edits, the combined API values are used as-is.
+  // The item-wise tables (AC/Non-AC) still update live when the admin edits rows,
+  // but the Business Position cards reflect the saved database state (via combined API).
+  // After Save, loadData() re-fetches the combined API and the cards update automatically.
   // Summary overrides (manual card edits) always take precedence.
   //
   // 16 fields per spec:
@@ -540,64 +540,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     if (!data) return null;
 
     // The combined API summary (from /non-ac/combined — same as main Inventory screen)
+    // This is the source of truth. It already includes all items with correct values.
     const combinedSummary = data.summary || {};
-
-    // Check if there are any live item edits that would change the summary
-    const hasAcEdits = Object.keys(acItemEdits).some(id => {
-      const e = acItemEdits[id];
-      return e && (e.purchaseCost != null || e.sellingPrice != null || e.qty != null);
-    });
-    const hasNonAcEdits = Object.keys(nonAcItemEdits).some(id => {
-      const e = nonAcItemEdits[id];
-      return e && (e.purchaseCost != null || e.sellingPrice != null || e.qty != null || e.sold != null);
-    });
-    const hasLiveEdits = hasAcEdits || hasNonAcEdits;
-
-    // Item-wise totals (used when there are live edits, or as fallback)
-    const totalAcRevenue = computedAcTotals.saleAmount;
-    const totalNonAcRevenue = computedNonAcTotals.saleAmount;
-    const totalAcConsumptionCost = computedAcTotals.consumption;
-    const totalNonAcConsumptionCost = computedNonAcTotals.consumption;
-    const totalAcProfit = computedAcTotals.profit;
-    const totalNonAcProfit = computedNonAcTotals.profit;
-
-    // Recomputed values from live item arrays
-    const computedOpeningStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
-      return s + (Number(i.opening) || 0) * (Number(i.purchaseCost) || 0);
-    }, 0);
-    const computedPurchaseValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
-      return s + (Number(i.purchases) || 0) * (Number(i.purchaseCost) || 0);
-    }, 0);
-    const computedConsumption = totalAcConsumptionCost + totalNonAcConsumptionCost;
-    const computedClosingStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
-      return s + (Number(i.closing) || 0) * (Number(i.purchaseCost) || 0);
-    }, 0);
-    const computedAcProfitPct = totalAcRevenue > 0 ? (totalAcProfit / totalAcRevenue) * 100 : 0;
-    const computedNonAcProfitPct = totalNonAcRevenue > 0 ? (totalNonAcProfit / totalNonAcRevenue) * 100 : 0;
-    const computedTotalSales = totalAcRevenue + totalNonAcRevenue;
-    const computedTotalConsumption = computedConsumption;
-    const computedTotalProfit = totalAcProfit + totalNonAcProfit;
-    const computedTotalProfitPct = computedTotalSales > 0 ? (computedTotalProfit / computedTotalSales) * 100 : 0;
-
-    // Determine the base values:
-    // - If there are live edits → recompute from item arrays (so cards update in real time)
-    // - If no live edits → use the combined API summary (same as main Inventory screen)
-    const baseOpeningStockValue = hasLiveEdits ? computedOpeningStockValue : (combinedSummary.openingStockValue ?? computedOpeningStockValue);
-    const basePurchaseValue = hasLiveEdits ? computedPurchaseValue : (combinedSummary.purchaseValue ?? computedPurchaseValue);
-    const baseConsumption = hasLiveEdits ? computedConsumption : (combinedSummary.consumption ?? computedConsumption);
-    const baseClosingStockValue = hasLiveEdits ? computedClosingStockValue : (combinedSummary.closingStockValue ?? computedClosingStockValue);
-    const baseAcSales = hasLiveEdits ? totalAcRevenue : (combinedSummary.acSales ?? totalAcRevenue);
-    const baseAcConsumption = hasLiveEdits ? totalAcConsumptionCost : (combinedSummary.acConsumption ?? totalAcConsumptionCost);
-    const baseAcProfit = hasLiveEdits ? totalAcProfit : (combinedSummary.acProfit ?? totalAcProfit);
-    const baseAcProfitPct = hasLiveEdits ? computedAcProfitPct : (combinedSummary.acProfitPct ?? computedAcProfitPct);
-    const baseNonAcSales = hasLiveEdits ? totalNonAcRevenue : (combinedSummary.nonAcSales ?? totalNonAcRevenue);
-    const baseNonAcConsumption = hasLiveEdits ? totalNonAcConsumptionCost : (combinedSummary.nonAcConsumption ?? totalNonAcConsumptionCost);
-    const baseNonAcProfit = hasLiveEdits ? totalNonAcProfit : (combinedSummary.nonAcProfit ?? totalNonAcProfit);
-    const baseNonAcProfitPct = hasLiveEdits ? computedNonAcProfitPct : (combinedSummary.nonAcProfitPct ?? computedNonAcProfitPct);
-    const baseTotalSales = hasLiveEdits ? computedTotalSales : (combinedSummary.totalSales ?? computedTotalSales);
-    const baseTotalConsumption = hasLiveEdits ? computedTotalConsumption : (combinedSummary.totalConsumption ?? computedTotalConsumption);
-    const baseTotalProfit = hasLiveEdits ? computedTotalProfit : (combinedSummary.totalProfit ?? computedTotalProfit);
-    const baseTotalProfitPct = hasLiveEdits ? computedTotalProfitPct : (combinedSummary.totalProfitPct ?? computedTotalProfitPct);
 
     // Apply summary overrides — every business position card is editable.
     // If a field has been manually edited via the card input, use the edited value.
@@ -607,26 +551,29 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     const summary = {
       ...combinedSummary,
       // ── 16 Business Position fields ──
-      openingStockValue: pick('openingStockValue', baseOpeningStockValue),
-      purchaseValue: pick('purchaseValue', basePurchaseValue),
-      consumption: pick('consumption', baseConsumption),
-      closingStockValue: pick('closingStockValue', baseClosingStockValue),
-      acSales: pick('acSales', baseAcSales),
-      acConsumption: pick('acConsumption', baseAcConsumption),
-      acProfit: pick('acProfit', baseAcProfit),
-      acProfitPct: pick('acProfitPct', baseAcProfitPct),
-      nonAcSales: pick('nonAcSales', baseNonAcSales),
-      nonAcConsumption: pick('nonAcConsumption', baseNonAcConsumption),
-      nonAcProfit: pick('nonAcProfit', baseNonAcProfit),
-      nonAcProfitPct: pick('nonAcProfitPct', baseNonAcProfitPct),
-      totalSales: pick('totalSales', baseTotalSales),
-      totalConsumption: pick('totalConsumption', baseTotalConsumption),
-      totalProfit: pick('totalProfit', baseTotalProfit),
-      totalProfitPct: pick('totalProfitPct', baseTotalProfitPct),
+      // Always use the combined API value as the base. The combined API computes
+      // these from the same DailyInventorySnapshot + nonAcDailyEntry data that the
+      // main Inventory screen uses, so the values are identical.
+      openingStockValue: pick('openingStockValue', combinedSummary.openingStockValue ?? 0),
+      purchaseValue: pick('purchaseValue', combinedSummary.purchaseValue ?? 0),
+      consumption: pick('consumption', combinedSummary.consumption ?? 0),
+      closingStockValue: pick('closingStockValue', combinedSummary.closingStockValue ?? 0),
+      acSales: pick('acSales', combinedSummary.acSales ?? 0),
+      acConsumption: pick('acConsumption', combinedSummary.acConsumption ?? 0),
+      acProfit: pick('acProfit', combinedSummary.acProfit ?? 0),
+      acProfitPct: pick('acProfitPct', combinedSummary.acProfitPct ?? 0),
+      nonAcSales: pick('nonAcSales', combinedSummary.nonAcSales ?? 0),
+      nonAcConsumption: pick('nonAcConsumption', combinedSummary.nonAcConsumption ?? 0),
+      nonAcProfit: pick('nonAcProfit', combinedSummary.nonAcProfit ?? 0),
+      nonAcProfitPct: pick('nonAcProfitPct', combinedSummary.nonAcProfitPct ?? 0),
+      totalSales: pick('totalSales', combinedSummary.totalSales ?? 0),
+      totalConsumption: pick('totalConsumption', combinedSummary.totalConsumption ?? 0),
+      totalProfit: pick('totalProfit', combinedSummary.totalProfit ?? 0),
+      totalProfitPct: pick('totalProfitPct', combinedSummary.totalProfitPct ?? 0),
     };
 
     return { ...data, categories: data.categories || [], summary };
-  }, [data, summaryEdits, computedAcTotals, computedNonAcTotals, computedAcItems, computedNonAcItems, acItemEdits, nonAcItemEdits]);
+  }, [data, summaryEdits]);
 
   // ── Save item-wise edits to backend + summary overrides ──
   // Returns fresh JSON on success, false on failure
