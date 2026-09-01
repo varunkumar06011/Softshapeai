@@ -1314,6 +1314,27 @@ const CashierDashboard = ({ onLogout }) => {
   const [bottlePickerQty, setBottlePickerQty] = useState(1);
   const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
 
+  // Sticky bottle selection per menu item — remembers which bottle the cashier
+  // picked for each peg item so they don't have to pick again on every tap.
+  // Cleared when KOT is sent or cart is cleared. Entries expire after 3 minutes.
+  const stickyBottleRef = useRef({});
+  const STICKY_BOTTLE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+  const getStickyBottle = useCallback((itemId) => {
+    if (!itemId) return null;
+    const entry = stickyBottleRef.current[itemId];
+    if (!entry) return null;
+    if (typeof entry === 'string') return entry; // legacy format
+    if (entry.bottleId && Date.now() - entry.ts < STICKY_BOTTLE_TTL_MS) return entry.bottleId;
+    delete stickyBottleRef.current[itemId];
+    return null;
+  }, []);
+
+  const setStickyBottle = useCallback((itemId, bottleId) => {
+    if (!itemId || !bottleId) return;
+    stickyBottleRef.current[itemId] = { bottleId, ts: Date.now() };
+  }, []);
+
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH');
 
   const [showMethodPicker, setShowMethodPicker] = useState(false);
@@ -10287,6 +10308,8 @@ const CashierDashboard = ({ onLogout }) => {
 
     setSelectedOrder(null);
 
+    stickyBottleRef.current = {}; // clear sticky bottle selections on table switch
+
     lastConfirmedItemsRef.current = [];
 
     setExpandedNoteItemId(null);
@@ -10421,16 +10444,21 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (!liquorQtyItem) return;
 
-    // Check if this is a liquor peg (30/60/90ml) — if so, show bottle picker
-    const PEG_SIZES = [30, 60, 90];
+    // Check if this is a liquor peg (30/60/90ml) or half-bottle serving (180/375ml)
+    // — if so, show bottle picker so cashier can choose which bottle to pour from.
+    const PICKER_SIZES = [30, 60, 90, 180, 375];
     const itemName = liquorQtyItem.n || liquorQtyItem.name || '';
     const mlMatch = itemName.match(/(\d+)\s*ml/i);
     const menuSize = mlMatch ? parseInt(mlMatch[1], 10) : null;
     const menuType = String(liquorQtyItem.menuType || liquorQtyItem.mt || 'FOOD').toUpperCase();
-    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PEG_SIZES.includes(menuSize);
+    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PICKER_SIZES.includes(menuSize);
 
     if (isLiquorPeg) {
-      // Fetch bottles and show the bottle picker
+      const itemId = liquorQtyItem.id || liquorQtyItem.menuItemId;
+      const remembered = getStickyBottle(itemId);
+      // Always fetch bottles first — verifies stock before using sticky memory.
+      // If the remembered bottle is still in stock, add directly (no picker).
+      // If not, show the picker with available bottles.
       setBottlePickerItem(liquorQtyItem);
       setBottlePickerQty(qty);
       setBottlePickerBottles([]);
@@ -10439,9 +10467,22 @@ const CashierDashboard = ({ onLogout }) => {
       getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId)
         .then((res) => {
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
-            setBottlePickerBottles(res.bottles);
+            // Sticky bottle still in stock? → add directly, skip picker
+            if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
+              addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
+              setShowBottlePicker(false);
+              setBottlePickerItem(null);
+              setBottlePickerBottles([]);
+              setSearchQuery('');
+              setSelectedCategory('All');
+              setActiveDiet('All');
+            } else {
+              // Remembered bottle out of stock — clear it and show picker
+              if (remembered) stickyBottleRef.current[itemId] = undefined;
+              setBottlePickerBottles(res.bottles);
+            }
           } else {
-            // Not a peg or no bottles configured — skip picker, add directly
+            // No bottles in stock — skip picker, add with auto deduction
             addToCart(liquorQtyItem, qty);
             setShowBottlePicker(false);
             setBottlePickerItem(null);
@@ -10451,10 +10492,15 @@ const CashierDashboard = ({ onLogout }) => {
           }
         })
         .catch(() => {
-          // Offline or error — skip picker, add directly (fallback to auto deduction)
-          addToCart(liquorQtyItem, qty);
+          // Offline or error — use sticky memory as best-effort fallback
+          if (remembered) {
+            addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
+          } else {
+            addToCart(liquorQtyItem, qty);
+          }
           setShowBottlePicker(false);
           setBottlePickerItem(null);
+          setBottlePickerBottles([]);
           setSearchQuery('');
           setSelectedCategory('All');
           setActiveDiet('All');
@@ -10482,6 +10528,8 @@ const CashierDashboard = ({ onLogout }) => {
   // ── Bottle picker handlers ──────────────────────────────────────────────
   const handleBottleSelect = (inventoryItemId) => {
     if (!bottlePickerItem) return;
+    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
+    setStickyBottle(itemId, inventoryItemId);
     addToCart(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: inventoryItemId });
     setShowBottlePicker(false);
     setBottlePickerItem(null);
@@ -11779,6 +11827,8 @@ const CashierDashboard = ({ onLogout }) => {
 
         lastAnyItemAddedRef.current = 0;
 
+        stickyBottleRef.current = {}; // clear sticky bottle selections after KOT
+
         setExpandedNoteItemId(null);
 
         setIsKotSuccess(true);
@@ -11938,6 +11988,8 @@ const CashierDashboard = ({ onLogout }) => {
               lastKotCartSignatureRef.current = null;
 
               lastAnyItemAddedRef.current = 0;
+
+              stickyBottleRef.current = {}; // clear sticky bottle selections after KOT
 
               setIsKotSuccess(true);
 

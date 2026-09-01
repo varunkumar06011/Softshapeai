@@ -137,26 +137,52 @@ export async function fetchBarInventory(date = '') {
 // Returns { menuItemId, menuName, isPeg, bottles: [{ inventoryItemId, label, bottleSize }] }
 // No stock quantities returned — captain should not see stock levels.
 //
-// PRIMARY: derive bottles from the bar menu items already loaded in memory
-// (instant, no network call). The menu items already have bottle sizes in
-// their names ("Royal Stag 180ml", "Royal Stag 375ml", etc.).
+// PRIMARY: cloud API — queries the inventory table and returns the actual
+// bottle sizes configured for this brand (180ml, 375ml, 750ml, etc.).
+// The bar menu only has peg sizes (30/60/90ml) — full bottle sizes live in
+// the inventory table, so deriving from menu items returns nothing.
+//
+// FALLBACK: derive from loaded bar menu items (instant, offline).
+// Used when the cloud API is unreachable (edge down / offline mode).
 // Uses menuItemId as the bottle identifier — the backend's inventoryService
 // accepts both inventory item IDs and menu item IDs for pourFromInventoryItemId.
 export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
-  // ── Primary: derive from loaded menu items (instant) ─────────────────
+  // ── Primary: cloud API (queries inventory table) ─────────────────────
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(apiUrl(`/api/bar/inventory/bottles-for-menu/${menuItemId}`), {
+      headers: { ...getCloudAuthHeaders() },
+      signal: controller.signal,
+    });
+    const data = await parseResponse(res);
+    if (data && data.isPeg && data.bottles && data.bottles.length > 0) {
+      return data;
+    }
+    // API responded but no bottles — fall through to menu-derived fallback
+  } catch {
+    // Network error / timeout — fall through to menu-derived fallback
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  // ── Fallback: derive from loaded menu items (offline) ────────────────
   const tapped = menuItems.find((i) => i.id === menuItemId);
   if (tapped) {
     const tapName = (tapped.n || tapped.name || '').toLowerCase();
     const tapMl = parseMlFromName(tapName);
     if (tapMl) {
       const tapBase = normalizeBaseName(tapName);
-      const PEG_SIZES = [30, 60, 90];
-      if (PEG_SIZES.includes(tapMl)) {
+      // Show picker for pegs (30/60/90ml) and half-bottle servings (180/375ml).
+      // 750ml is excluded — you can't pour 750ml from a smaller bottle.
+      const PICKER_SIZES = [30, 60, 90, 180, 375];
+      if (PICKER_SIZES.includes(tapMl)) {
         const bottles = menuItems
           .filter((i) => {
             const name = (i.n || i.name || '').toLowerCase();
             const ml = parseMlFromName(name);
-            return ml && ml > tapMl && normalizeBaseName(name) === tapBase;
+            // Show bottles >= ordered size (e.g., 180ml order → 180ml, 375ml, 750ml)
+            return ml && ml >= tapMl && normalizeBaseName(name) === tapBase;
           })
           .map((i) => {
             const ml = parseMlFromName((i.n || i.name || '').toLowerCase());
@@ -177,18 +203,8 @@ export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
     }
   }
 
-  // ── Fallback: cloud API (if menu items not available) ────────────────
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(apiUrl(`/api/bar/inventory/bottles-for-menu/${menuItemId}`), {
-      headers: { ...getCloudAuthHeaders() },
-      signal: controller.signal,
-    });
-    return parseResponse(res);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  // No bottles found from either source
+  return { menuItemId, menuName: null, isPeg: false, bottles: [] };
 }
 
 // ── Helpers for offline bottle derivation ──────────────────────────────

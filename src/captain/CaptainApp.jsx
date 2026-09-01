@@ -1363,7 +1363,24 @@ export default function CaptainApp({ onLogout }) {
   // Sticky bottle selection per menu item — remembers which bottle the captain
   // picked for each peg item so they don't have to pick again on every tap.
   // Cleared when KOT is sent (cart cleared). Keyed by menuItemId.
+  // Entries expire after 3 minutes so stale selections don't persist forever.
   const stickyBottleRef = useRef({});
+  const STICKY_BOTTLE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+  const getStickyBottle = useCallback((itemId) => {
+    if (!itemId) return null;
+    const entry = stickyBottleRef.current[itemId];
+    if (!entry) return null;
+    if (typeof entry === 'string') return entry; // legacy format
+    if (entry.bottleId && Date.now() - entry.ts < STICKY_BOTTLE_TTL_MS) return entry.bottleId;
+    delete stickyBottleRef.current[itemId];
+    return null;
+  }, []);
+
+  const setStickyBottle = useCallback((itemId, bottleId) => {
+    if (!itemId || !bottleId) return;
+    stickyBottleRef.current[itemId] = { bottleId, ts: Date.now() };
+  }, []);
 
 
 
@@ -3071,33 +3088,56 @@ export default function CaptainApp({ onLogout }) {
 
   const handleQtySelect = (qty) => {
     if (!liquorQtyItem) return;
-    // Check if this is a liquor peg (30/60/90ml) — if so, show bottle picker
-    const PEG_SIZES = [30, 60, 90];
+    // Check if this is a liquor peg (30/60/90ml) or half-bottle serving (180/375ml)
+    // — if so, show bottle picker so captain can choose which bottle to pour from.
+    const PICKER_SIZES = [30, 60, 90, 180, 375];
     const itemName = liquorQtyItem.n || liquorQtyItem.name || '';
     const mlMatch = itemName.match(/(\d+)\s*ml/i);
     const menuSize = mlMatch ? parseInt(mlMatch[1], 10) : null;
     const menuType = String(liquorQtyItem.menuType || liquorQtyItem.mt || 'FOOD').toUpperCase();
-    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PEG_SIZES.includes(menuSize);
+    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PICKER_SIZES.includes(menuSize);
 
     if (isLiquorPeg) {
+      const itemId = liquorQtyItem.id || liquorQtyItem.menuItemId;
+      const remembered = getStickyBottle(itemId);
+      // Always fetch bottles first — verifies stock availability before using
+      // sticky memory. If the remembered bottle is still in stock, add directly
+      // (fast path, no picker). If not, show the picker with available bottles.
       setBottlePickerItem(liquorQtyItem);
       setBottlePickerQty(qty);
       setBottlePickerBottles([]);
       setShowBottlePicker(true);
       setShowLiquorQtyPicker(false);
-      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId, activeMenuItems)
+      getBottlesForMenuItem(itemId, activeMenuItems)
         .then((res) => {
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
-            setBottlePickerBottles(res.bottles);
+            // Sticky bottle still in stock? → add directly, skip picker
+            if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
+              addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
+              setShowBottlePicker(false);
+              setBottlePickerItem(null);
+              setBottlePickerBottles([]);
+            } else {
+              // Remembered bottle is out of stock or not found — clear it and show picker
+              if (remembered) stickyBottleRef.current[itemId] = undefined;
+              setBottlePickerBottles(res.bottles);
+            }
           } else {
-            // API returned no bottles — show "No bottles configured" with Skip
+            // No bottles in stock — show empty picker with Skip
             setBottlePickerBottles([]);
           }
         })
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem failed:', err?.message);
-          // Show "No bottles configured" with Skip button instead of silently closing
-          setBottlePickerBottles([]);
+          // Offline — if we have sticky memory, use it (best effort)
+          if (remembered) {
+            addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
+            setShowBottlePicker(false);
+            setBottlePickerItem(null);
+            setBottlePickerBottles([]);
+          } else {
+            setBottlePickerBottles([]);
+          }
         });
       setLiquorQtyItem(null);
       return;
@@ -3114,7 +3154,7 @@ export default function CaptainApp({ onLogout }) {
     // Remember the bottle selection for this peg item so subsequent taps
     // skip the picker. Cleared on KOT send.
     const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
-    if (itemId) stickyBottleRef.current[itemId] = inventoryItemId;
+    setStickyBottle(itemId, inventoryItemId);
     addItemToSession(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: inventoryItemId });
     setShowBottlePicker(false);
     setBottlePickerItem(null);
@@ -3223,25 +3263,20 @@ export default function CaptainApp({ onLogout }) {
   }, []);
 
   // Direct add (qty 1) — used by card tap. Bypasses the quantity picker.
-  // BUT for liquor pegs (30/60/90ml), still show the bottle picker so the
-  // captain can select which bottle to pour from.
+  // BUT for liquor pegs (30/60/90ml) and half-bottle servings (180/375ml),
+  // still show the bottle picker so the captain can select which bottle to pour from.
   const stableCardDirectAdd = useCallback((item) => {
-    const PEG_SIZES = [30, 60, 90];
+    const PICKER_SIZES = [30, 60, 90, 180, 375];
     const itemName = item.n || item.name || '';
     const mlMatch = itemName.match(/(\d+)\s*ml/i);
     const menuSize = mlMatch ? parseInt(mlMatch[1], 10) : null;
     const menuType = String(item.menuType || item.mt || 'FOOD').toUpperCase();
-    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PEG_SIZES.includes(menuSize);
+    const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PICKER_SIZES.includes(menuSize);
 
     if (isLiquorPeg) {
       const itemId = item.id || item.menuItemId;
-      // If captain already picked a bottle for this peg item, add directly
-      // without showing the picker again.
-      const remembered = stickyBottleRef.current[itemId];
-      if (remembered) {
-        addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
-        return;
-      }
+      const remembered = getStickyBottle(itemId);
+      // Always fetch bottles first — verifies stock before using sticky memory.
       setBottlePickerItem(item);
       setBottlePickerQty(1);
       setBottlePickerBottles([]);
@@ -3249,14 +3284,31 @@ export default function CaptainApp({ onLogout }) {
       getBottlesForMenuItem(itemId, activeMenuItemsRef.current)
         .then((res) => {
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
-            setBottlePickerBottles(res.bottles);
+            // Sticky bottle still in stock? → add directly, skip picker
+            if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
+              addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
+              setShowBottlePicker(false);
+              setBottlePickerItem(null);
+              setBottlePickerBottles([]);
+            } else {
+              if (remembered) stickyBottleRef.current[itemId] = undefined;
+              setBottlePickerBottles(res.bottles);
+            }
           } else {
             setBottlePickerBottles([]);
           }
         })
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem (directAdd) failed:', err?.message);
-          setBottlePickerBottles([]);
+          // Offline — use sticky memory as best-effort fallback
+          if (remembered) {
+            addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
+            setShowBottlePicker(false);
+            setBottlePickerItem(null);
+            setBottlePickerBottles([]);
+          } else {
+            setBottlePickerBottles([]);
+          }
         });
     } else {
       addItemToSessionRef.current(item, 1);
