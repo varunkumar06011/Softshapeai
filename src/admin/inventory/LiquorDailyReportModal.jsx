@@ -63,12 +63,14 @@ function computeReportFromJson(jsonData) {
       const purchases = Number(item.received) || 0;
       const totalStock = opening + purchases;
       const sold = Number(item.sold) || 0;
+      const displaySale = item.displaySale != null ? Number(item.displaySale) : sold;
       const sale = sold;
       const closing = totalStock - sold;
-      const consumption = sale * purchaseCost;
-      const saleAmount = Number(item.saleAmount) || (sale * sellingPrice);
-      const profit = saleAmount - consumption;
-      return { ...item, qty: Number(item.qty) || 0, sale, purchaseCost, sellingPrice, consumption, saleAmount, profit, isHidden: false, hasMissingPrice: purchaseCost <= 0, hasMissingBottleSize: (Number(item.qty) || 0) <= 0, hasMissingSellingPrice: sellingPrice <= 0, opening, purchases, totalStock, sold, closing };
+      // Use backend values directly — do not recalculate
+      const consumption = Number(item.consumption) || 0;
+      const saleAmount = Number(item.saleAmount) || 0;
+      const profit = Number(item.profit) || 0;
+      return { ...item, qty: Number(item.qty) || 0, sale, displaySale, purchaseCost, sellingPrice, consumption, saleAmount, profit, isHidden: false, hasMissingPrice: purchaseCost <= 0, hasMissingBottleSize: (Number(item.qty) || 0) <= 0, hasMissingSellingPrice: sellingPrice <= 0, opening, purchases, totalStock, sold, closing };
     });
 
   const computedNonAcItems = (jsonData.nonAcItems || [])
@@ -154,6 +156,13 @@ function fmtQty(n) {
   if (n == null || Number.isNaN(Number(n))) return '0';
   const v = Number(n);
   return v % 1 === 0 ? String(v) : v.toFixed(2);
+}
+
+// Number equality with tolerance for floating-point comparison
+function numEq(a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return Math.round(Number(a) * 10000) / 10000 === Math.round(Number(b) * 10000) / 10000;
 }
 
 const SAFE_DIV = (a, b) => (b > 0 ? a / b * 100 : 0);
@@ -315,7 +324,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           qty: item.qty ?? 0,
           purchaseCost: item.purchaseCost ?? 0,
           sellingPrice: item.sellingPrice ?? 0,
-          sold: item.sold ?? 0,
+          // sold not initialized here — display falls through to item.displaySale (pegs)
+          // allComputedAcItems uses itemEdit?.sold ?? item.sold, so when no edit,
+          // it uses backend item.sold (bottles) for calculations and saving.
         };
         acHiddenInit[item.itemId] = item.isHidden === true;
       }
@@ -458,36 +469,32 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     return allComputedNonAcItems.filter(i => !i.isHidden);
   }, [allComputedNonAcItems]);
 
-  // All AC items with computed values (including hidden ones for data preservation)
+  // All AC items — use backend values directly, no frontend recalculation.
+  // The backend already computes consumption, saleAmount, profit correctly
+  // (including 30ml peg logic for spirits). Frontend just displays them.
   const allComputedAcItems = useMemo(() => {
     if (!data) return [];
     return (data.acItems || []).map((item) => {
       const itemEdit = acItemEdits[item.itemId];
-      const edit = itemEdit || { qty: item.qty, purchaseCost: item.purchaseCost, sellingPrice: item.sellingPrice, sold: item.sold };
-      const purchaseCost = Number(edit.purchaseCost) || 0;
-      const sellingPrice = Number(edit.sellingPrice) || 0;
-      const qty = Number(edit.qty) || 0;
-      // Opening Stock and Purchases are read-only — always from backend
+      // Editable fields: use user edit if present, else backend value
+      const purchaseCost = Number(itemEdit?.purchaseCost ?? item.purchaseCost) || 0;
+      const sellingPrice = Number(itemEdit?.sellingPrice ?? item.sellingPrice) || 0;
+      const qty = Number(itemEdit?.qty ?? item.qty) || 0;
+      const sold = Number(itemEdit?.sold ?? item.sold) || 0;
+      // Read-only from backend
       const opening = Number(item.opening) || 0;
       const purchases = Number(item.received) || 0;
       const totalStock = opening + purchases;
-      // Sold is the main editable field
-      const sold = Number(edit.sold ?? item.sold) || 0;
-      const sale = sold; // sale = sold (same value)
       const closing = totalStock - sold;
-      // AC uses 30ML cost logic: Consumption = Sale × Purchase Cost (mathematically equivalent to pegs × 30ML_cost)
-      const consumption = sale * purchaseCost;
-      // Sale Amount: use backend POS revenue when no edits to sold/sellingPrice.
-      // Only recalculate from sale × sellingPrice when user has edited those fields.
-      // This ensures the PDF Sale Amount matches the dashboard AC Sales perfectly.
-      const hasSoldOrPriceEdit = itemEdit != null && (itemEdit.sold != null || itemEdit.sellingPrice != null);
-      const saleAmount = hasSoldOrPriceEdit ? sale * sellingPrice : (Number(item.saleAmount) || 0);
-      const profit = saleAmount - consumption;
+      // Use backend computed values directly — do NOT recalculate in frontend
+      const consumption = Number(item.consumption) || 0;
+      const saleAmount = Number(item.saleAmount) || 0;
+      const profit = Number(item.profit) || 0;
       const isHidden = acHiddenFlags[item.itemId] === true;
       return {
         ...item,
         qty,
-        sale,
+        sale: sold,
         purchaseCost,
         sellingPrice,
         consumption,
@@ -623,11 +630,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // because the frontend doesn't round the same way as the backend —
       // floating-point differences would cause false positives and ALL items
       // would be sent every save, re-introducing the timeout.
-      const numEq = (a, b) => {
-        if (a == null && b == null) return true;
-        if (a == null || b == null) return false;
-        return Math.round(Number(a) * 10000) / 10000 === Math.round(Number(b) * 10000) / 10000;
-      };
       const nonAcItemsPayload = [];
       for (const item of allComputedNonAcItems) {
         const e = nonAcItemEdits[item.itemId] || {};
@@ -745,6 +747,16 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setTimeout(() => setSavedMsg(false), 3000);
       // ── ONLY clear pending edits after confirmed successful save ──
       clearPendingFromStorage();
+      // ── Clear ALL edit states so the auto-save useEffect doesn't re-fire ──
+      // The saved values are now in the backend data (refetched below).
+      // Without this, summaryEdits/nonAcItemEdits/acItemEdits remain populated
+      // and the auto-save effect re-marks the report as "unsaved" immediately.
+      setNonAcItemEdits({});
+      setAcItemEdits({});
+      setNonAcHiddenFlags({});
+      setAcHiddenFlags({});
+      setEdits({});
+      setSummaryEdits({});
       // Reload data to reflect saved state and AWAIT it so the caller
       // (handleSaveAndPrint) gets the fresh data for PDF generation.
       const freshJson = await loadData();
@@ -1264,12 +1276,12 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                         <tr>
                           <th className="text-center px-2 py-2 font-bold text-blue-700 uppercase tracking-wide w-10">S.No</th>
                           <th className="text-left px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Item Name</th>
-                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Qty (ml)</th>
-                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Sold</th>
-                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Selling Rate</th>
-                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale Amount</th>
-                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Purchase Rate</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Qty</th>
+                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Purchase Cost</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Consumption</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Selling Price</th>
+                          <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale Amount</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Profit</th>
                           <th className="text-center px-2 py-2 font-bold text-blue-700 uppercase tracking-wide w-16">Hide</th>
                         </tr>
@@ -1284,7 +1296,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                               {item.hasMissingBottleSize && <span className="ml-1 text-[9px] text-red-500" title="Missing bottle size">⚠</span>}
                               {item.hasMissingSellingPrice && <span className="ml-1 text-[9px] text-red-500" title="No selling price set">⚠</span>}
                             </td>
-                            {/* Qty (ml) — editable */}
+                            {/* Qty — editable */}
                             <td className="px-3 py-2 text-right bg-blue-50/30">
                               <input
                                 type="number"
@@ -1296,33 +1308,19 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                                 placeholder="0"
                               />
                             </td>
-                            {/* Sold — editable */}
+                            {/* Sale — editable, shows displaySale (pegs/bottles) */}
                             <td className="px-2 py-2 text-right bg-blue-50/30">
                               <input
                                 type="number"
                                 min="0"
                                 step="any"
-                                value={acItemEdits[item.itemId]?.sold ?? ''}
+                                value={acItemEdits[item.itemId]?.sold != null ? acItemEdits[item.itemId].sold : (item.displaySale ?? item.sold ?? '')}
                                 onChange={(e) => handleAcItemChange(item.itemId, 'sold', e.target.value)}
                                 className="w-16 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                                 placeholder="0"
                               />
                             </td>
-                            {/* Selling Rate — editable (admin-managed, persistent) */}
-                            <td className="px-3 py-2 text-right bg-blue-50/30">
-                              <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={acItemEdits[item.itemId]?.sellingPrice ?? ''}
-                                onChange={(e) => handleAcItemChange(item.itemId, 'sellingPrice', e.target.value)}
-                                className="w-24 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
-                                placeholder="0"
-                              />
-                            </td>
-                            {/* Sale Amount — auto-calculated: Sold × Selling Rate */}
-                            <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.saleAmount)}</td>
-                            {/* Purchase Rate — editable */}
+                            {/* Purchase Cost — editable */}
                             <td className="px-3 py-2 text-right bg-blue-50/30">
                               <input
                                 type="number"
@@ -1334,9 +1332,23 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                                 placeholder="0"
                               />
                             </td>
-                            {/* Consumption — auto-calculated: Sold × Purchase Rate */}
+                            {/* Consumption — auto-calculated */}
                             <td className="px-3 py-2 text-right text-gray-700">{fmtInr(item.consumption)}</td>
-                            {/* Profit — auto-calculated: Sale Amount − Consumption */}
+                            {/* Selling Price — editable */}
+                            <td className="px-3 py-2 text-right bg-blue-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={acItemEdits[item.itemId]?.sellingPrice ?? ''}
+                                onChange={(e) => handleAcItemChange(item.itemId, 'sellingPrice', e.target.value)}
+                                className="w-24 text-right text-xs px-1 py-0.5 border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="0"
+                              />
+                            </td>
+                            {/* Sale Amount — from backend */}
+                            <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.saleAmount)}</td>
+                            {/* Profit — auto-calculated */}
                             <td className="px-3 py-2 text-right text-gray-900 font-bold">{fmtInr(item.profit)}</td>
                             {/* Hide/Show toggle — persists on InventoryItem.isHiddenFromReport */}
                             <td className="px-2 py-2 text-center">
@@ -1361,18 +1373,16 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                         <tr className="border-t-2 border-blue-200 bg-blue-50 font-bold">
                           <td colSpan={3} className="px-3 py-2 text-gray-900">TOTAL (visible items only)</td>
                           <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedAcTotals.sold)}</td>
-                          <td className="px-2 py-2 text-right text-gray-700">{fmtQty(computedAcTotals.closing)}</td>
-                          <td className="px-3 py-2 text-right text-gray-400"></td>
-                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.saleAmount)}</td>
                           <td className="px-3 py-2 text-right text-gray-400"></td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.consumption)}</td>
+                          <td className="px-3 py-2 text-right text-gray-400"></td>
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.saleAmount)}</td>
                           <td className="px-3 py-2 text-right text-gray-900">{fmtInr(computedAcTotals.profit)}</td>
                           <td className="px-2 py-2"></td>
                         </tr>
                         <tr className="bg-blue-50/50">
-                          <td colSpan={10} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
+                          <td colSpan={9} className="px-3 py-1 text-right text-xs text-gray-500 font-medium">Profit Margin %</td>
                           <td className="px-3 py-1 text-right text-xs text-gray-900 font-bold">{fmtPct(computedAcTotals.profitMarginPct)}</td>
-                          <td className="px-2 py-1"></td>
                         </tr>
                       </tfoot>
                     </table>
@@ -1500,17 +1510,17 @@ function buildPrintHtml(data) {
     </tr>
   `).join('\n');
 
-  // ── Item-wise AC rows (30ML Cost column removed — matches exact column spec) ──
+  // ── Item-wise AC rows (matches exact image format) ──
   const acItemRows = (acItems || []).map((item) => `
     <tr>
       <td class="num">${item.sno}</td>
       <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingBottleSize ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingSellingPrice ? ' <span class="warn">⚠</span>' : ''}</td>
       <td class="num">${fmtQtyP(item.qty)}</td>
-      <td class="num">${fmtBtlP(item.sold)}</td>
-      <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
-      <td class="num bold">${fmtInrP(item.saleAmount)}</td>
+      <td class="num">${item.displaySale != null ? fmtQty(item.displaySale) : fmtBtlP(item.sold)}</td>
       <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
       <td class="num">${fmtInrP(item.consumption)}</td>
+      <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
+      <td class="num bold">${fmtInrP(item.saleAmount)}</td>
       <td class="num bold">${fmtInrP(item.profit)}</td>
     </tr>
   `).join('\n');
@@ -1754,12 +1764,12 @@ ${(acItems && acItems.length > 0) ? `
     <tr>
       <th>S.No</th>
       <th class="cat">Item Name</th>
-      <th>Qty (ml)</th>
-      <th>Sold</th>
-      <th>Selling Rate</th>
-      <th>Sale Amount</th>
-      <th>Purchase Rate</th>
+      <th>Qty</th>
+      <th>Sale</th>
+      <th>Purchase Cost</th>
       <th>Consumption</th>
+      <th>Selling Price</th>
+      <th>Sale Amount</th>
       <th>Profit</th>
     </tr>
   </thead>
@@ -1771,10 +1781,10 @@ ${(acItems && acItems.length > 0) ? `
       <td colspan="3" class="cat">TOTAL</td>
       <td class="num">${fmtStockP(acItemTotals?.sold || 0)}</td>
       <td class="num"></td>
-      <td class="num">${fmtInrP(acItemTotals?.saleAmount || 0)}</td>
-      <td class="num"></td>
       <td class="num">${fmtInrP(acItemTotals?.consumption || 0)}</td>
-      <td class="num">${fmtInrP(acItemTotals?.profit || 0)}</td>
+      <td class="num"></td>
+      <td class="num">${fmtInrP(acItemTotals?.saleAmount || 0)}</td>
+      <td class="num bold">${fmtInrP(acItemTotals?.profit || 0)}</td>
     </tr>
     <tr>
       <td colspan="8" class="num" style="text-align:right;font-size:5px;color:#666;">Profit Margin %</td>
