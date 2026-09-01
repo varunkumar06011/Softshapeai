@@ -869,8 +869,8 @@ export default function AdminDailyBalanceSheet() {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      // Update the id if it was a temp id
-      if (String(row.id).startsWith('temp-')) {
+      // Update the id if it was a temp or null-id seed row
+      if (!row.id || String(row.id).startsWith('temp-')) {
         const next = bankBalancesRef.current.map((b) =>
           b.id === row.id ? { ...b, id: res.id } : b
         );
@@ -886,7 +886,7 @@ export default function AdminDailyBalanceSheet() {
 
   // Delete a bank balance row from the backend
   const deleteBankBalanceRemote = async (id) => {
-    if (String(id).startsWith('temp-')) return; // temp rows don't exist remotely
+    if (!id || String(id).startsWith('temp-')) return; // temp/seed rows don't exist remotely
     try {
       await apiFetch(`/api/balance-sheet/bank-balances/${id}`, { method: 'DELETE' });
     } catch (err) {
@@ -1850,7 +1850,7 @@ export default function AdminDailyBalanceSheet() {
                     type="text"
                     value={bank.bankName}
                     onChange={(e) => handleBankBalanceNameChange(bank.id, e.target.value)}
-                    onBlur={() => { if (!String(bank.id).startsWith('temp-')) persistBankBalance(bank); }}
+                    onBlur={() => persistBankBalance(bank)}
                     disabled={isLocked}
                     className="w-full rounded border border-gray-200 px-2 py-1 text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed"
                   />
@@ -1864,7 +1864,7 @@ export default function AdminDailyBalanceSheet() {
                     step="0.01"
                     value={bank.accountBalance}
                     onChange={(e) => handleBankBalanceAccountChange(bank.id, e.target.value)}
-                    onBlur={() => { if (!String(bank.id).startsWith('temp-')) persistBankBalance(bank); }}
+                    onBlur={() => persistBankBalance(bank)}
                     disabled={isLocked}
                     className="w-28 rounded border border-gray-200 px-2 py-1 text-right text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed"
                   />
@@ -1878,7 +1878,7 @@ export default function AdminDailyBalanceSheet() {
                     step="0.01"
                     value={bank.minimumBalance ?? ''}
                     onChange={(e) => handleBankBalanceMinimumChange(bank.id, e.target.value)}
-                    onBlur={() => { if (!String(bank.id).startsWith('temp-')) persistBankBalance(bank); }}
+                    onBlur={() => persistBankBalance(bank)}
                     disabled={isLocked}
                     placeholder="—"
                     className="w-28 rounded border border-gray-200 px-2 py-1 text-right text-sm font-bold text-gray-700 outline-none focus:border-[#E53935] disabled:opacity-60 disabled:cursor-not-allowed placeholder:text-gray-300"
