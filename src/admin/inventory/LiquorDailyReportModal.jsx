@@ -1147,7 +1147,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                           <th className="text-left px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Item Name</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Qty (ml)</th>
                           <th className="text-right px-2 py-2 font-bold text-orange-700 uppercase tracking-wide">Sold</th>
-                          <th className="text-right px-2 py-2 font-bold text-orange-700 uppercase tracking-wide">Closing</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Selling Rate</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Sale Amount</th>
                           <th className="text-right px-3 py-2 font-bold text-orange-700 uppercase tracking-wide">Purchase Rate</th>
@@ -1187,23 +1186,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                                 onChange={(e) => handleNonAcItemChange(item.itemId, 'sold', e.target.value)}
                                 className="w-16 text-right text-xs px-1 py-0.5 border border-orange-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-400"
                                 placeholder="0"
-                              />
-                            </td>
-                            {/* Closing = Total Stock − Sold — auto-calc, but admin can override */}
-                            <td className="px-2 py-2 text-right bg-orange-50/30">
-                              <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={nonAcItemEdits[item.itemId]?.closingOverride ?? ''}
-                                onChange={(e) => handleNonAcItemChange(item.itemId, 'closingOverride', e.target.value)}
-                                className={`w-16 text-right text-xs px-1 py-0.5 border rounded focus:outline-none focus:ring-1 ${
-                                  item.hasClosingOverride
-                                    ? 'border-blue-400 bg-blue-50 text-blue-700 font-bold focus:ring-blue-400'
-                                    : 'border-orange-200 text-gray-700 font-medium focus:ring-orange-400'
-                                }`}
-                                placeholder={fmtQty(item.closing)}
-                                title={item.hasClosingOverride ? 'Admin override (auto: ' + fmtQty(item.totalStock - item.sold) + ')' : 'Auto: Total Stock - Sold. Click to override.'}
                               />
                             </td>
                             {/* Selling Rate — editable */}
@@ -1297,7 +1279,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                           <th className="text-left px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Item Name</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Qty (ml)</th>
                           <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Sold</th>
-                          <th className="text-right px-2 py-2 font-bold text-blue-700 uppercase tracking-wide">Closing</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Selling Rate</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Sale Amount</th>
                           <th className="text-right px-3 py-2 font-bold text-blue-700 uppercase tracking-wide">Purchase Rate</th>
@@ -1340,8 +1321,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                                 placeholder="0"
                               />
                             </td>
-                            {/* Closing = Total Stock − Sold — auto-calc, read-only */}
-                            <td className="px-2 py-2 text-right text-gray-700 font-medium">{fmtQty(item.closing)}</td>
                             {/* Selling Rate — editable (admin-managed, persistent) */}
                             <td className="px-3 py-2 text-right bg-blue-50/30">
                               <input
@@ -1526,7 +1505,6 @@ function buildPrintHtml(data) {
       <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingSellingPrice ? ' <span class="warn">⚠</span>' : ''}</td>
       <td class="num">${fmtQtyP(item.qty)}</td>
       <td class="num">${fmtBtlP(item.sold)}</td>
-      <td class="num">${fmtStockP(item.closing)}</td>
       <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
       <td class="num bold">${fmtInrP(item.saleAmount)}</td>
       <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
@@ -1542,7 +1520,6 @@ function buildPrintHtml(data) {
       <td class="cat">${escapeHtml(item.itemName)}${item.hasMissingPrice ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingBottleSize ? ' <span class="warn">⚠</span>' : ''}${item.hasMissingSellingPrice ? ' <span class="warn">⚠</span>' : ''}</td>
       <td class="num">${fmtQtyP(item.qty)}</td>
       <td class="num">${fmtBtlP(item.sold)}</td>
-      <td class="num">${fmtStockP(item.closing)}</td>
       <td class="num">${item.sellingPrice > 0 ? fmtInrP(item.sellingPrice) : '—'}</td>
       <td class="num bold">${fmtInrP(item.saleAmount)}</td>
       <td class="num">${item.purchaseCost > 0 ? fmtInrP(item.purchaseCost) : '—'}</td>
@@ -1727,15 +1704,14 @@ ${/* ── Detailed Item-wise Tables (Non-AC + AC together on one page) ── 
 ${(nonAcItems && nonAcItems.length > 0) ? `
 <table>
   <colgroup>
-    <col style="width: 4%">
-    <col style="width: 18%">
-    <col style="width: 7%">
-    <col style="width: 7%">
-    <col style="width: 7%">
-    <col style="width: 10%">
+    <col style="width: 5%">
+    <col style="width: 20%">
+    <col style="width: 8%">
+    <col style="width: 8%">
+    <col style="width: 12%">
+    <col style="width: 13%">
     <col style="width: 11%">
-    <col style="width: 10%">
-    <col style="width: 11%">
+    <col style="width: 12%">
     <col style="width: 11%">
   </colgroup>
   <thead>
@@ -1744,7 +1720,6 @@ ${(nonAcItems && nonAcItems.length > 0) ? `
       <th class="cat">Item Name</th>
       <th>Qty (ml)</th>
       <th>Sold</th>
-      <th>Closing</th>
       <th>Selling Rate</th>
       <th>Sale Amount</th>
       <th>Purchase Rate</th>
@@ -1759,7 +1734,6 @@ ${(nonAcItems && nonAcItems.length > 0) ? `
     <tr>
       <td colspan="3" class="cat">TOTAL</td>
       <td class="num">${fmtStockP(nonAcItemTotals?.sold || 0)}</td>
-      <td class="num">${fmtStockP(nonAcItemTotals?.closing || 0)}</td>
       <td class="num"></td>
       <td class="num">${fmtInrP(nonAcItemTotals?.saleAmount || 0)}</td>
       <td class="num"></td>
@@ -1767,7 +1741,7 @@ ${(nonAcItems && nonAcItems.length > 0) ? `
       <td class="num">${fmtInrP(nonAcItemTotals?.profit || 0)}</td>
     </tr>
     <tr>
-      <td colspan="9" class="num" style="text-align:right;font-size:5px;color:#666;">Profit Margin %</td>
+      <td colspan="8" class="num" style="text-align:right;font-size:5px;color:#666;">Profit Margin %</td>
       <td class="num" style="font-weight:700;">${fmtPctP(nonAcItemTotals?.profitMarginPct || 0)}</td>
     </tr>
   </tfoot>
@@ -1779,15 +1753,14 @@ ${/* ── Item-wise AC Bar Table ── */ ''}
 ${(acItems && acItems.length > 0) ? `
 <table>
   <colgroup>
-    <col style="width: 4%">
-    <col style="width: 18%">
-    <col style="width: 7%">
-    <col style="width: 7%">
-    <col style="width: 7%">
-    <col style="width: 10%">
+    <col style="width: 5%">
+    <col style="width: 20%">
+    <col style="width: 8%">
+    <col style="width: 8%">
+    <col style="width: 12%">
+    <col style="width: 13%">
     <col style="width: 11%">
-    <col style="width: 10%">
-    <col style="width: 11%">
+    <col style="width: 12%">
     <col style="width: 11%">
   </colgroup>
   <thead>
@@ -1796,7 +1769,6 @@ ${(acItems && acItems.length > 0) ? `
       <th class="cat">Item Name</th>
       <th>Qty (ml)</th>
       <th>Sold</th>
-      <th>Closing</th>
       <th>Selling Rate</th>
       <th>Sale Amount</th>
       <th>Purchase Rate</th>
@@ -1811,7 +1783,6 @@ ${(acItems && acItems.length > 0) ? `
     <tr>
       <td colspan="3" class="cat">TOTAL</td>
       <td class="num">${fmtStockP(acItemTotals?.sold || 0)}</td>
-      <td class="num">${fmtStockP(acItemTotals?.closing || 0)}</td>
       <td class="num"></td>
       <td class="num">${fmtInrP(acItemTotals?.saleAmount || 0)}</td>
       <td class="num"></td>
@@ -1819,7 +1790,7 @@ ${(acItems && acItems.length > 0) ? `
       <td class="num">${fmtInrP(acItemTotals?.profit || 0)}</td>
     </tr>
     <tr>
-      <td colspan="9" class="num" style="text-align:right;font-size:5px;color:#666;">Profit Margin %</td>
+      <td colspan="8" class="num" style="text-align:right;font-size:5px;color:#666;">Profit Margin %</td>
       <td class="num" style="font-weight:700;">${fmtPctP(acItemTotals?.profitMarginPct || 0)}</td>
     </tr>
   </tfoot>
@@ -1830,7 +1801,7 @@ ${(acItems && acItems.length > 0) ? `
 ${/* ── Per-Bottle Stock Summary section removed per admin request ── */ ''}
 
 <div class="footer">
-  Stock Position: Opening Stock Value = Opening × Purchase Rate · Purchase Value = Purchases × Purchase Rate · Consumption = Sold × Purchase Rate · Closing Stock Value = Closing × Purchase Rate<br>
+  Stock Position: Opening Stock Value = Opening × Purchase Rate · Purchase Value = Purchases × Purchase Rate · Consumption = Sold × Purchase Rate<br>
   Profitability: AC Profit = AC Sales − AC Consumption · Non-AC Profit = Non-AC Sales − Non-AC Consumption · Total Profit = AC Profit + Non-AC Profit · Profit % = Profit ÷ Sales × 100<br>
   AC = POS billing (Vgrand Lounge) · Non-AC = Admin-entered · All values reflect the latest saved database data.
 </div>
