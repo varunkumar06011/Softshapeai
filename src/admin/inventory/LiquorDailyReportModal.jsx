@@ -617,37 +617,37 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
       // Build item-wise payloads from edits
       // OPTIMIZATION: Only send items that actually changed (dirty checking).
-      // Previously sent ALL 200+ items on every save, causing 600+ DB operations
-      // per save. Now we compare current edit values against original server
-      // data and only include items where something actually differs.
+      // Compare ONLY base edit fields (qty, sold, purchaseCost, sellingPrice,
+      // isHidden, closingOverride) against original server data.
+      // DO NOT compare computed fields (consumption, saleAmount, profit, closing)
+      // because the frontend doesn't round the same way as the backend —
+      // floating-point differences would cause false positives and ALL items
+      // would be sent every save, re-introducing the timeout.
+      const numEq = (a, b) => {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return Math.round(Number(a) * 10000) / 10000 === Math.round(Number(b) * 10000) / 10000;
+      };
       const nonAcItemsPayload = [];
       for (const item of allComputedNonAcItems) {
         const e = nonAcItemEdits[item.itemId] || {};
         const orig = data.nonAcItems?.find(i => i.itemId === item.itemId);
         if (!orig) continue;
-        // Check if anything changed compared to server data
+        // Current values (with edits applied)
         const bottleSize = numOrUndef(e.qty ?? item.qty);
         const sale = numOrUndef(item.sold) ?? 0;
         const purchaseRate = numOrUndef(e.purchaseCost ?? item.purchaseCost);
         const sellingPrice = numOrUndef(e.sellingPrice ?? item.sellingPrice);
         const isHidden = nonAcHiddenFlags[item.itemId] === true;
         const closingOverride = (e.closingOverride != null && e.closingOverride !== '') ? Number(e.closingOverride) : undefined;
-        // Compare against original server values
-        const origBottleSize = orig.qty ?? 0;
-        const origSale = orig.sold ?? 0;
-        const origPurchaseRate = orig.purchaseCost ?? 0;
-        const origSellingPrice = orig.sellingPrice ?? 0;
-        const origIsHidden = orig.isHidden === true;
-        const origClosing = orig.closing ?? 0;
-        const origClosingOverride = (Math.round(origClosing * 100) / 100 !== Math.round(((orig.opening ?? 0) + (orig.received ?? 0) - (orig.sold ?? 0)) * 100) / 100) ? origClosing : undefined;
-        // Only include if something changed
+        // Compare ONLY base fields against original server values (with tolerance)
         const changed =
-          (bottleSize != null && bottleSize !== origBottleSize) ||
-          (sale !== origSale) ||
-          (purchaseRate != null && purchaseRate !== origPurchaseRate) ||
-          (sellingPrice != null && sellingPrice !== origSellingPrice) ||
-          (isHidden !== origIsHidden) ||
-          (closingOverride != null && closingOverride !== origClosingOverride);
+          (bottleSize != null && !numEq(bottleSize, orig.qty)) ||
+          !numEq(sale, orig.sold ?? 0) ||
+          (purchaseRate != null && !numEq(purchaseRate, orig.purchaseCost)) ||
+          (sellingPrice != null && !numEq(sellingPrice, orig.sellingPrice)) ||
+          (isHidden !== (orig.isHidden === true)) ||
+          (closingOverride != null && !numEq(closingOverride, orig.closing));
         if (!changed) continue;
         nonAcItemsPayload.push({
           itemId: item.itemId,
@@ -659,53 +659,40 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           closingOverride,
         });
       }
-      // AC adjustments payload — only send items that actually changed
+      // AC adjustments payload — only send items where BASE fields changed
       const acAdjustmentsPayload = [];
       for (const item of allComputedAcItems) {
         const e = acItemEdits[item.itemId] || {};
         const orig = data.acItems?.find(i => i.itemId === item.itemId);
         if (!orig) continue;
+        // Current base values (with edits applied)
         const adjustedSaleBtl = numOrUndef(item.sold) ?? 0;
         const adjustedPurchaseCost = numOrUndef(e.purchaseCost ?? item.purchaseCost);
         const adjustedSellingPrice = numOrUndef(e.sellingPrice ?? item.sellingPrice);
         const adjustedBottleSize = numOrUndef(e.qty ?? item.qty);
-        const adjustedConsumption = item.consumption;
-        const adjustedSaleAmount = item.saleAmount;
-        const adjustedProfit = item.profit;
         const isHidden = acHiddenFlags[item.itemId] === true;
-        const adjustedClosingBtl = Number(item.closing) || 0;
-        // Compare against original server values
-        const origSale = orig.sold ?? 0;
-        const origPurchaseCost = orig.purchaseCost ?? 0;
-        const origSellingPrice = orig.sellingPrice ?? 0;
-        const origBottleSize = orig.qty ?? 0;
-        const origConsumption = orig.consumption ?? 0;
-        const origSaleAmount = orig.saleAmount ?? 0;
-        const origProfit = orig.profit ?? 0;
-        const origIsHidden = orig.isHidden === true;
-        const origClosing = orig.closing ?? 0;
+        // Compare ONLY base fields (NOT computed consumption/saleAmount/profit/closing
+        // which have floating-point rounding differences vs the backend)
         const changed =
-          (adjustedSaleBtl !== origSale) ||
-          (adjustedPurchaseCost != null && adjustedPurchaseCost !== origPurchaseCost) ||
-          (adjustedSellingPrice != null && adjustedSellingPrice !== origSellingPrice) ||
-          (adjustedBottleSize != null && adjustedBottleSize !== origBottleSize) ||
-          (adjustedConsumption !== origConsumption) ||
-          (adjustedSaleAmount !== origSaleAmount) ||
-          (adjustedProfit !== origProfit) ||
-          (isHidden !== origIsHidden) ||
-          (adjustedClosingBtl !== origClosing);
+          !numEq(adjustedSaleBtl, orig.sold ?? 0) ||
+          (adjustedPurchaseCost != null && !numEq(adjustedPurchaseCost, orig.purchaseCost)) ||
+          (adjustedSellingPrice != null && !numEq(adjustedSellingPrice, orig.sellingPrice)) ||
+          (adjustedBottleSize != null && !numEq(adjustedBottleSize, orig.qty)) ||
+          (isHidden !== (orig.isHidden === true));
         if (!changed) continue;
+        // Include computed fields for the backend to store (they'll be recalculated
+        // correctly from the base fields on the backend side anyway)
         acAdjustmentsPayload.push({
           itemId: item.itemId,
           adjustedSaleBtl,
           adjustedPurchaseCost,
           adjustedSellingPrice,
           adjustedBottleSize,
-          adjustedConsumption,
-          adjustedSaleAmount,
-          adjustedProfit,
+          adjustedConsumption: item.consumption,
+          adjustedSaleAmount: item.saleAmount,
+          adjustedProfit: item.profit,
           isHidden,
-          adjustedClosingBtl,
+          adjustedClosingBtl: Number(item.closing) || 0,
         });
       }
 
