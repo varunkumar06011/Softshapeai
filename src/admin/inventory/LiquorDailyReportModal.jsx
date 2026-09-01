@@ -264,33 +264,15 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           : { fromDate: date, toDate: date };
         const combined = await fetchCombinedInventory(combinedOpts);
         if (combined?.summary) {
-          // Merge the combined API's 16-field summary into the liquor report's summary
-          // BUT: the liquor report API already includes saved summary overrides
-          // (stored as __SUMMARY__ in liquorReportNonAcEntry). The combined API
-          // does NOT know about these overrides. So we must NOT let the combined
-          // API overwrite fields that the admin has manually overridden.
-          // Strategy: use combined API as the base, then re-apply liquor report's
-          // saved overrides on top so they take precedence.
-          const savedOverrides = json.summary || {};
-          json.summary = { ...combined.summary };
-          // Re-apply saved summary overrides from the liquor report API on top
-          // of the combined API values. The liquor report backend already
-          // applied overrides to json.summary before we overwrote it, so we
-          // need to extract the override values and apply them again.
-          // The liquor report API applies overrides to the same field names
-          // (openingStockValue, purchaseValue, consumption, etc.), so any
-          // field in savedOverrides that differs from combined.summary is
-          // an admin override.
-          for (const key of Object.keys(savedOverrides)) {
-            const savedVal = savedOverrides[key];
-            const combinedVal = json.summary[key];
-            // If the saved value differs from the combined API value, it's
-            // an admin override — keep it.
-            if (savedVal != null && !Number.isNaN(Number(savedVal)) &&
-                (combinedVal == null || Number(savedVal) !== Number(combinedVal))) {
-              json.summary[key] = savedVal;
-            }
-          }
+          // The combined API returns raw computed values WITHOUT admin overrides.
+          // The liquor report API returns summaryOverrides separately (raw saved
+          // values). We use combined.summary as the base and apply overrides on
+          // top so the admin's saved Business Position values take precedence.
+          const overrides = json.summaryOverrides || {};
+          json.summary = {
+            ...combined.summary,
+            ...overrides,  // saved overrides win over combined API computed values
+          };
           // Also store the combined items count for debugging
           json._combinedItemsCount = combined.items?.length || 0;
         }
