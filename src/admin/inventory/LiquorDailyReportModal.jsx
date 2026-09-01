@@ -191,6 +191,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const [hasPendingEdits, setHasPendingEdits] = useState(false);
   // Ref to prevent duplicate save submissions while one is in flight
   const saveInFlightRef = useRef(false);
+  // Ref to skip the auto-save effect right after loadData() populates edit
+  // states from server data. Without this, loadData() fills nonAcItemEdits
+  // etc. with ~200 items, the auto-save effect sees non-empty states, and
+  // immediately writes them to localStorage → false "Unsaved" badge.
+  const skipAutoSaveRef = useRef(false);
 
   // ── localStorage persistence for failure-safe saves ──
   // Key: unique per date + restaurant. Stores ALL edit state so it survives
@@ -379,6 +384,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // Restore summary overrides from the response (already applied to summary by backend)
       // We don't set summaryEdits here because the backend already applied them to summary values.
       // The inputs will show the backend-provided values (which include overrides).
+      // ── Skip the next auto-save effect run ──
+      // loadData() just populated edit states from server data — these are NOT
+      // user edits. Without this flag, the auto-save effect would immediately
+      // write them to localStorage and show a false "Unsaved" badge.
+      skipAutoSaveRef.current = true;
       return json;
     } catch (err) {
       setError(err.message || 'Failed to load report');
@@ -394,8 +404,14 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   // ── Auto-save edit state to localStorage on every change ──
   // This ensures pending edits survive page refresh, timeout, or any failure.
   // Only runs after data is loaded (don't save empty initial state).
+  // SKIP: right after loadData() populates edit states from server data,
+  // skip one run to avoid treating server-initialized values as user edits.
   useEffect(() => {
     if (!open || !data || !pendingKey) return;
+    if (skipAutoSaveRef.current) {
+      skipAutoSaveRef.current = false;
+      return;
+    }
     // Don't save if all edit states are empty (initial load before any edit)
     const hasAnyEdit =
       Object.keys(nonAcItemEdits).length > 0 ||
@@ -747,18 +763,10 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setTimeout(() => setSavedMsg(false), 3000);
       // ── ONLY clear pending edits after confirmed successful save ──
       clearPendingFromStorage();
-      // ── Clear ALL edit states so the auto-save useEffect doesn't re-fire ──
-      // The saved values are now in the backend data (refetched below).
-      // Without this, summaryEdits/nonAcItemEdits/acItemEdits remain populated
-      // and the auto-save effect re-marks the report as "unsaved" immediately.
-      setNonAcItemEdits({});
-      setAcItemEdits({});
-      setNonAcHiddenFlags({});
-      setAcHiddenFlags({});
-      setEdits({});
-      setSummaryEdits({});
       // Reload data to reflect saved state and AWAIT it so the caller
       // (handleSaveAndPrint) gets the fresh data for PDF generation.
+      // loadData() will re-populate edit states from server data and set
+      // skipAutoSaveRef so the auto-save effect doesn't false-trigger.
       const freshJson = await loadData();
       // Notify parent (original inventory screen) to refresh its data
       // so both screens stay synchronized.
