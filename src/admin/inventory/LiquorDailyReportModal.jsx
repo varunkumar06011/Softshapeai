@@ -27,6 +27,7 @@ import { X, Printer, AlertTriangle, FileText, Save, CheckCircle } from 'lucide-r
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { apiUrl, getAuthHeaders } from '../../services/apiConfig';
+import { fetchCombinedInventory, toggleAcItemHide, toggleNonAcItemHide } from '../../services/barInventoryApi';
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
@@ -234,6 +235,27 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         throw new Error(body.error || `Request failed (${res.status})`);
       }
       const json = await res.json();
+
+      // ── Also fetch the combined API (same as main Inventory screen) ──
+      // This ensures the Business Position cards use the EXACT same calculation
+      // as the main Inventory screen — one source of truth.
+      try {
+        const combinedOpts = endDate && endDate !== date
+          ? { fromDate: date, toDate: endDate }
+          : { fromDate: date, toDate: date };
+        const combined = await fetchCombinedInventory(combinedOpts);
+        if (combined?.summary) {
+          // Merge the combined API's 16-field summary into the liquor report's summary
+          // The combined API uses the correct field names (openingStockValue, acSales, etc.)
+          json.summary = { ...json.summary, ...combined.summary };
+          // Also store the combined items count for debugging
+          json._combinedItemsCount = combined.items?.length || 0;
+        }
+      } catch (combinedErr) {
+        // Non-fatal: if the combined API fails, fall back to liquor report data
+        console.warn('[LiquorReport] Combined API fetch failed, using liquor report summary:', combinedErr);
+      }
+
       setData(json);
       // Initialize edits from POS data + saved Non-AC entries
       const init = {};
@@ -499,11 +521,15 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     return { consumption, saleAmount, profit, profitMarginPct, opening, purchases, totalStock, sold, closing };
   }, [computedAcItems]);
 
-  // ── Business Position — derived from item-wise totals (live) ──
-  // The Business Position cards derive from the item-wise AC + Non-AC tables
-  // so that editing any item row (sale, purchase cost, selling price, stock) updates
-  // the summary cards simultaneously. Summary overrides (manual card edits)
-  // still take precedence via the pick() helper.
+  // ── Business Position — uses the SAME combined API summary as the main Inventory screen ──
+  // The base values come from data.summary (fetched from /non-ac/combined — the same
+  // endpoint the main Inventory screen uses). This ensures both screens show identical
+  // Business Position values for the same outlet + date.
+  //
+  // When the admin edits item rows (sale, purchase cost, selling price, stock), the
+  // summary is recomputed from the live item arrays so the cards update in real time.
+  // When there are no live edits, the combined API values are used as-is.
+  // Summary overrides (manual card edits) always take precedence.
   //
   // 16 fields per spec:
   //   Opening Stock Value, Purchase Value, Consumption, Closing Stock Value,
@@ -513,7 +539,21 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const computed = useMemo(() => {
     if (!data) return null;
 
-    // Item-wise totals drive the Business Position
+    // The combined API summary (from /non-ac/combined — same as main Inventory screen)
+    const combinedSummary = data.summary || {};
+
+    // Check if there are any live item edits that would change the summary
+    const hasAcEdits = Object.keys(acItemEdits).some(id => {
+      const e = acItemEdits[id];
+      return e && (e.purchaseCost != null || e.sellingPrice != null || e.qty != null);
+    });
+    const hasNonAcEdits = Object.keys(nonAcItemEdits).some(id => {
+      const e = nonAcItemEdits[id];
+      return e && (e.purchaseCost != null || e.sellingPrice != null || e.qty != null || e.sold != null);
+    });
+    const hasLiveEdits = hasAcEdits || hasNonAcEdits;
+
+    // Item-wise totals (used when there are live edits, or as fallback)
     const totalAcRevenue = computedAcTotals.saleAmount;
     const totalNonAcRevenue = computedNonAcTotals.saleAmount;
     const totalAcConsumptionCost = computedAcTotals.consumption;
@@ -521,66 +561,72 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     const totalAcProfit = computedAcTotals.profit;
     const totalNonAcProfit = computedNonAcTotals.profit;
 
-    // Opening Stock Value = sum(opening bottles × purchase cost) across all visible items
+    // Recomputed values from live item arrays
     const computedOpeningStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
       return s + (Number(i.opening) || 0) * (Number(i.purchaseCost) || 0);
     }, 0);
-
-    // Purchase Value = sum(purchases × purchase cost) across all visible items
     const computedPurchaseValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
       return s + (Number(i.purchases) || 0) * (Number(i.purchaseCost) || 0);
     }, 0);
-
-    // Consumption = sum(sold bottles × purchase cost) across all visible items
     const computedConsumption = totalAcConsumptionCost + totalNonAcConsumptionCost;
-
-    // Closing Stock Value = sum(closing bottles × purchase cost) across all visible items
     const computedClosingStockValue = [...computedAcItems, ...computedNonAcItems].reduce((s, i) => {
       return s + (Number(i.closing) || 0) * (Number(i.purchaseCost) || 0);
     }, 0);
-
-    // AC Profit % = AC Profit ÷ AC Sales × 100
     const computedAcProfitPct = totalAcRevenue > 0 ? (totalAcProfit / totalAcRevenue) * 100 : 0;
-    // Non-AC Profit % = Non-AC Profit ÷ Non-AC Sales × 100
     const computedNonAcProfitPct = totalNonAcRevenue > 0 ? (totalNonAcProfit / totalNonAcRevenue) * 100 : 0;
-
-    // Total Sales = AC Sales + Non-AC Sales
     const computedTotalSales = totalAcRevenue + totalNonAcRevenue;
-    // Total Consumption = AC Consumption + Non-AC Consumption
     const computedTotalConsumption = computedConsumption;
-    // Total Profit = AC Profit + Non-AC Profit
     const computedTotalProfit = totalAcProfit + totalNonAcProfit;
-    // Total Profit % = Total Profit ÷ Total Sales × 100
     const computedTotalProfitPct = computedTotalSales > 0 ? (computedTotalProfit / computedTotalSales) * 100 : 0;
 
+    // Determine the base values:
+    // - If there are live edits → recompute from item arrays (so cards update in real time)
+    // - If no live edits → use the combined API summary (same as main Inventory screen)
+    const baseOpeningStockValue = hasLiveEdits ? computedOpeningStockValue : (combinedSummary.openingStockValue ?? computedOpeningStockValue);
+    const basePurchaseValue = hasLiveEdits ? computedPurchaseValue : (combinedSummary.purchaseValue ?? computedPurchaseValue);
+    const baseConsumption = hasLiveEdits ? computedConsumption : (combinedSummary.consumption ?? computedConsumption);
+    const baseClosingStockValue = hasLiveEdits ? computedClosingStockValue : (combinedSummary.closingStockValue ?? computedClosingStockValue);
+    const baseAcSales = hasLiveEdits ? totalAcRevenue : (combinedSummary.acSales ?? totalAcRevenue);
+    const baseAcConsumption = hasLiveEdits ? totalAcConsumptionCost : (combinedSummary.acConsumption ?? totalAcConsumptionCost);
+    const baseAcProfit = hasLiveEdits ? totalAcProfit : (combinedSummary.acProfit ?? totalAcProfit);
+    const baseAcProfitPct = hasLiveEdits ? computedAcProfitPct : (combinedSummary.acProfitPct ?? computedAcProfitPct);
+    const baseNonAcSales = hasLiveEdits ? totalNonAcRevenue : (combinedSummary.nonAcSales ?? totalNonAcRevenue);
+    const baseNonAcConsumption = hasLiveEdits ? totalNonAcConsumptionCost : (combinedSummary.nonAcConsumption ?? totalNonAcConsumptionCost);
+    const baseNonAcProfit = hasLiveEdits ? totalNonAcProfit : (combinedSummary.nonAcProfit ?? totalNonAcProfit);
+    const baseNonAcProfitPct = hasLiveEdits ? computedNonAcProfitPct : (combinedSummary.nonAcProfitPct ?? computedNonAcProfitPct);
+    const baseTotalSales = hasLiveEdits ? computedTotalSales : (combinedSummary.totalSales ?? computedTotalSales);
+    const baseTotalConsumption = hasLiveEdits ? computedTotalConsumption : (combinedSummary.totalConsumption ?? computedTotalConsumption);
+    const baseTotalProfit = hasLiveEdits ? computedTotalProfit : (combinedSummary.totalProfit ?? computedTotalProfit);
+    const baseTotalProfitPct = hasLiveEdits ? computedTotalProfitPct : (combinedSummary.totalProfitPct ?? computedTotalProfitPct);
+
     // Apply summary overrides — every business position card is editable.
-    // If a field has been edited, use the edited value; otherwise use computed.
+    // If a field has been manually edited via the card input, use the edited value.
     const s = summaryEdits;
     const pick = (field, fallback) => (s[field] != null && s[field] !== '' && !Number.isNaN(Number(s[field]))) ? Number(s[field]) : fallback;
 
     const summary = {
-      ...data.summary,
+      ...combinedSummary,
       // ── 16 Business Position fields ──
-      openingStockValue: pick('openingStockValue', computedOpeningStockValue),
-      purchaseValue: pick('purchaseValue', computedPurchaseValue),
-      consumption: pick('consumption', computedConsumption),
-      closingStockValue: pick('closingStockValue', computedClosingStockValue),
-      acSales: pick('acSales', data.summary?.acSales ?? totalAcRevenue),
-      acConsumption: pick('acConsumption', totalAcConsumptionCost),
-      acProfit: pick('acProfit', totalAcProfit),
-      acProfitPct: pick('acProfitPct', computedAcProfitPct),
-      nonAcSales: pick('nonAcSales', totalNonAcRevenue),
-      nonAcConsumption: pick('nonAcConsumption', totalNonAcConsumptionCost),
-      nonAcProfit: pick('nonAcProfit', totalNonAcProfit),
-      nonAcProfitPct: pick('nonAcProfitPct', computedNonAcProfitPct),
-      totalSales: pick('totalSales', computedTotalSales),
-      totalConsumption: pick('totalConsumption', computedTotalConsumption),
-      totalProfit: pick('totalProfit', computedTotalProfit),
-      totalProfitPct: pick('totalProfitPct', computedTotalProfitPct),
+      openingStockValue: pick('openingStockValue', baseOpeningStockValue),
+      purchaseValue: pick('purchaseValue', basePurchaseValue),
+      consumption: pick('consumption', baseConsumption),
+      closingStockValue: pick('closingStockValue', baseClosingStockValue),
+      acSales: pick('acSales', baseAcSales),
+      acConsumption: pick('acConsumption', baseAcConsumption),
+      acProfit: pick('acProfit', baseAcProfit),
+      acProfitPct: pick('acProfitPct', baseAcProfitPct),
+      nonAcSales: pick('nonAcSales', baseNonAcSales),
+      nonAcConsumption: pick('nonAcConsumption', baseNonAcConsumption),
+      nonAcProfit: pick('nonAcProfit', baseNonAcProfit),
+      nonAcProfitPct: pick('nonAcProfitPct', baseNonAcProfitPct),
+      totalSales: pick('totalSales', baseTotalSales),
+      totalConsumption: pick('totalConsumption', baseTotalConsumption),
+      totalProfit: pick('totalProfit', baseTotalProfit),
+      totalProfitPct: pick('totalProfitPct', baseTotalProfitPct),
     };
 
     return { ...data, categories: data.categories || [], summary };
-  }, [data, summaryEdits, computedAcTotals, computedNonAcTotals, computedAcItems, computedNonAcItems]);
+  }, [data, summaryEdits, computedAcTotals, computedNonAcTotals, computedAcItems, computedNonAcItems, acItemEdits, nonAcItemEdits]);
 
   // ── Save item-wise edits to backend + summary overrides ──
   // Returns fresh JSON on success, false on failure
@@ -844,20 +890,36 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     });
   };
 
-  // Toggle hide/show for an AC item — persisted on InventoryItem.isHiddenFromReport
-  const handleAcItemToggleHide = (itemId) => {
-    setAcHiddenFlags(prev => ({
-      ...prev,
-      [itemId]: !prev[itemId],
-    }));
+  // Toggle hide/show for an AC item — persists IMMEDIATELY to InventoryItem.isHiddenFromReport
+  // The hidden status is stored on the item master (not per-date), so it persists
+  // across all dates, refreshes, and logout/login cycles.
+  const handleAcItemToggleHide = async (itemId) => {
+    const newHidden = !acHiddenFlags[itemId];
+    // Optimistic update: toggle immediately in UI
+    setAcHiddenFlags(prev => ({ ...prev, [itemId]: newHidden }));
+    try {
+      await toggleAcItemHide(itemId, newHidden);
+    } catch (err) {
+      // Revert on failure
+      console.error('[LiquorReport] Failed to persist AC hide toggle:', err);
+      setAcHiddenFlags(prev => ({ ...prev, [itemId]: !newHidden }));
+      alert('Failed to update hide status. Please try again.');
+    }
   };
 
-  // Toggle hide/show for a Non-AC item — persisted on NonAcInventoryItem.isHiddenFromReport
-  const handleNonAcItemToggleHide = (itemId) => {
-    setNonAcHiddenFlags(prev => ({
-      ...prev,
-      [itemId]: !prev[itemId],
-    }));
+  // Toggle hide/show for a Non-AC item — persists IMMEDIATELY to NonAcInventoryItem.isHiddenFromReport
+  const handleNonAcItemToggleHide = async (itemId) => {
+    const newHidden = !nonAcHiddenFlags[itemId];
+    // Optimistic update: toggle immediately in UI
+    setNonAcHiddenFlags(prev => ({ ...prev, [itemId]: newHidden }));
+    try {
+      await toggleNonAcItemHide(itemId, newHidden);
+    } catch (err) {
+      // Revert on failure
+      console.error('[LiquorReport] Failed to persist Non-AC hide toggle:', err);
+      setNonAcHiddenFlags(prev => ({ ...prev, [itemId]: !newHidden }));
+      alert('Failed to update hide status. Please try again.');
+    }
   };
 
   if (!open) return null;

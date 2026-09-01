@@ -248,6 +248,28 @@ export async function deleteInventoryItem(id) {
   return parseResponse(res);
 }
 
+// Toggle hide/show for an AC inventory item in the PDF report
+// Persists immediately to InventoryItem.isHiddenFromReport in the database
+export async function toggleAcItemHide(id, isHidden) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/items/${id}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ isHiddenFromReport: isHidden }),
+  });
+  return parseResponse(res);
+}
+
+// Toggle hide/show for a Non-AC inventory item in the PDF report
+// Persists immediately to NonAcInventoryItem.isHiddenFromReport in the database
+export async function toggleNonAcItemHide(id, isHidden) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/items/${id}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ isHiddenFromReport: isHidden }),
+  });
+  return parseResponse(res);
+}
+
 // Adjust stock (manual adjustment)
 // data.requestId (optional) — UUID for idempotency; if provided, server deduplicates
 // retries with the same requestId via ProcessedRequest.
