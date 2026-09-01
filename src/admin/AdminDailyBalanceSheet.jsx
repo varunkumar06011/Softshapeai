@@ -1156,8 +1156,25 @@ export default function AdminDailyBalanceSheet() {
     setStatusLoading(true);
     setError(null);
     try {
+      // 1. Save all pending edits before generating the image so values
+      //    persist after refresh and the image reflects the saved state.
+      if (dirty && !isLocked) {
+        await doSave();
+      }
+      // Persist any bank balance rows that haven't been saved yet
+      // (temp IDs or null seed IDs that were never blurred).
+      await Promise.all(
+        bankBalancesRef.current
+          .filter((b) => !b.id || String(b.id).startsWith('temp-'))
+          .map((b) => persistBankBalance(b).catch(() => null))
+      );
+      // Persist liquor consumption if dirty
+      if (dirty) {
+        await persistLiquorConsumption().catch(() => null);
+      }
+
       const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
-      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}`;
+      const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\nFinal Balance: ₹${bankBalanceComputed.finalBalance.toLocaleString('en-IN')}`;
 
       // Generate PNG from the template
       const dateObj = new Date(selectedDate + 'T00:00:00');
@@ -1222,6 +1239,20 @@ export default function AdminDailyBalanceSheet() {
           bankName: b.bankName,
           amount: Number(b.amount) || 0,
         })),
+        // Bank-wise Balance (separate from Bank Collection)
+        bankBalances: bankBalanceComputed.rows.map(b => ({
+          bankName: b.bankName,
+          accountBalance: b.accountBalance,
+          minimumBalance: b.minimumBalance,
+          canUse: b.canUse,
+        })),
+        bankBalanceTotals: {
+          totalAccountBalance: bankBalanceComputed.totalAccountBalance,
+          totalMinimumBalance: bankBalanceComputed.totalMinimumBalance,
+          totalCanUse: bankBalanceComputed.totalCanUse,
+        },
+        liquorConsumption: liquorConsumption || 0,
+        finalBalance: bankBalanceComputed.finalBalance,
       };
 
       const container = document.createElement('div');
@@ -1238,9 +1269,9 @@ export default function AdminDailyBalanceSheet() {
         const { createRoot } = await import('react-dom/client');
         const root = createRoot(container);
         root.render(
-          <BalanceSheetReportTemplate 
-            data={templateData} 
-            logoSrc={logoBase64 || '/logo softshape.ai.png'} 
+          <BalanceSheetReportTemplate
+            data={templateData}
+            logoSrc={logoBase64 || '/logo softshape.ai.png'}
           />
         );
 
