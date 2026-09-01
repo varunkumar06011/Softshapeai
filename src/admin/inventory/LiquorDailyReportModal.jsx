@@ -286,15 +286,23 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           nonAcLandingCost: c.nonAcConsumptionCost || 0,
         };
       }
-      // Also include any saved entries for categories not in POS data
+      // Merge saved Non-AC entries into ALL categories (not just new ones).
+      // Previously only categories NOT in POS data got saved values restored.
+      // Categories WITH POS data kept POS-derived nonAcSales=0, ignoring the
+      // admin's saved values → "business entries overridden with old entries".
       for (const e of (json.nonAcEntries || [])) {
-        if (e.categoryName !== 'TOTAL' && !init[e.categoryName]) {
+        if (e.categoryName === 'TOTAL') continue;
+        if (!init[e.categoryName]) {
           init[e.categoryName] = {
             acSales: 0,
             acLandingCost: 0,
             nonAcSales: e.nonAcSales || 0,
             nonAcLandingCost: e.nonAcLandingCost || 0,
           };
+        } else {
+          // Override POS-derived non-ac values with the admin's saved values
+          init[e.categoryName].nonAcSales = e.nonAcSales || 0;
+          init[e.categoryName].nonAcLandingCost = e.nonAcLandingCost || 0;
         }
       }
       setEdits(init);
@@ -763,6 +771,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setTimeout(() => setSavedMsg(false), 3000);
       // ── ONLY clear pending edits after confirmed successful save ──
       clearPendingFromStorage();
+      // ── Clear summaryEdits so stale card overrides don't persist ──
+      // The saved values are now in the backend data (refetched below).
+      // Without this, summaryEdits keeps old values and the `computed`
+      // useMemo uses them OVER the fresh backend values.
+      setSummaryEdits({});
       // Reload data to reflect saved state and AWAIT it so the caller
       // (handleSaveAndPrint) gets the fresh data for PDF generation.
       // loadData() will re-populate edit states from server data and set
