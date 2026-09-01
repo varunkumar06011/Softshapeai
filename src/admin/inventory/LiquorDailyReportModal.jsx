@@ -616,49 +616,105 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       };
 
       // Build item-wise payloads from edits
-      // Non-AC payload — include ALL items (visible + hidden) so that
-      // selling prices and hide/show flags are persisted for every item.
-      // IMPORTANT: Only send fields that have a valid value. Empty/undefined
-      // fields are sent as undefined so the backend skips them and preserves
-      // previously saved values.
-      const nonAcItemsPayload = allComputedNonAcItems.map((item) => {
+      // OPTIMIZATION: Only send items that actually changed (dirty checking).
+      // Previously sent ALL 200+ items on every save, causing 600+ DB operations
+      // per save. Now we compare current edit values against original server
+      // data and only include items where something actually differs.
+      const nonAcItemsPayload = [];
+      for (const item of allComputedNonAcItems) {
         const e = nonAcItemEdits[item.itemId] || {};
-        return {
+        const orig = data.nonAcItems?.find(i => i.itemId === item.itemId);
+        if (!orig) continue;
+        // Check if anything changed compared to server data
+        const bottleSize = numOrUndef(e.qty ?? item.qty);
+        const sale = numOrUndef(item.sold) ?? 0;
+        const purchaseRate = numOrUndef(e.purchaseCost ?? item.purchaseCost);
+        const sellingPrice = numOrUndef(e.sellingPrice ?? item.sellingPrice);
+        const isHidden = nonAcHiddenFlags[item.itemId] === true;
+        const closingOverride = (e.closingOverride != null && e.closingOverride !== '') ? Number(e.closingOverride) : undefined;
+        // Compare against original server values
+        const origBottleSize = orig.qty ?? 0;
+        const origSale = orig.sold ?? 0;
+        const origPurchaseRate = orig.purchaseCost ?? 0;
+        const origSellingPrice = orig.sellingPrice ?? 0;
+        const origIsHidden = orig.isHidden === true;
+        const origClosing = orig.closing ?? 0;
+        const origClosingOverride = (Math.round(origClosing * 100) / 100 !== Math.round(((orig.opening ?? 0) + (orig.received ?? 0) - (orig.sold ?? 0)) * 100) / 100) ? origClosing : undefined;
+        // Only include if something changed
+        const changed =
+          (bottleSize != null && bottleSize !== origBottleSize) ||
+          (sale !== origSale) ||
+          (purchaseRate != null && purchaseRate !== origPurchaseRate) ||
+          (sellingPrice != null && sellingPrice !== origSellingPrice) ||
+          (isHidden !== origIsHidden) ||
+          (closingOverride != null && closingOverride !== origClosingOverride);
+        if (!changed) continue;
+        nonAcItemsPayload.push({
           itemId: item.itemId,
-          bottleSize: numOrUndef(e.qty ?? item.qty),
-          sale: numOrUndef(item.sold) ?? 0,
-          purchaseRate: numOrUndef(e.purchaseCost ?? item.purchaseCost),
-          sellingPrice: numOrUndef(e.sellingPrice ?? item.sellingPrice),
-          isHidden: nonAcHiddenFlags[item.itemId] === true,
-          // Send closingOverride only when admin has manually edited closing
-          closingOverride: (e.closingOverride != null && e.closingOverride !== '') ? Number(e.closingOverride) : undefined,
-        };
-      });
-      // AC adjustments payload — include ALL items (visible + hidden) so that
-      // selling prices and hide/show flags are persisted for every item.
-      const acAdjustmentsPayload = allComputedAcItems.map((item) => {
+          bottleSize,
+          sale,
+          purchaseRate,
+          sellingPrice,
+          isHidden,
+          closingOverride,
+        });
+      }
+      // AC adjustments payload — only send items that actually changed
+      const acAdjustmentsPayload = [];
+      for (const item of allComputedAcItems) {
         const e = acItemEdits[item.itemId] || {};
-        return {
+        const orig = data.acItems?.find(i => i.itemId === item.itemId);
+        if (!orig) continue;
+        const adjustedSaleBtl = numOrUndef(item.sold) ?? 0;
+        const adjustedPurchaseCost = numOrUndef(e.purchaseCost ?? item.purchaseCost);
+        const adjustedSellingPrice = numOrUndef(e.sellingPrice ?? item.sellingPrice);
+        const adjustedBottleSize = numOrUndef(e.qty ?? item.qty);
+        const adjustedConsumption = item.consumption;
+        const adjustedSaleAmount = item.saleAmount;
+        const adjustedProfit = item.profit;
+        const isHidden = acHiddenFlags[item.itemId] === true;
+        const adjustedClosingBtl = Number(item.closing) || 0;
+        // Compare against original server values
+        const origSale = orig.sold ?? 0;
+        const origPurchaseCost = orig.purchaseCost ?? 0;
+        const origSellingPrice = orig.sellingPrice ?? 0;
+        const origBottleSize = orig.qty ?? 0;
+        const origConsumption = orig.consumption ?? 0;
+        const origSaleAmount = orig.saleAmount ?? 0;
+        const origProfit = orig.profit ?? 0;
+        const origIsHidden = orig.isHidden === true;
+        const origClosing = orig.closing ?? 0;
+        const changed =
+          (adjustedSaleBtl !== origSale) ||
+          (adjustedPurchaseCost != null && adjustedPurchaseCost !== origPurchaseCost) ||
+          (adjustedSellingPrice != null && adjustedSellingPrice !== origSellingPrice) ||
+          (adjustedBottleSize != null && adjustedBottleSize !== origBottleSize) ||
+          (adjustedConsumption !== origConsumption) ||
+          (adjustedSaleAmount !== origSaleAmount) ||
+          (adjustedProfit !== origProfit) ||
+          (isHidden !== origIsHidden) ||
+          (adjustedClosingBtl !== origClosing);
+        if (!changed) continue;
+        acAdjustmentsPayload.push({
           itemId: item.itemId,
-          adjustedSaleBtl: numOrUndef(item.sold) ?? 0,
-          adjustedPurchaseCost: numOrUndef(e.purchaseCost ?? item.purchaseCost),
-          adjustedSellingPrice: numOrUndef(e.sellingPrice ?? item.sellingPrice),
-          adjustedBottleSize: numOrUndef(e.qty ?? item.qty),
-          adjustedConsumption: item.consumption,
-          adjustedSaleAmount: item.saleAmount,
-          adjustedProfit: item.profit,
-          isHidden: acHiddenFlags[item.itemId] === true,
-          adjustedClosingBtl: Number(item.closing) || 0,
-        };
-      });
+          adjustedSaleBtl,
+          adjustedPurchaseCost,
+          adjustedSellingPrice,
+          adjustedBottleSize,
+          adjustedConsumption,
+          adjustedSaleAmount,
+          adjustedProfit,
+          isHidden,
+          adjustedClosingBtl,
+        });
+      }
 
       // Save item-wise edits (Non-AC to inventory + daily entries, AC to adjustment table)
-      // Use AbortController with a 130s timeout — backend allows 120s for the
-      // transaction, so we give 10s buffer to avoid the frontend aborting
-      // before the backend finishes persisting (which caused false "timeout"
-      // errors even though the save actually completed).
+      // Use AbortController with a 60s timeout — with dirty checking, only changed
+      // items are sent, so the save should complete in a few seconds. If it takes
+      // longer than 60s, something is genuinely wrong.
       const saveController = new AbortController();
-      const saveTimeout = setTimeout(() => saveController.abort(), 130000);
+      const saveTimeout = setTimeout(() => saveController.abort(), 60000);
       let itemWiseRes;
       try {
         itemWiseRes = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
@@ -760,8 +816,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       iframe.style.position = 'fixed';
       iframe.style.left = '-9999px';
       iframe.style.top = '0';
-      iframe.style.width = '1400px';
-      iframe.style.height = '1000px';
+      iframe.style.width = '700px';
+      iframe.style.height = '500px';
       iframe.style.border = 'none';
       iframe.style.background = '#ffffff';
       document.body.appendChild(iframe);
@@ -782,21 +838,22 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
-        windowWidth: 1400,
+        windowWidth: 700,
       });
 
       // Remove the off-screen iframe now that we have the canvas.
       document.body.removeChild(iframe);
 
-      // 5. Convert the canvas to a real PDF with jsPDF (A4 landscape).
+      // 5. Convert the canvas to a real PDF with jsPDF (A6 landscape).
+      //    A6 = 148mm × 105mm (landscape). Compact size for printing.
       const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = 297;  // A4 landscape width in mm
-      const pdfHeight = 210; // A4 landscape height in mm
-      const margin = 5;
+      const pdfWidth = 148;  // A6 landscape width in mm
+      const pdfHeight = 105; // A6 landscape height in mm
+      const margin = 3;
       const usableWidth = pdfWidth - 2 * margin;
       const imgHeight = (canvas.height * usableWidth) / canvas.width;
 
-      const pdf = new jsPDF('l', 'mm', 'a4');
+      const pdf = new jsPDF('l', 'mm', 'a6');
       if (imgHeight <= pdfHeight - 2 * margin) {
         pdf.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight);
       } else {
@@ -1495,15 +1552,15 @@ function buildPrintHtml(data) {
 <title>Liquor Stock & Sales Report — ${escapeHtml(outletName)} — ${date}</title>
 <style>
   @page {
-    size: A4 landscape;
-    margin: 10mm 8mm 12mm 8mm;
+    size: A6 landscape;
+    margin: 4mm 3mm 5mm 3mm;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
     font-family: 'Segoe UI', Arial, sans-serif;
     color: #1a1a1a;
-    font-size: 9px;
-    line-height: 1.3;
+    font-size: 6px;
+    line-height: 1.2;
   }
   .header {
     text-align: center;
@@ -1511,9 +1568,9 @@ function buildPrintHtml(data) {
     padding-bottom: 5px;
     margin-bottom: 8px;
   }
-  .header h1 { font-size: 15px; font-weight: 800; }
-  .header .sub { font-size: 10px; color: #555; margin-top: 1px; }
-  .header .date { font-size: 9px; color: #777; margin-top: 1px; }
+  .header h1 { font-size: 10px; font-weight: 800; }
+  .header .sub { font-size: 7px; color: #555; margin-top: 1px; }
+  .header .date { font-size: 6px; color: #777; margin-top: 1px; }
 
   .info-banner {
     background: #eff6ff;
@@ -1521,12 +1578,12 @@ function buildPrintHtml(data) {
     border-radius: 3px;
     padding: 4px 8px;
     margin-bottom: 8px;
-    font-size: 8px;
+    font-size: 5px;
     color: #1e40af;
   }
 
   .section-title {
-    font-size: 11px;
+    font-size: 8px;
     font-weight: 700;
     margin: 8px 0 4px 0;
     color: #1a1a1a;
@@ -1548,7 +1605,7 @@ function buildPrintHtml(data) {
     background: #f3f4f6;
     text-align: right;
     padding: 3px 4px;
-    font-size: 7.5px;
+    font-size: 5px;
     font-weight: 700;
     text-transform: uppercase;
     color: #4b5563;
@@ -1559,8 +1616,8 @@ function buildPrintHtml(data) {
   th.ac { color: #1e40af; }
   th.nonac { color: #9a3412; }
   td {
-    padding: 3px 4px;
-    font-size: 8.5px;
+    padding: 2px 3px;
+    font-size: 6px;
     border: 1px solid #e5e7eb;
     color: #374151;
     word-wrap: break-word;
@@ -1571,7 +1628,7 @@ function buildPrintHtml(data) {
   td.ac { background: #eff6ff; color: #1e40af; }
   td.nonac { background: #fff7ed; color: #9a3412; }
   .variance-warn { color: #dc2626; font-weight: 700; }
-  .warn { color: #dc2626; font-size: 7px; }
+  .warn { color: #dc2626; font-size: 5px; }
 
   tfoot td {
     background: #f3f4f6;
@@ -1605,7 +1662,7 @@ function buildPrintHtml(data) {
   .bp-card.bp-ac { background: #eff6ff; border-color: #bfdbfe; }
   .bp-card.bp-manual { background: #fff7ed; border-color: #fed7aa; }
   .bp-label {
-    font-size: 6.5px;
+    font-size: 4.5px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.2px;
@@ -1613,8 +1670,8 @@ function buildPrintHtml(data) {
   }
   .bp-badge {
     display: inline-block;
-    font-size: 5.5px;
-    padding: 0 3px;
+    font-size: 4px;
+    padding: 0 2px;
     border-radius: 2px;
     font-weight: 700;
     margin-left: 2px;
@@ -1622,17 +1679,17 @@ function buildPrintHtml(data) {
   .bp-badge.bp-ac { background: #dbeafe; color: #1e40af; }
   .bp-badge.bp-manual { background: #ffedd5; color: #9a3412; }
   .bp-value {
-    font-size: 11px;
+    font-size: 7.5px;
     font-weight: 800;
     color: #111827;
     margin-top: 1px;
   }
 
   .footer {
-    margin-top: 10px;
-    padding-top: 5px;
+    margin-top: 6px;
+    padding-top: 3px;
     border-top: 1px solid #d1d5db;
-    font-size: 7.5px;
+    font-size: 5px;
     color: #6b7280;
     text-align: center;
   }
@@ -1704,12 +1761,12 @@ ${(nonAcItems && nonAcItems.length > 0) ? `
       <td class="num">${fmtInrP(nonAcItemTotals?.profit || 0)}</td>
     </tr>
     <tr>
-      <td colspan="9" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
+      <td colspan="9" class="num" style="text-align:right;font-size:5px;color:#666;">Profit Margin %</td>
       <td class="num" style="font-weight:700;">${fmtPctP(nonAcItemTotals?.profitMarginPct || 0)}</td>
     </tr>
   </tfoot>
 </table>
-` : '<p style="font-size:8px;color:#999;padding:6px 0;">No Non-AC items with activity on this date.</p>'}
+` : '<p style="font-size:5px;color:#999;padding:4px 0;">No Non-AC items with activity on this date.</p>'}
 
 ${/* ── Item-wise AC Bar Table ── */ ''}
 <div class="section-title" style="margin-top:12px;">AC Bar Detailed Item-wise Report</div>
@@ -1756,12 +1813,12 @@ ${(acItems && acItems.length > 0) ? `
       <td class="num">${fmtInrP(acItemTotals?.profit || 0)}</td>
     </tr>
     <tr>
-      <td colspan="9" class="num" style="text-align:right;font-size:7.5px;color:#666;">Profit Margin %</td>
+      <td colspan="9" class="num" style="text-align:right;font-size:5px;color:#666;">Profit Margin %</td>
       <td class="num" style="font-weight:700;">${fmtPctP(acItemTotals?.profitMarginPct || 0)}</td>
     </tr>
   </tfoot>
 </table>
-` : '<p style="font-size:8px;color:#999;padding:6px 0;">No AC items with sales on this date.</p>'}
+` : '<p style="font-size:5px;color:#999;padding:4px 0;">No AC items with sales on this date.</p>'}
 </div><!-- /.detailed-section -->
 
 ${/* ── Per-Bottle Stock Summary section removed per admin request ── */ ''}
