@@ -21,7 +21,7 @@
 //   - PDF contains only the two item-wise tables
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, AlertTriangle, FileText, Save, CheckCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
@@ -81,7 +81,10 @@ function computeReportFromJson(jsonData) {
       const totalStock = opening + purchases;
       const sold = Number(item.sold) || 0;
       const sale = sold;
-      const closing = totalStock - sold;
+      // Use backend-provided closing (reflects saved admin override if any)
+      const closing = Number(item.closing) != null && !Number.isNaN(Number(item.closing))
+        ? Number(item.closing)
+        : totalStock - sold;
       const consumption = sale * purchaseCost;
       const saleAmount = sale * sellingPrice;
       const profit = saleAmount - consumption;
@@ -177,6 +180,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const [savedMsg, setSavedMsg] = useState(false);
   // Track whether there are unsaved (pending) edits restored from localStorage
   const [hasPendingEdits, setHasPendingEdits] = useState(false);
+  // Ref to prevent duplicate save submissions while one is in flight
+  const saveInFlightRef = useRef(false);
 
   // ── localStorage persistence for failure-safe saves ──
   // Key: unique per date + restaurant. Stores ALL edit state so it survives
@@ -281,16 +286,22 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setEdits(init);
 
       // Initialize item-wise edits from database data
-      // Only editable fields: qty, sold, purchaseCost, sellingPrice
+      // Only editable fields: qty, sold, purchaseCost, sellingPrice, closingOverride
       // Opening Stock and Purchases are read-only (from backend)
       const nonAcInit = {};
       const nonAcHiddenInit = {};
       for (const item of (json.nonAcItems || [])) {
+        // Detect if the saved closing is an admin override (differs from auto-calc)
+        const autoClosing = Math.round(((Number(item.opening) || 0) + (Number(item.received) || 0) - (Number(item.sold) || 0)) * 100) / 100;
+        const savedClosing = Math.round((Number(item.closing) || 0) * 100) / 100;
+        const hasOverride = savedClosing !== autoClosing && Number(item.closing) != null;
         nonAcInit[item.itemId] = {
           qty: item.qty ?? 0,
           purchaseCost: item.purchaseCost ?? 0,
           sellingPrice: item.sellingPrice ?? 0,
           sold: item.sold ?? 0,
+          // Restore closing override only if saved closing differs from auto-calc
+          closingOverride: hasOverride ? savedClosing : undefined,
         };
         nonAcHiddenInit[item.itemId] = item.isHidden === true;
       }
@@ -410,11 +421,16 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // Sold is the main editable field
       const sold = Number(edit.sold ?? item.sold) || 0;
       const sale = sold; // sale = sold (same value)
-      const closing = totalStock - sold;
+      // Closing: use admin override if provided, otherwise auto-calc Total Stock - Sold
+      const autoClosing = totalStock - sold;
+      const closing = edit.closingOverride != null && edit.closingOverride !== ''
+        ? Number(edit.closingOverride)
+        : autoClosing;
       const consumption = sale * purchaseCost;
       const saleAmount = sale * sellingPrice;
       const profit = saleAmount - consumption;
       const isHidden = nonAcHiddenFlags[item.itemId] === true;
+      const hasClosingOverride = edit.closingOverride != null && edit.closingOverride !== '' && Number(edit.closingOverride) !== Math.round(autoClosing * 100) / 100;
       return {
         ...item,
         qty,
@@ -432,6 +448,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         totalStock,
         sold,
         closing,
+        hasClosingOverride,
       };
     });
   }, [data, nonAcItemEdits, nonAcHiddenFlags]);
@@ -579,6 +596,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   // Returns fresh JSON on success, false on failure
   const handleSave = async () => {
     if (!data) return false;
+    // Prevent duplicate submissions — if a save is already in flight, ignore
+    if (saveInFlightRef.current) {
+      return false;
+    }
+    saveInFlightRef.current = true;
     setSaving(true);
     setSavedMsg(false);
     setError(null);
@@ -608,6 +630,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           purchaseRate: numOrUndef(e.purchaseCost ?? item.purchaseCost),
           sellingPrice: numOrUndef(e.sellingPrice ?? item.sellingPrice),
           isHidden: nonAcHiddenFlags[item.itemId] === true,
+          // Send closingOverride only when admin has manually edited closing
+          closingOverride: (e.closingOverride != null && e.closingOverride !== '') ? Number(e.closingOverride) : undefined,
         };
       });
       // AC adjustments payload — include ALL items (visible + hidden) so that
@@ -629,10 +653,12 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       });
 
       // Save item-wise edits (Non-AC to inventory + daily entries, AC to adjustment table)
-      // Use AbortController with a 90s timeout so the user gets a clear error
-      // instead of a generic "Failed to fetch" if the server is slow.
+      // Use AbortController with a 130s timeout — backend allows 120s for the
+      // transaction, so we give 10s buffer to avoid the frontend aborting
+      // before the backend finishes persisting (which caused false "timeout"
+      // errors even though the save actually completed).
       const saveController = new AbortController();
-      const saveTimeout = setTimeout(() => saveController.abort(), 90000);
+      const saveTimeout = setTimeout(() => saveController.abort(), 130000);
       let itemWiseRes;
       try {
         itemWiseRes = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
@@ -643,7 +669,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         });
       } catch (fetchErr) {
         if (fetchErr.name === 'AbortError') {
-          throw new Error('Save timed out — the server took too long. Your edits are preserved. Please try again.');
+          throw new Error('Save timed out — the server took too long. Your edits are preserved. The save may have completed on the server; please refresh the date to check before retrying.');
         }
         throw new Error('Network error during save — please check your connection and try again. Your edits are preserved.');
       } finally {
@@ -692,6 +718,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       return false;
     } finally {
       setSaving(false);
+      saveInFlightRef.current = false;
     }
   };
 
@@ -1100,8 +1127,23 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                                 placeholder="0"
                               />
                             </td>
-                            {/* Closing = Total Stock − Sold — auto-calc, read-only */}
-                            <td className="px-2 py-2 text-right text-gray-700 font-medium">{fmtQty(item.closing)}</td>
+                            {/* Closing = Total Stock − Sold — auto-calc, but admin can override */}
+                            <td className="px-2 py-2 text-right bg-orange-50/30">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={nonAcItemEdits[item.itemId]?.closingOverride ?? ''}
+                                onChange={(e) => handleNonAcItemChange(item.itemId, 'closingOverride', e.target.value)}
+                                className={`w-16 text-right text-xs px-1 py-0.5 border rounded focus:outline-none focus:ring-1 ${
+                                  item.hasClosingOverride
+                                    ? 'border-blue-400 bg-blue-50 text-blue-700 font-bold focus:ring-blue-400'
+                                    : 'border-orange-200 text-gray-700 font-medium focus:ring-orange-400'
+                                }`}
+                                placeholder={fmtQty(item.closing)}
+                                title={item.hasClosingOverride ? 'Admin override (auto: ' + fmtQty(item.totalStock - item.sold) + ')' : 'Auto: Total Stock - Sold. Click to override.'}
+                              />
+                            </td>
                             {/* Selling Rate — editable */}
                             <td className="px-3 py-2 text-right bg-orange-50/30">
                               <input
