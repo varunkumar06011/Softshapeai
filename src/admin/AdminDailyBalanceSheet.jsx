@@ -1104,7 +1104,7 @@ export default function AdminDailyBalanceSheet() {
 
       // Capture with html2canvas
       const canvas = await html2canvas(container, {
-        scale: 3,
+        scale: 2,
         width: 900,
         windowWidth: 900,
         useCORS: true,
@@ -1116,17 +1116,16 @@ export default function AdminDailyBalanceSheet() {
       root.unmount();
       document.body.removeChild(container);
 
-      // Convert to PDF — fit content to A4 with dynamic scaling
+      // Convert to PDF — A4 LANDSCAPE for the wide 900px layout
       const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = 210; // A4 width in mm
-      const pdfHeight = 297; // A4 height in mm
+      const pdfWidth = 297; // A4 landscape width in mm
+      const pdfHeight = 210; // A4 landscape height in mm
       const margin = 10;
       const usableWidth = pdfWidth - 2 * margin;
       const imgHeight = (canvas.height * usableWidth) / canvas.width;
-      
-      const doc = new jsPDF('p', 'mm', 'a4');
+
+      const doc = new jsPDF('l', 'mm', 'a4');
       if (imgHeight <= pdfHeight - 2 * margin) {
-        // Fits on one page
         doc.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight);
       } else {
         // Multi-page: split the image across pages
