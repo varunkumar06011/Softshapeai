@@ -14,7 +14,7 @@ import { getAuthHeaders } from '../services/apiConfig';
 import {
   fetchReportCategorywise, fetchReportDailySales, fetchReportPaymentMethods,
 } from '../services/reportsApi.js';
-import { fetchBarInventory, fetchLowStockItems } from '../services/barInventoryApi.js';
+import { fetchCombinedInventory, fetchLowStockItems } from '../services/barInventoryApi.js';
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
 
 function Money({ value }) {
@@ -124,11 +124,11 @@ async function fetchPayrollSummary() {
 
 async function loadDashboardData(dateFilter, outletId) {
   const rid = getCurrentRestaurantId();
-  const [sales, payments, categories, barInventory, lowStock, kitchenInventory, payrollRecords] = await Promise.allSettled([
+  const [sales, payments, categories, combinedInventory, lowStock, kitchenInventory, payrollRecords] = await Promise.allSettled([
     fetchReportDailySales(dateFilter.startDate, dateFilter.endDate, outletId),
     fetchReportPaymentMethods(dateFilter.startDate, dateFilter.endDate, outletId),
     fetchReportCategorywise(dateFilter.startDate, dateFilter.endDate, outletId),
-    fetchBarInventory(),
+    fetchCombinedInventory({ fromDate: dateFilter.startDate, toDate: dateFilter.endDate }),
     fetchLowStockItems(),
     fetchKitchenInventory(),
     fetchPayrollSummary(),
@@ -138,7 +138,7 @@ async function loadDashboardData(dateFilter, outletId) {
     sales: sales.status === 'fulfilled' ? sales.value : null,
     payments: payments.status === 'fulfilled' ? payments.value : null,
     categories: categories.status === 'fulfilled' ? categories.value : null,
-    barInventory: barInventory.status === 'fulfilled' ? barInventory.value : [],
+    combinedInventory: combinedInventory.status === 'fulfilled' ? combinedInventory.value : null,
     lowStock: lowStock.status === 'fulfilled' ? lowStock.value : [],
     kitchenInventory: kitchenInventory.status === 'fulfilled' ? kitchenInventory.value : [],
     payrollRecords: payrollRecords.status === 'fulfilled' ? payrollRecords.value : [],
@@ -179,9 +179,7 @@ export default function OperationsDashboard({ dateFilter, outletId, onDownloadRe
       (i) => Number(i.currentStock || 0) <= Number(i.reorderLevel || 0) && Number(i.reorderLevel || 0) > 0
     ).length;
 
-    const totalInventoryValue = data.barInventory.reduce(
-      (s, i) => s + Number(i.currentStock || 0) * Number(i.costPerBottle || 0), 0
-    );
+    const totalInventoryValue = Number(data.combinedInventory?.summary?.closingStockValue || 0);
 
     return {
       totalRevenue: salesSummary.totalRevenue || 0,
