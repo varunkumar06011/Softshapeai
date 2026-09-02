@@ -561,9 +561,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     return allComputedNonAcItems.filter(i => !i.isHidden);
   }, [allComputedNonAcItems]);
 
-  // All AC items — use backend values directly, no frontend recalculation.
-  // The backend already computes consumption, saleAmount, profit correctly
-  // (including 30ml peg logic for spirits). Frontend just displays them.
+  // All AC items — recalculate dependent fields from edits, same as Non-AC.
+  // On initial load (no edits), use backend values (which include POS revenue
+  // for saleAmount). Once the user edits any field, recalculate consumption,
+  // saleAmount, and profit from the edited values so the UI updates live.
+  // The `sold` field is NOT initialized in acInit (loadData), so
+  // itemEdit?.sold being non-null signals that the user has made at least
+  // one edit (handleAcItemChange always sets defaults including sold).
   const allComputedAcItems = useMemo(() => {
     if (!data) return [];
     return (data.acItems || []).map((item) => {
@@ -578,10 +582,27 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const purchases = Number(item.received) || 0;
       const totalStock = opening + purchases;
       const closing = totalStock - sold;
-      // Use backend computed values directly — do NOT recalculate in frontend
-      const consumption = Number(item.consumption) || 0;
-      const saleAmount = Number(item.saleAmount) || 0;
-      const profit = Number(item.profit) || 0;
+      // Determine whether the user has made any edit to this item.
+      // On initial load, itemEdit exists (from acInit) but sold is undefined
+      // (not set in acInit). After any edit via handleAcItemChange, sold is
+      // set (to backend value or user value). This is the signal to switch
+      // from backend values to live recalculation.
+      const hasUserEdit = itemEdit?.sold != null;
+      // Recalculate using the SAME formulas as Non-AC items:
+      //   consumption = sold × purchaseCost
+      //   saleAmount  = sold × sellingPrice
+      //   profit      = saleAmount − consumption
+      // On initial load (no edit), use backend values (POS revenue for
+      // saleAmount, backend-computed consumption/profit).
+      const consumption = hasUserEdit
+        ? Math.round(sold * purchaseCost * 100) / 100
+        : Number(item.consumption) || 0;
+      const saleAmount = hasUserEdit
+        ? Math.round(sold * sellingPrice * 100) / 100
+        : Number(item.saleAmount) || 0;
+      const profit = hasUserEdit
+        ? Math.round((saleAmount - consumption) * 100) / 100
+        : Number(item.profit) || 0;
       const isHidden = acHiddenFlags[item.itemId] === true;
       return {
         ...item,
