@@ -592,14 +592,23 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // set (to backend value or user value). This is the signal to switch
       // from backend values to live recalculation.
       const hasUserEdit = itemEdit?.sold != null;
-      // Recalculate using the SAME formulas as Non-AC items:
-      //   consumption = sold × purchaseCost
-      //   saleAmount  = sold × sellingPrice
-      //   profit      = saleAmount − consumption
-      // On initial load (no edit), use backend values (POS revenue for
-      // saleAmount, backend-computed consumption/profit).
+      // Recalculate using the SAME logic as the backend:
+      //   - For spirits (30ml peg-based): unitCost = purchaseCost × 30 / effectiveBottleSize
+      //     consumption = sold × unitCost  (sold = pegs, unitCost = per-peg cost)
+      //   - For beer/other (bottle-based): unitCost = purchaseCost
+      //     consumption = sold × unitCost  (sold = bottles, unitCost = per-bottle cost)
+      //   saleAmount = sold × sellingPrice (sellingPrice is per-peg for spirits, per-bottle for beer)
+      //   profit = saleAmount − consumption
+      // The backend sends `unitCost` which encodes the correct cost-per-sale-unit.
+      // When the user edits purchaseCost, recompute unitCost from the new purchaseCost.
+      const baseUnitCost = Number(item.unitCost) || 0;
+      const basePurchaseCost = Number(item.purchaseCost) || 0;
+      // If the user changed purchaseCost, scale unitCost proportionally
+      const unitCost = (hasUserEdit && basePurchaseCost > 0 && purchaseCost !== basePurchaseCost)
+        ? Math.round((baseUnitCost * purchaseCost / basePurchaseCost) * 1000000) / 1000000
+        : baseUnitCost;
       const consumption = hasUserEdit
-        ? Math.round(sold * purchaseCost * 100) / 100
+        ? Math.round(sold * (unitCost || purchaseCost) * 100) / 100
         : Number(item.consumption) || 0;
       const saleAmount = hasUserEdit
         ? Math.round(sold * sellingPrice * 100) / 100
