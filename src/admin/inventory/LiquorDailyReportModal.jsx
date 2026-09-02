@@ -756,8 +756,36 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       }
 
       // Save summary overrides (Business Position cards)
-      const summaryOverrides = { ...summaryEdits };
-      const hasSummaryEdits = Object.values(summaryOverrides).some(v => v != null && v !== '' && !Number.isNaN(Number(v)));
+      // Send ALL current Business Position values, not just edited ones.
+      // This prevents data loss: if the admin previously saved closingStockValue
+      // and today only edits acSales, the old closingStockValue must be preserved.
+      // The backend MERGES these with existing saved overrides (new values win,
+      // unmentioned fields are preserved).
+      //
+      // Priority: summaryEdits (user's in-flight edits) > data.summary (backend values)
+      // This ensures the saved state matches exactly what the admin sees on screen.
+      const allSummaryFields = [
+        'openingStockValue', 'purchaseValue', 'consumption', 'closingStockValue',
+        'acSales', 'acConsumption', 'acProfit', 'acProfitPct',
+        'nonAcSales', 'nonAcConsumption', 'nonAcProfit', 'nonAcProfitPct',
+        'totalSales', 'totalConsumption', 'totalProfit', 'totalProfitPct',
+      ];
+      const summaryOverrides = {};
+      for (const field of allSummaryFields) {
+        // summaryEdits takes priority (user's current unsaved edits)
+        const editVal = summaryEdits[field];
+        // data.summary is the backend value (already loaded)
+        const dataVal = data?.summary?.[field];
+        const val = (editVal != null && editVal !== '' && !Number.isNaN(Number(editVal)))
+          ? Number(editVal)
+          : (dataVal != null && dataVal !== '' && !Number.isNaN(Number(dataVal)))
+            ? Number(dataVal)
+            : null;
+        if (val != null) {
+          summaryOverrides[field] = Math.round(val * 100) / 100;
+        }
+      }
+      const hasSummaryEdits = Object.keys(summaryOverrides).length > 0;
       if (hasSummaryEdits) {
         const entries = Object.entries(edits)
           .filter(([, v]) => Number(v.nonAcSales) > 0 || Number(v.nonAcLandingCost) > 0)
@@ -766,11 +794,15 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
             nonAcSales: Number(v.nonAcSales) || 0,
             nonAcLandingCost: Number(v.nonAcLandingCost) || 0,
           }));
-        await fetch(apiUrl('/api/bar/inventory/liquor-report-non-ac'), {
+        const summaryRes = await fetch(apiUrl('/api/bar/inventory/liquor-report-non-ac'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ date, entries, summaryOverrides }),
         });
+        if (!summaryRes.ok) {
+          const body = await summaryRes.json().catch(() => ({}));
+          throw new Error(body.error || `Business Position save failed (${summaryRes.status})`);
+        }
       }
 
       setSavedMsg(true);
@@ -1430,7 +1462,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 function EditableSummaryCard({ label, field, value, edits, onChange, suffix, badge }) {
   const editValue = edits[field];
   const rawVal = editValue != null ? editValue : value;
-  const displayVal = (rawVal != null && rawVal !== '' && !Number.isNaN(Number(rawVal))) ? Math.ceil(Number(rawVal)) : rawVal;
+  const displayVal = (rawVal != null && rawVal !== '' && !Number.isNaN(Number(rawVal))) ? Math.round(Number(rawVal) * 100) / 100 : rawVal;
   return (
     <div className="bg-gray-50 rounded-lg p-2 sm:p-3 min-w-0 border border-gray-200">
       <div className="flex items-center gap-1">
@@ -1474,7 +1506,7 @@ function buildPrintHtml(data) {
   const fmtStockP = (n) => n == null || Number.isNaN(Number(n)) ? '0' : Number(n).toFixed(2);
 
   // ── Business Position summary cards (matches the admin preview — 16 cards) ──
-  const ceilVal = (v) => (v != null && !Number.isNaN(Number(v))) ? Math.ceil(Number(v)) : v;
+  const ceilVal = (v) => (v != null && !Number.isNaN(Number(v))) ? Math.round(Number(v) * 100) / 100 : v;
   const summaryCard = (label, value, suffix, badge) => {
     const rv = ceilVal(value);
     return `
