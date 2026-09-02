@@ -593,22 +593,37 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // from backend values to live recalculation.
       const hasUserEdit = itemEdit?.sold != null;
       // Recalculate using the SAME logic as the backend:
-      //   - For spirits (30ml peg-based): unitCost = purchaseCost × 30 / effectiveBottleSize
+      //   - For spirits (30ml peg-based): unitCost = purchaseCost × 30 / 750
       //     consumption = sold × unitCost  (sold = pegs, unitCost = per-peg cost)
       //   - For beer/other (bottle-based): unitCost = purchaseCost
       //     consumption = sold × unitCost  (sold = bottles, unitCost = per-bottle cost)
       //   saleAmount = sold × sellingPrice (sellingPrice is per-peg for spirits, per-bottle for beer)
       //   profit = saleAmount − consumption
-      // The backend sends `unitCost` which encodes the correct cost-per-sale-unit.
-      // When the user edits purchaseCost, recompute unitCost from the new purchaseCost.
-      const baseUnitCost = Number(item.unitCost) || 0;
-      const basePurchaseCost = Number(item.purchaseCost) || 0;
-      // If the user changed purchaseCost, scale unitCost proportionally
-      const unitCost = (hasUserEdit && basePurchaseCost > 0 && purchaseCost !== basePurchaseCost)
-        ? Math.round((baseUnitCost * purchaseCost / basePurchaseCost) * 1000000) / 1000000
-        : baseUnitCost;
+      //
+      // The backend sends `unitCost` and `isSpirit`/`isBeer` flags based on the
+      // original bottle size. When the user changes qty (pack size), we must
+      // recompute isSpirit and unitCost based on the NEW qty.
+      const SPIRIT_CATEGORIES = ['brandy', 'whisky', 'whiskey', 'rum', 'vodka', 'wine', 'gin', 'tequila', 'scotch', 'liquor', 'spirit'];
+      const catName = String(item.categoryName || '').toLowerCase();
+      const isBeer = item.isBeer === true;
+      // Recompute isSpirit based on the CURRENT qty (pack size):
+      // - 180ml = half-bottle (bottle-based, NOT peg-based)
+      // - <= 60ml = peg (spirit)
+      // - >= 375ml + spirit category = peg-based spirit
+      // - >= 375ml + has 30ml variant = peg-based spirit
+      const isSpirit = !isBeer && qty !== 180 && (
+        qty <= 60 ||
+        (qty >= 375 && (item.isSpirit === true || SPIRIT_CATEGORIES.some(c => catName.includes(c))))
+      );
+      // Compute unitCost from the CURRENT purchaseCost and qty
+      // For spirits: unitCost = purchaseCost × 30 / 750 (pegs from 750ml bottles)
+      // For beer/other: unitCost = purchaseCost (per-bottle)
+      const effectiveBottleSize = isSpirit ? 750 : qty;
+      const unitCost = isSpirit && effectiveBottleSize > 0
+        ? Math.round((purchaseCost * 30 / effectiveBottleSize) * 1000000) / 1000000
+        : purchaseCost;
       const consumption = hasUserEdit
-        ? Math.round(sold * (unitCost || purchaseCost) * 100) / 100
+        ? Math.round(sold * unitCost * 100) / 100
         : Number(item.consumption) || 0;
       const saleAmount = hasUserEdit
         ? Math.round(sold * sellingPrice * 100) / 100
