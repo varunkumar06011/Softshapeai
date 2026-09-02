@@ -1313,12 +1313,21 @@ const CashierDashboard = ({ onLogout }) => {
   const [bottlePickerItem, setBottlePickerItem] = useState(null);
   const [bottlePickerQty, setBottlePickerQty] = useState(1);
   const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
+  const [bottlePickerLoading, setBottlePickerLoading] = useState(false);
 
   // Sticky bottle selection per menu item — remembers which bottle the cashier
   // picked for each peg item so they don't have to pick again on every tap.
   // Cleared when KOT is sent or cart is cleared. Entries expire after 3 minutes.
   const stickyBottleRef = useRef({});
   const STICKY_BOTTLE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+  // Clear sticky bottle memory whenever cart becomes empty — covers all
+  // setCart([]) calls (table switch, KOT send, trash button, order clear, etc.)
+  useEffect(() => {
+    if (cart.length === 0) {
+      stickyBottleRef.current = {};
+    }
+  }, [cart.length]);
 
   const getStickyBottle = useCallback((itemId) => {
     if (!itemId) return null;
@@ -8536,6 +8545,8 @@ const CashierDashboard = ({ onLogout }) => {
 
                   gstEnabled: i.gstEnabled ?? true,
 
+                  pourFromInventoryItemId: i.pourFromInventoryItemId || undefined,
+
                 })),
 
               serviceChargeAmount: Number(activeOrderCalc.serviceChargeAmount ?? 0),
@@ -10456,51 +10467,43 @@ const CashierDashboard = ({ onLogout }) => {
     if (isLiquorPeg) {
       const itemId = liquorQtyItem.id || liquorQtyItem.menuItemId;
       const remembered = getStickyBottle(itemId);
-      // Always fetch bottles first — verifies stock before using sticky memory.
-      // If the remembered bottle is still in stock, add directly (no picker).
-      // If not, show the picker with available bottles.
-      setBottlePickerItem(liquorQtyItem);
-      setBottlePickerQty(qty);
-      setBottlePickerBottles([]);
-      setShowBottlePicker(true);
+      // Fetch first, then show picker only if needed (no flash).
       setShowLiquorQtyPicker(false);
-      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId)
+      setBottlePickerLoading(true);
+      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId, activeMenuItems)
         .then((res) => {
+          setBottlePickerLoading(false);
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
             // Sticky bottle still in stock? → add directly, skip picker
             if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
               addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-              setShowBottlePicker(false);
-              setBottlePickerItem(null);
-              setBottlePickerBottles([]);
               setSearchQuery('');
               setSelectedCategory('All');
               setActiveDiet('All');
             } else {
               // Remembered bottle out of stock — clear it and show picker
               if (remembered) stickyBottleRef.current[itemId] = undefined;
+              setBottlePickerItem(liquorQtyItem);
+              setBottlePickerQty(qty);
               setBottlePickerBottles(res.bottles);
+              setShowBottlePicker(true);
             }
           } else {
             // No bottles in stock — skip picker, add with auto deduction
             addToCart(liquorQtyItem, qty);
-            setShowBottlePicker(false);
-            setBottlePickerItem(null);
             setSearchQuery('');
             setSelectedCategory('All');
             setActiveDiet('All');
           }
         })
         .catch(() => {
+          setBottlePickerLoading(false);
           // Offline or error — use sticky memory as best-effort fallback
           if (remembered) {
             addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
           } else {
             addToCart(liquorQtyItem, qty);
           }
-          setShowBottlePicker(false);
-          setBottlePickerItem(null);
-          setBottlePickerBottles([]);
           setSearchQuery('');
           setSelectedCategory('All');
           setActiveDiet('All');
@@ -10541,6 +10544,9 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleBottleSkip = () => {
     if (!bottlePickerItem) return;
+    // Clear sticky — user explicitly skipped bottle selection
+    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
+    if (itemId) stickyBottleRef.current[itemId] = undefined;
     addToCart(bottlePickerItem, bottlePickerQty);
     setShowBottlePicker(false);
     setBottlePickerItem(null);
@@ -10551,6 +10557,9 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleBottleClose = () => {
+    // Clear sticky — user closed without selecting
+    const itemId = bottlePickerItem?.id || bottlePickerItem?.menuItemId;
+    if (itemId) stickyBottleRef.current[itemId] = undefined;
     setShowBottlePicker(false);
     setBottlePickerItem(null);
     setBottlePickerBottles([]);
@@ -20516,6 +20525,8 @@ const CashierDashboard = ({ onLogout }) => {
         quantity={bottlePickerQty}
 
         bottles={bottlePickerBottles}
+
+        isLoading={bottlePickerLoading}
 
         onSelect={handleBottleSelect}
 

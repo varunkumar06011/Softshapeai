@@ -1359,6 +1359,7 @@ export default function CaptainApp({ onLogout }) {
   const [bottlePickerItem, setBottlePickerItem] = useState(null);
   const [bottlePickerQty, setBottlePickerQty] = useState(1);
   const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
+  const [bottlePickerLoading, setBottlePickerLoading] = useState(false);
 
   // Sticky bottle selection per menu item — remembers which bottle the captain
   // picked for each peg item so they don't have to pick again on every tap.
@@ -3100,43 +3101,46 @@ export default function CaptainApp({ onLogout }) {
     if (isLiquorPeg) {
       const itemId = liquorQtyItem.id || liquorQtyItem.menuItemId;
       const remembered = getStickyBottle(itemId);
-      // Always fetch bottles first — verifies stock availability before using
-      // sticky memory. If the remembered bottle is still in stock, add directly
-      // (fast path, no picker). If not, show the picker with available bottles.
-      setBottlePickerItem(liquorQtyItem);
-      setBottlePickerQty(qty);
-      setBottlePickerBottles([]);
-      setShowBottlePicker(true);
+      // Fetch bottles first, then decide: sticky hit → add directly (no picker),
+      // otherwise show picker with available bottles. This avoids the picker
+      // flashing open then closing when sticky memory is valid.
       setShowLiquorQtyPicker(false);
+      setBottlePickerLoading(true);
       getBottlesForMenuItem(itemId, activeMenuItems)
         .then((res) => {
+          setBottlePickerLoading(false);
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
             // Sticky bottle still in stock? → add directly, skip picker
             if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
               addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-              setShowBottlePicker(false);
-              setBottlePickerItem(null);
-              setBottlePickerBottles([]);
             } else {
               // Remembered bottle is out of stock or not found — clear it and show picker
               if (remembered) stickyBottleRef.current[itemId] = undefined;
+              setBottlePickerItem(liquorQtyItem);
+              setBottlePickerQty(qty);
               setBottlePickerBottles(res.bottles);
+              setShowBottlePicker(true);
             }
           } else {
             // No bottles in stock — show empty picker with Skip
+            setBottlePickerItem(liquorQtyItem);
+            setBottlePickerQty(qty);
             setBottlePickerBottles([]);
+            setShowBottlePicker(true);
           }
         })
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem failed:', err?.message);
+          setBottlePickerLoading(false);
           // Offline — if we have sticky memory, use it (best effort)
           if (remembered) {
             addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-            setShowBottlePicker(false);
-            setBottlePickerItem(null);
-            setBottlePickerBottles([]);
           } else {
+            // No sticky and offline — show picker with empty bottles (Skip)
+            setBottlePickerItem(liquorQtyItem);
+            setBottlePickerQty(qty);
             setBottlePickerBottles([]);
+            setShowBottlePicker(true);
           }
         });
       setLiquorQtyItem(null);
@@ -3163,6 +3167,9 @@ export default function CaptainApp({ onLogout }) {
 
   const handleBottleSkip = () => {
     if (!bottlePickerItem) return;
+    // Clear sticky — user explicitly skipped bottle selection
+    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
+    if (itemId) stickyBottleRef.current[itemId] = undefined;
     addItemToSession(bottlePickerItem, bottlePickerQty);
     setShowBottlePicker(false);
     setBottlePickerItem(null);
@@ -3170,6 +3177,9 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const handleBottleClose = () => {
+    // Clear sticky — user closed without selecting
+    const itemId = bottlePickerItem?.id || bottlePickerItem?.menuItemId;
+    if (itemId) stickyBottleRef.current[itemId] = undefined;
     setShowBottlePicker(false);
     setBottlePickerItem(null);
     setBottlePickerBottles([]);
@@ -3276,38 +3286,40 @@ export default function CaptainApp({ onLogout }) {
     if (isLiquorPeg) {
       const itemId = item.id || item.menuItemId;
       const remembered = getStickyBottle(itemId);
-      // Always fetch bottles first — verifies stock before using sticky memory.
-      setBottlePickerItem(item);
-      setBottlePickerQty(1);
-      setBottlePickerBottles([]);
-      setShowBottlePicker(true);
+      // Fetch first, then show picker only if needed (no flash).
+      setBottlePickerLoading(true);
       getBottlesForMenuItem(itemId, activeMenuItemsRef.current)
         .then((res) => {
+          setBottlePickerLoading(false);
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
             // Sticky bottle still in stock? → add directly, skip picker
             if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
               addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
-              setShowBottlePicker(false);
-              setBottlePickerItem(null);
-              setBottlePickerBottles([]);
             } else {
               if (remembered) stickyBottleRef.current[itemId] = undefined;
+              setBottlePickerItem(item);
+              setBottlePickerQty(1);
               setBottlePickerBottles(res.bottles);
+              setShowBottlePicker(true);
             }
           } else {
+            setBottlePickerItem(item);
+            setBottlePickerQty(1);
             setBottlePickerBottles([]);
+            setShowBottlePicker(true);
           }
         })
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem (directAdd) failed:', err?.message);
+          setBottlePickerLoading(false);
           // Offline — use sticky memory as best-effort fallback
           if (remembered) {
             addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
-            setShowBottlePicker(false);
-            setBottlePickerItem(null);
-            setBottlePickerBottles([]);
           } else {
+            setBottlePickerItem(item);
+            setBottlePickerQty(1);
             setBottlePickerBottles([]);
+            setShowBottlePicker(true);
           }
         });
     } else {
@@ -7328,6 +7340,7 @@ export default function CaptainApp({ onLogout }) {
         itemName={bottlePickerItem?.n || bottlePickerItem?.name || ''}
         quantity={bottlePickerQty}
         bottles={bottlePickerBottles}
+        isLoading={bottlePickerLoading}
         onSelect={handleBottleSelect}
         onSkip={handleBottleSkip}
         onClose={handleBottleClose}

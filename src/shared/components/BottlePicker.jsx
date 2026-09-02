@@ -10,18 +10,18 @@
 import React, { useState, useEffect } from 'react';
 import { X, Wine } from 'lucide-react';
 
-export default function BottlePicker({ isOpen, itemName, quantity, bottles, onSelect, onSkip, onClose }) {
+export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLoading, onSelect, onSkip, onClose }) {
   const [selectedId, setSelectedId] = useState(null);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedId(null);
-      setLoading(!bottles || bottles.length === 0);
     }
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const loading = isLoading;
 
   const handleConfirm = () => {
     if (selectedId) {
