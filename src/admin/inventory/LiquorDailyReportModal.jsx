@@ -532,7 +532,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const consumption = sale * purchaseCost;
       const saleAmount = sale * sellingPrice;
       const profit = saleAmount - consumption;
-      const isHidden = nonAcHiddenFlags[item.itemId] === true;
+      // For manual PDF-only items, use isHidden from manualItems state.
+      // For regular Non-AC items, use nonAcHiddenFlags.
+      const isHidden = item.isManualItem
+        ? (manualItems.find(m => m.id === item.manualItemId)?.isHidden ?? item.isHidden)
+        : nonAcHiddenFlags[item.itemId] === true;
       const hasClosingOverride = edit.closingOverride != null && edit.closingOverride !== '' && Number(edit.closingOverride) !== Math.round(autoClosing * 100) / 100;
       return {
         ...item,
@@ -554,7 +558,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         hasClosingOverride,
       };
     });
-  }, [data, nonAcItemEdits, nonAcHiddenFlags]);
+  }, [data, nonAcItemEdits, nonAcHiddenFlags, manualItems]);
 
   // Only visible (non-hidden) Non-AC items for display totals and PDF
   const computedNonAcItems = useMemo(() => {
@@ -603,7 +607,12 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const profit = hasUserEdit
         ? Math.round((saleAmount - consumption) * 100) / 100
         : Number(item.profit) || 0;
-      const isHidden = acHiddenFlags[item.itemId] === true;
+      // For manual PDF-only items, use isHidden from manualItems state
+      // (toggled locally, persisted on Save). For regular AC items, use
+      // acHiddenFlags (persisted immediately to InventoryItem).
+      const isHidden = item.isManualItem
+        ? (manualItems.find(m => m.id === item.manualItemId)?.isHidden ?? item.isHidden)
+        : acHiddenFlags[item.itemId] === true;
       return {
         ...item,
         qty,
@@ -623,7 +632,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         closing,
       };
     });
-  }, [data, acItemEdits, acHiddenFlags]);
+  }, [data, acItemEdits, acHiddenFlags, manualItems]);
 
   // Only visible (non-hidden) AC items for display and PDF
   const computedAcItems = useMemo(() => {
@@ -1109,6 +1118,16 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       alert('This item has no inventory record. Create it in Main Inventory first.');
       return;
     }
+    // Manual PDF-only items: toggle isHidden in local manualItems state.
+    // These items are NOT in InventoryItem — they are saved via the manual
+    // report items endpoint. The isHidden flag will be persisted on Save.
+    if (itemId.startsWith('manual:')) {
+      const manualId = itemId.slice('manual:'.length);
+      setManualItems(prev => prev.map(m =>
+        m.id === manualId ? { ...m, isHidden: !m.isHidden } : m
+      ));
+      return;
+    }
     const newHidden = !acHiddenFlags[itemId];
     // Optimistic update: toggle immediately in UI
     setAcHiddenFlags(prev => ({ ...prev, [itemId]: newHidden }));
@@ -1124,6 +1143,14 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
   // Toggle hide/show for a Non-AC item — persists IMMEDIATELY to NonAcInventoryItem.isHiddenFromReport
   const handleNonAcItemToggleHide = async (itemId) => {
+    // Manual PDF-only items: toggle isHidden in local manualItems state.
+    if (itemId.startsWith('manual:')) {
+      const manualId = itemId.slice('manual:'.length);
+      setManualItems(prev => prev.map(m =>
+        m.id === manualId ? { ...m, isHidden: !m.isHidden } : m
+      ));
+      return;
+    }
     const newHidden = !nonAcHiddenFlags[itemId];
     // Optimistic update: toggle immediately in UI
     setNonAcHiddenFlags(prev => ({ ...prev, [itemId]: newHidden }));
