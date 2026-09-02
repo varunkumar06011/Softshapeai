@@ -185,6 +185,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const [acItemEdits, setAcItemEdits] = useState({});
   // AC item hide/show flags: { [itemId]: boolean } — persisted on InventoryItem.isHiddenFromReport
   const [acHiddenFlags, setAcHiddenFlags] = useState({});
+  // Manual PDF-only report items — admin can add items not in Main Inventory
+  // These are report-only: they do NOT create inventory master items.
+  const [manualItems, setManualItems] = useState([]);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
   // Track whether there are unsaved (pending) edits restored from localStorage
@@ -352,6 +355,55 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setAcItemEdits(acInit);
       setAcHiddenFlags(acHiddenInit);
 
+      // ── Initialize manual PDF-only items from backend data ──
+      // Manual items have itemId starting with "manual:" and are included
+      // in acItems/nonAcItems by the backend. Extract them into a separate
+      // state for the manual items UI.
+      const loadedManualItems = [];
+      for (const item of (json.acItems || [])) {
+        if (item.isManualItem) {
+          loadedManualItems.push({
+            id: item.manualItemId,
+            section: 'AC',
+            itemName: item.itemName,
+            categoryName: item.categoryName,
+            qty: item.qty ?? 0,
+            sale: item.sale ?? 0,
+            purchaseCost: item.purchaseCost ?? 0,
+            sellingPrice: item.sellingPrice ?? 0,
+            consumption: item.consumption ?? 0,
+            saleAmount: item.saleAmount ?? 0,
+            profit: item.profit ?? 0,
+            opening: item.opening ?? 0,
+            received: item.received ?? 0,
+            closing: item.closing ?? 0,
+            isHidden: item.isHidden === true,
+          });
+        }
+      }
+      for (const item of (json.nonAcItems || [])) {
+        if (item.isManualItem) {
+          loadedManualItems.push({
+            id: item.manualItemId,
+            section: 'NON_AC',
+            itemName: item.itemName,
+            categoryName: item.categoryName,
+            qty: item.qty ?? 0,
+            sale: item.sale ?? 0,
+            purchaseCost: item.purchaseCost ?? 0,
+            sellingPrice: item.sellingPrice ?? 0,
+            consumption: item.consumption ?? 0,
+            saleAmount: item.saleAmount ?? 0,
+            profit: item.profit ?? 0,
+            opening: item.opening ?? 0,
+            received: item.received ?? 0,
+            closing: item.closing ?? 0,
+            isHidden: item.isHidden === true,
+          });
+        }
+      }
+      setManualItems(loadedManualItems);
+
       // ── Restore pending edits from localStorage (failure-safe) ──
       // If a previous save failed or timed out, the admin's entered values
       // are still in localStorage. Restore them OVER the server data so the
@@ -389,6 +441,14 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         }
         if (pending.summaryEdits) {
           setSummaryEdits(pending.summaryEdits);
+        }
+        if (pending.manualItems && Array.isArray(pending.manualItems) && pending.manualItems.length > 0) {
+          // Restore unsaved manual items from localStorage — merge with loaded items
+          setManualItems(prev => {
+            const existingIds = new Set(prev.map(m => m.id).filter(Boolean));
+            const restored = pending.manualItems.filter(m => !m.id || !existingIds.has(m.id));
+            return [...prev, ...restored];
+          });
         }
         setHasPendingEdits(true);
       } else {
@@ -431,7 +491,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       Object.keys(nonAcItemEdits).length > 0 ||
       Object.keys(acItemEdits).length > 0 ||
       Object.keys(edits).length > 0 ||
-      Object.keys(summaryEdits).length > 0;
+      Object.keys(summaryEdits).length > 0 ||
+      manualItems.length > 0;
     if (!hasAnyEdit) return;
     savePendingToStorage({
       nonAcItemEdits,
@@ -440,8 +501,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       acHiddenFlags,
       edits,
       summaryEdits,
+      manualItems,
     });
-  }, [open, data, pendingKey, nonAcItemEdits, acItemEdits, nonAcHiddenFlags, acHiddenFlags, edits, summaryEdits, savePendingToStorage]);
+  }, [open, data, pendingKey, nonAcItemEdits, acItemEdits, nonAcHiddenFlags, acHiddenFlags, edits, summaryEdits, manualItems, savePendingToStorage]);
 
   // ── Computed item-wise values with live recalculation from edits ──
   // For each item: Consumption = Sold × Purchase Cost, Sale Amount = Sold × Selling Price, Profit = Sale Amount − Consumption
@@ -662,6 +724,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // would be sent every save, re-introducing the timeout.
       const nonAcItemsPayload = [];
       for (const item of allComputedNonAcItems) {
+        // Skip manual PDF-only items — they are saved via a separate endpoint
+        if (item.isManualItem) continue;
         const e = nonAcItemEdits[item.itemId] || {};
         const orig = data.nonAcItems?.find(i => i.itemId === item.itemId);
         if (!orig) continue;
@@ -694,6 +758,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       // AC adjustments payload — only send items where BASE fields changed
       const acAdjustmentsPayload = [];
       for (const item of allComputedAcItems) {
+        // Skip manual PDF-only items — they are saved via a separate endpoint
+        if (item.isManualItem) continue;
         const e = acItemEdits[item.itemId] || {};
         const orig = data.acItems?.find(i => i.itemId === item.itemId);
         if (!orig) continue;
@@ -802,6 +868,40 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         if (!summaryRes.ok) {
           const body = await summaryRes.json().catch(() => ({}));
           throw new Error(body.error || `Business Position save failed (${summaryRes.status})`);
+        }
+      }
+
+      // ── Save manual PDF-only report items ──
+      // These are report-only items that do NOT exist in Main Inventory.
+      // They are saved to a separate table and do not affect stock logic.
+      if (manualItems.length > 0 || true) {
+        // Always send the full list (even if empty) so the backend can
+        // delete items that were removed from the report.
+        const manualPayload = manualItems.map(mi => ({
+          id: mi.id || undefined,
+          section: mi.section,
+          itemName: mi.itemName,
+          categoryName: mi.categoryName,
+          qty: Number(mi.qty) || 0,
+          sale: Number(mi.sale) || 0,
+          purchaseCost: Number(mi.purchaseCost) || 0,
+          sellingPrice: Number(mi.sellingPrice) || 0,
+          consumption: Number(mi.consumption) || 0,
+          saleAmount: Number(mi.saleAmount) || 0,
+          profit: Number(mi.profit) || 0,
+          opening: Number(mi.opening) || 0,
+          received: Number(mi.received) || 0,
+          closing: Number(mi.closing) || 0,
+          isHidden: Boolean(mi.isHidden),
+        }));
+        const manualRes = await fetch(apiUrl('/api/bar/inventory/manual-report-items'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ date, items: manualPayload }),
+        });
+        if (!manualRes.ok) {
+          const body = await manualRes.json().catch(() => ({}));
+          throw new Error(body.error || `Manual items save failed (${manualRes.status})`);
         }
       }
 
@@ -1316,6 +1416,228 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                   </div>
                 </div>
               )}
+
+              {/* ── Add Manual PDF-only Item ── */}
+              {/* Admin can add items that do NOT exist in Main Inventory.
+                  These are report-only: they appear in the AC or Non-AC
+                  section of the PDF but do NOT affect stock or inventory master. */}
+              <div className="border border-purple-200 rounded-lg p-3 bg-purple-50/30">
+                <h3 className="text-sm font-bold text-purple-700 mb-2">
+                  Add Manual PDF-only Item
+                  <span className="ml-2 text-xs font-normal text-gray-500">(report-only · not added to Main Inventory)</span>
+                </h3>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Section</label>
+                    <select
+                      id="manualSection"
+                      className="border border-gray-300 rounded px-2 py-1 text-sm"
+                      defaultValue="AC"
+                    >
+                      <option value="AC">AC</option>
+                      <option value="NON_AC">NON-AC</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Item Name</label>
+                    <input
+                      id="manualItemName"
+                      type="text"
+                      placeholder="e.g. Special Item"
+                      className="border border-gray-300 rounded px-2 py-1 text-sm w-40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Qty (ml)</label>
+                    <input
+                      id="manualQty"
+                      type="number"
+                      placeholder="0"
+                      className="border border-gray-300 rounded px-2 py-1 text-sm w-20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Sale (btl)</label>
+                    <input
+                      id="manualSale"
+                      type="number"
+                      placeholder="0"
+                      className="border border-gray-300 rounded px-2 py-1 text-sm w-20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Purchase Cost</label>
+                    <input
+                      id="manualPurchaseCost"
+                      type="number"
+                      placeholder="0"
+                      className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Selling Price</label>
+                    <input
+                      id="manualSellingPrice"
+                      type="number"
+                      placeholder="0"
+                      className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const section = document.getElementById('manualSection').value;
+                      const itemName = document.getElementById('manualItemName').value.trim();
+                      const qty = parseFloat(document.getElementById('manualQty').value) || 0;
+                      const sale = parseFloat(document.getElementById('manualSale').value) || 0;
+                      const purchaseCost = parseFloat(document.getElementById('manualPurchaseCost').value) || 0;
+                      const sellingPrice = parseFloat(document.getElementById('manualSellingPrice').value) || 0;
+                      if (!itemName) { alert('Please enter an item name'); return; }
+                      const consumption = Math.round(sale * purchaseCost * 100) / 100;
+                      const saleAmount = Math.round(sale * sellingPrice * 100) / 100;
+                      const profit = Math.round((saleAmount - consumption) * 100) / 100;
+                      setManualItems(prev => [...prev, {
+                        id: undefined, // new item — backend will create it
+                        section,
+                        itemName,
+                        categoryName: section === 'AC' ? 'Manual AC' : 'Manual Non-AC',
+                        qty, sale, purchaseCost, sellingPrice,
+                        consumption, saleAmount, profit,
+                        opening: 0, received: 0, closing: 0,
+                        isHidden: false,
+                      }]);
+                      // Clear the form
+                      document.getElementById('manualItemName').value = '';
+                      document.getElementById('manualQty').value = '';
+                      document.getElementById('manualSale').value = '';
+                      document.getElementById('manualPurchaseCost').value = '';
+                      document.getElementById('manualSellingPrice').value = '';
+                    }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded px-3 py-1.5"
+                  >
+                    + Add Item
+                  </button>
+                </div>
+                {manualItems.length > 0 && (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-purple-100">
+                        <tr>
+                          <th className="px-2 py-1 text-left">Section</th>
+                          <th className="px-2 py-1 text-left">Item Name</th>
+                          <th className="px-2 py-1 text-right">Qty</th>
+                          <th className="px-2 py-1 text-right">Sale</th>
+                          <th className="px-2 py-1 text-right">Purchase Cost</th>
+                          <th className="px-2 py-1 text-right">Selling Price</th>
+                          <th className="px-2 py-1 text-right">Consumption</th>
+                          <th className="px-2 py-1 text-right">Sale Amount</th>
+                          <th className="px-2 py-1 text-right">Profit</th>
+                          <th className="px-2 py-1 text-center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {manualItems.map((mi, idx) => (
+                          <tr key={mi.id || `new-${idx}`} className="border-t border-purple-100">
+                            <td className="px-2 py-1">
+                              <select
+                                value={mi.section}
+                                onChange={(e) => setManualItems(prev => prev.map((m, i) => i === idx ? { ...m, section: e.target.value } : m))}
+                                className="border border-gray-300 rounded px-1 py-0.5 text-xs"
+                              >
+                                <option value="AC">AC</option>
+                                <option value="NON_AC">NON-AC</option>
+                              </select>
+                            </td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="text"
+                                value={mi.itemName}
+                                onChange={(e) => setManualItems(prev => prev.map((m, i) => i === idx ? { ...m, itemName: e.target.value } : m))}
+                                className="border border-gray-300 rounded px-1 py-0.5 text-xs w-32"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="number"
+                                value={mi.qty}
+                                onChange={(e) => {
+                                  const qty = parseFloat(e.target.value) || 0;
+                                  setManualItems(prev => prev.map((m, i) => i === idx ? { ...m, qty } : m));
+                                }}
+                                className="border border-gray-300 rounded px-1 py-0.5 text-xs w-16 text-right"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="number"
+                                value={mi.sale}
+                                onChange={(e) => {
+                                  const sale = parseFloat(e.target.value) || 0;
+                                  setManualItems(prev => prev.map((m, i) => {
+                                    if (i !== idx) return m;
+                                    const consumption = Math.round(sale * m.purchaseCost * 100) / 100;
+                                    const saleAmount = Math.round(sale * m.sellingPrice * 100) / 100;
+                                    const profit = Math.round((saleAmount - consumption) * 100) / 100;
+                                    return { ...m, sale, consumption, saleAmount, profit };
+                                  }));
+                                }}
+                                className="border border-gray-300 rounded px-1 py-0.5 text-xs w-16 text-right"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="number"
+                                value={mi.purchaseCost}
+                                onChange={(e) => {
+                                  const purchaseCost = parseFloat(e.target.value) || 0;
+                                  setManualItems(prev => prev.map((m, i) => {
+                                    if (i !== idx) return m;
+                                    const consumption = Math.round(m.sale * purchaseCost * 100) / 100;
+                                    const profit = Math.round((m.saleAmount - consumption) * 100) / 100;
+                                    return { ...m, purchaseCost, consumption, profit };
+                                  }));
+                                }}
+                                className="border border-gray-300 rounded px-1 py-0.5 text-xs w-20 text-right"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="number"
+                                value={mi.sellingPrice}
+                                onChange={(e) => {
+                                  const sellingPrice = parseFloat(e.target.value) || 0;
+                                  setManualItems(prev => prev.map((m, i) => {
+                                    if (i !== idx) return m;
+                                    const saleAmount = Math.round(m.sale * sellingPrice * 100) / 100;
+                                    const profit = Math.round((saleAmount - m.consumption) * 100) / 100;
+                                    return { ...m, sellingPrice, saleAmount, profit };
+                                  }));
+                                }}
+                                className="border border-gray-300 rounded px-1 py-0.5 text-xs w-20 text-right"
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-right text-gray-700">{fmtInr(mi.consumption)}</td>
+                            <td className="px-2 py-1 text-right text-gray-700 font-medium">{fmtInr(mi.saleAmount)}</td>
+                            <td className="px-2 py-1 text-right text-gray-700 font-medium">{fmtInr(mi.profit)}</td>
+                            <td className="px-2 py-1 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setManualItems(prev => prev.filter((_, i) => i !== idx))}
+                                className="text-red-500 hover:text-red-700 text-xs font-medium"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Click <strong>Save</strong> to persist these items. They will appear in the selected section of the PDF.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* ── Item-wise AC Bar Table (editable rows) ── */}
               {allComputedAcItems.length > 0 && (
