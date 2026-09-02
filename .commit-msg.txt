@@ -1,11 +1,19 @@
-feat: size-wise bottle tracking (750/375/180ml) for spirits with inline editing
+fix: use backend unitCost for AC consumption recalculation
 
-- CombinedBarTable: Group by Brand toggle with expandable rows, inline
-  editable per-size stock fields that save to backend via PUT /:itemId/stock
-- InventoryTable: same expandable grouped view for kitchen tab
-- LiquorDailyReportModal: editable per-bottle stock summary section in PDF
-  preview, saves to same backend endpoint (one source of truth)
-- barInventoryApi: new setItemStock() function for absolute stock updates
+The frontend was recalculating consumption as sale × purchaseCost,
+which is wrong for spirits (30ml peg-based items). For spirits, Sale
+is in pegs and the cost-per-peg is much smaller than the bottle cost.
+
+Now uses the backend-provided unitCost field:
+- Spirits: unitCost = purchaseCost × 30 / effectiveBottleSize
+- Beer/other: unitCost = purchaseCost
+
+When the user edits purchaseCost, unitCost is scaled proportionally
+from the backend's base unitCost/base purchaseCost ratio.
+
+This fixes the inflated consumption values and negative profits that
+occurred when editing spirit items (e.g., BLEDERSPRIDE, ROYAL STAG,
+SIGNATURE, etc.).
 
 Generated with [Devin](https://devin.ai)
 
