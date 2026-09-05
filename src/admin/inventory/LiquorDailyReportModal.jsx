@@ -884,6 +884,32 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         throw new Error(body.error || `Item-wise save failed (${itemWiseRes.status})`);
       }
 
+      // ── Re-fetch combined API to get FRESH summary values ──
+      // The item-wise save just updated snapshots and adjustments. The
+      // combined API recomputes summary (openingStockValue, closingStockValue,
+      // etc.) from those updated snapshots. Without this re-fetch, the
+      // summaryOverrides below would use STALE values from data.summary
+      // (loaded BEFORE the item edits were saved), causing the wrong
+      // closingStockValue to be persisted in __SUMMARY__ — which breaks
+      // the carry-forward to the next day's openingStockValue.
+      let freshSummary = data?.summary || {};
+      try {
+        const combinedOpts = endDate && endDate !== date
+          ? { fromDate: date, toDate: endDate }
+          : { fromDate: date, toDate: date };
+        const freshCombined = await fetchCombinedInventory(combinedOpts);
+        if (freshCombined?.summary) {
+          // Apply existing saved overrides on top of the fresh combined values
+          // (same merge logic as loadData), so any previously saved overrides
+          // (e.g. admin's explicit closingStockValue edit) are preserved.
+          const existingOverrides = data?.summaryOverrides || {};
+          freshSummary = { ...freshCombined.summary, ...existingOverrides };
+        }
+      } catch (e) {
+        // Non-fatal: fall back to stale data.summary if re-fetch fails
+        console.warn('[LiquorReport] Pre-save combined refetch failed:', e);
+      }
+
       // Save summary overrides (Business Position cards)
       // Send ALL current Business Position values, not just edited ones.
       // This prevents data loss: if the admin previously saved closingStockValue
@@ -903,8 +929,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       for (const field of allSummaryFields) {
         // summaryEdits takes priority (user's current unsaved edits)
         const editVal = summaryEdits[field];
-        // data.summary is the backend value (already loaded)
-        const dataVal = data?.summary?.[field];
+        // Use freshSummary (re-fetched AFTER item edits were saved) so
+        // closingStockValue reflects the just-saved item-level changes.
+        // This ensures the carry-forward to the next day's
+        // openingStockValue uses the correct value.
+        const dataVal = freshSummary?.[field];
         const val = (editVal != null && editVal !== '' && !Number.isNaN(Number(editVal)))
           ? Number(editVal)
           : (dataVal != null && dataVal !== '' && !Number.isNaN(Number(dataVal)))
