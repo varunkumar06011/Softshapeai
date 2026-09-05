@@ -24,9 +24,10 @@ describe('Android SQLite adapter', () => {
     await adapter.open();
 
     expect(plugin.open).toHaveBeenCalledWith({ name: DATABASE_NAME, version: DATABASE_VERSION });
-    expect(plugin.execScript).toHaveBeenCalledTimes(2);
+    expect(plugin.execScript).toHaveBeenCalledTimes(3);
     expect(plugin.execScript.mock.calls[0][0].sql).toContain('CREATE TABLE IF NOT EXISTS order_record');
     expect(plugin.execScript.mock.calls[1][0].sql).toContain('ALTER TABLE order_record ADD COLUMN discount_percent');
+    expect(plugin.execScript.mock.calls[2][0].sql).toContain('ALTER TABLE sync_queue ADD COLUMN last_attempt_at');
     expect(adapter.health()).toMatchObject({ opened: true, version: DATABASE_VERSION });
   });
 
