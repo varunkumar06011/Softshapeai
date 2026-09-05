@@ -67,7 +67,7 @@ import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeAvailableFast, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import secureStorage from '../utils/secureStorage';
 
@@ -1095,6 +1095,10 @@ export default function CaptainApp({ onLogout }) {
   const kotRequestIdRef = useRef(null);
 
   const kotSubmitStartRef = useRef(0); // timestamp guard against stuck submissions
+  // AbortController for the in-flight edgeFetch during KOT submission. Aborted
+  // by the stuck-guard (>15s) or when the captain switches tables — prevents
+  // orphaned promises from corrupting state when they eventually resolve.
+  const kotAbortRef = useRef(null);
   const printTimeoutRef = useRef(null); // timeout for KOT print acknowledgement
 
   // Bug A: Dedup socket echoes from our own KOT submissions (same pattern as cashier)
@@ -3002,6 +3006,12 @@ export default function CaptainApp({ onLogout }) {
     activeOrderIdRef.current = null;
     kotRequestIdRef.current = null;
     setKotError(null);
+    // Abort any in-flight KOT write for the previous table — prevents the
+    // orphaned promise from corrupting the new table's state when it resolves.
+    if (kotAbortRef.current) {
+      try { kotAbortRef.current.abort(); } catch { /* already aborted */ }
+      kotAbortRef.current = null;
+    }
     setSendingKOT(false);
     isSubmittingKotRef.current = false;
     setExpandedNoteItemId(null);
@@ -3502,8 +3512,14 @@ export default function CaptainApp({ onLogout }) {
     // would cancel the WRONG timeout if a second KOT was sent before the first
     // one's 30s print ack window expired.
     // Stuck-guard: if a previous submission has been running for >15s, force-reset
+    // AND abort the in-flight edgeFetch so its orphaned promise doesn't corrupt
+    // state when it eventually resolves/rejects.
     if (isSubmittingKotRef.current && kotSubmitStartRef.current && Date.now() - kotSubmitStartRef.current > 15000) {
-      console.warn('[KOT] Stuck submission detected (>15s), forcing reset');
+      console.warn('[KOT] Stuck submission detected (>15s), aborting and forcing reset');
+      if (kotAbortRef.current) {
+        try { kotAbortRef.current.abort(); } catch { /* already aborted */ }
+        kotAbortRef.current = null;
+      }
       isSubmittingKotRef.current = false;
       setSendingKOT(false);
     }
@@ -3529,6 +3545,11 @@ export default function CaptainApp({ onLogout }) {
 
     isSubmittingKotRef.current = true;
     kotSubmitStartRef.current = Date.now();
+
+    // Create an AbortController for this KOT submission. Passed to edgeFetch
+    // via createOrder/updateOrderItems so the stuck-guard or table-switch can
+    // cancel the in-flight write instead of leaving an orphaned promise.
+    kotAbortRef.current = new AbortController();
 
     setSendingKOT(true);
 
@@ -3772,7 +3793,7 @@ export default function CaptainApp({ onLogout }) {
 
         try {
           if (existingOrderId) {
-            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined, true);
+            const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined, true, kotAbortRef.current?.signal);
             savedOrder = response;
           } else {
             try {
@@ -3789,12 +3810,13 @@ export default function CaptainApp({ onLogout }) {
                 localPrinted,
                 kotEventIds,
                 failFastOnEdgeDown: true,
+                signal: kotAbortRef.current?.signal,
               });
             } catch (createErr) {
               if (createErr.statusCode === 409 && createErr.existingOrderId) {
                 console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
                 activeOrderIdRef.current = createErr.existingOrderId;
-                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined, true);
+                savedOrder = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, preReservedKotNumber, activeTableEntry?.backendId || activeTableId, localPrinted, kotEventIds, currentCaptain?.id || undefined, true, kotAbortRef.current?.signal);
               } else {
                 throw createErr;
               }
@@ -3854,7 +3876,10 @@ export default function CaptainApp({ onLogout }) {
         let edgeLocalPrinted = false;
         let edgeKotEventIds = [];
         let edgePreReservedKotNumber = null;
-        const edgeAvailable = isEdgeLocalAuth() || await isEdgeAvailable();
+        // Use isEdgeAvailableFast() — skips the 19s LAN discovery scan that
+        // isEdgeAvailable() runs on failure. During KOT submission, a 3s
+        // health check is the max acceptable delay before falling through.
+        const edgeAvailable = isEdgeLocalAuth() || await isEdgeAvailableFast();
         try {
           // Skip local print entirely when edge server is available — it handles printing.
           // Only attempt local print when edge is NOT available (fallback for cloud-only captains).
@@ -3942,7 +3967,7 @@ export default function CaptainApp({ onLogout }) {
         if (existingOrderId) {
           const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true);
+          const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true, kotAbortRef.current?.signal);
           savedOrder = response?.order || response;
           const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
           realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -3963,6 +3988,7 @@ export default function CaptainApp({ onLogout }) {
               localPrinted: edgeHasPrintedIds,
               kotEventIds: edgeKotIdsToSend,
               failFastOnEdgeDown: true,
+              signal: kotAbortRef.current?.signal,
             });
           } catch (createErr) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
@@ -3970,7 +3996,7 @@ export default function CaptainApp({ onLogout }) {
               activeOrderIdRef.current = createErr.existingOrderId;
               const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
-              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true);
+              const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true, kotAbortRef.current?.signal);
               savedOrder = response?.order || response;
               const _kotHistory = response?.order?.kotHistory || response?.kotHistory;
               realKotId = Array.isArray(_kotHistory) && _kotHistory.length > 0
@@ -4185,6 +4211,16 @@ export default function CaptainApp({ onLogout }) {
 
     } catch (err) {
 
+      // Silently swallow intentional aborts (stuck-guard >15s or table switch).
+      // The stuck-guard / table-switch handler already reset the UI state
+      // (setSendingKOT(false), isSubmittingKotRef=false). Showing an error
+      // banner + persisting to localStorage would confuse the captain —
+      // they didn't cancel anything, the system did for safety.
+      if (err.name === 'AbortError' || (err.message && err.message.includes('cancelled'))) {
+        console.log('[KOT] Submission aborted (stuck-guard or table switch) — silently exiting');
+        return;
+      }
+
       console.error('[KOT] DB write failed:', err.message);
 
       // ❌ DB failed — show persistent error banner with Retry instead of success toast.
@@ -4241,6 +4277,10 @@ export default function CaptainApp({ onLogout }) {
       setSendingKOT(false);
 
       kotRequestIdRef.current = null;
+
+      // Clear the AbortController — the fetch has completed (success or error).
+      // A new one is created on the next KOT submission.
+      kotAbortRef.current = null;
 
     }
 

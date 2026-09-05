@@ -1,0 +1,8 @@
+ALTER TABLE order_record ADD COLUMN discount_percent REAL NOT NULL DEFAULT 0;
+ALTER TABLE order_record ADD COLUMN transaction_number TEXT;
+ALTER TABLE order_record ADD COLUMN cash_amount REAL NOT NULL DEFAULT 0;
+ALTER TABLE order_record ADD COLUMN card_amount REAL NOT NULL DEFAULT 0;
+ALTER TABLE order_record ADD COLUMN upi_amount REAL NOT NULL DEFAULT 0;
+ALTER TABLE order_record ADD COLUMN other_amount REAL NOT NULL DEFAULT 0;
+ALTER TABLE order_record ADD COLUMN tip_amount REAL NOT NULL DEFAULT 0;
+ALTER TABLE order_item ADD COLUMN gst_enabled INTEGER NOT NULL DEFAULT 1;

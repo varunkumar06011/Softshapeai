@@ -32,6 +32,9 @@ import AppUpdateBanner from './shared/components/AppUpdateBanner'
 import { reconnectSocket } from './hooks/useSocket'
 import { ErrorBoundary } from './shared/components/ErrorBoundary'
 import { isEdgeAvailable, edgeFetch } from './services/edgeHealth'
+import AndroidLocalCashierRuntime from './android-local-pos/AndroidLocalCashierRuntime'
+import AndroidLocalCaptainSetup from './android-local-pos/AndroidLocalCaptainSetup'
+import { isAndroidLocalPosEnabled } from './android-local-pos/config'
 import * as Sentry from '@sentry/react'
 
 
@@ -117,7 +120,9 @@ function CaptainAppWrapper() {
   return (
     <ErrorBoundary>
       <SyncStatusIndicator />
-      <CaptainApp onLogout={() => { logout(); window.location.href = '/captain' }} />
+      <AndroidLocalCaptainSetup>
+        <CaptainApp onLogout={() => { logout(); window.location.href = '/captain' }} />
+      </AndroidLocalCaptainSetup>
     </ErrorBoundary>
   )
 }
@@ -127,9 +132,10 @@ function CashierLoginWrapper() {
   const [edgeCheck, setEdgeCheck] = useState(null)
   const [edgeRestaurantId, setEdgeRestaurantId] = useState(null)
   const isLoggedIn = user && token && isTokenValid(token) && ['CASHIER', 'OWNER', 'ADMIN'].includes(user.role)
+  const isAndroidLocalCashier = isAndroidLocalPosEnabled()
 
   useEffect(() => {
-    if (isLoggedIn) return
+    if (isLoggedIn || isAndroidLocalCashier) return
     let cancelled = false
     ;(async () => {
       try {
@@ -148,7 +154,7 @@ function CashierLoginWrapper() {
       }
     })()
     return () => { cancelled = true }
-  }, [isLoggedIn])
+  }, [isLoggedIn, isAndroidLocalCashier])
 
   if (isLoggedIn) return <Navigate to="/cashier/dashboard" replace />
   if (edgeCheck === 'setup') return <Navigate to="/edge-setup" replace />
@@ -173,7 +179,9 @@ function CashierDashboardWrapper() {
   return (
     <ErrorBoundary>
       <SyncStatusIndicator />
-      <CashierDashboard onLogout={() => { logout(); window.location.href = '/cashier' }} />
+      <AndroidLocalCashierRuntime>
+        <CashierDashboard onLogout={() => { logout(); window.location.href = '/cashier' }} />
+      </AndroidLocalCashierRuntime>
     </ErrorBoundary>
   )
 }

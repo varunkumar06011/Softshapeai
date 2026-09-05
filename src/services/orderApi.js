@@ -77,8 +77,28 @@ import {
 import { queueKitchenItems } from "../utils/kitchenQueue";
 
 import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, resetEdgeCache } from "./edgeHealth.js";
+import { isAndroidLocalCaptainEnabled } from "../android-local-pos/config";
+import { getStoredCashierHub } from "../android-local-pos/hubStorage";
+import { createCashierHubClient } from "../android-local-pos/captainClient";
+import { isAndroidLocalPosEnabled } from "../android-local-pos/config";
+import { getAndroidLocalPosRuntime, startAndroidLocalPosRuntime } from "../android-local-pos/runtimeManager";
 
 
+
+function getAndroidCaptainHubClient() {
+  if (!isAndroidLocalCaptainEnabled()) return null;
+  const hub = getStoredCashierHub();
+  if (!hub.url || !hub.token) return null;
+  return createCashierHubClient({ baseUrl: hub.url, token: hub.token });
+}
+
+async function getAndroidCashierOrderService() {
+  if (!isAndroidLocalPosEnabled()) return null;
+  await startAndroidLocalPosRuntime();
+  const service = getAndroidLocalPosRuntime().adapters.orderService;
+  if (!service) throw new Error('Android local order service is not available');
+  return service;
+}
 
 // Generate a unique request ID for idempotency tracking
 
@@ -165,6 +185,12 @@ export function toOrderItems(items) {
 
 
 export async function reserveKotNumber(requestId = null) {
+  if (isAndroidLocalPosEnabled()) {
+    return { kotNumber: null, localPos: true };
+  }
+  if (getAndroidCaptainHubClient()) {
+    return { kotNumber: null, localHub: true };
+  }
 
   // ── Edge server first (local daily_counter) ─────────────────────────────────
 
@@ -222,7 +248,7 @@ export async function reserveKotNumber(requestId = null) {
 
 
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null, failFastOnEdgeDown = false }) {
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null, failFastOnEdgeDown = false, signal = null }) {
 
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
 
@@ -244,7 +270,46 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
 
   if (kotEventIds) { orderData.kotEventIds = kotEventIds; }
 
+  const localCashierService = await getAndroidCashierOrderService();
+  if (localCashierService) {
+    const result = await localCashierService.createOrder({
+      tableId,
+      tableNumber,
+      restaurantId,
+      items: orderData.items,
+      requestId: requestId || generateRequestId(),
+      captainName,
+      captainId,
+      isExtraTable,
+      sectionTag,
+      platform,
+    });
+    return { id: result.orderId, ...result.order, kotNumber: result.kotNumber, localPos: true, printResults: result.printResults || [] };
+  }
 
+  const localHubClient = getAndroidCaptainHubClient();
+  if (localHubClient) {
+    const result = await localHubClient.createOrder({
+      tableId,
+      tableNumber,
+      restaurantId,
+      items: orderData.items,
+      requestId: requestId || generateRequestId(),
+      captainName,
+      captainId,
+      isExtraTable,
+      sectionTag,
+      platform,
+    });
+    return {
+      id: result.orderId,
+      ...result.order,
+      kotNumber: result.kotNumber,
+      edge: false,
+      localHub: true,
+      printResults: result.printResults || [],
+    };
+  }
 
   // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
 
@@ -299,6 +364,8 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         method: 'POST',
 
         body: JSON.stringify(edgeBody),
+
+        signal,
 
       });
 
@@ -758,7 +825,7 @@ export async function fetchTableOrder(tableId) {
 
 
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null, captainId = null, failFastOnEdgeDown = false) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null, captainId = null, failFastOnEdgeDown = false, signal = null) {
 
   const body = { items: toOrderItems(items) };
 
@@ -780,7 +847,20 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
 
   if (kotEventIds) { body.kotEventIds = kotEventIds; }
 
+  const localCashierService = await getAndroidCashierOrderService();
+  if (localCashierService) {
+    return localCashierService.updateOrderItems(orderId, { ...body, tableId, tableNumber });
+  }
 
+  const localHubClient = getAndroidCaptainHubClient();
+  if (localHubClient) {
+    return localHubClient.updateOrder(orderId, {
+      ...body,
+      tableId,
+      tableNumber,
+      platform: 'DINE_IN',
+    });
+  }
 
   // ── Path 1: Edge server (local SQLite hub) — primary path ──────────────────
 
@@ -837,6 +917,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         method: 'POST',
 
         body: JSON.stringify(edgeBody),
+
+        signal,
 
       });
 
@@ -1691,8 +1773,10 @@ export async function markOrderPaid(orderId, paymentMethod = 'CASH') {
 export async function settleOrder(orderId, removedItemIds, removedBy = 'Cashier', requestId = null, extraSettleData = {}) {
 
   const settleRequestId = requestId || generateRequestId();
-
-
+  const localCashierService = await getAndroidCashierOrderService();
+  if (localCashierService) {
+    return localCashierService.settleOrder(orderId, { ...extraSettleData, requestId: settleRequestId });
+  }
 
   // ── Edge server only (local SQLite, instant) ───────────────────────────────
 
@@ -2291,8 +2375,22 @@ export async function fetchTransactionsWithRetry(restaurantId, limit = 2000, dat
 export async function cancelOrderItem(orderId, orderItemId, cancelledBy, tableNumber, cancelQuantity = 1, requestId = null, localPrinted = false, eventId = null, isExtraTable = false) {
 
   const cancelRequestId = requestId || generateRequestId();
+  const localCashierService = await getAndroidCashierOrderService();
+  if (localCashierService) {
+    return localCashierService.cancelOrderItem(orderId, orderItemId, { cancelledBy, tableNumber, cancelQuantity, requestId: cancelRequestId, eventId });
+  }
 
-
+  const localHubClient = getAndroidCaptainHubClient();
+  if (localHubClient) {
+    return localHubClient.cancelItem(orderId, orderItemId, {
+      cancelledBy,
+      tableNumber,
+      cancelQuantity,
+      requestId: cancelRequestId,
+      eventId,
+      isExtraTable: !!isExtraTable,
+    });
+  }
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
 
@@ -3279,6 +3377,10 @@ export async function confirmPayment(transactionId, { paymentMethod = 'CASH', ca
 export async function printBill(orderId, { restaurantId, tableNumber, discountPercent, kotNumbers, requestId = null, billEventId = null, localPrinted = false } = {}) {
 
   const printRequestId = requestId || generateRequestId();
+  const localCashierService = await getAndroidCashierOrderService();
+  if (localCashierService) {
+    return localCashierService.printBill(orderId, { requestId: billEventId || printRequestId, discountPercent });
+  }
 
   const qs = new URLSearchParams({ restaurantId: restaurantId || '', requestId: printRequestId });
 
@@ -3568,7 +3670,19 @@ export async function cancelOrderItems(orderId, items, cancelledBy, tableNumber,
 
   const cancelRequestId = requestId || generateRequestId();
 
-
+  const localHubClient = getAndroidCaptainHubClient();
+  if (localHubClient) {
+    const results = [];
+    for (const item of items || []) {
+      results.push(await localHubClient.cancelItem(orderId, item.orderItemId, {
+        cancelledBy,
+        tableNumber,
+        cancelQuantity: item.cancelQuantity,
+        requestId: `${cancelRequestId}-${item.orderItemId}`,
+      }));
+    }
+    return { success: true, results };
+  }
 
   // ── Edge server first (local SQLite, instant) ───────────────────────────────
 

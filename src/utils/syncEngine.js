@@ -437,8 +437,34 @@ async function replayActionsToEdge(actions) {
       }
     } catch (err) {
       // Edge replay failed — leave in queue for cloud sync or next edge retry
-      if (err?.statusCode) {
-        // Business logic error (409, 404) — don't retry via edge, let cloud sync handle
+      if (err?.statusCode === 409 && action.actionType === 'create-order' && err.existingOrderId) {
+        // Table already has an active order (e.g. cashier created it while
+        // captain's KOT was queued offline). The edge returned the existing
+        // orderId — map the offline orderId to it and mark as edgeSynced so:
+        //   1. Dependent actions (update-items, settle) can proceed with the real orderId
+        //   2. The verify step confirms cloud sync of the EXISTING order
+        //   3. The action is removed from the queue once cloud sync is confirmed
+        // This prevents the double-order scenario: captain's queued KOT is
+        // NOT replayed as a new order — the existing order is adopted.
+        const existingId = err.existingOrderId;
+        if (action.offlineOrderId) {
+          await setOrderIdMapping(action.offlineOrderId, existingId);
+          await updatePendingActionEntityIds(action.offlineOrderId, existingId);
+        }
+        await updatePendingAction(action.id, {
+          edgeSynced: true,
+          edgeOrderId: existingId,
+          edgeSyncedAt: Date.now(),
+        });
+        clearConflict(action.id);
+        if (body.tableId) {
+          markKitchenItemsSynced(body.tableId, action.requestId).catch(() => {});
+        }
+        replayedIds.add(action.id);
+        console.log(`[SyncEngine] Edge replay: create-order ${action.requestId} → 409 resolved, adopted existing order ${existingId}`);
+      } else if (err?.statusCode) {
+        // Business logic error (409 without existingOrderId, 404, etc.) —
+        // don't retry via edge, let cloud sync handle
         remainingIds.add(action.id);
       } else {
         // Network error — edge may have gone down mid-replay

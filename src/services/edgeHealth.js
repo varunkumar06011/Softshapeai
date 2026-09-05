@@ -8,6 +8,8 @@
 
 import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from "./apiConfig";
 import secureStorage from "../utils/secureStorage";
+import { isAndroidLocalCaptainEnabled } from "../android-local-pos/config";
+import { getStoredCashierHub } from "../android-local-pos/hubStorage";
 
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_RUNTIME_TOKEN_STORAGE_KEY = "softshape_edge_runtime_token";
@@ -53,6 +55,10 @@ let _discoveryFailReason = null;
  * Priority: localStorage (user configured) > LAN discovery > default localhost.
  */
 export function getEdgeUrl() {
+  if (isAndroidLocalCaptainEnabled()) {
+    const localHub = getStoredCashierHub();
+    if (localHub.url && localHub.token) return localHub.url;
+  }
   try {
     const stored = localStorage.getItem(EDGE_URL_STORAGE_KEY);
     if (stored) return stored;
@@ -698,6 +704,44 @@ export async function isEdgeAvailable() {
   return _edgeAvailable;
 }
 
+/**
+ * Fast edge availability check — skips LAN discovery entirely.
+ * Used by the KOT submission path (sendIncrementalKOT) where blocking for
+ * 19s on a 253-IP LAN scan is unacceptable. Uses a 3s health-check timeout
+ * against the current known edge URL only. If the edge is unreachable, returns
+ * false immediately so the caller can fall through to cloud or show an error.
+ *
+ * @returns {Promise<boolean>} true if the edge server responded and is operational
+ */
+export async function isEdgeAvailableFast() {
+  if (isHttpsBrowserContext()) return false;
+
+  const edgeUrl = getEdgeUrl();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
+    const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const health = await res.json().catch(() => ({}));
+      const available = health.isOperational === true;
+      // Update the shared cache so subsequent isEdgeAvailable() calls benefit
+      _edgeAvailable = available;
+      _edgeLastCheck = Date.now();
+      _connectivityState = available
+        ? (health.sessionValid && health.onboarded !== false ? 'edge_reachable' : 'edge_not_ready')
+        : 'edge_not_ready';
+      _connectivityLastCheck = Date.now();
+      return available;
+    }
+  } catch {
+    // Edge unreachable — fall through
+  }
+  _edgeAvailable = false;
+  _edgeLastCheck = Date.now();
+  return false;
+}
+
 // ── Connectivity state machine ───────────────────────────────────────────────
 // Returns a richer state than just boolean isEdgeAvailable:
 //   'edge_reachable'    — edge server is online and session is valid
@@ -779,10 +823,37 @@ export function getConnectivityState() {
 
 export const EDGE_FETCH_TIMEOUT_MS = 30_000;
 export const EDGE_READ_TIMEOUT_MS = 3_000; // Fast-fail for reads (tables/sections/venues)
+export const EDGE_WRITE_TIMEOUT_MS = 8_000; // Writes (POST/PUT/PATCH) — fast-fail, no 92s freeze
 
-async function _edgeFetchWithKey(path, options, headers, timeoutMs) {
+// Write methods that use the shorter timeout and no retries. A KOT write that
+// times out after 8s should surface immediately so the captain can retry or
+// fix connectivity — not block for 92s (3×30s + 2×1s) staring at "Sending...".
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+// Cancellation support: callers can pass an external AbortController via
+// options.signal so an in-flight edgeFetch can be cancelled (e.g. when the
+// captain navigates away or the stuck-guard fires). The controller is merged
+// with the internal timeout controller — aborting either one cancels the fetch.
+async function _edgeFetchWithKey(path, options, headers, timeoutMs, externalSignal) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // If the caller provided an external AbortController, wire it so aborting
+  // the external signal also aborts this fetch. This lets sendIncrementalKOT
+  // cancel an in-flight KOT write when the stuck-guard fires or the captain
+  // switches tables — preventing orphaned promises that corrupt state.
+  let onExternalAbort = null;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timeoutId);
+      const cancelErr = new Error(`Edge request to ${path} cancelled before start`);
+      cancelErr.name = 'AbortError';
+      throw cancelErr;
+    }
+    onExternalAbort = () => controller.abort();
+    externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+
   let res;
   try {
     res = await fetch(`${getEdgeUrl()}${path}`, {
@@ -792,22 +863,48 @@ async function _edgeFetchWithKey(path, options, headers, timeoutMs) {
     });
   } catch (err) {
     clearTimeout(timeoutId);
+    if (externalSignal && onExternalAbort) {
+      externalSignal.removeEventListener('abort', onExternalAbort);
+    }
     if (err?.name === 'AbortError') {
-      throw new Error(`Edge request to ${path} timed out after ${timeoutMs / 1000}s`);
+      // Distinguish external cancellation from timeout — both surface as
+      // AbortError so existing callers that check err.name === 'AbortError'
+      // (e.g. barTableSyncService.js) recognize intentional cancellation.
+      if (externalSignal?.aborted) {
+        const cancelErr = new Error(`Edge request to ${path} cancelled`);
+        cancelErr.name = 'AbortError';
+        throw cancelErr;
+      }
+      const timeoutErr = new Error(`Edge request to ${path} timed out after ${timeoutMs / 1000}s`);
+      timeoutErr.name = 'AbortError';
+      throw timeoutErr;
     }
     throw err;
   }
   clearTimeout(timeoutId);
+  if (externalSignal && onExternalAbort) {
+    externalSignal.removeEventListener('abort', onExternalAbort);
+  }
   return res;
 }
 
 export async function edgeFetch(path, options = {}) {
   const edgeApiKey = getStoredEdgeApiKey();
   const runtimeToken = getStoredEdgeRuntimeToken();
-  // Allow callers to override timeout — reads use 3s, writes keep 30s.
-  const timeoutMs = options.timeoutMs ?? EDGE_FETCH_TIMEOUT_MS;
+  const localHub = isAndroidLocalCaptainEnabled() ? getStoredCashierHub() : null;
+  // Writes (POST/PUT/PATCH/DELETE) use a shorter timeout and NO retries.
+  // A KOT write that fails should surface immediately so the captain can
+  // retry or fix connectivity — not block for 92s (3×30s + 2×1s) staring
+  // at "Sending...". Reads keep the 30s timeout + 2 retries because they're
+  // idempotent and a retry is always safe.
+  const method = (options.method || 'GET').toUpperCase();
+  const isWrite = WRITE_METHODS.has(method);
+  const timeoutMs = options.timeoutMs ?? (isWrite ? EDGE_WRITE_TIMEOUT_MS : EDGE_FETCH_TIMEOUT_MS);
+  const maxRetries = isWrite ? 0 : 2;
+  const externalSignal = options.signal || null;
   const fetchOptions = { ...options };
   delete fetchOptions.timeoutMs; // don't pass to native fetch
+  delete fetchOptions.signal;    // handled via _edgeFetchWithKey merge
   const headers = {
     'Content-Type': 'application/json',
     ...(fetchOptions.headers || {}),
@@ -818,17 +915,21 @@ export async function edgeFetch(path, options = {}) {
   if (runtimeToken) {
     headers['Authorization'] = `Bearer ${runtimeToken}`;
   }
+  if (localHub?.token) {
+    headers['X-Local-Token'] = localHub.token;
+    delete headers.Authorization;
+    delete headers['X-Edge-Key'];
+  }
 
   // Retry on network errors (not HTTP error statuses). The edge server is a
   // separate process that survives page reloads — a transient failure usually
-  // means the sidecar is still starting up or a brief network blip. Retry up
-  // to 2 times with 1s delay before giving up and letting the caller fall
-  // through to cloud.
-  const MAX_RETRIES = 2;
+  // means the sidecar is still starting up or a brief network blip. Retries
+  // are disabled for writes (maxRetries=0) because a write timeout must
+  // surface immediately — the captain app's KOT flow has its own retry UX.
   let lastError = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      let res = await _edgeFetchWithKey(path, fetchOptions, headers, timeoutMs);
+      let res = await _edgeFetchWithKey(path, fetchOptions, headers, timeoutMs, externalSignal);
 
       // If the edge server rejected our API key (or we never had one), try to
       // fetch a fresh key from the cloud and retry once. The edge server
@@ -849,7 +950,7 @@ export async function edgeFetch(path, options = {}) {
           if (freshKey && freshKey !== edgeApiKey) {
             setStoredEdgeApiKey(freshKey);
             const retryHeaders = { ...headers, 'X-Edge-Key': freshKey };
-            res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
+            res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs, externalSignal);
             // Key was fixed — check if retry also failed with a token error
             if (res.status === 401) {
               try { body = await res.json(); } catch { /* ignore */ }
@@ -880,7 +981,7 @@ export async function edgeFetch(path, options = {}) {
           const freshToken = await ensureEdgeRuntimeToken().catch(() => null);
           if (freshToken) {
             const retryHeaders = { ...headers, 'Authorization': `Bearer ${freshToken}` };
-            res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs);
+            res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs, externalSignal);
           } else if (runtimeToken) {
             // Restore the old token so we don't leave things worse than before
             setStoredEdgeRuntimeToken(runtimeToken);
@@ -910,8 +1011,12 @@ export async function edgeFetch(path, options = {}) {
       // Only retry on network errors (not HTTP error statuses which throw
       // with a .status property). AbortError (timeout) also retries since
       // the edge server may be slow to respond during startup.
+      // Writes never retry (maxRetries=0) — a write timeout surfaces immediately.
+      // Don't retry if the caller cancelled the request — the signal is already
+      // aborted so retries would fail instantly and waste 2s on delays.
       if (err?.status) throw err; // HTTP error — don't retry
-      if (attempt < MAX_RETRIES) {
+      if (externalSignal?.aborted) throw err; // caller cancelled — don't retry
+      if (attempt < maxRetries) {
         await new Promise(r => setTimeout(r, 1000));
         // Reset edge availability cache so isEdgeAvailable() re-checks
         _edgeLastCheck = 0;
