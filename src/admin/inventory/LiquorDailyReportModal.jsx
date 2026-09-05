@@ -444,9 +444,18 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         }
         if (pending.manualItems && Array.isArray(pending.manualItems) && pending.manualItems.length > 0) {
           // Restore unsaved manual items from localStorage — merge with loaded items
+          // Dedup by id AND by (itemName + section) to prevent duplicates:
+          // if a saved item now has an id from the backend, a stale localStorage
+          // entry without an id for the same item must NOT be restored.
           setManualItems(prev => {
             const existingIds = new Set(prev.map(m => m.id).filter(Boolean));
-            const restored = pending.manualItems.filter(m => !m.id || !existingIds.has(m.id));
+            const existingKeys = new Set(prev.map(m => `${(m.itemName || '').trim().toLowerCase()}|${m.section}`));
+            const restored = pending.manualItems.filter(m => {
+              if (m.id && existingIds.has(m.id)) return false; // dup by id
+              const key = `${(m.itemName || '').trim().toLowerCase()}|${m.section}`;
+              if (existingKeys.has(key)) return false; // dup by name+section
+              return true;
+            });
             return [...prev, ...restored];
           });
         }
@@ -963,6 +972,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setTimeout(() => setSavedMsg(false), 3000);
       // ── ONLY clear pending edits after confirmed successful save ──
       clearPendingFromStorage();
+      // ── Skip the auto-save effect BEFORE any state updates ──
+      // Without this, setSummaryEdits({}) triggers a re-render between
+      // clearPendingFromStorage() and loadData(). The auto-save effect
+      // would fire with stale manualItems (still { id: undefined }) and
+      // re-write them to localStorage. loadData() would then merge them
+      // back, creating duplicates that get saved as new DB records.
+      skipAutoSaveRef.current = true;
       // ── Clear summaryEdits so stale card overrides don't persist ──
       // The saved values are now in the backend data (refetched below).
       // Without this, summaryEdits keeps old values and the `computed`
