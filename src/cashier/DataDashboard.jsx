@@ -164,7 +164,7 @@ function SalesAttributionChart({ outletId }) {
         <EmptyState message="No sales in the last 7 days" />
       ) : (
         <div className="h-[260px] w-full">
-          <ResponsiveContainer width="99%" height="100%">
+          <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0} debounce={150}>
             <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="ddBarGrad" x1="0" y1="0" x2="0" y2="1">
@@ -479,7 +479,7 @@ function CategoryBreakdown({ outletId, date }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="h-[240px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
               <PieChart>
                 <Pie
                   data={pieData}

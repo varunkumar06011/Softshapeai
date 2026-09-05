@@ -428,7 +428,7 @@ function CaptainPerformanceReport({ dateFilter }) {
             </div>
             {captain.trends?.length > 0 && (
               <div className="mt-4 h-16">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                   <AreaChart data={captain.trends}>
                     <defs>
                       <linearGradient id={`trend-${captain.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -516,7 +516,7 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
             <TrendingUp size={18} className="text-[#B71C1C]" /> Revenue Trend
           </h3>
           <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
               <AreaChart data={trend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs><linearGradient id="esColorRev" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#B71C1C" stopOpacity={0.15} />
@@ -537,7 +537,7 @@ function ExecutiveSummary({ dateFilter, outletId, onDownloadRef }) {
           </h3>
           <div className="flex-grow flex flex-col justify-center">
             <div className="h-[200px] w-full relative">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                 <PieChart>
                   <Pie data={methods} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={8} stroke="none" isAnimationActive={true} animationDuration={800} animationEasing="ease-out">
                     {methods.map((_entry, i) => <Cell key={i} fill={['#B71C1C','#E53935','#EF9A9A','#FFCDD2'][i%4]} />)}
@@ -720,7 +720,7 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
         <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Payment Methods</h3>
           <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
               <BarChart layout="vertical" data={methods.map(([m, v]) => ({ method: m, amount: v.amount }))} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dsBarGrad" x1="0" y1="0" x2="1" y2="0">
@@ -757,7 +757,7 @@ function DailySalesReport({ dateFilter, outletId, onDownloadRef }) {
         <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in-delay-1">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Daily Trend</h3>
           <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
               <AreaChart data={trend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs><linearGradient id="dsColorRev" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#B71C1C" stopOpacity={0.15} />
@@ -900,7 +900,7 @@ function AOVReport({ dateFilter, outletId, onDownloadRef }) {
       {trendData.length > 1 && (
         <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
           <h3 className="text-sm font-black text-gray-900 mb-4">AOV Trend</h3>
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={260} minWidth={0} minHeight={0} debounce={150}>
             <AreaChart data={trendData}>
               <defs>
                 <linearGradient id="aovGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1314,7 +1314,7 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
         <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Revenue Distribution</h3>
           <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={4} stroke="none" isAnimationActive={true} animationDuration={800} animationEasing="ease-out">
                   {pieData.map((_e, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
@@ -1469,7 +1469,7 @@ function PaymentMethodsReport({ dateFilter, outletId, onDownloadRef }) {
         <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm animate-chart-in">
           <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Daily Payment Trend</h3>
           <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
               <BarChart data={byDay} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
@@ -2495,7 +2495,7 @@ function HourlyAnalysisReport({ dateFilter, outletId }) {
       <div className="bg-white p-6 rounded-3xl border border-[#FFCDD2] shadow-sm">
         <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-widest">Revenue by Hour</h3>
         <div className="h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
             <BarChart data={activeHours} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F5" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />

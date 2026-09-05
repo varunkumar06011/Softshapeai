@@ -200,7 +200,7 @@ export default function CaptainPerformanceDashboard() {
                 </div>
               ) : (
                 <div className="h-[250px] w-full">
-                  <ResponsiveContainer width="99%" height="100%">
+                  <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                     <BarChart data={trends}>
                       <XAxis dataKey="hour" tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />

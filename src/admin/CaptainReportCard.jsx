@@ -348,7 +348,7 @@ export default function CaptainReportCard() {
                   </div>
                   {data.trends?.length > 0 ? (
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                         <LineChart data={data.trends}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                           <XAxis dataKey="day" tick={{ fontSize: 11 }} />
@@ -376,7 +376,7 @@ export default function CaptainReportCard() {
                     Performance Summary
                   </h3>
                   <div className="h-40">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                       <PieChart>
                         <Pie
                           data={[
@@ -450,7 +450,7 @@ export default function CaptainReportCard() {
                   </h3>
                   {data.categories?.length > 0 ? (
                     <div className="h-48">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                         <PieChart>
                           <Pie
                             data={data.categories}

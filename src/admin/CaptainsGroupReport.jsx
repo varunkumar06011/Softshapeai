@@ -271,7 +271,7 @@ export default function CaptainsGroupReport() {
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-4">Sales Trend</h3>
                   {data.trends?.length > 0 ? (
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                         <LineChart data={data.trends}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                           <XAxis dataKey="day" tick={{ fontSize: 11 }} />
@@ -287,7 +287,7 @@ export default function CaptainsGroupReport() {
                 <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-4">Performance Summary</h3>
                   <div className="h-40">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}>
                       <PieChart>
                         <Pie data={[{ name: 'Score', value: 92 }, { name: 'Remaining', value: 8 }]} innerRadius={45} outerRadius={65} startAngle={90} endAngle={-270} dataKey="value" stroke="none">
                           <Cell fill="#E53935" />
@@ -332,7 +332,7 @@ export default function CaptainsGroupReport() {
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-4">Sales by Category</h3>
                   {data.categories?.length > 0 ? (
                     <>
-                      <div className="h-48"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data.categories} dataKey="revenue" nameKey="name" cx="40%" cy="50%" innerRadius={45} outerRadius={70} stroke="none">{data.categories.map((_, i) => <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />)}</Pie><Tooltip formatter={(v) => [inr(Number(v)), 'Revenue']} /></PieChart></ResponsiveContainer></div>
+                      <div className="h-48"><ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={150}><PieChart><Pie data={data.categories} dataKey="revenue" nameKey="name" cx="40%" cy="50%" innerRadius={45} outerRadius={70} stroke="none">{data.categories.map((_, i) => <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />)}</Pie><Tooltip formatter={(v) => [inr(Number(v)), 'Revenue']} /></PieChart></ResponsiveContainer></div>
                       <div className="mt-2 space-y-1">{data.categories.slice(0, 5).map((c, i) => <div key={i} className="flex items-center justify-between text-xs"><div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{ background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} /><span className="font-bold text-gray-700">{c.name}</span></div><span className="font-black text-gray-900">{c.percent}%</span></div>)}</div>
                     </>
                   ) : <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No category data</div>}
