@@ -5,10 +5,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { createInventoryItem } from '../../services/barInventoryApi';
+import { createInventoryItem, fetchUnlinkedItems } from '../../services/barInventoryApi';
 import { createKitchenItem, createKitchenEntry } from '../../services/kitchenInventoryApi';
-import { apiUrl, getAuthHeaders } from '../../services/apiConfig';
-import { getCurrentRestaurantId } from '../../utils/getCurrentRestaurantId';
 
 export function AddItemModal({ open, onClose, tab, onSaved }) {
   const [saving, setSaving] = useState(false);
@@ -17,10 +15,14 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   // Bar-specific state
   const [menuItems, setMenuItems] = useState([]);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [brand, setBrand] = useState('');
+  const [barCategory, setBarCategory] = useState('');
   const [bottleSize, setBottleSize] = useState('');
   const [openingStock, setOpeningStock] = useState('');
   const [reorderLevel, setReorderLevel] = useState('');
   const [costPerBottle, setCostPerBottle] = useState('');
+  const [sellingPricePerMl, setSellingPricePerMl] = useState('');
 
   // Kitchen-specific state
   const [name, setName] = useState('');
@@ -48,16 +50,38 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [open]);
 
+  // Auto-fill brand + bottle size from the selected menu item name
+  useEffect(() => {
+    if (!selectedMenuItemId) return;
+    const mi = menuItems.find((m) => m.id === selectedMenuItemId);
+    if (!mi) return;
+    const miName = mi.name || '';
+    if (!displayName) setDisplayName(miName);
+    if (!brand) {
+      const base = miName.toLowerCase()
+        .replace(/\s*\d+\s*(?:ml|l(?:tr|itre|iter)?|l)\b/gi, ' ')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      setBrand(base.split(' ').map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(' '));
+    }
+    if (!barCategory) {
+      const catName = mi.category?.name || '';
+      setBarCategory(catName);
+    }
+    if (!bottleSize) {
+      const mlMatch = miName.match(/(\d+)\s*ml\b/i);
+      const ltrMatch = miName.match(/(\d+)\s*l(?:tr|itre|iter)?\b/i);
+      if (mlMatch) setBottleSize(mlMatch[1]);
+      else if (ltrMatch) setBottleSize(String(Number(ltrMatch[1]) * 1000));
+      else setBottleSize('750');
+    }
+  }, [selectedMenuItemId, menuItems]);
+
   const fetchUnlinkedMenuItems = async () => {
     try {
-      const rId = getCurrentRestaurantId();
-      const res = await fetch(apiUrl(`/api/bar/menu/items?restaurantId=${rId}&_t=${Date.now()}`), {
-        headers: getAuthHeaders(),
-      });
-      const data = await res.json();
-      // Filter to LIQUOR items that don't have inventory linked
-      const items = Array.isArray(data) ? data : (data?.items || []);
-      setMenuItems(items.filter((m) => m.menuType === 'LIQUOR' || m.menuType === 'BAR'));
+      const data = await fetchUnlinkedItems();
+      setMenuItems(data?.items || []);
     } catch {
       setMenuItems([]);
     }
@@ -65,10 +89,14 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
 
   const resetForm = () => {
     setSelectedMenuItemId('');
+    setDisplayName('');
+    setBrand('');
+    setBarCategory('');
     setBottleSize('');
     setOpeningStock('');
     setReorderLevel('');
     setCostPerBottle('');
+    setSellingPricePerMl('');
     setName('');
     setCategory('');
     setUnit('gm');
@@ -85,11 +113,11 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   };
 
   const handleSaveBar = async () => {
-    if (!selectedMenuItemId) {
-      setError('Please select a menu item');
+    if (!displayName.trim()) {
+      setError('Display name is required');
       return;
     }
-    if (bottleSize <= 0) {
+    if (Number(bottleSize) <= 0) {
       setError('Bottle size must be greater than 0');
       return;
     }
@@ -104,12 +132,15 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     setError(null);
     try {
       await createInventoryItem({
-        menuItemId: selectedMenuItemId,
-        unitOfMeasure: 'ml',
-        bottleSize: Number(bottleSize),
+        menuItemId: selectedMenuItemId || undefined,
+        name: displayName.trim(),
+        brand: brand.trim() || displayName.trim(),
+        category: barCategory.trim() || 'Liquor',
+        bottleSizeMl: Number(bottleSize),
         openingStockBottles: openingStockNum,
-        reorderLevel: reorderLevelNum,
-        ...(costPerBottle !== '' && { costPerBottle: Number(costPerBottle) }),
+        reorderLevelBottles: reorderLevelNum,
+        ...(costPerBottle !== '' && { purchaseRate: Number(costPerBottle) }),
+        ...(sellingPricePerMl !== '' && { sellingPricePerMl: Number(sellingPricePerMl) }),
       });
       onSaved?.();
       handleClose();
@@ -195,24 +226,54 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
 
           {tab === 'bar' ? (
             <>
-              {/* Bar: menu-item picker */}
+              {/* Bar: one stock pool per bottle SKU — optional menu link */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Menu Item *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Link Menu Item (optional)</label>
                 <select
                   value={selectedMenuItemId}
                   onChange={(e) => setSelectedMenuItemId(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 >
-                  <option value="">Select a liquor menu item...</option>
+                  <option value="">— No menu link (standalone stock item) —</option>
                   {menuItems.map((m) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
                 {menuItems.length === 0 && (
                   <p className="text-xs text-gray-400 mt-1">
-                    No unlinked liquor menu items found. All items may already have inventory.
+                    No unlinked liquor menu items found. You can still create a standalone stock item.
                   </p>
                 )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name *</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g. Royal Stag 750ml"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                <input
+                  type="text"
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  placeholder="e.g. Royal Stag"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <input
+                  type="text"
+                  value={barCategory}
+                  onChange={(e) => setBarCategory(e.target.value)}
+                  placeholder="e.g. Whisky, Beer, Vodka"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Bottle Size (ml) *</label>
@@ -245,12 +306,23 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cost per Bottle (₹)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Rate (₹ per bottle)</label>
                 <input
                   type="number"
                   value={costPerBottle}
                   onChange={(e) => setCostPerBottle(e.target.value)}
                   placeholder="enter cost"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (₹ per ml)</label>
+                <input
+                  type="number"
+                  value={sellingPricePerMl}
+                  onChange={(e) => setSellingPricePerMl(e.target.value)}
+                  placeholder="e.g. 2.5"
+                  step="0.01"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>

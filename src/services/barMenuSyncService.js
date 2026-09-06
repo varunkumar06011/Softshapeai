@@ -306,37 +306,47 @@ export function updateBarMenuItem(itemId, patch, apiBase) {
 
 /**
  * Toggle a bar menu item's availability optimistically.
- * Supports both global and venue-scoped toggling.
+ * Supports global, venue-scoped, and section-scoped toggling.
  *
  * @param {string} itemId  - The item's DB id
  * @param {string} apiBase - API base URL
  * @param {function} onDone - Optional callback on success (e.g. refreshMenu)
  * @param {function} onError - Optional callback on failure
  * @param {string|null} venueId - Optional venue ID for scoped toggle
+ * @param {string|null} sectionId - Optional section ID for section-scoped toggle
  */
-export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError, venueId = null) {
+export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError, venueId = null, sectionId = null) {
   if (!barGlobalMenu) return;
 
-  const isVenueScope = venueId !== null;
+  const isSectionScope = sectionId !== null;
+  const isVenueScope = venueId !== null && !isSectionScope;
 
-  // Optimistic toggle
-  barGlobalMenu = barGlobalMenu.map((item) => {
-    if (item.id !== itemId) return item;
+  const toggleItem = (item) => {
+    if (isSectionScope) {
+      return { ...item, sectionAvailabilities: { ...item.sectionAvailabilities, [sectionId]: !(item.sectionAvailabilities?.[sectionId] ?? true) } };
+    }
     if (isVenueScope) {
       return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
     }
     return { ...item, isAvailable: !(item.isAvailable ?? true) };
-  });
+  };
+
+  // Optimistic toggle
+  barGlobalMenu = barGlobalMenu.map((item) => item.id !== itemId ? item : toggleItem(item));
   writeBarMenuCache(barGlobalMenu);
   notifySubscribers();
 
-  const endpoint = isVenueScope
-    ? `${apiBase}/api/bar/menu/items/${itemId}/venue-availability`
-    : `${apiBase}/api/bar/menu/items/${itemId}/availability`;
-
-  const fetchOptions = isVenueScope
-    ? { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, body: JSON.stringify({ venueId }) }
-    : { method: "PATCH", headers: { ...getAuthHeaders() } };
+  let endpoint, fetchOptions;
+  if (isSectionScope) {
+    endpoint = `${apiBase}/api/bar/menu/items/${itemId}/section-availability`;
+    fetchOptions = { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, body: JSON.stringify({ sectionId }) };
+  } else if (isVenueScope) {
+    endpoint = `${apiBase}/api/bar/menu/items/${itemId}/venue-availability`;
+    fetchOptions = { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, body: JSON.stringify({ venueId }) };
+  } else {
+    endpoint = `${apiBase}/api/bar/menu/items/${itemId}/availability`;
+    fetchOptions = { method: "PATCH", headers: { ...getAuthHeaders() } };
+  }
 
   fetch(endpoint, fetchOptions)
     .then((res) => {
@@ -344,26 +354,14 @@ export function toggleBarMenuAvailability(itemId, apiBase, onDone, onError, venu
         onDone?.();
       } else {
         // Revert on failure
-        barGlobalMenu = barGlobalMenu.map((item) => {
-          if (item.id !== itemId) return item;
-          if (isVenueScope) {
-            return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
-          }
-          return { ...item, isAvailable: !(item.isAvailable ?? true) };
-        });
+        barGlobalMenu = barGlobalMenu.map((item) => item.id !== itemId ? item : toggleItem(item));
         writeBarMenuCache(barGlobalMenu);
         notifySubscribers();
         onError?.();
       }
     })
     .catch(() => {
-      barGlobalMenu = barGlobalMenu.map((item) => {
-        if (item.id !== itemId) return item;
-        if (isVenueScope) {
-          return { ...item, venueAvailabilities: { ...item.venueAvailabilities, [venueId]: !(item.venueAvailabilities?.[venueId] ?? true) } };
-        }
-        return { ...item, isAvailable: !(item.isAvailable ?? true) };
-      });
+      barGlobalMenu = barGlobalMenu.map((item) => item.id !== itemId ? item : toggleItem(item));
       writeBarMenuCache(barGlobalMenu);
       notifySubscribers();
       onError?.();

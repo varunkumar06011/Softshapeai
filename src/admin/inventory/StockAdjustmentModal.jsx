@@ -13,10 +13,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo } from 'react';
-import { adjustStock, getOrCreateRequestId, clearRequestId, getOpeningPreview, updateNonAcEntry, recordNonAcDeduction } from '../../services/barInventoryApi';
+import { adjustStock, getOrCreateRequestId, clearRequestId, getOpeningPreview, recordNonAcSale } from '../../services/barInventoryApi';
 import { createKitchenEntry } from '../../services/kitchenInventoryApi';
+import { getKolkataDateString } from '../../shared/utils/dateFormat';
 
-export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved }) {
+export function StockAdjustmentModal({ open, item, items, tab, date, defaultType, onClose, onSaved }) {
   // `selectedItem` is the item chosen in the picker step (or the pre-selected
   // `item` prop when launched from the drawer). It is the ONLY item whose stock
   // is adjusted — never falls back to items[0].
@@ -40,14 +41,14 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     if (open) {
       setSelectedItem(item ?? null);
       setItemSearch('');
-      setAdjustType('+');
+      setAdjustType(defaultType || '+');
       setAmount('');
-      setOpeningUnit(item && !item.acItemId && (item.nonAcItemId || (item.id || '').startsWith('nonac-')) ? 'btl' : 'ml');
+      setOpeningUnit('ml');
       setReason('');
       setNotes('');
       setError(null);
     }
-  }, [item, open, tab]);
+  }, [item, open, tab, defaultType]);
 
   // Filtered item list for the picker step. Searches by name (case-insensitive).
   const searchableItems = Array.isArray(items) ? items : [];
@@ -65,7 +66,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     setItemSearch('');
     setAdjustType('+');
     setAmount('');
-    setOpeningUnit(!it.acItemId && (it.nonAcItemId || (it.id || '').startsWith('nonac-')) ? 'btl' : 'ml');
+    setOpeningUnit('ml');
     setReason('');
     setNotes('');
     setError(null);
@@ -76,13 +77,13 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   // Shows today's sold/purchased/wastage so the admin can see the resulting
   // closing stock before saving the opening stock value.
   useEffect(() => {
-    if (!open || tab !== 'bar' || !selectedItem?.acItemId) {
+    if (!open || tab !== 'bar' || !selectedItem?.id) {
       setOpeningPreview(null);
       return;
     }
     let cancelled = false;
     setOpeningPreviewLoading(true);
-    getOpeningPreview(selectedItem.acItemId)
+    getOpeningPreview(selectedItem.id, date || undefined)
       .then((data) => {
         if (!cancelled) setOpeningPreview(data);
       })
@@ -93,7 +94,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
         if (!cancelled) setOpeningPreviewLoading(false);
       });
     return () => { cancelled = true; };
-  }, [open, tab, selectedItem?.acItemId]);
+  }, [open, tab, date, selectedItem?.id]);
 
   const handleBackToPicker = () => {
     setSelectedItem(null);
@@ -110,15 +111,12 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
       setError('Please select an inventory item first');
       return;
     }
-    // For combined bar items, use acItemId (real InventoryItem ID) for adjustStock.
-    // Standalone Non-AC items use updateNonAcEntry / recordNonAcDeduction instead.
-    const isNonAcOnly = !selectedItem.acItemId && (selectedItem.nonAcItemId || (selectedItem.id || '').startsWith('nonac-'));
-    const adjustItemId = selectedItem.acItemId || selectedItem.id;
+    const adjustItemId = selectedItem.id;
     if (amountNum <= 0) {
       setError(adjustType === 'opening' ? 'Opening stock must be greater than 0' : 'Amount must be greater than 0');
       return;
     }
-    if (!reason && adjustType !== 'opening') {
+    if (!reason && adjustType !== 'opening' && adjustType !== 'nonac') {
       setError('Reason is required');
       return;
     }
@@ -129,65 +127,38 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
     // Idempotency key scoped to the actual selected item id.
     const actionKey = `bar-adjust:${adjustItemId}`;
     const requestId = tab === 'bar' ? getOrCreateRequestId(actionKey) : undefined;
+    const movementDate = date || getKolkataDateString();
+    const bottleSizeMl = Number(selectedItem.bottleSizeMl) || 0;
+    const amountMl = openingUnit === 'btl' && bottleSizeMl > 0
+      ? Math.round(amountNum * bottleSizeMl * 100) / 100
+      : amountNum;
 
     try {
       if (tab === 'bar') {
-        if (isNonAcOnly) {
-          // Standalone Non-AC item — use Non-AC APIs
-          const nonAcItemId = selectedItem.nonAcItemId || selectedItem.id;
-          if (adjustType === 'opening') {
-            // Non-AC opening stock is in bottles
-            const openingBottles = openingUnit === 'btl' ? amountNum : (Number(selectedItem.bottleSize) > 0 ? amountNum / Number(selectedItem.bottleSize) : amountNum);
-            await updateNonAcEntry({
-              itemId: nonAcItemId,
-              openingBottles: Math.round(openingBottles * 100) / 100,
-              reason: reason || undefined,
-            });
-          } else if (adjustType === '+') {
-            // Add stock = received bottles
-            const addBottles = openingUnit === 'btl' ? amountNum : (Number(selectedItem.bottleSize) > 0 ? amountNum / Number(selectedItem.bottleSize) : amountNum);
-            await recordNonAcDeduction({
-              itemId: nonAcItemId,
-              receivedBottles: Math.round(addBottles * 100) / 100,
-              adminDeduction: 0,
-              reason: reason || undefined,
-            });
-          } else {
-            // Remove stock = admin deduction
-            const deductBottles = openingUnit === 'btl' ? amountNum : (Number(selectedItem.bottleSize) > 0 ? amountNum / Number(selectedItem.bottleSize) : amountNum);
-            await recordNonAcDeduction({
-              itemId: nonAcItemId,
-              adminDeduction: Math.round(deductBottles * 100) / 100,
-              receivedBottles: 0,
-              reason: reason || undefined,
-            });
-          }
+        if (adjustType === 'nonac') {
+          // Non-AC sale — append-only; edits become CORRECTION movements.
+          // Requires a reason for audit when correcting an existing entry.
+          await recordNonAcSale({
+            itemId: adjustItemId,
+            date: movementDate,
+            ...(openingUnit === 'btl' && bottleSizeMl > 0
+              ? { bottles: amountNum }
+              : { quantityMl: amountMl }),
+            reason: `${reason}${notes ? ': ' + notes : ''}` || undefined,
+            notes: notes || undefined,
+          });
         } else {
-          // AC item — use adjustStock
-          // OPENING: set opening stock directly (positive amount = the opening stock value)
-          // WASTAGE/ADJUSTMENT: + adds stock, - removes stock
-          let quantityChange, type;
-          if (adjustType === 'opening') {
-            // Opening stock entry: set the absolute stock value
-            // The backend OPENING type sets openingStock = stockAfter in the snapshot.
-            // If the admin entered bottles, convert to ml using the item's bottleSize.
-            const bottleSize = Number(selectedItem.bottleSize) || 0;
-            if (openingUnit === 'btl' && bottleSize > 0) {
-              quantityChange = Math.round(amountNum * bottleSize * 100) / 100; // bottles → ml
-            } else {
-              quantityChange = amountNum; // already in ml
-            }
-            type = 'OPENING';
-          } else {
-            quantityChange = adjustType === '+' ? amountNum : -amountNum;
-            type = reason === 'wastage' || reason === 'breakage' ? 'WASTAGE' : 'ADJUSTMENT';
-          }
+          // ADD / REMOVE / WASTAGE / OPENING → adjust-stock movement
+          let adjustmentType;
+          if (adjustType === 'opening') adjustmentType = 'OPENING';
+          else if (adjustType === '+') adjustmentType = 'ADD';
+          else adjustmentType = reason === 'wastage' || reason === 'breakage' ? 'WASTAGE' : 'REMOVE';
           await adjustStock({
             itemId: adjustItemId,
-            quantityChange,
-            type,
-            notes: `${reason}${notes ? ': ' + notes : ''}`,
-            createdBy: 'Admin',
+            adjustmentType,
+            quantityMl: amountMl,
+            reason: `${reason}${notes ? ': ' + notes : ''}` || undefined,
+            date: movementDate,
             requestId,
           });
           clearRequestId(actionKey);
@@ -229,16 +200,15 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
   const amountNum = amount === '' ? 0 : Number(amount);
 
   const itemName = selectedItem
-    ? (selectedItem.itemName || (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name))
+    ? (selectedItem.itemName || selectedItem.name)
     : '';
-  const isNonAcOnlyItem = selectedItem && !selectedItem.acItemId && (selectedItem.nonAcItemId || (selectedItem.id || '').startsWith('nonac-'));
-  const currentStock = isNonAcOnlyItem
-    ? (Number(selectedItem?.nonAcClosing) || 0)
-    : (Number(selectedItem?.currentStock || selectedItem?.acClosing) || 0);
-  const bottleSize = Number(selectedItem?.bottleSize) || 0;
-  const currentStockBtl = isNonAcOnlyItem ? currentStock : (bottleSize > 0 ? currentStock / bottleSize : 0);
+  const currentStock = tab === 'bar'
+    ? (Number(selectedItem?.systemClosingMl ?? selectedItem?.currentStockMl) || 0)
+    : (Number(selectedItem?.currentStock) || 0);
+  const bottleSize = Number(selectedItem?.bottleSizeMl) || 0;
+  const currentStockBtl = bottleSize > 0 ? currentStock / bottleSize : 0;
   const unit = selectedItem
-    ? (isNonAcOnlyItem ? 'btl' : (tab === 'bar' ? 'ml' : selectedItem.unit))
+    ? (tab === 'bar' ? 'ml' : selectedItem.unit)
     : '';
 
   return (
@@ -308,7 +278,9 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                 ) : (
                   filteredPickerItems.map((it) => {
                     const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
-                    const stock = Number(it.currentStock || it.acClosing) || 0;
+                    const stock = tab === 'bar'
+                      ? (Number(it.systemClosingMl ?? it.currentStockMl) || 0)
+                      : (Number(it.currentStock) || 0);
                     const itUnit = tab === 'bar' ? 'ml' : it.unit;
                     return (
                       <button
@@ -379,7 +351,22 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                       Opening Stock
                     </button>
                   )}
+                  {tab === 'bar' && (
+                    <button
+                      onClick={() => setAdjustType('nonac')}
+                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                        adjustType === 'nonac' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      Non-AC Sale
+                    </button>
+                  )}
                 </div>
+                {adjustType === 'nonac' && (
+                  <p className="text-xs text-blue-600 mt-1.5">
+                    Records a Non-AC (offline/manual) sale for this bottle. Re-entering for the same date creates an automatic correction — the original entry is never modified.
+                  </p>
+                )}
                 {adjustType === 'opening' && (
                   <p className="text-xs text-purple-600 mt-1.5">
                     Enter the total opening stock for today. The system automatically deducts today's settled bills and shows the closing stock.
@@ -392,7 +379,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                   <label className="block text-sm font-medium text-gray-700">
                     {adjustType === 'opening' ? `Opening Stock` : `Amount (${unit})`} <span className="text-red-500">*</span>
                   </label>
-                  {adjustType === 'opening' && tab === 'bar' && bottleSize > 0 && (
+                  {(adjustType === 'opening' || adjustType === 'nonac') && tab === 'bar' && bottleSize > 0 && (
                     <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
                       <button
                         type="button"
@@ -422,7 +409,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                   placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
-                {adjustType === 'opening' && tab === 'bar' && bottleSize > 0 && amount !== '' && amountNum > 0 && (
+                {(adjustType === 'opening' || adjustType === 'nonac') && tab === 'bar' && bottleSize > 0 && amount !== '' && amountNum > 0 && (
                   <p className="text-xs text-gray-500 mt-1">
                     {openingUnit === 'btl'
                       ? `= ${Math.round(amountNum * bottleSize).toLocaleString('en-IN')} ml (${bottleSize} ml per bottle)`
@@ -436,36 +423,27 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
                     ) : openingPreview ? (
                       <>
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-600 font-medium">Today's Sold (from settled bills):</span>
-                          <span className="text-red-600 font-bold">{Number(openingPreview.todaySoldMl).toLocaleString('en-IN')} ml</span>
+                          <span className="text-gray-600 font-medium">Today's Sold (settled bills + Non-AC):</span>
+                          <span className="text-red-600 font-bold">{Number(openingPreview.soldMl).toLocaleString('en-IN')} ml</span>
                         </div>
-                        {Number(openingPreview.todayPurchasedMl) > 0 && (
+                        {Number(openingPreview.purchasedMl) > 0 && (
                           <div className="flex justify-between text-xs">
                             <span className="text-gray-600 font-medium">Today's Purchases:</span>
-                            <span className="text-green-600 font-bold">+{Number(openingPreview.todayPurchasedMl).toLocaleString('en-IN')} ml</span>
+                            <span className="text-green-600 font-bold">+{Number(openingPreview.purchasedMl).toLocaleString('en-IN')} ml</span>
                           </div>
                         )}
-                        {Number(openingPreview.todayWastageMl) > 0 && (
+                        {Number(openingPreview.wastageMl) > 0 && (
                           <div className="flex justify-between text-xs">
                             <span className="text-gray-600 font-medium">Today's Wastage:</span>
-                            <span className="text-orange-600 font-bold">-{Number(openingPreview.todayWastageMl).toLocaleString('en-IN')} ml</span>
-                          </div>
-                        )}
-                        {Number(openingPreview.todayAdjustedMl) !== 0 && (
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-600 font-medium">Today's Adjustments:</span>
-                            <span className={`font-bold ${Number(openingPreview.todayAdjustedMl) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {Number(openingPreview.todayAdjustedMl) > 0 ? '+' : ''}{Number(openingPreview.todayAdjustedMl).toLocaleString('en-IN')} ml
-                            </span>
+                            <span className="text-orange-600 font-bold">-{Number(openingPreview.wastageMl).toLocaleString('en-IN')} ml</span>
                           </div>
                         )}
                         {amount !== '' && amountNum > 0 && (() => {
                           const openingMl = openingUnit === 'btl' && bottleSize > 0 ? amountNum * bottleSize : amountNum;
                           const closing = openingMl
-                            + Number(openingPreview.todayPurchasedMl)
-                            - Number(openingPreview.todaySoldMl)
-                            - Number(openingPreview.todayWastageMl)
-                            + Number(openingPreview.todayAdjustedMl);
+                            + Number(openingPreview.purchasedMl)
+                            - Number(openingPreview.soldMl)
+                            - Number(openingPreview.wastageMl);
                           return (
                             <div className="flex justify-between text-xs pt-1.5 border-t border-purple-200">
                               <span className="text-purple-700 font-bold">Closing Stock (for tomorrow):</span>
@@ -490,7 +468,7 @@ export function StockAdjustmentModal({ open, item, items, tab, onClose, onSaved 
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason {adjustType === 'opening' ? '(optional)' : '*'}
+                  Reason {(adjustType === 'opening' || adjustType === 'nonac') ? '(optional)' : '*'}
                 </label>
                 <select
                   value={reason}

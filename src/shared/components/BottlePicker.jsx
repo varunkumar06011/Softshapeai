@@ -3,8 +3,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Opens after quantity selection when a liquor peg is added to the cart.
 // Lets the captain/cashier pick which physical bottle the drink is poured from.
-// "Skip" falls back to the current largest-bottle-first deduction logic.
-// No stock quantities are shown to the captain/cashier.
+// "Skip" falls back to the default deduction logic.
+// Bottle sizes and remaining stock are shown (single unified stock pool).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect } from 'react';
@@ -94,9 +94,16 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
                         : 'border-gray-200 bg-white hover:border-amber-200'
                     }`}
                   >
-                    <span className={`text-sm font-black ${selectedId === bottle.inventoryItemId ? 'text-amber-700' : 'text-gray-700'}`}>
-                      {bottle.label}
-                    </span>
+                    <div className="flex flex-col items-start">
+                      <span className={`text-sm font-black ${selectedId === bottle.inventoryItemId ? 'text-amber-700' : 'text-gray-700'}`}>
+                        {bottle.label}{bottle.bottleSize ? ` · ${bottle.bottleSize}ml` : ''}
+                      </span>
+                      {(bottle.stockDisplay || bottle.currentStockMl != null) && (
+                        <span className={`text-[10px] font-bold mt-0.5 ${Number(bottle.currentStockMl) > 0 ? 'text-gray-400' : 'text-red-500'}`}>
+                          {bottle.stockDisplay || `${Math.round(Number(bottle.currentStockMl) || 0)} ml left`}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
                         selectedId === bottle.inventoryItemId

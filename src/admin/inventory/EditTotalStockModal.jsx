@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { adjustStock, getOrCreateRequestId, clearRequestId, updateNonAcEntry, updateInventoryItem, updateNonAcItem } from '../../services/barInventoryApi';
+import { adjustStock, getOrCreateRequestId, clearRequestId, updateInventoryItem } from '../../services/barInventoryApi';
 
 export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
   const [newOpeningInput, setNewOpeningInput] = useState('');
@@ -28,12 +28,11 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
 
   if (!open || !item) return null;
 
-  const isNonAcOnly = !item.acItemId && (item.nonAcItemId || (item.id || '').startsWith('nonac-'));
-  const itemName = item.itemName || '';
-  const bottleSize = Number(item.bottleSize) || 0;
+  const itemName = item.itemName || item.name || '';
+  const bottleSize = Number(item.bottleSizeMl) || 0;
   const purchaseRate = Number(item.purchaseRate) || 0;
-  const currentOpeningBtl = Number(item.openingStockBottles) || 0;
-  const currentPurchasesBtl = Number(item.purchasesBottles) || 0;
+  const currentOpeningBtl = bottleSize > 0 ? (Number(item.openingMl) || 0) / bottleSize : 0;
+  const currentPurchasesBtl = bottleSize > 0 ? (Number(item.purchasedMl) || 0) / bottleSize : 0;
   const currentTotalBtl = currentOpeningBtl + currentPurchasesBtl;
   const newOpeningBtl = newOpeningInput === '' ? currentOpeningBtl : Number(newOpeningInput);
   const newTotalBtl = newOpeningBtl + currentPurchasesBtl;
@@ -68,43 +67,26 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
     try {
       // 1. Update purchase rate in DB if changed
       if (hasRateChange) {
-        if (isNonAcOnly) {
-          const nonAcItemId = item.nonAcItemId || item.id;
-          await updateNonAcItem(nonAcItemId, { purchaseRate: newPurchaseRate });
-        } else {
-          const acItemId = item.acItemId || item.id;
-          await updateInventoryItem(acItemId, { costPerBottle: newPurchaseRate });
-        }
+        await updateInventoryItem(item.id, { purchaseRate: newPurchaseRate });
       }
 
-      // 2. Update opening stock in DB if changed
+      // 2. Update opening stock via an OPENING movement (append-only ledger)
       if (hasStockChange) {
-        if (isNonAcOnly) {
-          const nonAcItemId = item.nonAcItemId || item.id;
-          await updateNonAcEntry({
-            itemId: nonAcItemId,
-            openingBottles: Math.round(newOpeningBtl * 100) / 100,
-            reason: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
-          });
-        } else {
-          const acItemId = item.acItemId || item.id;
-          const actionKey = `bar-edit-stock:${acItemId}`;
-          const requestId = getOrCreateRequestId(actionKey);
-          const newOpeningMl = bottleSize > 0
-            ? Math.round(newOpeningBtl * bottleSize * 100) / 100
-            : Math.round(newOpeningBtl * 100) / 100;
+        const actionKey = `bar-edit-stock:${item.id}`;
+        const requestId = getOrCreateRequestId(actionKey);
+        const newOpeningMl = bottleSize > 0
+          ? Math.round(newOpeningBtl * bottleSize * 100) / 100
+          : Math.round(newOpeningBtl * 100) / 100;
 
-          await adjustStock({
-            itemId: acItemId,
-            quantityChange: newOpeningMl,
-            type: 'OPENING',
-            notes: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
-            createdBy: 'Admin',
-            requestId,
-            date,
-          });
-          clearRequestId(actionKey);
-        }
+        await adjustStock({
+          itemId: item.id,
+          adjustmentType: 'OPENING',
+          quantityMl: newOpeningMl,
+          reason: reason.trim() || `Edit Total Stock — set opening to ${newOpeningBtl} btl`,
+          requestId,
+          date,
+        });
+        clearRequestId(actionKey);
       }
 
       onSaved?.();

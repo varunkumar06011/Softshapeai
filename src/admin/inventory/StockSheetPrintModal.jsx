@@ -48,7 +48,7 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
     setEdits({});
     try {
       const result = tab === 'bar'
-        ? await fetchBarStockSheet(targetDate)
+        ? adaptBarStockSheet(await fetchBarStockSheet(targetDate))
         : await fetchKitchenStockSheet(targetDate);
       setData(result);
     } catch (err) {
@@ -341,6 +341,49 @@ function EditCell({ value, onChange, bold }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Adapt the redesigned /stock-sheet response ({ date, groups }) to the legacy
+// preview shape used by this modal and the kitchen sheet.
+// New per-item fields → legacy: openingMl→openingStock, purchasedMl→received,
+// (acSaleMl+nonAcSaleMl+wastageMl)→consumption, systemClosingMl→closingStock.
+function adaptBarStockSheet(res) {
+  if (!res) return res;
+  const categories = (res.groups || []).map((g) => ({
+    category: g.category,
+    items: (g.items || []).map((r, idx) => ({
+      itemId: r.id,
+      itemNumber: idx + 1,
+      itemName: r.brand ? `${r.brand} — ${r.name}` : r.name,
+      bottleSize: r.bottleSizeMl,
+      openingStock: r.openingMl,
+      openingBottles: r.bottleSizeMl > 0 ? Math.round((r.openingMl / r.bottleSizeMl) * 100) / 100 : undefined,
+      received: r.purchasedMl,
+      consumption: (Number(r.acSaleMl) || 0) + (Number(r.nonAcSaleMl) || 0) + (Number(r.wastageMl) || 0),
+      closingStock: r.systemClosingMl,
+      reconciled: true,
+    })),
+    totals: {
+      openingStock: g.subtotal?.openingMl ?? 0,
+      received: g.subtotal?.purchasedMl ?? 0,
+      consumption: (g.subtotal?.acSaleMl ?? 0) + (g.subtotal?.nonAcSaleMl ?? 0) + (g.subtotal?.wastageMl ?? 0),
+      closingStock: g.subtotal?.closingMl ?? 0,
+    },
+  }));
+  const totalRelevantItems = categories.reduce((s, c) => s + c.items.length, 0);
+  return {
+    ...res,
+    categories,
+    totalRelevantItems,
+    grandTotals: {
+      openingStock: categories.reduce((s, c) => s + c.totals.openingStock, 0),
+      received: categories.reduce((s, c) => s + c.totals.received, 0),
+      consumption: categories.reduce((s, c) => s + c.totals.consumption, 0),
+      closingStock: categories.reduce((s, c) => s + c.totals.closingStock, 0),
+    },
+    hasDiscrepancies: false,
+    discrepancies: [],
+  };
+}
 
 function formatDateDDMMYYYY(yyyyMmDd) {
   if (!yyyyMmDd) return '';

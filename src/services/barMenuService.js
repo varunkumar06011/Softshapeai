@@ -301,6 +301,8 @@ export function mapBarMenuItems(items, restaurantItems = []) {
       isBottleItem: item.isBottleItem,
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
       venuePrices: item.venuePrices || {},
+      venueAvailabilities: item.venueAvailabilities || {},
+      sectionAvailabilities: item.sectionAvailabilities || {},
       // Bar/liquor items never have GST
       gstEnabled: (item.menuType === 'LIQUOR' || item.menuType === 'BAR')
         ? false

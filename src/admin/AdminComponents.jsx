@@ -2252,6 +2252,8 @@ export function MenuPage({ onAddDish }) {
 
   const [activeVenueId, setActiveVenueId] = useState(null);
 
+  const [activeSectionId, setActiveSectionId] = useState(null);
+
   const [showHiddenVenueItems, setShowHiddenVenueItems] = useState(false);
 
 
@@ -2268,7 +2270,7 @@ export function MenuPage({ onAddDish }) {
 
   // ── Venue/section resolution from actual tenant venues ──
 
-  const { outlets, venueColumns: currentVenueColumns } = useVenueSections(activeOutlet);
+  const { outlets, venueColumns: currentVenueColumns, sections: allSections } = useVenueSections(activeOutlet);
 
 
 
@@ -2381,6 +2383,8 @@ export function MenuPage({ onAddDish }) {
 
     setActiveVenueId(currentVenueColumns[0]?.id ?? null);
 
+    setActiveSectionId(null);
+
     fetchAdminItems(); // Refetch when outlet changes
 
   }, [activeOutlet, fetchAdminItems]);
@@ -2398,6 +2402,28 @@ export function MenuPage({ onAddDish }) {
     if (!exists) setActiveVenueId(currentVenueColumns[0].id);
 
   }, [currentVenueColumns, activeVenueId]);
+
+
+
+  // Sections belonging to the active venue (for section-level availability toggles)
+
+  const activeVenueSections = useMemo(() => {
+
+    if (!activeVenueId) return [];
+
+    return allSections.filter(s => s.venueId === activeVenueId);
+
+  }, [allSections, activeVenueId]);
+
+
+
+  // Reset activeSectionId when venue changes
+
+  useEffect(() => {
+
+    setActiveSectionId(null);
+
+  }, [activeVenueId]);
 
 
 
@@ -2464,69 +2490,58 @@ export function MenuPage({ onAddDish }) {
 
 
   // ── Availability toggle with optimistic update ─────────────────────────
+  // Scope priority: section > venue > global
+  //   - If a section is active, toggle section availability (only affects that section)
+  //   - Else if multi-venue, toggle venue availability (only affects that venue)
+  //   - Else toggle global availability
 
   const handleToggleAvailability = useCallback(async (item) => {
 
     if (togglingId) return;
 
     const hasMultiVenue = currentVenueColumns.length > 1 && activeVenueId;
-
-    const venueAvail = item.venueAvailabilities?.[activeVenueId] !== false;
-
-    const isVenueScope = hasMultiVenue && item.isAvailable !== false;
-
-    const newValue = isVenueScope ? !venueAvail : !item.isAvailable;
+    const isSectionScope = hasMultiVenue && !!activeSectionId;
+    const isVenueScope = hasMultiVenue && !activeSectionId;
 
     setTogglingId(item.id);
 
+    let scopeKey, newValue, optimisticFn, revertFn, endpoint, body;
 
+    if (isSectionScope) {
+      const sectionAvail = item.sectionAvailabilities?.[activeSectionId] !== false;
+      newValue = !sectionAvail;
+      scopeKey = 'section';
+      optimisticFn = (i) => ({ ...i, sectionAvailabilities: { ...i.sectionAvailabilities, [activeSectionId]: newValue } });
+      revertFn = (i) => ({ ...i, sectionAvailabilities: { ...i.sectionAvailabilities, [activeSectionId]: !newValue } });
+      endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items/${item.id}/section-availability`
+        : `${API_BASE}/api/menu/admin/items/${item.id}/section-availability`;
+      body = JSON.stringify({ sectionId: activeSectionId });
+    } else if (isVenueScope) {
+      const venueAvail = item.venueAvailabilities?.[activeVenueId] !== false;
+      newValue = !venueAvail;
+      scopeKey = 'venue';
+      optimisticFn = (i) => ({ ...i, venueAvailabilities: { ...i.venueAvailabilities, [activeVenueId]: newValue } });
+      revertFn = (i) => ({ ...i, venueAvailabilities: { ...i.venueAvailabilities, [activeVenueId]: !newValue } });
+      endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items/${item.id}/venue-availability`
+        : `${API_BASE}/api/menu/admin/items/${item.id}/venue-availability`;
+      body = JSON.stringify({ venueId: activeVenueId });
+    } else {
+      newValue = !item.isAvailable;
+      scopeKey = 'global';
+      optimisticFn = (i) => ({ ...i, isAvailable: newValue });
+      revertFn = (i) => ({ ...i, isAvailable: !newValue });
+      endpoint = activeOutlet === 'bar'
+        ? `${API_BASE}/api/bar/menu/items/${item.id}/availability`
+        : `${API_BASE}/api/menu/admin/items/${item.id}/availability`;
+      body = undefined;
+    }
 
     // Optimistic UI update
-
-    setAdminItems(prev =>
-
-      prev.map(i => {
-
-        if (i.id !== item.id) return i;
-
-        if (isVenueScope) {
-          return { ...i, venueAvailabilities: { ...i.venueAvailabilities, [activeVenueId]: newValue } };
-
-        }
-
-        return { ...i, isAvailable: newValue };
-
-      })
-
-    );
-
-
+    setAdminItems(prev => prev.map(i => i.id !== item.id ? i : optimisticFn(i)));
 
     try {
-
-      let endpoint;
-
-      let body = undefined;
-
-      if (isVenueScope) {
-
-        endpoint = activeOutlet === 'bar'
-
-          ? `${API_BASE}/api/bar/menu/items/${item.id}/venue-availability`
-
-          : `${API_BASE}/api/menu/admin/items/${item.id}/venue-availability`;
-
-        body = JSON.stringify({ venueId: activeVenueId });
-
-      } else {
-
-        endpoint = activeOutlet === 'bar'
-
-          ? `${API_BASE}/api/bar/menu/items/${item.id}/availability`
-
-          : `${API_BASE}/api/menu/admin/items/${item.id}/availability`;
-
-      }
 
       const res = await fetch(endpoint, {
 
@@ -2550,22 +2565,7 @@ export function MenuPage({ onAddDish }) {
 
       // Revert on error
 
-      setAdminItems(prev =>
-
-        prev.map(i => {
-
-          if (i.id !== item.id) return i;
-
-          if (isVenueScope) {
-            return { ...i, venueAvailabilities: { ...i.venueAvailabilities, [activeVenueId]: !newValue } };
-
-          }
-
-          return { ...i, isAvailable: !newValue };
-
-        })
-
-      );
+      setAdminItems(prev => prev.map(i => i.id !== item.id ? i : revertFn(i)));
 
       alert('Could not update availability. Please try again.');
 
@@ -2575,7 +2575,7 @@ export function MenuPage({ onAddDish }) {
 
     }
 
-  }, [togglingId, refreshMenu, activeVenueId, currentVenueColumns, activeOutlet]);
+  }, [togglingId, refreshMenu, activeVenueId, activeSectionId, currentVenueColumns, activeOutlet]);
 
 
 
@@ -3970,6 +3970,59 @@ export function MenuPage({ onAddDish }) {
 
     )}
 
+    {/* Section-specific tabs within the active venue — for section-level availability */}
+    {currentVenueColumns.length > 1 && activeVenueSections.length > 1 && (
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+
+        <span className="text-[10px] font-black uppercase text-gray-400 mr-1">Section:</span>
+
+        <button
+
+          type="button"
+
+          onClick={() => setActiveSectionId(null)}
+
+          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+            !activeSectionId
+              ? 'border-blue-500 bg-blue-50 text-blue-700'
+              : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+          }`}
+
+        >
+
+          All (venue-level)
+
+        </button>
+
+        {activeVenueSections.map((section) => (
+
+          <button
+
+            key={section.id}
+
+            type="button"
+
+            onClick={() => setActiveSectionId(section.id)}
+
+            className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+              activeSectionId === section.id
+                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+            }`}
+
+          >
+
+            {section.name}
+
+          </button>
+
+        ))}
+
+      </div>
+
+    )}
+
     <p className="text-xs text-[#6B6B6B] mb-3">
 
       Showing {items.length} item{items.length !== 1 ? "s" : ""}
@@ -4380,17 +4433,21 @@ export function MenuPage({ onAddDish }) {
 
                 {(() => {
 
-                  const venueAvail = currentVenueColumns.length > 1
-
-                    ? (item.isAvailable !== false && item.venueAvailabilities?.[activeVenueId] !== false)
-
-                    : item.isAvailable;
+                  const hasMultiVenue = currentVenueColumns.length > 1;
+                  let avail;
+                  if (hasMultiVenue && activeSectionId) {
+                    avail = item.venueAvailabilities?.[activeVenueId] !== false && item.sectionAvailabilities?.[activeSectionId] !== false;
+                  } else if (hasMultiVenue) {
+                    avail = item.venueAvailabilities?.[activeVenueId] !== false;
+                  } else {
+                    avail = item.isAvailable !== false;
+                  }
 
                   return (
 
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
 
-                      venueAvail
+                      avail
 
                         ? 'bg-green-100 text-green-800'
 
@@ -4398,7 +4455,7 @@ export function MenuPage({ onAddDish }) {
 
                     }`}>
 
-                      {venueAvail ? 'Available' : 'Unavailable'}
+                      {avail ? 'Available' : 'Unavailable'}
 
                     </span>
 
@@ -4412,11 +4469,15 @@ export function MenuPage({ onAddDish }) {
 
                 {(() => {
 
-                  const venueAvail = currentVenueColumns.length > 1
-
-                    ? (item.isAvailable !== false && item.venueAvailabilities?.[activeVenueId] !== false)
-
-                    : item.isAvailable;
+                  const hasMultiVenue = currentVenueColumns.length > 1;
+                  let avail;
+                  if (hasMultiVenue && activeSectionId) {
+                    avail = item.venueAvailabilities?.[activeVenueId] !== false && item.sectionAvailabilities?.[activeSectionId] !== false;
+                  } else if (hasMultiVenue) {
+                    avail = item.venueAvailabilities?.[activeVenueId] !== false;
+                  } else {
+                    avail = item.isAvailable !== false;
+                  }
 
                   return (
 
@@ -4426,11 +4487,11 @@ export function MenuPage({ onAddDish }) {
 
                       disabled={togglingId === item.id}
 
-                      title={venueAvail ? 'Mark Unavailable' : 'Mark Available'}
+                      title={avail ? 'Mark Unavailable' : 'Mark Available'}
 
                       className={`text-xs font-bold px-2 py-1 rounded-md border transition-all ${
 
-                        venueAvail
+                        avail
 
                           ? 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
 
@@ -4440,7 +4501,7 @@ export function MenuPage({ onAddDish }) {
 
                     >
 
-                      {togglingId === item.id ? '…' : venueAvail ? 'Disable' : 'Enable'}
+                      {togglingId === item.id ? '…' : avail ? 'Disable' : 'Enable'}
 
                     </button>
 
@@ -7119,6 +7180,12 @@ function getISTDateString() {
 
 
 
+// ═════════════════════════════════════════════════════════════════════════════
+// ⚠ DEAD CODE — DO NOT USE ⚠
+// Not referenced by any route — 'kitchen-inventory' renders the new
+// InventoryPage (src/admin/inventory/InventoryPage.jsx) instead.
+// Scheduled for deletion in the cleanup step.
+// ═════════════════════════════════════════════════════════════════════════════
 export function KitchenInventory() {
 
   const [items, setItems] = useState([]);
@@ -13472,6 +13539,13 @@ function WasteReport({ inventory }) {
 
 
 
+// ═════════════════════════════════════════════════════════════════════════════
+// ⚠ DEAD CODE — DO NOT USE ⚠
+// Not referenced by any route — 'kitchen-inventory' renders the new
+// InventoryPage (src/admin/inventory/InventoryPage.jsx) instead. This
+// component and its helpers use the removed AC/Non-AC bar inventory model.
+// Scheduled for deletion in the cleanup step.
+// ═════════════════════════════════════════════════════════════════════════════
 export function Inventory() {
 
   const { restaurant } = useAuth();
@@ -17561,7 +17635,9 @@ export function BarMenuPage() {
 
   // ── Venue/section resolution from actual tenant venues (bar-only) ──
 
-  const { venueColumns } = useVenueSections('bar');
+  const { venueColumns, sections: allBarSections } = useVenueSections('bar');
+
+  const [activeSectionId, setActiveSectionId] = useState(null);
 
 
 
@@ -17574,6 +17650,28 @@ export function BarMenuPage() {
     if (!exists) Promise.resolve().then(() => setActiveVenueId(venueColumns[0].id));
 
   }, [venueColumns, activeVenueId]);
+
+
+
+  // Sections belonging to the active venue (for section-level availability toggles)
+
+  const activeVenueSections = useMemo(() => {
+
+    if (!activeVenueId) return [];
+
+    return allBarSections.filter(s => s.venueId === activeVenueId);
+
+  }, [allBarSections, activeVenueId]);
+
+
+
+  // Reset activeSectionId when venue changes
+
+  useEffect(() => {
+
+    setActiveSectionId(null);
+
+  }, [activeVenueId]);
 
 
 
@@ -17934,15 +18032,22 @@ export function BarMenuPage() {
 
 
 
-  // Availability toggle
+  // Availability toggle — scope priority: section > venue > global
 
   const toggleAvailability = (item) => {
 
     const hasMultiVenue = venueColumns.length > 1 && activeVenueId;
+    const isSectionScope = hasMultiVenue && !!activeSectionId;
+    const isVenueScope = hasMultiVenue && !activeSectionId;
 
+    const sectionAvail = item.sectionAvailabilities?.[activeSectionId] !== false;
     const venueAvail = item.venueAvailabilities?.[activeVenueId] !== false;
 
-    const isVenueScope = hasMultiVenue && item.isAvailable !== false;
+    const willEnable = isSectionScope
+      ? !sectionAvail
+      : isVenueScope
+        ? !venueAvail
+        : item.isAvailable === false;
 
     toggleBarMenuAvailability(
 
@@ -17950,11 +18055,13 @@ export function BarMenuPage() {
 
       API_BASE,
 
-      () => showToast((isVenueScope ? !venueAvail : item.isAvailable === false) ? 'Item enabled' : 'Item disabled'),
+      () => showToast(willEnable ? 'Item enabled' : 'Item disabled'),
 
       () => showToast('Toggle failed', 'error'),
 
-      isVenueScope ? activeVenueId : null
+      isVenueScope ? activeVenueId : null,
+
+      isSectionScope ? activeSectionId : null
 
     );
 
@@ -18272,6 +18379,61 @@ export function BarMenuPage() {
 
 
 
+      {/* Section-specific tabs within the active venue — for section-level availability */}
+      {venueColumns.length > 1 && activeVenueSections.length > 1 && (
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+
+          <span className="text-[10px] font-black uppercase text-gray-400 mr-1">Section:</span>
+
+          <button
+
+            type="button"
+
+            onClick={() => setActiveSectionId(null)}
+
+            className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+              !activeSectionId
+                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+            }`}
+
+          >
+
+            All (venue-level)
+
+          </button>
+
+          {activeVenueSections.map((section) => (
+
+            <button
+
+              key={section.id}
+
+              type="button"
+
+              onClick={() => setActiveSectionId(section.id)}
+
+              className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                activeSectionId === section.id
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+              }`}
+
+            >
+
+              {section.name}
+
+            </button>
+
+          ))}
+
+        </div>
+
+      )}
+
+
+
       {error && (
 
         <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-[12px] text-red-600 font-bold">
@@ -18377,11 +18539,15 @@ export function BarMenuPage() {
 
               {(() => {
 
-                const venueAvail = venueColumns.length > 1
-
-                  ? (item.isAvailable !== false && item.venueAvailabilities?.[activeVenueId] !== false)
-
-                  : item.isAvailable !== false;
+                const hasMultiVenue = venueColumns.length > 1;
+                let avail;
+                if (hasMultiVenue && activeSectionId) {
+                  avail = item.venueAvailabilities?.[activeVenueId] !== false && item.sectionAvailabilities?.[activeSectionId] !== false;
+                } else if (hasMultiVenue) {
+                  avail = item.venueAvailabilities?.[activeVenueId] !== false;
+                } else {
+                  avail = item.isAvailable !== false;
+                }
 
                 return (
 
@@ -18389,13 +18555,13 @@ export function BarMenuPage() {
 
                     onClick={() => toggleAvailability(item)}
 
-                    title={venueAvail ? 'Mark unavailable' : 'Mark available'}
+                    title={avail ? 'Mark unavailable' : 'Mark available'}
 
-                    className={`text-[11px] px-2 py-0.5 rounded-full font-bold border transition ${venueAvail ? 'border-green-300 text-green-700 bg-green-50' : 'border-gray-300 text-gray-400 bg-gray-50'}`}
+                    className={`text-[11px] px-2 py-0.5 rounded-full font-bold border transition ${avail ? 'border-green-300 text-green-700 bg-green-50' : 'border-gray-300 text-gray-400 bg-gray-50'}`}
 
                   >
 
-                    {venueAvail ? 'On' : 'Off'}
+                    {avail ? 'On' : 'Off'}
 
                   </button>
 

@@ -10,12 +10,12 @@
 //   - Bar: ML mode (enter ml directly) or Bottle mode (bottles × ml/bottle)
 //   - Kitchen: Unit-based entry (kg, g, ml, litre, dozen, piece, etc.)
 //
-// Generates a requestId (UUID) on first submit for bar purchases, persisted in
-// sessionStorage across retries, disables submit while in-flight.
+// Bar purchases create a PURCHASE movement on the single stock pool and
+// trigger a sequential daily-record rebuild on the backend.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo } from 'react';
-import { recordPurchase, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
+import { recordPurchase } from '../../services/barInventoryApi';
 import { createKitchenEntry } from '../../services/kitchenInventoryApi';
 import { getUnitOptions, convertToBaseUnit, normalizeUnit } from '../../shared/utils/unitConversion';
 
@@ -40,8 +40,8 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
       setItemSearch('');
       setQuantity('');
       setPurchaseBottles('');
-      setBottleSize(tab === 'bar' ? Number(item?.bottleSize) || '' : '');
-      setCostPerBottle(tab === 'bar' ? Number(item?.costPerBottle) || '' : '');
+      setBottleSize(tab === 'bar' ? Number(item?.bottleSizeMl) || '' : '');
+      setCostPerBottle(tab === 'bar' ? Number(item?.purchaseRate) || '' : '');
       setPurchaseUnit(tab === 'bar' ? 'ml' : normalizeUnit(item?.unit) || '');
       setNotes('');
       setError(null);
@@ -55,7 +55,7 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
     const q = itemSearch.trim().toLowerCase();
     if (!q) return searchableItems;
     return searchableItems.filter((it) => {
-      const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
+      const name = it.itemName || it.name;
       return name?.toLowerCase().includes(q);
     });
   }, [searchableItems, itemSearch, tab]);
@@ -65,8 +65,8 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
     setItemSearch('');
     setQuantity('');
     setPurchaseBottles('');
-    setBottleSize(tab === 'bar' ? Number(it.bottleSize) || '' : '');
-    setCostPerBottle(tab === 'bar' ? Number(it.costPerBottle) || '' : '');
+    setBottleSize(tab === 'bar' ? Number(it.bottleSizeMl) || '' : '');
+    setCostPerBottle(tab === 'bar' ? Number(it.purchaseRate) || '' : '');
     setPurchaseUnit(tab === 'bar' ? 'ml' : normalizeUnit(it.unit) || '');
     setError(null);
     setPurchaseMode('ml');
@@ -94,10 +94,9 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
       setError('Please select an inventory item first');
       return;
     }
-    // For combined bar items, use acItemId (real InventoryItem ID)
-    const purchaseItemId = selectedItem.acItemId || selectedItem.id;
-    if (!purchaseItemId || purchaseItemId.startsWith('nonac-')) {
-      setError('Purchases can only be recorded for AC inventory items.');
+    const purchaseItemId = selectedItem.id;
+    if (!purchaseItemId) {
+      setError('Please select an inventory item first');
       return;
     }
 
@@ -127,30 +126,21 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
     setSaving(true);
     setError(null);
 
-    const actionKey = `bar-purchase:${purchaseItemId}`;
-    const requestId = tab === 'bar' ? getOrCreateRequestId(actionKey) : undefined;
-
     try {
       if (tab === 'bar') {
         const body = {
           itemId: purchaseItemId,
           notes: notes || undefined,
-          createdBy: 'Admin',
         };
         if (purchaseMode === 'bottles') {
-          body.purchaseBottles = Number(purchaseBottles);
-          // Send bottleSize so backend uses the correct size for ML conversion
-          if (Number(bottleSize) > 0) {
-            body.bottleSize = Number(bottleSize);
-          }
+          // Backend multiplies bottles by the item's master bottleSizeMl
+          body.bottles = Number(purchaseBottles);
         } else {
-          body.quantity = Number(quantity);
+          body.quantityMl = Number(quantity);
         }
         if (Number(costPerBottle) > 0) body.costPerBottle = Number(costPerBottle);
-        if (requestId) body.requestId = requestId;
 
         await recordPurchase(body);
-        clearRequestId(actionKey);
       } else {
         const baseUnit = selectedItem.unit || purchaseUnit;
         const { effectiveQty } = convertToBaseUnit(quantity, purchaseUnit || baseUnit, baseUnit);
@@ -176,9 +166,11 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
   const showPicker = !selectedItem;
 
   const itemName = selectedItem
-    ? (selectedItem.itemName || (tab === 'bar' ? selectedItem.menuItem?.name : selectedItem.name))
+    ? (selectedItem.itemName || selectedItem.name)
     : '';
-  const currentStock = Number(selectedItem?.currentStock || selectedItem?.acClosing) || 0;
+  const currentStock = tab === 'bar'
+    ? (Number(selectedItem?.systemClosingMl ?? selectedItem?.currentStockMl) || 0)
+    : (Number(selectedItem?.currentStock) || 0);
   const unit = selectedItem
     ? (tab === 'bar' ? 'ml' : selectedItem.unit)
     : '';
@@ -249,8 +241,10 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
                   </div>
                 ) : (
                   filteredPickerItems.map((it) => {
-                    const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
-                    const stock = Number(it.currentStock || it.acClosing) || 0;
+                    const name = it.itemName || it.name;
+                    const stock = tab === 'bar'
+                      ? (Number(it.systemClosingMl ?? it.currentStockMl) || 0)
+                      : (Number(it.currentStock) || 0);
                     const itUnit = tab === 'bar' ? 'ml' : it.unit;
                     return (
                       <button
@@ -347,15 +341,11 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          ML per Bottle <span className="text-red-500">*</span>
+                          ML per Bottle
                         </label>
-                        <input
-                          type="number"
-                          value={bottleSize}
-                          onChange={(e) => setBottleSize(e.target.value === '' ? '' : Number(e.target.value))}
-                          placeholder="750"
-                          className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                        />
+                        <div className="w-full px-3 py-2.5 rounded-lg border border-gray-100 bg-gray-50 text-sm text-gray-600">
+                          {bottleSize || '—'} ml <span className="text-xs text-gray-400">(from item settings)</span>
+                        </div>
                       </div>
                       {calculatedMl > 0 && (
                         <div className="bg-green-50 rounded-lg p-3 text-sm text-green-700">

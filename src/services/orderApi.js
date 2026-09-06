@@ -2296,11 +2296,14 @@ export async function saveTransaction({
 
 export async function fetchTransactions(restaurantId, limit = 2000, date = null, month = null, outletId = null) {
 
-  // For edge-local (PIN) auth, fetch settled orders + walk-in transactions
+  // Edge-first: try the edge server's local SQLite (GET /api/edge/transactions)
+  // before hitting the cloud. This works for both PIN-logged-in devices (which
+  // can't reach the cloud at all) and JWT-logged-in devices (which may be
+  // offline or have a slow/unreachable cloud). The edge endpoint authenticates
+  // via the edge runtime token, not the cloud JWT, so it works regardless of
+  // the frontend auth type.
 
-  // from the edge server's local SQLite via GET /api/edge/transactions.
-
-  if (isEdgeLocalAuth()) {
+  if (isEdgeLocalAuth() || await isEdgeAvailable()) {
 
     try {
 
@@ -2318,9 +2321,17 @@ export async function fetchTransactions(restaurantId, limit = 2000, date = null,
 
     } catch (err) {
 
-      console.warn('[fetchTransactions] Edge fetch failed:', err.message);
+      // Edge fetch failed — fall through to cloud only if not PIN auth
+      // (PIN auth can't use the cloud, so return empty instead of retrying)
+      if (isEdgeLocalAuth()) {
 
-      return [];
+        console.warn('[fetchTransactions] Edge fetch failed (PIN auth, no cloud fallback):', err.message);
+
+        return [];
+
+      }
+
+      console.warn('[fetchTransactions] Edge fetch failed, falling back to cloud:', err.message);
 
     }
 

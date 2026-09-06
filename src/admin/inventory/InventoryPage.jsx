@@ -13,7 +13,7 @@ import { useInventoryData } from './useInventoryData';
 import { InventorySummaryCards } from './InventorySummaryCards';
 import { InventoryToolbar } from './InventoryToolbar';
 import { InventoryTable } from './InventoryTable';
-import { CombinedBarTable } from './CombinedBarTable';
+import { BarInventoryTable } from './BarInventoryTable';
 import { InventoryReconciliation } from './InventoryReconciliation';
 import { AddItemModal } from './AddItemModal';
 import { EditItemModal } from './EditItemModal';
@@ -22,9 +22,8 @@ import { StockAdjustmentModal } from './StockAdjustmentModal';
 import { ItemDetailsDrawer } from './ItemDetailsDrawer';
 import { StockSheetPrintModal } from './StockSheetPrintModal';
 import LiquorDailyReportModal from './LiquorDailyReportModal';
-import { NonAcDeductionModal } from './NonAcDeductionModal';
 import { EditTotalStockModal } from './EditTotalStockModal';
-import { fetchCombinedInventory, deleteInventoryItem } from '../../services/barInventoryApi';
+import { fetchBarInventory, deleteInventoryItem } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
 
 export function InventoryPage() {
@@ -45,12 +44,11 @@ export function InventoryPage() {
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [adjustItem, setAdjustItem] = useState(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustDefaultType, setAdjustDefaultType] = useState(null);
   const [viewItem, setViewItem] = useState(null);
   const [viewOpen, setViewOpen] = useState(false);
   const [printSheetOpen, setPrintSheetOpen] = useState(false);
   const [liquorReportOpen, setLiquorReportOpen] = useState(false);
-  const [nonAcDeductItem, setNonAcDeductItem] = useState(null);
-  const [nonAcDeductOpen, setNonAcDeductOpen] = useState(false);
   const [editStockItem, setEditStockItem] = useState(null);
   const [editStockOpen, setEditStockOpen] = useState(false);
 
@@ -62,26 +60,61 @@ export function InventoryPage() {
   // Data hook
   const inventory = useInventoryData(tab, restaurant);
 
-  // Fetch combined bar inventory when tab is bar
+  // Listen for "buy stock" action from the dashboard low-stock toast
+  useEffect(() => {
+    const onOpenPurchase = (e) => {
+      const { itemId, name } = e.detail || {};
+      // Find the item in combined bar items; fall back to a stub so the modal
+      // still opens with the right name if data hasn't loaded yet.
+      const found = combinedItems.find((i) => i.id === itemId) || { id: itemId, name, bottleSizeMl: 750 };
+      setTab(TAB_BAR);
+      setPurchaseItem(found);
+      setPurchaseOpen(true);
+    };
+    window.addEventListener('bar:open-purchase-modal', onOpenPurchase);
+    return () => window.removeEventListener('bar:open-purchase-modal', onOpenPurchase);
+  }, [combinedItems]);
+
+  // Fetch bar inventory items + daily records when tab is bar
   const fetchCombined = useCallback(async () => {
     if (tab !== TAB_BAR || !restaurant?.id) return;
     setCombinedLoading(true);
     try {
-      const today = getKolkataDateString();
-      const opts = {
-        fromDate: inventory.fromDate || today,
-        toDate: inventory.toDate || inventory.fromDate || today,
-      };
-      const data = await fetchCombinedInventory(opts);
-      setCombinedItems(data?.items || []);
-      setCombinedSummary(data?.summary || null);
+      const date = inventory.fromDate || getKolkataDateString();
+      const data = await fetchBarInventory(date);
+      const rows = data?.items || [];
+      setCombinedItems(rows);
+      // Business-position summary aggregated from the unified daily rows
+      const sum = (fn) => rows.reduce((s, i) => s + fn(i), 0);
+      const costPerMl = (i) => Number(i.bottleSizeMl) > 0 ? (Number(i.purchaseRate) || 0) / Number(i.bottleSizeMl) : 0;
+      const acConsumption = sum((i) => (Number(i.acSaleMl) || 0) * costPerMl(i));
+      const nonAcConsumption = sum((i) => (Number(i.nonAcSaleMl) || 0) * costPerMl(i));
+      const totalConsumption = sum((i) => Number(i.consumptionCost) || 0);
+      const acSales = sum((i) => Number(i.acRevenue) || 0);
+      const nonAcSales = sum((i) => Number(i.nonAcRevenue) || 0);
+      const acProfit = acSales - acConsumption;
+      const nonAcProfit = nonAcSales - nonAcConsumption;
+      const totalProfit = sum((i) => Number(i.profit) || 0);
+      setCombinedSummary({
+        openingStockValue: sum((i) => (Number(i.openingMl) || 0) * costPerMl(i)),
+        purchaseValue: sum((i) => (Number(i.purchasedMl) || 0) * costPerMl(i)),
+        consumption: totalConsumption,
+        closingStockValue: sum((i) => Number(i.stockValue) || 0),
+        acSales, acConsumption, acProfit,
+        acProfitPct: acConsumption > 0 ? (acProfit / acConsumption) * 100 : 0,
+        nonAcSales, nonAcConsumption, nonAcProfit,
+        nonAcProfitPct: nonAcConsumption > 0 ? (nonAcProfit / nonAcConsumption) * 100 : 0,
+        totalSales: acSales + nonAcSales,
+        totalConsumption, totalProfit,
+        totalProfitPct: totalConsumption > 0 ? (totalProfit / totalConsumption) * 100 : 0,
+      });
     } catch {
       setCombinedItems([]);
       setCombinedSummary(null);
     } finally {
       setCombinedLoading(false);
     }
-  }, [tab, restaurant?.id, inventory.fromDate, inventory.toDate]);
+  }, [tab, restaurant?.id, inventory.fromDate]);
 
   useEffect(() => { fetchCombined(); }, [fetchCombined]);
 
@@ -102,6 +135,7 @@ export function InventoryPage() {
     }
     // Do NOT default to inventory.items[0] — the modal opens an item picker
     // step when no item is pre-selected, so the user must choose explicitly.
+    setAdjustDefaultType(null);
     setAdjustOpen(true);
   };
   const handleImport = () => {
@@ -113,13 +147,12 @@ export function InventoryPage() {
   const handlePrintSheet = () => setPrintSheetOpen(true);
   const handleLiquorReport = () => setLiquorReportOpen(true);
 
+  // Non-AC sale entry reuses the Stock Adjustment modal pre-set to 'nonac'.
+  // It creates NON_AC_SALE / CORRECTION movements on the single stock pool.
   const handleNonAcDeduct = (item) => {
-    setNonAcDeductItem(item);
-    setNonAcDeductOpen(true);
-  };
-
-  const handleNonAcSaved = () => {
-    fetchCombined();
+    setAdjustItem(item);
+    setAdjustDefaultType('nonac');
+    setAdjustOpen(true);
   };
 
   const handleEdit = (item) => {
@@ -133,11 +166,7 @@ export function InventoryPage() {
   };
 
   const handleDelete = async (item) => {
-    const itemId = item.acItemId || item.id;
-    if (!itemId || itemId.startsWith('nonac-')) {
-      throw new Error('Standalone Non-AC items cannot be deleted from here. Use the Non-AC items management.');
-    }
-    await deleteInventoryItem(itemId);
+    await deleteInventoryItem(item.id);
     handleSaved();
   };
 
@@ -157,6 +186,7 @@ export function InventoryPage() {
     setViewItem(null);
     setViewOpen(false);
     setAdjustItem(item);
+    setAdjustDefaultType(null);
     setAdjustOpen(true);
   };
 
@@ -188,7 +218,7 @@ export function InventoryPage() {
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_KITCHEN} onSaved={handleSaved} />
             <EditItemModal open={editOpen} item={editItem} tab={TAB_KITCHEN} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={TAB_KITCHEN} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
-            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_KITCHEN} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
+            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_KITCHEN} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_KITCHEN} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_KITCHEN} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
           </>
@@ -223,11 +253,10 @@ export function InventoryPage() {
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} onSaved={handleSaved} />
             <EditItemModal open={editOpen} item={editItem} tab={TAB_BAR} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
-            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
+            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} date={inventory.fromDate || undefined} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
-            <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
             <EditTotalStockModal open={editStockOpen} item={editStockItem} date={inventory.fromDate || undefined} onClose={() => setEditStockOpen(false)} onSaved={handleSaved} />
           </>
         }
@@ -292,11 +321,10 @@ export function InventoryPage() {
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} onSaved={handleSaved} />
             <EditItemModal open={editOpen} item={editItem} tab={tab} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
-            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
+            <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} date={inventory.fromDate || undefined} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
-            <NonAcDeductionModal open={nonAcDeductOpen} item={nonAcDeductItem} date={inventory.fromDate || undefined} onClose={() => setNonAcDeductOpen(false)} onSaved={handleNonAcSaved} />
             <EditTotalStockModal open={editStockOpen} item={editStockItem} date={inventory.fromDate || undefined} onClose={() => setEditStockOpen(false)} onSaved={handleSaved} />
           </>
         }
@@ -349,8 +377,8 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
           Loading inventory...
         </div>
       ) : tab === 'bar' ? (
-        /* Combined AC + Non-AC table for bar */
-        <CombinedBarTable
+        /* Single-stock-pool bar table */
+        <BarInventoryTable
           items={combinedItems}
           search={inventory.search}
           onNonAcDeduct={onNonAcDeduct}

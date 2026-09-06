@@ -1683,22 +1683,60 @@ const CashierDashboard = ({ onLogout }) => {
   const { venueColumns: specialVenueColumns } = useVenueSections('restaurant');
 
   // Printer options from restaurant config — used for KOT destination in special form
+  // Merges cloud-configured printers with live edge-discovered printers so the
+  // cashier's edit-menu modal shows physical printers connected to the edge machine.
+
+  const [edgeLivePrinters, setEdgeLivePrinters] = useState([]);
+
+  useEffect(() => {
+
+    let cancelled = false;
+
+    const fetchEdgePrinters = async () => {
+
+      if (!await isEdgeAvailable()) return;
+
+      try {
+
+        const res = await edgeFetch('/devices/printers', { timeoutMs: 5000 });
+
+        if (!cancelled && Array.isArray(res?.printers)) {
+
+          setEdgeLivePrinters(res.printers.map(p => ({ name: p.name, type: '', source: 'agent-live' })));
+
+        }
+
+      } catch { /* non-fatal */ }
+
+    };
+
+    fetchEdgePrinters();
+
+    const interval = setInterval(fetchEdgePrinters, 30000);
+
+    return () => { cancelled = true; clearInterval(interval); };
+
+  }, []);
 
   const specialPrinterOptions = useMemo(() => {
 
-    const printers = restaurant?.printerConfig?.printers || [];
-
     const map = new Map();
 
-    printers.forEach(p => {
+    (restaurant?.printerConfig?.printers || []).forEach(p => {
 
       if (p.name) map.set(p.name, { name: p.name, type: p.type || '' });
 
     });
 
+    edgeLivePrinters.forEach(p => {
+
+      if (p.name && !map.has(p.name)) map.set(p.name, p);
+
+    });
+
     return Array.from(map.values());
 
-  }, [restaurant]);
+  }, [restaurant, edgeLivePrinters]);
 
   const [configVersion, setConfigVersion] = useState(0);
 
@@ -2526,7 +2564,10 @@ const CashierDashboard = ({ onLogout }) => {
 
     }
 
-    if (isEdgeLocalAuth()) {
+    // Edge-first: try the edge server's local SQLite before hitting the cloud.
+    // Works for both PIN and JWT auth — the edge endpoint authenticates via
+    // the edge runtime token, not the cloud JWT.
+    if (isEdgeLocalAuth() || await isEdgeAvailable()) {
 
       try {
 
@@ -2536,11 +2577,16 @@ const CashierDashboard = ({ onLogout }) => {
 
       } catch {
 
-        setExpenditureSummary({ totalAmount: 0, count: 0 });
+        // Edge failed — fall through to cloud only if not PIN auth
+        if (isEdgeLocalAuth()) {
+
+          setExpenditureSummary({ totalAmount: 0, count: 0 });
+
+          return;
+
+        }
 
       }
-
-      return;
 
     }
 
@@ -9979,21 +10025,24 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-    // Determine current venue ID from selected table or sub-category
+    // Determine current venue ID + section ID from selected table or sub-category
 
     // Prioritize tableSubCategory over selectedTable section
 
     let currentVenueId = null;
+    let currentSectionId = null;
 
     const matchingSection = fetchedSections.find(s => (sectionTagToSource[s.sectionTag] || s.name) === tableSubCategory);
 
     if (matchingSection) {
 
       currentVenueId = matchingSection.venueId || matchingSection.venue?.id || null;
+      currentSectionId = matchingSection.id || null;
 
     } else if (selectedTable) {
 
       currentVenueId = selectedTable.section?.venueId || selectedTable.section?.venue?.id || null;
+      currentSectionId = selectedTable.section?.id || null;
 
       if (!currentVenueId) {
 
@@ -10004,6 +10053,7 @@ const CashierDashboard = ({ onLogout }) => {
         if (tableSection) {
 
           currentVenueId = tableSection.venueId || tableSection.venue?.id || null;
+          currentSectionId = tableSection.id || null;
 
         }
 
@@ -10018,6 +10068,14 @@ const CashierDashboard = ({ onLogout }) => {
     if (currentVenueId) {
 
       itemsToFilter = itemsToFilter.filter(item => item.venueAvailabilities?.[currentVenueId] !== false);
+
+    }
+
+    // Filter out items disabled for this section (one level below venue)
+
+    if (currentSectionId) {
+
+      itemsToFilter = itemsToFilter.filter(item => item.sectionAvailabilities?.[currentSectionId] !== false);
 
     }
 
@@ -12192,7 +12250,7 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-        <nav data-tour="cashier-tabs" className="flex-1 sm:flex-grow flex sm:flex-col items-center sm:items-stretch overflow-x-auto sm:overflow-visible p-3 sm:space-y-1.5 sm:mt-4 gap-3 sm:gap-0 scrollbar-hide px-3">
+        <nav data-tour="cashier-tabs" className="flex-1 sm:flex-grow flex sm:flex-col items-center sm:items-stretch overflow-x-auto sm:overflow-y-auto sm:overflow-x-hidden p-3 sm:space-y-1.5 sm:mt-4 gap-3 sm:gap-0 scrollbar-hide px-3 min-h-0">
 
           {[
 
@@ -15924,7 +15982,7 @@ const CashierDashboard = ({ onLogout }) => {
 
                         activeVenueId={editMenuVenues[0]?.id}
 
-                        printerOptions={[]}
+                        printerOptions={specialPrinterOptions}
 
                         showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
 
@@ -15954,7 +16012,7 @@ const CashierDashboard = ({ onLogout }) => {
 
                         activeVenueId={editMenuVenues[0]?.id}
 
-                        printerOptions={[]}
+                        printerOptions={specialPrinterOptions}
 
                         showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
 

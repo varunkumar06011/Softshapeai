@@ -1,19 +1,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Bar Inventory API — Frontend API client for bar liquor inventory management
+// Bar Inventory API — Frontend API client for the redesigned bar inventory
 // ─────────────────────────────────────────────────────────────────────────────
-// Provides functions for managing bar inventory items and daily stock entries:
-//   - fetchBarInventory() — list all inventory items with current stock levels
-//   - createBarInventoryItem(data) — create or update an inventory item
-//   - deleteBarInventoryItem(id) — delete an inventory item
-//   - createBarInventoryEntry(data) — create or update a daily stock entry
-//   - fetchBarInventoryLedger() — get stock ledger with consumption history
+// All data comes from the single-stock-pool model:
+//   BarInventoryItem (one per bottle SKU) + BarInventoryMovement (append-only
+//   ledger) + BarDailyRecord (permanent daily snapshot).
 //
-// All requests include auth headers and restaurantId from current session.
+// Endpoints used (mounted at /api/bar/inventory):
+//   GET    /items, /items/unlinked, /items/:id
+//   POST   /items            PATCH /items/:id      DELETE /items/:id
+//   POST   /record-purchase  POST /adjust-stock    POST /non-ac-sale
+//   PUT    /physical-count
+//   GET    /movements        GET /daily-report     GET /stock-sheet
+//   GET    /liquor-daily-report                    GET /reconciliation
+//   GET    /low-stock        GET /dashboard
+//   GET    /deduction-check  POST /retry-deduction/:orderId
+//   POST   /manual-report-items  GET /manual-report-items
+//   GET    /bottles-for-menu/:menuItemId           GET /opening-preview/:itemId
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { apiUrl, getAuthHeaders } from './apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import secureStorage from '../utils/secureStorage';
+import { getKolkataDateString } from '../shared/utils/dateFormat';
 
 // Edge-local tokens (offline PIN login) are not cloud JWTs — the cloud backend
 // rejects them with 401. Fall back to the preauth token so captain/cashier POS
@@ -56,38 +64,10 @@ async function parseResponse(res) {
   return res.json();
 }
 
-// Normalize numeric fields from API response (handles string -> number conversion)
-function normalizeInventoryItem(item) {
-  if (!item) return item;
-  return {
-    ...item,
-    currentStock: parseFloat(item.currentStock) || 0,
-    bottleSize: parseInt(item.bottleSize) || 750,
-    reorderLevel: parseFloat(item.reorderLevel) || 0,
-    maxStock: parseFloat(item.maxStock) || 0,
-    costPerBottle: parseFloat(item.costPerBottle) || 0,
-  };
-}
-
-function normalizeInventoryArray(items) {
-  if (!Array.isArray(items)) return items;
-  return items.map(normalizeInventoryItem);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Idempotency helpers — generate and persist requestId across retries
-// so the server can deduplicate double-clicks and network-retry submissions.
-// Uses sessionStorage (survives modal unmount/remount within the same browser
-// session) keyed by `item+action`. Callers must clear the key on success/error.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Get or create a requestId for a bar inventory mutation.
- * The same key returns the same UUID across calls within a browser session,
- * so retries (double-click, timeout-then-retry) reuse the same ID.
- * @param {string} actionKey — e.g. `bar-purchase:${itemId}` or `bar-adjust:${itemId}`
- * @returns {string} UUID
- */
 export function getOrCreateRequestId(actionKey) {
   const storageKey = `barInvReqId:${actionKey}`;
   try {
@@ -98,56 +78,69 @@ export function getOrCreateRequestId(actionKey) {
     }
     return id;
   } catch {
-    // sessionStorage may be unavailable (private mode) — generate ephemeral UUID
     return crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 }
 
-/**
- * Clear the persisted requestId after a confirmed success or terminal error.
- * @param {string} actionKey — same key passed to getOrCreateRequestId
- */
 export function clearRequestId(actionKey) {
   try {
     sessionStorage.removeItem(`barInvReqId:${actionKey}`);
   } catch {}
 }
 
-// Get all inventory items
+// ── Items ────────────────────────────────────────────────────────────────────
+
+// List all bar inventory items with their daily record for a date.
+// Returns { date, items: [...] }
 export async function fetchBarInventory(date = '') {
-  try {
-    const rId = getCurrentRestaurantId();
-    if (!rId) throw new Error('No restaurant context');
-    let url = `/api/bar/inventory/items?restaurantId=${rId}`;
-    if (date) url += `&date=${encodeURIComponent(date)}`;
-    
-    const res = await fetch(apiUrl(url), {
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() }
-    });
-    const data = await parseResponse(res);
-    return normalizeInventoryArray(data);
-  } catch (error) {
-    throw error;
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  let url = `/api/bar/inventory/items?restaurantId=${rId}`;
+  if (date) url += `&date=${encodeURIComponent(date)}`;
+  const res = await fetch(apiUrl(url), {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
+  });
+  return parseResponse(res);
+}
+
+// Backward-compat alias — the bar table previously fetched a "combined" AC+Non-AC
+// view. Now one stock pool — same endpoint.
+export async function fetchCombinedInventory(dateOrOpts = '') {
+  let date = '';
+  if (typeof dateOrOpts === 'object' && dateOrOpts !== null) {
+    date = dateOrOpts.fromDate || '';
+  } else if (dateOrOpts) {
+    date = dateOrOpts;
   }
+  const data = await fetchBarInventory(date);
+  return { date: data.date, items: data.items || [], summary: null };
+}
+
+// LIQUOR menu items with no inventory link (for Add Item dropdown + diagnostics)
+export async function fetchUnlinkedItems() {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  const res = await fetch(apiUrl(`/api/bar/inventory/items/unlinked?restaurantId=${rId}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// Single item detail + movement history
+export async function fetchBarItem(id) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/items/${id}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
 }
 
 // Get available bottle sizes for a liquor peg menu item (30/60/90ml)
 // Used by the BottlePicker to show bottle choices at the POS.
-// Returns { menuItemId, menuName, isPeg, bottles: [{ inventoryItemId, label, bottleSize }] }
-// No stock quantities returned — captain should not see stock levels.
-//
-// PRIMARY: cloud API — queries the inventory table and returns the actual
-// bottle sizes configured for this brand (180ml, 375ml, 750ml, etc.).
-// The bar menu only has peg sizes (30/60/90ml) — full bottle sizes live in
-// the inventory table, so deriving from menu items returns nothing.
-//
-// FALLBACK: derive from loaded bar menu items (instant, offline).
-// Used when the cloud API is unreachable (edge down / offline mode).
-// Uses menuItemId as the bottle identifier — the backend's inventoryService
-// accepts both inventory item IDs and menu item IDs for pourFromInventoryItemId.
+// Returns { menuItemId, defaultItemId, deductionMl, bottles: [...] }
 export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
-  // ── Primary: cloud API (queries inventory table) ─────────────────────
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5_000);
   try {
@@ -156,12 +149,27 @@ export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
       signal: controller.signal,
     });
     const data = await parseResponse(res);
-    if (data && data.isPeg && data.bottles && data.bottles.length > 0) {
-      return data;
+    if (data && data.bottles && data.bottles.length > 0) {
+      // Shape for BottlePicker: { isPeg, menuName, bottles: [{ inventoryItemId, label, bottleSize }] }
+      return {
+        menuItemId,
+        menuName: null,
+        isPeg: true,
+        bottles: data.bottles.map((b) => ({
+          inventoryItemId: b.id,
+          label: b.name,
+          bottleSize: b.bottleSizeMl,
+          currentStockMl: b.currentStockMl,
+          stockDisplay: b.stockDisplay,
+          isDefault: b.isDefault,
+        })),
+        defaultItemId: data.defaultItemId,
+        deductionMl: data.deductionMl,
+      };
     }
-    // API responded but no bottles — fall through to menu-derived fallback
+    // No bottles — fall through to menu-derived fallback
   } catch {
-    // Network error / timeout — fall through to menu-derived fallback
+    // Network error / timeout — fall through to fallback
   } finally {
     clearTimeout(timeoutId);
   }
@@ -173,37 +181,24 @@ export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
     const tapMl = parseMlFromName(tapName);
     if (tapMl) {
       const tapBase = normalizeBaseName(tapName);
-      // Show picker for pegs (30/60/90ml) and half-bottle servings (180/375ml).
-      // 750ml is excluded — you can't pour 750ml from a smaller bottle.
       const PICKER_SIZES = [30, 60, 90, 180, 375];
       if (PICKER_SIZES.includes(tapMl)) {
         const bottles = menuItems
           .filter((i) => {
             const name = (i.n || i.name || '').toLowerCase();
             const ml = parseMlFromName(name);
-            // Show bottles >= ordered size (e.g., 180ml order → 180ml, 375ml, 750ml)
             return ml && ml >= tapMl && normalizeBaseName(name) === tapBase;
           })
           .map((i) => {
             const ml = parseMlFromName((i.n || i.name || '').toLowerCase());
-            return {
-              inventoryItemId: i.id,
-              label: `${ml}ml`,
-              bottleSize: ml,
-            };
+            return { inventoryItemId: i.id, label: `${ml}ml`, bottleSize: ml };
           })
           .sort((a, b) => b.bottleSize - a.bottleSize);
-        return {
-          menuItemId,
-          menuName: tapped.n || tapped.name,
-          isPeg: true,
-          bottles,
-        };
+        return { menuItemId, menuName: tapped.n || tapped.name, isPeg: true, bottles };
       }
     }
   }
 
-  // No bottles found from either source
   return { menuItemId, menuName: null, isPeg: false, bottles: [] };
 }
 
@@ -222,40 +217,45 @@ function normalizeBaseName(name) {
     .trim();
 }
 
-// Create new inventory item
+// ── Item CRUD ────────────────────────────────────────────────────────────────
+
+// Create new bar inventory item (optionally links a menu item)
 export async function createInventoryItem(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/items'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
-  const item = await parseResponse(res);
-  return normalizeInventoryItem(item);
+  return parseResponse(res);
 }
 
-// Update inventory item
+// Update bar inventory item master fields
 export async function updateInventoryItem(id, data) {
   const res = await fetch(apiUrl(`/api/bar/inventory/items/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
   });
-  const item = await parseResponse(res);
-  return normalizeInventoryItem(item);
+  return parseResponse(res);
 }
 
-// Set absolute stock for a specific inventory item (per-size editing)
-// Body: { stockMl: number, notes?: string }
-export async function setItemStock(itemId, stockMl, notes) {
-  const res = await fetch(apiUrl(`/api/bar/inventory/${itemId}/stock`), {
+// Set physical closing count for an item on a date (physical count reconciliation)
+export async function setItemStock(itemId, physicalMl, opts = {}) {
+  const res = await fetch(apiUrl('/api/bar/inventory/physical-count'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ stockMl, notes }),
+    body: JSON.stringify({
+      itemId,
+      date: opts.date || getKolkataDateString(),
+      physicalClosingMl: physicalMl,
+      notes: opts.notes,
+      restaurantId: getCurrentRestaurantId(),
+    }),
   });
   return parseResponse(res);
 }
 
-// Delete inventory item
+// Delete (soft) inventory item
 export async function deleteInventoryItem(id) {
   const res = await fetch(apiUrl(`/api/bar/inventory/items/${id}`), {
     method: 'DELETE',
@@ -264,46 +264,28 @@ export async function deleteInventoryItem(id) {
   return parseResponse(res);
 }
 
-// Toggle hide/show for an AC inventory item in the PDF report
-// Persists immediately to InventoryItem.isHiddenFromReport in the database
+// Toggle hide/show in the PDF report
 export async function toggleAcItemHide(id, isHidden) {
-  const res = await fetch(apiUrl(`/api/bar/inventory/items/${id}`), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ isHiddenFromReport: isHidden }),
-  });
-  return parseResponse(res);
+  return updateInventoryItem(id, { isHiddenFromReport: isHidden });
 }
-
-// Toggle hide/show for a Non-AC inventory item in the PDF report
-// Persists immediately to NonAcInventoryItem.isHiddenFromReport in the database
+// Kept for backward compat — same table now
 export async function toggleNonAcItemHide(id, isHidden) {
-  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/items/${id}`), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ isHiddenFromReport: isHidden }),
-  });
-  return parseResponse(res);
+  return updateInventoryItem(id, { isHiddenFromReport: isHidden });
 }
 
-// Adjust stock (manual adjustment)
-// data.requestId (optional) — UUID for idempotency; if provided, server deduplicates
-// retries with the same requestId via ProcessedRequest.
+// ── Stock movements ─────────────────────────────────────────────────────────
+
+// Manual stock adjustment (ADD / REMOVE / OPENING / WASTAGE)
 export async function adjustStock(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/adjust-stock'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
-  const result = await parseResponse(res);
-  // Backend returns { item, transaction } — normalize the item for callers
-  const item = result?.item ?? result;
-  return normalizeInventoryItem(item);
+  return parseResponse(res);
 }
 
 // Get opening stock preview for a specific item
-// Returns today's sold/purchased/wastage/adjusted so the frontend can show
-// a live preview of the resulting closing stock before saving.
 export async function getOpeningPreview(itemId, date) {
   const params = new URLSearchParams();
   if (date) params.set('date', date);
@@ -314,32 +296,56 @@ export async function getOpeningPreview(itemId, date) {
   return parseResponse(res);
 }
 
-// Record purchase
-// data.requestId (optional) — UUID for idempotency; if provided, server deduplicates
-// retries with the same requestId via ProcessedRequest.
+// Record purchase (PURCHASE movement)
 export async function recordPurchase(data) {
   const res = await fetch(apiUrl('/api/bar/inventory/record-purchase'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
   });
-  const result = await parseResponse(res);
-  // Backend returns { item, transaction } — normalize the item for callers
-  const item = result?.item ?? result;
-  return normalizeInventoryItem(item);
+  return parseResponse(res);
 }
 
-// Get transaction history
-export async function fetchTransactions(filters = {}) {
+// Record / edit a Non-AC sale for a date (safe edit via CORRECTION movements)
+export async function recordNonAcSale({ itemId, date, quantityMl, bottles, sellingPrice, sellingPricePerMl, notes, reason }) {
+  const res = await fetch(apiUrl('/api/bar/inventory/non-ac-sale'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({
+      itemId, date: date || getKolkataDateString(), quantityMl, bottles, sellingPrice, sellingPricePerMl, notes, reason,
+      restaurantId: getCurrentRestaurantId(),
+    }),
+  });
+  return parseResponse(res);
+}
+
+// ── DEPRECATED wrappers — dead code, scheduled for removal ──────────────────
+// Only referenced by dead components (NonAcDeductionModal, CombinedBarTable).
+// Do not use in new code — Non-AC sales are NON_AC_SALE movements on the
+// single stock pool via recordNonAcSale().
+export async function recordNonAcDeduction({ itemId, adminDeduction, date, reason }) {
+  // adminDeduction was in bottles in the old model — caller should pass bottles
+  return recordNonAcSale({ itemId, date, bottles: adminDeduction, reason });
+}
+export async function updateNonAcEntry({ itemId, date, saleBottles, reason }) {
+  return recordNonAcSale({ itemId, date, bottles: saleBottles, reason });
+}
+
+// ── History & reports ────────────────────────────────────────────────────────
+
+// Movement history (replaces /transactions)
+export async function fetchMovements(filters = {}) {
   const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), ...filters });
-  const res = await fetch(apiUrl(`/api/bar/inventory/transactions?${params}`), {
+  const res = await fetch(apiUrl(`/api/bar/inventory/movements?${params}`), {
     cache: 'no-store',
     headers: getAuthHeaders(),
   });
   return parseResponse(res);
 }
+// Backward-compat alias
+export const fetchTransactions = fetchMovements;
 
-// Get daily report
+// Daily report from BarDailyRecord
 export async function fetchDailyReport(date) {
   const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), date });
   const res = await fetch(apiUrl(`/api/bar/inventory/daily-report?${params}`), {
@@ -349,9 +355,7 @@ export async function fetchDailyReport(date) {
   return parseResponse(res);
 }
 
-// Get printable Daily Stock & Sales Summary for a specific date.
-// Returns only items with relevant activity on that date, grouped by category,
-// with reconciliation flags. See backend /api/bar/inventory/stock-sheet.
+// Printable Daily Stock & Sales Summary (grouped by category)
 export async function fetchBarStockSheet(date) {
   const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), date });
   const res = await fetch(apiUrl(`/api/bar/inventory/stock-sheet?${params}`), {
@@ -361,24 +365,57 @@ export async function fetchBarStockSheet(date) {
   return parseResponse(res);
 }
 
-// Get low stock items
+// Full liquor daily report for PDF to Admin
+export async function fetchLiquorDailyReport(date) {
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), date });
+  const res = await fetch(apiUrl(`/api/bar/inventory/liquor-daily-report?${params}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// Reconciliation (system vs physical closing)
+export async function fetchReconciliation(date = '') {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  let url = `/api/bar/inventory/reconciliation?restaurantId=${rId}`;
+  if (date) url += `&date=${encodeURIComponent(date)}`;
+  const res = await fetch(apiUrl(url), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// Low stock items
 export async function fetchLowStockItems() {
   const res = await fetch(apiUrl(`/api/bar/inventory/low-stock?restaurantId=${getCurrentRestaurantId()}`), {
     cache: 'no-store',
     headers: getAuthHeaders(),
   });
-  const data = await parseResponse(res);
-  return normalizeInventoryArray(data);
+  return parseResponse(res);
 }
 
-// Get top 3 selling liquor items
-export async function fetchBarTopSelling(filters = {}) {
-  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), ...filters });
-  const res = await fetch(apiUrl(`/api/bar/inventory/top-selling?${params}`), {
+// Dashboard KPIs (replaces /non-ac/dashboard)
+export async function fetchBarDashboard(date = '') {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  let url = `/api/bar/inventory/dashboard?restaurantId=${rId}`;
+  if (date) url += `&date=${encodeURIComponent(date)}`;
+  const res = await fetch(apiUrl(url), {
     cache: 'no-store',
     headers: getAuthHeaders(),
   });
   return parseResponse(res);
+}
+export const fetchNonAcDashboard = fetchBarDashboard;
+
+// Top-selling — the dedicated endpoint was removed in the redesign.
+// Returns an empty array; callers should derive top sellers from movements
+// or daily-report data if needed.
+export async function fetchBarTopSelling() {
+  return [];
 }
 
 // Check deduction for a specific order
@@ -391,133 +428,59 @@ export async function fetchBarDeductionCheck(orderId) {
   return parseResponse(res);
 }
 
-// ─── Non-AC Bar Inventory (separate stock pool) ───────────────────────────
-
-// Fetch combined AC + Non-AC inventory view
-// Supports date-range queries via fromDate/toDate, or single date for backward compat.
-export async function fetchCombinedInventory(dateOrOpts = '') {
-  const rId = getCurrentRestaurantId();
-  if (!rId) throw new Error('No restaurant context');
-  let url = `/api/bar/inventory/non-ac/combined?restaurantId=${rId}`;
-  if (typeof dateOrOpts === 'object' && dateOrOpts !== null) {
-    if (dateOrOpts.fromDate) url += `&fromDate=${encodeURIComponent(dateOrOpts.fromDate)}`;
-    if (dateOrOpts.toDate) url += `&toDate=${encodeURIComponent(dateOrOpts.toDate)}`;
-  } else if (dateOrOpts) {
-    url += `&date=${encodeURIComponent(dateOrOpts)}`;
-  }
-  const res = await fetch(apiUrl(url), {
-    cache: 'no-store',
-    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
+// Retry failed deduction for an order
+export async function retryDeduction(orderId) {
+  const res = await fetch(apiUrl(`/api/bar/inventory/retry-deduction/${orderId}`), {
+    method: 'POST',
+    headers: getAuthHeaders(),
   });
-  const data = await parseResponse(res);
-  return data;
+  return parseResponse(res);
 }
 
-// Fetch Non-AC items only
+// ── Manual report items (PDF-only rows) ──────────────────────────────────────
+
+export async function fetchManualReportItems(date) {
+  const params = new URLSearchParams({ restaurantId: getCurrentRestaurantId(), date });
+  const res = await fetch(apiUrl(`/api/bar/inventory/manual-report-items?${params}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+export async function saveManualReportItems({ date, items }) {
+  const res = await fetch(apiUrl('/api/bar/inventory/manual-report-items'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ date, items, restaurantId: getCurrentRestaurantId() }),
+  });
+  return parseResponse(res);
+}
+
+// ── DEPRECATED / removed endpoints — dead code, scheduled for removal ───────
+// Only referenced by dead components (CombinedBarTable). Do not use in new
+// code — these map to the closest new-model operation purely for compat.
+
+// Old per-item Non-AC CRUD — Non-AC is now just a field on BarInventoryItem.
 export async function fetchNonAcItems(date = '') {
-  const rId = getCurrentRestaurantId();
-  if (!rId) throw new Error('No restaurant context');
-  let url = `/api/bar/inventory/non-ac/items?restaurantId=${rId}`;
-  if (date) url += `&date=${encodeURIComponent(date)}`;
-  const res = await fetch(apiUrl(url), {
-    cache: 'no-store',
-    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
-  });
-  return parseResponse(res);
+  const data = await fetchBarInventory(date);
+  return data.items || [];
 }
-
-// Record Non-AC deduction (admin manual entry)
-export async function recordNonAcDeduction({ itemId, adminDeduction, receivedBottles, date, reason }) {
-  const res = await fetch(apiUrl('/api/bar/inventory/non-ac/deduct'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({
-      itemId,
-      adminDeduction,
-      receivedBottles: receivedBottles || 0,
-      date,
-      reason,
-      restaurantId: getCurrentRestaurantId(),
-    }),
-  });
-  return parseResponse(res);
-}
-
-// Edit Non-AC daily entry (opening, sale, closing) — persists to database
-export async function updateNonAcEntry({ itemId, date, openingBottles, saleBottles, closingBottles, receivedBottles, reason }) {
-  const res = await fetch(apiUrl('/api/bar/inventory/non-ac/entry'), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({
-      itemId,
-      date,
-      openingBottles,
-      saleBottles,
-      closingBottles,
-      receivedBottles: receivedBottles || 0,
-      reason,
-      restaurantId: getCurrentRestaurantId(),
-    }),
-  });
-  return parseResponse(res);
-}
-
-// Fetch Non-AC audit trail
-export async function fetchNonAcAuditTrail({ itemId, date, startDate, endDate } = {}) {
-  const rId = getCurrentRestaurantId();
-  if (!rId) throw new Error('No restaurant context');
-  const params = new URLSearchParams({ restaurantId: rId });
-  if (itemId) params.set('itemId', itemId);
-  if (date) params.set('date', date);
-  if (startDate) params.set('startDate', startDate);
-  if (endDate) params.set('endDate', endDate);
-  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/audit-trail?${params}`), {
-    cache: 'no-store',
-    headers: getAuthHeaders(),
-  });
-  return parseResponse(res);
-}
-
-// Create Non-AC inventory item
 export async function createNonAcItem(data) {
-  const res = await fetch(apiUrl('/api/bar/inventory/non-ac/items'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ ...data, restaurantId: getCurrentRestaurantId() }),
-  });
-  return parseResponse(res);
+  return createInventoryItem(data);
 }
-
-// Update Non-AC inventory item (e.g., set selling price, confirm flagged item)
 export async function updateNonAcItem(id, data) {
-  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/items/${id}`), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(data),
-  });
-  return parseResponse(res);
+  return updateInventoryItem(id, data);
 }
 
-// Save item-wise edits (same endpoint as PDF preview — ensures bidirectional sync)
-// Used by CombinedBarTable when admin edits closing stock on the Inventory page.
-// This updates both DailyInventorySnapshot (sold + closing) and AcReportAdjustment,
-// so the PDF preview and Inventory page always show the same values.
-export async function saveItemWiseEdits({ date, nonAcItems, acAdjustments }) {
-  const res = await fetch(apiUrl('/api/bar/inventory/liquor-report-item-wise'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ date, nonAcItems, acAdjustments }),
-  });
-  return parseResponse(res);
-}
-
-// Fetch Non-AC dashboard metrics
-export async function fetchNonAcDashboard() {
-  const rId = getCurrentRestaurantId();
-  if (!rId) throw new Error('No restaurant context');
-  const res = await fetch(apiUrl(`/api/bar/inventory/non-ac/dashboard?restaurantId=${rId}`), {
-    cache: 'no-store',
-    headers: getAuthHeaders(),
-  });
-  return parseResponse(res);
+// Old item-wise save (CombinedBarTable closing edits) → physical count.
+// acAdjustments entries: { itemId, closingMl, date? }
+export async function saveItemWiseEdits({ date, acAdjustments }) {
+  const results = [];
+  for (const adj of acAdjustments || []) {
+    if (adj.closingMl == null) continue;
+    const r = await setItemStock(adj.itemId, adj.closingMl, { date: adj.date || date, notes: adj.notes });
+    results.push(r);
+  }
+  return { saved: results.length };
 }

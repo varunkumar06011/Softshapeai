@@ -346,6 +346,7 @@ export function useGlobalMenuSync() {
             variants: updated.variants || [],
             venuePrices: updated.venuePrices || {},
             venueAvailabilities: updated.venueAvailabilities || {},
+            sectionAvailabilities: updated.sectionAvailabilities || {},
             isSpecial: updated.isSpecial === true,
             specialChannel: updated.specialChannel || 'BOTH',
             active: updated.specialActive !== false,
@@ -368,6 +369,9 @@ export function useGlobalMenuSync() {
                   venueAvailabilities: updated.venueAvailabilities
                     ? { ...(item.venueAvailabilities || {}), ...updated.venueAvailabilities }
                     : item.venueAvailabilities,
+                  sectionAvailabilities: updated.sectionAvailabilities
+                    ? { ...(item.sectionAvailabilities || {}), ...updated.sectionAvailabilities }
+                    : item.sectionAvailabilities,
                   isSpecial: updated.isSpecial !== undefined ? updated.isSpecial === true : item.isSpecial,
                   specialChannel: updated.specialChannel ?? item.specialChannel,
                   active: updated.specialActive !== undefined ? updated.specialActive !== false : item.active,

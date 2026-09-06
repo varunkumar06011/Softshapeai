@@ -9,12 +9,12 @@ import {
 import { StarIcon } from '../shared/icons/StarIcon';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 import { formatCurrency } from '../utils/formatCurrency';
-import { API_BASE, apiUrl, apiFetch } from '../services/apiConfig';
+import { API_BASE, apiFetch } from '../services/apiConfig';
 import { getAuthHeaders } from '../services/apiConfig';
 import {
   fetchReportCategorywise, fetchReportDailySales, fetchReportPaymentMethods,
 } from '../services/reportsApi.js';
-import { fetchCombinedInventory, fetchLowStockItems } from '../services/barInventoryApi.js';
+import { fetchBarDashboard, fetchLowStockItems } from '../services/barInventoryApi.js';
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
 
 function Money({ value }) {
@@ -122,49 +122,24 @@ async function fetchPayrollSummary() {
   }
 }
 
-// Fetch the liquor daily report's saved summary overrides (admin-entered
-// business position values like closingStockValue). The combined API returns
-// raw computed values WITHOUT these overrides — the PDF report merges them
-// on top, so the dashboard must do the same to show matching values.
-async function fetchLiquorReportSummaryOverrides(startDate, endDate) {
-  const params = new URLSearchParams({ date: startDate });
-  if (endDate && endDate !== startDate) params.set('endDate', endDate);
-  const res = await fetch(apiUrl(`/api/bar/inventory/liquor-daily-report?${params.toString()}`), {
-    cache: 'no-store',
-    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...getAuthHeaders() },
-  });
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json?.summaryOverrides || null;
-}
-
 async function loadDashboardData(dateFilter, outletId) {
   const rid = getCurrentRestaurantId();
-  const [sales, payments, categories, combinedInventory, liquorOverrides, lowStock, kitchenInventory, payrollRecords] = await Promise.allSettled([
+  const [sales, payments, categories, barDashboard, lowStock, kitchenInventory, payrollRecords] = await Promise.allSettled([
     fetchReportDailySales(dateFilter.startDate, dateFilter.endDate, outletId),
     fetchReportPaymentMethods(dateFilter.startDate, dateFilter.endDate, outletId),
     fetchReportCategorywise(dateFilter.startDate, dateFilter.endDate, outletId),
-    fetchCombinedInventory({ fromDate: dateFilter.startDate, toDate: dateFilter.endDate }),
-    fetchLiquorReportSummaryOverrides(dateFilter.startDate, dateFilter.endDate),
+    fetchBarDashboard(dateFilter.startDate),
     fetchLowStockItems(),
     fetchKitchenInventory(),
     fetchPayrollSummary(),
   ]);
 
-  const combined = combinedInventory.status === 'fulfilled' ? combinedInventory.value : null;
-  const overrides = liquorOverrides.status === 'fulfilled' ? liquorOverrides.value : null;
-  // Merge saved admin overrides onto the combined summary — same merge the
-  // PDF report does so both show identical Business Position values.
-  const mergedSummary = combined?.summary
-    ? { ...combined.summary, ...(overrides || {}) }
-    : null;
-
   return {
     sales: sales.status === 'fulfilled' ? sales.value : null,
     payments: payments.status === 'fulfilled' ? payments.value : null,
     categories: categories.status === 'fulfilled' ? categories.value : null,
-    combinedInventory: mergedSummary ? { ...combined, summary: mergedSummary } : combined,
-    lowStock: lowStock.status === 'fulfilled' ? lowStock.value : [],
+    barDashboard: barDashboard.status === 'fulfilled' ? barDashboard.value : null,
+    lowStock: lowStock.status === 'fulfilled' ? lowStock.value : null,
     kitchenInventory: kitchenInventory.status === 'fulfilled' ? kitchenInventory.value : [],
     payrollRecords: payrollRecords.status === 'fulfilled' ? payrollRecords.value : [],
   };
@@ -200,11 +175,11 @@ export default function OperationsDashboard({ dateFilter, outletId, onDownloadRe
     const totalPaid = data.payrollRecords.reduce((s, r) => s + Number(r.paidAmount || 0), 0);
     const totalOutstanding = totalPayable - totalPaid;
 
-    const lowStockCount = data.lowStock.length + data.kitchenInventory.filter(
+    const lowStockCount = (data.lowStock?.count ?? data.lowStock?.items?.length ?? 0) + data.kitchenInventory.filter(
       (i) => Number(i.currentStock || 0) <= Number(i.reorderLevel || 0) && Number(i.reorderLevel || 0) > 0
     ).length;
 
-    const totalInventoryValue = Number(data.combinedInventory?.summary?.closingStockValue || 0);
+    const totalInventoryValue = Number(data.barDashboard?.inventoryValue || 0);
 
     return {
       totalRevenue: salesSummary.totalRevenue || 0,

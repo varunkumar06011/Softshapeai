@@ -1,5 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// InventoryTable — shared table (desktop) + card list (mobile)
+// InventoryTable — KITCHEN inventory table (desktop) + card list (mobile)
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTE: All `tab === 'bar'` branches in this file are DEAD CODE — the bar tab
+// is rendered by BarInventoryTable.jsx since the bar inventory redesign
+// (single stock pool + append-only movement ledger). This component is only
+// ever invoked with tab='kitchen'. Bar branches are scheduled for removal in
+// the cleanup step. The barInventoryApi imports below are only reachable via
+// the dead bar paths.
 // ─────────────────────────────────────────────────────────────────────────────
 // Columns: Item | Category | Unit | Opening | [Opening Bottles (bar only)] |
 //          [Item Sale (bar only)] | Closing | [Closing Bottles (bar only)] |

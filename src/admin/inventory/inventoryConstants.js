@@ -4,13 +4,18 @@
 
 // Movement type labels for display
 export const MOVEMENT_TYPE_LABELS = {
-  // Bar
+  // Bar (new ledger types)
   PURCHASE: 'Purchase',
-  SALE: 'Sale Deduction',
+  AC_SALE: 'AC Sale (POS)',
+  NON_AC_SALE: 'Non-AC Sale',
   SALE_REVERSAL: 'Sale Reversal',
   WASTAGE: 'Wastage',
   ADJUSTMENT: 'Manual Adjustment',
   OPENING: 'Opening Stock',
+  CORRECTION: 'Correction',
+  PHYSICAL_COUNT: 'Physical Count',
+  // Legacy bar type
+  SALE: 'Sale Deduction',
   // Kitchen
   RECIPE_CONSUMPTION: 'Sale Deduction',
   MANUAL_ADJUSTMENT: 'Manual Adjustment',
@@ -19,6 +24,8 @@ export const MOVEMENT_TYPE_LABELS = {
 // Movement type colors (tailwind classes)
 export const MOVEMENT_TYPE_COLORS = {
   PURCHASE: 'text-green-600',
+  AC_SALE: 'text-red-600',
+  NON_AC_SALE: 'text-purple-600',
   SALE: 'text-red-600',
   SALE_REVERSAL: 'text-blue-600',
   RECIPE_CONSUMPTION: 'text-red-600',
@@ -26,11 +33,15 @@ export const MOVEMENT_TYPE_COLORS = {
   ADJUSTMENT: 'text-gray-600',
   MANUAL_ADJUSTMENT: 'text-gray-600',
   OPENING: 'text-purple-600',
+  CORRECTION: 'text-amber-600',
+  PHYSICAL_COUNT: 'text-teal-600',
 };
 
 // Sign convention: positive = stock in, negative = stock out
 export const MOVEMENT_TYPE_SIGN = {
   PURCHASE: '+',
+  AC_SALE: '-',
+  NON_AC_SALE: '-',
   SALE: '-',
   SALE_REVERSAL: '+',
   RECIPE_CONSUMPTION: '-',
@@ -38,6 +49,8 @@ export const MOVEMENT_TYPE_SIGN = {
   ADJUSTMENT: '±',
   MANUAL_ADJUSTMENT: '±',
   OPENING: '+',
+  CORRECTION: '±',
+  PHYSICAL_COUNT: '±',
 };
 
 // Tab keys

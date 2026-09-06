@@ -1,3 +1,9 @@
+// ═════════════════════════════════════════════════════════════════════════════
+// ⚠ DEAD CODE — DO NOT USE ⚠
+// Replaced by BarInventoryTable.jsx (bar inventory redesign, append-only
+// movement ledger). This file is not imported anywhere and is scheduled for
+// deletion in the cleanup step. Kept temporarily for reference only.
+// ═════════════════════════════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────────────────
 // CombinedBarTable — Bar inventory table (STOCK → PURCHASE → SALE → CONSUMPTION → PROFIT)
 // ─────────────────────────────────────────────────────────────────────────────

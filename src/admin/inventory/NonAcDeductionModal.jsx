@@ -1,3 +1,10 @@
+// ═════════════════════════════════════════════════════════════════════════════
+// ⚠ DEAD CODE — DO NOT USE ⚠
+// Replaced by StockAdjustmentModal (type 'nonac') in the bar inventory
+// redesign — Non-AC sales are now NON_AC_SALE/CORRECTION movements on the
+// single stock pool, not a separate table. This file is not imported anywhere
+// and is scheduled for deletion in the cleanup step.
+// ═════════════════════════════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────────────────
 // NonAcDeductionModal — admin enters Non-AC deduction for an item
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1640,8 +1640,9 @@ export default function CaptainApp({ onLogout }) {
     const unavailableCount = sourceMenu.filter(item => item.isAvailable === false).length;
     let base = sourceMenu.filter(item => item.isAvailable !== false);
 
-    // Resolve currentVenueId from the active table's section → venue relationship
+    // Resolve currentVenueId + currentSectionId from the active table's section → venue relationship
     let currentVenueId = activeTable?.section?.venueId || activeTable?.section?.venue?.id || null;
+    let currentSectionId = activeTable?.section?.id || null;
     if (!currentVenueId) {
       // Look up section from effectiveSections by subcategory
       const section = effectiveSections.find(s => {
@@ -1650,6 +1651,7 @@ export default function CaptainApp({ onLogout }) {
       });
       if (section) {
         currentVenueId = section.venueId || section.venue?.id || null;
+        currentSectionId = section.id || null;
       }
       if (!currentVenueId) {
         // Fallback: find by matching table section name
@@ -1659,6 +1661,7 @@ export default function CaptainApp({ onLogout }) {
             const sourceKey = tSection.sectionTag?.startsWith('venue-') ? tSection.sectionTag.slice(6) : tSection.sectionTag;
             if (sourceKey === tableSubCategory) {
               currentVenueId = tSection.venueId || tSection.venue?.id || null;
+              currentSectionId = tSection.id || null;
               break;
             }
           }
@@ -1673,6 +1676,16 @@ export default function CaptainApp({ onLogout }) {
       const venueFilteredCount = beforeVenueFilter - base.length;
       if (venueFilteredCount > 0) {
         console.log(`[CaptainApp] Menu filter: ${unavailableCount} unavailable, ${venueFilteredCount} excluded by venueAvailabilities[venue=${currentVenueId}], ${base.length} remaining`);
+      }
+    }
+
+    // Filter out items disabled for this section (one level below venue)
+    if (currentSectionId) {
+      const beforeSectionFilter = base.length;
+      base = base.filter(item => item.sectionAvailabilities?.[currentSectionId] !== false);
+      const sectionFilteredCount = beforeSectionFilter - base.length;
+      if (sectionFilteredCount > 0) {
+        console.log(`[CaptainApp] Menu filter: ${sectionFilteredCount} excluded by sectionAvailabilities[section=${currentSectionId}], ${base.length} remaining`);
       }
     }
 

@@ -38,6 +38,7 @@ import {
   ArrowRight,
   PanelLeftClose,
   PanelLeftOpen,
+  ShoppingCart,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
@@ -200,6 +201,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
   const [statsLoading, setStatsLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
+  const [barLowStockAlerts, setBarLowStockAlerts] = useState([]);
   const [dashboardScope, setDashboardScope] = useState(() => {
     try {
       const saved = localStorage.getItem('ss_dashboard_scope');
@@ -317,6 +319,16 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
     };
     socket.on('kitchen:low-stock', onKitchenLowStock);
 
+    // Bar low-stock alerts (real-time from POS deduction, Non-AC sales, wastage)
+    const onBarLowStock = (payload) => {
+      if (!payload?.item) return;
+      setBarLowStockAlerts((prev) => {
+        const filtered = prev.filter((a) => a.id !== payload.item.id);
+        return [...filtered, { ...payload.item, timestamp: Date.now() }];
+      });
+    };
+    socket.on('bar:low-stock', onBarLowStock);
+
     return () => {
       socket.off("order:created", onOrderCreated);
       socket.off("order:updated", onOrderUpdated);
@@ -325,6 +337,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
       socket.off("table:updated", onTableUpdated);
       socket.off('menu-item-updated', onMenuItemUpdated);
       socket.off('kitchen:low-stock', onKitchenLowStock);
+      socket.off('bar:low-stock', onBarLowStock);
     };
   }, [socket, setTables]);
 
@@ -764,6 +777,41 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
               <button
                 onClick={() => setKitchenLowStockAlerts((prev) => prev.filter((a) => a.ingredientId !== alert.ingredientId))}
                 className="text-amber-400 hover:text-amber-600 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Bar low-stock toast notifications */}
+      {barLowStockAlerts.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm mt-2">
+          {barLowStockAlerts.map((alert) => (
+            <div
+              key={alert.id}
+              className="bg-red-50 border border-red-300 rounded-xl p-3 shadow-lg flex items-start gap-3"
+            >
+              <ShoppingCart className="text-red-600 shrink-0 mt-0.5" size={20} />
+              <div className="flex-1">
+                <p className="text-sm font-bold text-red-900">Buy Stock: {alert.name}</p>
+                <p className="text-xs text-red-700">
+                  {alert.stockDisplay || `${Math.round(alert.currentStockMl)}ml left`}
+                </p>
+                <button
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('bar:open-purchase-modal', { detail: { itemId: alert.id, name: alert.name } }));
+                    setBarLowStockAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+                  }}
+                  className="mt-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg px-3 py-1 transition-colors"
+                >
+                  Record Purchase
+                </button>
+              </div>
+              <button
+                onClick={() => setBarLowStockAlerts((prev) => prev.filter((a) => a.id !== alert.id))}
+                className="text-red-400 hover:text-red-600 text-lg leading-none"
               >
                 ×
               </button>

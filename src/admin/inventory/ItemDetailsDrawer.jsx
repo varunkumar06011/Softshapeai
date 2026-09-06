@@ -25,9 +25,9 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
     setLoading(true);
     try {
       if (tab === 'bar') {
-        // Bar transactions endpoint returns a bare array
+        // Movements endpoint returns { movements, total, page, limit }
         const data = await fetchTransactions({ itemId: item.id, limit: 20 });
-        setTransactions(Array.isArray(data) ? data : []);
+        setTransactions(Array.isArray(data) ? data : (data?.movements || []));
       } else {
         // Kitchen ledger endpoint returns { data: [...], hasMore, nextCursor }
         const data = await fetchKitchenLedger({ itemId: item.id, limit: 20 });
@@ -42,14 +42,20 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
 
   if (!open || !item) return null;
 
-  const itemName = item.itemName || (tab === 'bar' ? item.menuItem?.name : item.name);
-  const category = item.category || (tab === 'bar' ? item.menuItem?.category?.name : item.category);
-  const currentStock = Number(item.currentStock || item.acClosing) || 0;
-  const reorderLevel = Number(item.reorderLevel) || 0;
+  const itemName = item.itemName || item.name;
+  const category = item.category;
+  const bottleSizeMl = Number(item.bottleSizeMl) || 0;
+  const currentStock = tab === 'bar'
+    ? (Number(item.currentStockMl ?? item.systemClosingMl) || 0)
+    : (Number(item.currentStock) || 0);
+  // Bar reorder level is stored in bottles — convert to ml for comparison
+  const reorderLevel = tab === 'bar'
+    ? (Number(item.reorderLevelBottles) || 0) * (bottleSizeMl || 1)
+    : (Number(item.reorderLevel) || 0);
   const unit = tab === 'bar' ? 'ml' : item.unit;
-  const rate = tab === 'bar' ? Number(item.costPerBottle) || 0 : Number(item.price) || 0;
+  const rate = tab === 'bar' ? Number(item.purchaseRate) || 0 : Number(item.price) || 0;
   const stockValue = tab === 'bar'
-    ? (Number(item.bottleSize) > 0 ? (currentStock / Number(item.bottleSize)) * rate : 0)
+    ? (Number(item.stockValue) || (bottleSizeMl > 0 ? (currentStock / bottleSizeMl) * rate : 0))
     : currentStock * rate;
   const isLow = reorderLevel > 0 && currentStock <= reorderLevel;
 
@@ -105,11 +111,11 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="text-xs text-gray-500 uppercase tracking-wide">Reorder Level</div>
               <div className="text-lg font-semibold text-gray-700 mt-1">
-                {reorderLevel > 0 ? `${reorderLevel.toFixed(2)} ${unit}` : 'Not set'}
+                {reorderLevel > 0 ? (tab === 'bar' ? `${Number(item.reorderLevelBottles)} btl` : `${reorderLevel.toFixed(2)} ${unit}`) : 'Not set'}
               </div>
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Rate</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide">{tab === 'bar' ? 'Rate / Bottle' : 'Rate'}</div>
               <div className="text-lg font-semibold text-gray-700 mt-1">₹{rate.toFixed(2)}</div>
             </div>
           </div>
@@ -121,14 +127,20 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
               <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Bottle Size</span>
-                  <span className="font-medium text-gray-900">{Number(item.bottleSize) > 0 ? `${Number(item.bottleSize)} ml` : 'Not set'}</span>
+                  <span className="font-medium text-gray-900">{bottleSizeMl > 0 ? `${bottleSizeMl} ml` : 'Not set'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Cost / ML (derived)</span>
                   <span className="font-medium text-gray-900">
-                    {Number(item.costPerBottle) > 0 && Number(item.bottleSize) > 0
-                      ? `₹${(Number(item.costPerBottle) / Number(item.bottleSize)).toFixed(2)}`
+                    {rate > 0 && bottleSizeMl > 0
+                      ? `₹${(rate / bottleSizeMl).toFixed(2)}`
                       : 'Cost not configured'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Selling Price / ML</span>
+                  <span className="font-medium text-gray-900">
+                    {Number(item.sellingPricePerMl) > 0 ? `₹${Number(item.sellingPricePerMl).toFixed(2)}` : 'Not set'}
                   </span>
                 </div>
               </div>
@@ -145,12 +157,14 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
             ) : (
               <div className="space-y-2">
                 {transactions.slice(0, 20).map((tx) => {
-                  const type = tx.type || '';
-                  const qty = Number(tx.quantityChange) || 0;
+                  // Bar ledger uses movementType/quantityMl/date; kitchen ledger
+                  // still uses type/quantityChange/transactionDate
+                  const type = tx.movementType || tx.type || '';
+                  const qty = tab === 'bar' ? Number(tx.quantityMl) || 0 : Number(tx.quantityChange) || 0;
                   const label = MOVEMENT_TYPE_LABELS[type] || type;
                   const color = MOVEMENT_TYPE_COLORS[type] || 'text-gray-600';
                   const sign = MOVEMENT_TYPE_SIGN[type] || (qty >= 0 ? '+' : '-');
-                  const date = tx.transactionDate || tx.createdAt;
+                  const date = tx.date || tx.transactionDate || tx.createdAt;
                   return (
                     <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-50">
                       <div>

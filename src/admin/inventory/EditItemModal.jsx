@@ -1,41 +1,31 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// EditItemModal — edit item metadata and inventory fields
+// EditItemModal — edit item metadata (master fields only, no stock movements)
 // ─────────────────────────────────────────────────────────────────────────────
-// Three modes:
-//   1. Non-AC edit (item.hasNonAc + item.nonAcItemId): edit Non-AC Opening, Sale, Closing
-//      → persists to non_ac_daily_entries via PUT /non-ac/entry
-//   2. AC bar edit (tab='bar', no Non-AC): bottle size, reorder, cost, opening stock
-//      → persists to inventory_items via updateInventoryItem
-//   3. Kitchen edit (tab='kitchen'): name, category, unit, rate, low-stock
+// Two modes:
+//   1. Bar edit (tab='bar'): name, brand, category, bottle size, reorder,
+//      purchase rate, selling price per ml, hide-from-report
+//      → persists to bar_inventory_items via updateInventoryItem
+//      Stock changes use Stock Adjustment / Physical Count (append-only ledger).
+//   2. Kitchen edit (tab='kitchen'): name, category, unit, rate, low-stock
 //      → persists to kitchen items via updateKitchenItem
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { updateInventoryItem, updateNonAcEntry } from '../../services/barInventoryApi';
+import { updateInventoryItem } from '../../services/barInventoryApi';
 import { updateKitchenItem } from '../../services/kitchenInventoryApi';
 
 export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  // Detect Non-AC edit mode (from combined table)
-  const isNonAcEdit = tab === 'bar' && item?.hasNonAc && item?.nonAcItemId;
-
-  // Non-AC fields
-  const [naOpening, setNaOpening] = useState('');
-  const [naSale, setNaSale] = useState('');
-  const [naClosing, setNaClosing] = useState('');
-  const [naReceived, setNaReceived] = useState('');
-  const [naReason, setNaReason] = useState('');
-
-  // Bar (AC) fields
+  // Bar master fields (new single-pool model — no stock movement here)
+  const [displayName, setDisplayName] = useState('');
+  const [brand, setBrand] = useState('');
+  const [barCategory, setBarCategory] = useState('');
   const [bottleSize, setBottleSize] = useState('');
   const [reorderLevel, setReorderLevel] = useState('');
-  const [costPerBottle, setCostPerBottle] = useState('');
-  const [openingStock, setOpeningStock] = useState('');
-  const [openingStockReason, setOpeningStockReason] = useState('');
-  const [originalOpeningStock, setOriginalOpeningStock] = useState(0);
-  const [acSellingPrice, setAcSellingPrice] = useState('');
+  const [purchaseRate, setPurchaseRate] = useState('');
+  const [sellingPricePerMl, setSellingPricePerMl] = useState('');
   const [isHiddenFromReport, setIsHiddenFromReport] = useState(false);
 
   // Kitchen fields
@@ -47,25 +37,14 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
 
   useEffect(() => {
     if (item && open) {
-      if (isNonAcEdit) {
-        // Non-AC edit mode — populate from combined table item
-        setNaOpening(item.openingNonAc != null ? String(item.openingNonAc) : '');
-        setNaSale(item.nonAcDeduction != null ? String(item.nonAcDeduction) : '');
-        setNaClosing(item.nonAcClosing != null ? String(item.nonAcClosing) : '');
-        setNaReceived(item.nonAcReceived != null ? String(item.nonAcReceived) : '');
-        setNaReason('');
-      } else if (tab === 'bar') {
-        setBottleSize(item.bottleSize != null ? String(item.bottleSize) : '');
-        setReorderLevel(item.reorderLevel != null ? String(item.reorderLevel) : '');
-        // Combined items use 'purchaseRate', basic items use 'costPerBottle'
-        const costVal = item.costPerBottle != null ? item.costPerBottle : item.purchaseRate;
-        setCostPerBottle(costVal != null ? String(costVal) : '');
-        // Combined items use 'acClosing' (ml), basic items use 'currentStock'/'todayEntry'
-        const todayOpening = Number(item.todayEntry?.openingStock) || Number(item.acClosing) || Number(item.currentStock) || 0;
-        setOpeningStock(String(todayOpening));
-        setOriginalOpeningStock(todayOpening);
-        setOpeningStockReason('');
-        setAcSellingPrice(item.acSellingPrice != null ? String(item.acSellingPrice) : '');
+      if (tab === 'bar') {
+        setDisplayName(item.name || '');
+        setBrand(item.brand || '');
+        setBarCategory(item.category || '');
+        setBottleSize(item.bottleSizeMl != null ? String(item.bottleSizeMl) : '');
+        setReorderLevel(item.reorderLevelBottles != null ? String(item.reorderLevelBottles) : '');
+        setPurchaseRate(item.purchaseRate != null ? String(item.purchaseRate) : '');
+        setSellingPricePerMl(item.sellingPricePerMl != null ? String(item.sellingPricePerMl) : '');
         setIsHiddenFromReport(item.isHiddenFromReport === true);
       } else {
         setName(item.name || '');
@@ -76,38 +55,29 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
       }
       setError(null);
     }
-  }, [item, open, tab, isNonAcEdit]);
+  }, [item, open, tab]);
 
   const handleSave = async () => {
     if (!item) return;
     setSaving(true);
     setError(null);
     try {
-      if (isNonAcEdit) {
-        // Save Non-AC entry edit to database
-        await updateNonAcEntry({
-          itemId: item.nonAcItemId,
-          date: date || undefined,
-          openingBottles: naOpening !== '' ? Number(naOpening) : undefined,
-          saleBottles: naSale !== '' ? Number(naSale) : undefined,
-          closingBottles: naClosing !== '' ? Number(naClosing) : undefined,
-          receivedBottles: naReceived !== '' ? Number(naReceived) : 0,
-          reason: naReason.trim() || undefined,
-        });
-      } else if (tab === 'bar') {
-        const payload = {
-          bottleSize: bottleSize !== '' ? Number(bottleSize) : undefined,
-          reorderLevel: reorderLevel === '' ? 0 : Number(reorderLevel),
-          costPerBottle: costPerBottle !== '' ? Number(costPerBottle) : null,
-          acSellingPrice: acSellingPrice !== '' ? Number(acSellingPrice) : null,
-          isHiddenFromReport,
-        };
-        const openingStockNum = openingStock === '' ? 0 : Number(openingStock);
-        if (Math.abs(openingStockNum - originalOpeningStock) > 0.01) {
-          payload.openingStock = openingStockNum;
-          payload.notes = openingStockReason.trim() || undefined;
+      if (tab === 'bar') {
+        if (!displayName.trim()) {
+          setError('Display name is required');
+          setSaving(false);
+          return;
         }
-        await updateInventoryItem(item.acItemId || item.id, payload);
+        await updateInventoryItem(item.id, {
+          name: displayName.trim(),
+          brand: brand.trim() || displayName.trim(),
+          category: barCategory.trim() || 'Liquor',
+          bottleSizeMl: bottleSize !== '' ? Number(bottleSize) : undefined,
+          reorderLevelBottles: reorderLevel === '' ? 0 : Number(reorderLevel),
+          purchaseRate: purchaseRate !== '' ? Number(purchaseRate) : null,
+          sellingPricePerMl: sellingPricePerMl !== '' ? Number(sellingPricePerMl) : null,
+          isHiddenFromReport,
+        });
       } else {
         await updateKitchenItem(item.id, {
           name: name.trim(),
@@ -128,19 +98,12 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
 
   if (!open || !item) return null;
 
-  // Compute live closing for Non-AC mode
-  const naOpeningVal = parseFloat(naOpening) || 0;
-  const naSaleVal = parseFloat(naSale) || 0;
-  const naReceivedVal = parseFloat(naReceived) || 0;
-  const naClosingVal = parseFloat(naClosing) || 0;
-  const naComputedClosing = naOpeningVal + naReceivedVal - naSaleVal;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h2 className="text-lg font-bold text-gray-900">
-            {isNonAcEdit ? 'Edit Non-AC Inventory' : tab === 'bar' ? 'Edit Bar Item' : 'Edit Kitchen Item'}
+            {tab === 'bar' ? 'Edit Bar Item' : 'Edit Kitchen Item'}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -154,99 +117,47 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
             <div className="bg-red-50 text-red-600 text-sm rounded-lg p-3">{error}</div>
           )}
 
-          {isNonAcEdit ? (
+          {tab === 'bar' ? (
             <>
-              {/* Non-AC edit mode */}
-              <div className="bg-orange-50 rounded-lg p-3">
-                <div className="text-xs text-orange-600 uppercase tracking-wide font-medium">Non-AC Item (Admin Controlled)</div>
-                <div className="text-sm font-bold text-gray-900 mt-0.5">{item.itemName}</div>
-                <div className="text-xs text-gray-500">{item.category} · {item.bottleSize ? `${item.bottleSize}ml` : ''}</div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Non-AC Opening (bottles)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={naOpening}
-                  onChange={(e) => setNaOpening(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Non-AC Received / Purchase (bottles)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={naReceived}
-                  onChange={(e) => setNaReceived(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Non-AC Sale / Deduction (bottles)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={naSale}
-                  onChange={(e) => setNaSale(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Non-AC Closing (bottles)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={naClosing}
-                  onChange={(e) => setNaClosing(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Formula: Opening ({naOpeningVal.toFixed(2)}) + Received ({naReceivedVal.toFixed(2)}) − Sale ({naSaleVal.toFixed(2)}) = {naComputedClosing.toFixed(2)}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason / Notes <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={naReason}
-                  onChange={(e) => setNaReason(e.target.value)}
-                  placeholder="e.g. Corrected after physical count"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
-                />
-              </div>
-
-              <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
-                Changes persist to the database and recalculate all dependent values.
-                Previous day's closing becomes next day's opening automatically.
-              </div>
-            </>
-          ) : tab === 'bar' ? (
-            <>
-              {/* AC bar edit mode */}
+              {/* Bar item master edit — updates BarInventoryItem only (no stock movement).
+                  To change stock, use Stock Adjustment or the inline closing edit. */}
               <div className="bg-gray-50 rounded-lg p-3">
                 <div className="text-xs text-gray-500 uppercase tracking-wide">Current Stock</div>
                 <div className="text-lg font-bold text-gray-900 mt-0.5">
-                  {Number(item.currentStock || item.acClosing || 0).toFixed(2)}
+                  {Number(item.currentStockMl || item.systemClosingMl || 0).toFixed(2)}
                   <span className="text-sm font-normal text-gray-500 ml-1">ml</span>
                 </div>
+                <p className="text-xs text-gray-400 mt-1">Stock changes happen via movements (Purchase, Adjustment, Non-AC sale, Physical count).</p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name *</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                <input
+                  type="text"
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <input
+                  type="text"
+                  value={barCategory}
+                  onChange={(e) => setBarCategory(e.target.value)}
+                  placeholder="e.g. Whisky, Beer, Vodka"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Bottle Size (ml)</label>
                 <input
@@ -267,26 +178,27 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cost per Bottle (₹)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Rate (₹ per bottle)</label>
                 <input
                   type="number"
-                  value={costPerBottle}
-                  onChange={(e) => setCostPerBottle(e.target.value)}
+                  value={purchaseRate}
+                  onChange={(e) => setPurchaseRate(e.target.value)}
                   placeholder="enter cost"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">AC Selling Price (₹ per bottle)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (₹ per ml)</label>
                 <input
                   type="number"
-                  value={acSellingPrice}
-                  onChange={(e) => setAcSellingPrice(e.target.value)}
-                  placeholder="enter selling price"
+                  value={sellingPricePerMl}
+                  onChange={(e) => setSellingPricePerMl(e.target.value)}
+                  placeholder="e.g. 2.5"
+                  step="0.01"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  Persistent selling price used in the Liquor Stock &amp; Sales Report. Saved once, reused on all future reports.
+                  Persistent per-ml selling price used in the Liquor Stock &amp; Sales Report.
                 </p>
               </div>
               <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
@@ -304,40 +216,6 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Opening Stock (ml)
-                  {Math.abs((openingStock === '' ? 0 : Number(openingStock)) - originalOpeningStock) > 0.01 && (
-                    <span className="text-red-500 ml-1">•</span>
-                  )}
-                </label>
-                <input
-                  type="number"
-                  value={openingStock}
-                  onChange={(e) => setOpeningStock(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                />
-                {Math.abs((openingStock === '' ? 0 : Number(openingStock)) - originalOpeningStock) > 0.01 && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    Changing opening stock will update current stock from {originalOpeningStock.toFixed(2)}ml to {((openingStock === '' ? 0 : Number(openingStock)) + (Number(item.todayEntry?.addedStock) || 0) - (Number(item.todayEntry?.consumedStock) || 0)).toFixed(2)}ml.
-                  </p>
-                )}
-              </div>
-              {Math.abs((openingStock === '' ? 0 : Number(openingStock)) - originalOpeningStock) > 0.01 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Reason <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={openingStockReason}
-                    onChange={(e) => setOpeningStockReason(e.target.value)}
-                    placeholder="e.g. Corrected after physical count"
-                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                  />
-                </div>
-              )}
             </>
           ) : (
             <>

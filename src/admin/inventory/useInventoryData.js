@@ -72,7 +72,8 @@ export function useInventoryData(tab, restaurant) {
       }
       // Ignore result if a newer fetch was triggered (tab switch, etc.)
       if (signal?.aborted) return;
-      setItems(data || []);
+      // Bar endpoint returns { date, items }; kitchen returns a bare array
+      setItems(tab === 'bar' ? (data?.items || []) : (data || []));
     } catch (err) {
       if (signal?.aborted) return;
       setError(err.message || 'Failed to load inventory');
@@ -133,13 +134,17 @@ export function useInventoryData(tab, restaurant) {
     'inventory:low_stock': useCallback(() => {
       refetchForSocket();
     }, [refetchForSocket]),
+    // Redesigned bar inventory emits this event
+    'bar:inventory-updated': useCallback(() => {
+      refetchForSocket();
+    }, [refetchForSocket]),
   });
 
   // Derive categories from loaded data (not hardcoded)
   const categories = useMemo(() => {
     const set = new Set();
     for (const item of items) {
-      const cat = tab === 'bar' ? item.menuItem?.category?.name : item.category;
+      const cat = item.category;
       if (cat) set.add(cat);
     }
     return ['all', ...Array.from(set).sort()];
@@ -153,22 +158,20 @@ export function useInventoryData(tab, restaurant) {
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.trim().toLowerCase();
       result = result.filter((item) => {
-        const name = tab === 'bar' ? item.menuItem?.name : item.name;
+        const name = item.name;
         return name?.toLowerCase().includes(q);
       });
     }
 
     // Category filter
     if (category !== 'all') {
-      result = result.filter((item) => {
-        const cat = tab === 'bar' ? item.menuItem?.category?.name : item.category;
-        return cat === category;
-      });
+      result = result.filter((item) => item.category === category);
     }
 
-    // Low-stock filter
+    // Low-stock filter (bar reorder level is in bottles × bottleSizeMl)
     if (filterStatus === 'low') {
       result = result.filter((item) => {
+        if (tab === 'bar') return item.isLowStock === true;
         const stock = Number(item.currentStock) || 0;
         const reorder = Number(item.reorderLevel) || 0;
         return reorder > 0 && stock <= reorder;
@@ -189,16 +192,15 @@ export function useInventoryData(tab, restaurant) {
   const summary = useMemo(() => {
     const totalItems = items.length;
     const lowStock = items.filter((item) => {
+      if (tab === 'bar') return item.isLowStock === true;
       const stock = Number(item.currentStock) || 0;
       const reorder = Number(item.reorderLevel) || 0;
       return reorder > 0 && stock <= reorder;
     }).length;
     const stockValue = items.reduce((sum, item) => {
+      if (tab === 'bar') return sum + (Number(item.stockValue) || 0);
       const stock = Number(item.currentStock) || 0;
-      const rate = tab === 'bar'
-        ? (Number(item.costPerBottle) || 0) * (stock / (Number(item.bottleSize) || 750))
-        : Number(item.price) || 0;
-      return sum + stock * rate;
+      return sum + stock * (Number(item.price) || 0);
     }, 0);
     const todayUsage = topSelling.reduce((sum, item) => {
       const qty = Number(item.totalQuantity || item.quantity || 0);

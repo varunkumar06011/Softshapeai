@@ -20,6 +20,8 @@ const Reports         = lazy(() => import('./AdminComponents').then(m => ({ defa
 const Payroll         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Payroll })));
 const Marketing       = lazy(() => import('./AdminComponents').then(m => ({ default: m.Marketing })));
 const Pricing         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Pricing })));
+// DEAD CODE: legacy Inventory/KitchenInventory are not referenced by any route
+// (kitchen-inventory renders InventorySection → InventoryPage). Remove in cleanup.
 const Inventory       = lazy(() => import('./AdminComponents').then(m => ({ default: m.Inventory })));
 const KitchenInventory = lazy(() => import('./AdminComponents').then(m => ({ default: m.KitchenInventory })));
 const NewInventoryPage = lazy(() => import('./inventory/InventoryPage').then(m => ({ default: m.InventoryPage })));

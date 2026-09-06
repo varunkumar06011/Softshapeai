@@ -138,6 +138,7 @@ export function mapFlatMenuItems(items) {
       printerName: item.printerName || null,
       venuePrices: item.venuePrices || {},
       venueAvailabilities: item.venueAvailabilities || {},
+      sectionAvailabilities: item.sectionAvailabilities || {},
       // Liquor/bar items never carry GST; food uses stored flag (default true when unset)
       gstEnabled: isLiquor ? false : (item.gstEnabled === undefined || item.gstEnabled === null ? true : toBool(item.gstEnabled)),
       isSpecial: toBool(item.isSpecial),
