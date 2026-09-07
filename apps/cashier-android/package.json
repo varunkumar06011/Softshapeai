@@ -1,6 +1,6 @@
 {
   "name": "softshape-cashier-android",
-  "version": "23.12.31",
+  "version": "23.12.32",
   "description": "SoftShape Cashier Android App (Capacitor)",
   "private": true,
   "type": "module",

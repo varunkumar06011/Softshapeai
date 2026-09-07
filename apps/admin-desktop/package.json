@@ -1,6 +1,6 @@
 {
   "name": "softshape-admin-desktop",
-  "version": "23.12.31",
+  "version": "23.12.32",
   "description": "SoftShape Admin Desktop App (Tauri)",
   "private": true,
   "type": "module",
