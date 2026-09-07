@@ -88,10 +88,8 @@ fn check_edge_server_health() -> (bool, String) {
                 return (false, "Failed to send health request".to_string());
             }
             let mut response = String::new();
-            if stream.read_to_string(&mut response).is_err() {
-                return (false, "Failed to read health response".to_string());
-            }
-            if response.starts_with("HTTP/1.1 200") {
+            let _ = stream.read_to_string(&mut response);
+            if response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200") {
                 let body = response.split("\r\n\r\n").nth(1).unwrap_or("");
                 if body.contains("\"status\"") {
                     return (true, body.to_string());
