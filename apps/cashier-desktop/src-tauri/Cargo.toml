@@ -1,6 +1,6 @@
 [package]
 name = "softshape-cashier-desktop"
-version = "24.0.3"
+version = "24.0.4"
 description = "SoftShape Cashier Desktop App"
 authors = ["SoftShape"]
 license = "MIT"
