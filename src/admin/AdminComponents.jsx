@@ -140,7 +140,9 @@ import {
 
   Loader2,
 
-  ShoppingBag
+  ShoppingBag,
+
+  Smartphone
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -1152,6 +1154,93 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
     </div>
   );
 
+  // ── Bank Reconciliation Widget ──────────────────────────────────────────────
+  // Shows Sales + Tips = Gross per method so the cashier can match the gross
+  // amount to what the POS machine / UPI gateway / cash drawer reports.
+  // Tips are shown as a waiter liability, not restaurant revenue.
+  const BankReconciliationWidget = () => {
+    const tipBreakdown = paymentData?.summary?.tipBreakdown || { cash: 0, card: 0, upi: 0, other: 0 };
+    const totalTips = paymentData?.summary?.totalTips || 0;
+
+    const rows = [
+      { label: 'Cash', sales: cashAmount, tips: tipBreakdown.cash, icon: Banknote, color: '#22C55E' },
+      { label: 'Card', sales: cardAmount, tips: tipBreakdown.card, icon: CreditCard, color: '#8B5CF6' },
+      { label: 'UPI',  sales: upiAmount,  tips: tipBreakdown.upi,  icon: Smartphone, color: '#3B82F6' },
+      { label: 'Other', sales: otherAmount, tips: tipBreakdown.other, icon: Wallet, color: '#F59E0B' },
+    ].filter(r => r.sales > 0 || r.tips > 0);
+
+    if (rows.length === 0) return null;
+
+    const grossTotal = rows.reduce((s, r) => s + r.sales + r.tips, 0);
+    const tipsToPayOut = tipBreakdown.card + tipBreakdown.upi + tipBreakdown.other;
+    const cashTipsKept = tipBreakdown.cash;
+
+    return (
+      <div className={`${dashCard} p-4 flex flex-col animate-chart-in-delay-1`}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-black flex items-center gap-2 text-[#1A1A1A]">
+            <Receipt size={18} className="text-[#1E3A8A]" /> Bank Reconciliation
+          </h3>
+          <span className="text-[10px] font-bold text-[#6B6B6B]">Match to POS / Bank</span>
+        </div>
+
+        {/* Table header */}
+        <div className="grid grid-cols-12 gap-1 text-[10px] font-black uppercase tracking-wider text-[#6B6B6B] px-2 pb-1 border-b border-gray-100">
+          <div className="col-span-3">Method</div>
+          <div className="col-span-3 text-right">Sales</div>
+          <div className="col-span-3 text-right">Tips</div>
+          <div className="col-span-3 text-right">Gross</div>
+        </div>
+
+        {/* Rows */}
+        <div className="space-y-0.5">
+          {rows.map((r) => {
+            const Icon = r.icon;
+            const gross = r.sales + r.tips;
+            return (
+              <div key={r.label} className="grid grid-cols-12 gap-1 items-center px-2 py-1.5 rounded-lg hover:bg-gray-50">
+                <div className="col-span-3 flex items-center gap-1.5 min-w-0">
+                  <Icon size={14} style={{ color: r.color }} className="shrink-0" />
+                  <span className="text-xs font-bold text-[#1A1A1A] truncate">{r.label}</span>
+                </div>
+                <div className="col-span-3 text-right text-xs font-bold text-[#1A1A1A] tabular-nums">{fmtInr(r.sales)}</div>
+                <div className="col-span-3 text-right text-xs font-bold tabular-nums" style={{ color: r.tips > 0 ? '#F59E0B' : '#9CA3AF' }}>
+                  {r.tips > 0 ? fmtInr(r.tips) : '—'}
+                </div>
+                <div className="col-span-3 text-right text-xs font-black text-[#1A1A1A] tabular-nums">{fmtInr(gross)}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Gross total — this is what should match the bank */}
+        <div className="mt-3 flex items-center justify-between rounded-xl bg-[#1E3A8A] px-3 py-2.5">
+          <span className="text-xs font-black text-white uppercase tracking-wider">Gross Total (match to bank)</span>
+          <span className="text-base font-black text-white tabular-nums">{fmtInr(grossTotal)}</span>
+        </div>
+
+        {/* Tip distribution summary */}
+        {totalTips > 0 && (
+          <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-1.5">
+            <div className="text-[10px] font-black uppercase tracking-wider text-amber-700 mb-1">Tips to Distribute</div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-amber-800">Cash tips (kept by waiters)</span>
+              <span className="font-black text-amber-900 tabular-nums">{fmtInr(cashTipsKept)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-amber-800">Card/UPI/Other tips (pay from drawer)</span>
+              <span className="font-black text-amber-900 tabular-nums">{fmtInr(tipsToPayOut)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs pt-1 border-t border-amber-200">
+              <span className="font-black text-amber-900">Total tips</span>
+              <span className="font-black text-amber-900 tabular-nums">{fmtInr(totalTips)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const TopCaptainsWidget = () => {
     const rankColors = ['#F59E0B', '#94A3B8', '#F97316'];
     const rankBgs = ['rgba(245, 158, 11, 0.10)', 'rgba(148, 163, 184, 0.12)', 'rgba(249, 115, 22, 0.10)'];
@@ -1358,6 +1447,11 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PaymentMixWidget />
         <TopCaptainsWidget />
+      </div>
+
+      {/* Row 3b — bank reconciliation (sales + tips = gross, matches bank) */}
+      <div className="grid grid-cols-1 gap-4">
+        <BankReconciliationWidget />
       </div>
 
       <p className="text-[10px] text-[#6B6B6B] font-medium text-center mt-4">

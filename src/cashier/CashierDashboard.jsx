@@ -62,7 +62,7 @@ import {
 
   Maximize2, Minimize2, Eye, Receipt, FileText, Tag, Sparkles, Flame, AlertTriangle,
 
-  DatabaseBackup, RefreshCw, Edit2, Plus as PlusIcon, Pause, Save, LayoutGrid
+  DatabaseBackup, RefreshCw, Edit2, Plus as PlusIcon, Pause, Save, LayoutGrid, CircleSlash
 
 } from 'lucide-react';
 
@@ -72,9 +72,9 @@ import { useMenu } from '../context/MenuContext';
 
 import { useVenueSections } from '../hooks/useVenueSections';
 
-import { updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvailabilityEdge, toggleMenuTypeEdge } from '../services/menuService';
+import { updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvailabilityEdge, toggleMenuTypeEdge, toggleVenueAvailabilityEdge, toggleSectionAvailabilityEdge } from '../services/menuService';
 
-import { createMenuItem, updateMenuItem, deleteMenuItem } from '../services/adminApi';
+import { createMenuItem, updateMenuItem } from '../services/adminApi';
 
 import EditMenuItemModal from '../shared/components/EditMenuItemModal';
 
@@ -1680,7 +1680,11 @@ const CashierDashboard = ({ onLogout }) => {
 
   // LIQUOR items cannot be specials, so bar venues are irrelevant here).
 
-  const { venueColumns: specialVenueColumns } = useVenueSections('restaurant');
+  // `venues` from useVenueSections is the raw, unfiltered list (all outlets),
+
+  // used by editMenuVenues so the edit modal shows every venue (bar + restaurant).
+
+  const { venueColumns: specialVenueColumns, venues: allVenues } = useVenueSections('restaurant');
 
   // Printer options from restaurant config — used for KOT destination in special form
   // Merges cloud-configured printers with live edge-discovered printers so the
@@ -3644,7 +3648,21 @@ const CashierDashboard = ({ onLogout }) => {
 
     try {
 
-      await deleteMenuItem(id, { syncToAllOutlets: false });
+      // Edge-first: write to edge SQLite + enqueue cloud sync + broadcast to
+
+      // cashier/captain via config.changed. Falls back to cloud if edge is down.
+
+      const result = await deleteMenuItemEdge(id);
+
+      if (!result || !result.success) {
+
+        const msg = result?.error || 'Could not delete special';
+
+        addNotification('Delete Failed', msg, 'error');
+
+        return;
+
+      }
 
       addNotification('Special Deleted', `${name} removed.`, 'success');
 
@@ -9667,23 +9685,45 @@ const CashierDashboard = ({ onLogout }) => {
 
   const editMenuVenues = useMemo(() => {
 
-    const seen = new Map();
+    // Use the unfiltered venues list from useVenueSections so bar + restaurant
 
-    for (const s of fetchedSections) {
+    // venues all appear in the edit-menu modal, not just those that have sections.
 
-      const vid = s.venueId || s.venue?.id;
+    return (allVenues || []).map(v => ({ id: v.id, label: v.name || 'Price' }));
 
-      if (vid && !seen.has(vid)) {
+  }, [allVenues]);
 
-        seen.set(vid, { id: vid, label: s.venue?.name || s.name });
 
-      }
+
+  // Current venue ID derived from the selected table / sub-category, so the
+
+  // edit-menu modal opens with the right venue as active (instead of always the
+
+  // first venue in the list). Falls back to the first venue when no context.
+
+  const editMenuActiveVenueId = useMemo(() => {
+
+    const matchingSection = fetchedSections.find(s => (sectionTagToSource[s.sectionTag] || s.name) === tableSubCategory);
+
+    if (matchingSection) {
+
+      const vid = matchingSection.venueId || matchingSection.venue?.id;
+
+      if (vid && editMenuVenues.some(v => v.id === vid)) return vid;
 
     }
 
-    return Array.from(seen.values());
+    if (selectedTable) {
 
-  }, [fetchedSections]);
+      const vid = selectedTable.section?.venueId || selectedTable.section?.venue?.id;
+
+      if (vid && editMenuVenues.some(v => v.id === vid)) return vid;
+
+    }
+
+    return editMenuVenues[0]?.id;
+
+  }, [fetchedSections, sectionTagToSource, tableSubCategory, selectedTable, editMenuVenues]);
 
 
 
@@ -9805,6 +9845,8 @@ const CashierDashboard = ({ onLogout }) => {
 
         venuePrices: payload.venuePrices,
 
+        ...(payload.sectionAvailabilities ? { sectionAvailabilities: payload.sectionAvailabilities } : {}),
+
       } : i;
 
       if (isLiquor) {
@@ -9897,6 +9939,8 @@ const CashierDashboard = ({ onLogout }) => {
 
         venuePrices: payload.venuePrices || {},
 
+        sectionAvailabilities: payload.sectionAvailabilities || {},
+
         isSpecial: false,
 
         active: true,
@@ -9930,6 +9974,106 @@ const CashierDashboard = ({ onLogout }) => {
     } finally {
 
       setMenuEditSaving(false);
+
+    }
+
+  }, [addNotification, setGlobalMenu, setGlobalBarMenu]);
+
+
+
+  // ── Delete handler for the edit menu list (edge-first with cloud fallback) ──
+
+  const handleDeleteMenuItem = useCallback(async (id, name) => {
+
+    if (!window.confirm(`Delete "${name}"? This will remove it from the menu (soft-delete, syncs to edge + cloud).`)) return;
+
+    try {
+
+      const result = await deleteMenuItemEdge(id);
+
+      if (!result || !result.success) {
+
+        const msg = result?.error || 'Could not delete menu item';
+
+        addNotification('Delete Failed', msg, 'error');
+
+        return;
+
+      }
+
+      // Optimistically remove from the matching store. The config.changed event
+
+      // from edge will trigger a full refresh via menuSyncService/barMenuSyncService.
+
+      const remove = prev => prev.filter(i => i.id !== id);
+
+      setGlobalMenu(remove);
+
+      setGlobalBarMenu(remove);
+
+      addNotification('Item Deleted', `${name} removed (synced to edge)`, 'success');
+
+    } catch (err) {
+
+      addNotification('Delete Failed', err.message || 'Could not delete menu item', 'error');
+
+    }
+
+  }, [addNotification, setGlobalMenu, setGlobalBarMenu]);
+
+
+
+  // ── Quick availability toggle for the edit menu list (edge-first) ──
+
+  const handleToggleAvailability = useCallback(async (item) => {
+
+    const currentlyAvailable = item.isAvailable !== false;
+
+    try {
+
+      const result = await toggleAvailabilityEdge(item.id);
+
+      if (!result || !result.success) {
+
+        const msg = result?.error || 'Could not toggle availability';
+
+        addNotification('Toggle Failed', msg, 'error');
+
+        return;
+
+      }
+
+      // Optimistically flip the flag in the matching store(s). The config.changed
+
+      // event from edge will trigger a full refresh.
+
+      const flip = i => i.id === item.id ? { ...i, isAvailable: !currentlyAvailable } : i;
+
+      const isLiquor = (item.menuType || 'FOOD').toUpperCase() === 'LIQUOR';
+
+      if (isLiquor) {
+
+        setGlobalBarMenu(prev => prev.map(flip));
+
+      } else {
+
+        setGlobalMenu(prev => prev.map(flip));
+
+      }
+
+      addNotification(
+
+        'Availability Updated',
+
+        `${item.n || item.name} is now ${!currentlyAvailable ? 'available' : 'unavailable'}`,
+
+        'success'
+
+      );
+
+    } catch (err) {
+
+      addNotification('Toggle Failed', err.message || 'Could not toggle availability', 'error');
 
     }
 
@@ -10076,6 +10220,26 @@ const CashierDashboard = ({ onLogout }) => {
     if (currentSectionId) {
 
       itemsToFilter = itemsToFilter.filter(item => item.sectionAvailabilities?.[currentSectionId] !== false);
+
+    }
+
+    // Hide items with ₹0 price in the active venue/section — a zero price means
+
+    // the item is not offered there. When a venue override exists, use it; otherwise
+
+    // fall back to the base price. Only applies inside a venue context.
+
+    if (currentVenueId) {
+
+      itemsToFilter = itemsToFilter.filter(item => {
+
+        const vp = item.venuePrices?.[currentVenueId];
+
+        const finalPrice = vp !== undefined ? Number(vp) : Number(item.p || item.price || 0);
+
+        return finalPrice > 0;
+
+      });
 
     }
 
@@ -12168,9 +12332,12 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Venue-wise sales breakdown — groups completed transactions by venue name.
 
-  // Resolves venue from the transaction's sectionTag → fetchedSections → venue.name.
-
-  // Transactions with no resolvable venue are grouped under "Unassigned".
+  // Resolves venue name using a priority chain:
+  //   1. sectionId match → section.venue.name (most reliable)
+  //   2. sectionTag match → section.venue.name (fallback for legacy txns)
+  //   3. sectionName from the transaction itself (if no section found)
+  //   4. Derive from sectionTag (strip "venue-" prefix, capitalize)
+  //   5. "Unassigned" as last resort
 
   const venueSalesBreakdown = useMemo(() => {
 
@@ -12178,9 +12345,49 @@ const CashierDashboard = ({ onLogout }) => {
 
     for (const txn of completedTransactions) {
 
-      const section = fetchedSections.find(s => s.sectionTag === txn.sectionTag);
+      // Try sectionId first — most reliable (unique per section)
 
-      const venueName = section?.venue?.name || 'Unassigned';
+      let section = null;
+
+      if (txn.sectionId) {
+
+        section = fetchedSections.find(s => s.id === txn.sectionId);
+
+      }
+
+      // Fall back to sectionTag matching
+
+      if (!section && txn.sectionTag) {
+
+        section = fetchedSections.find(s => s.sectionTag === txn.sectionTag);
+
+      }
+
+      let venueName = section?.venue?.name || null;
+
+      // If no venue from section, try the transaction's own sectionName
+
+      if (!venueName && txn.sectionName) {
+
+        venueName = txn.sectionName;
+
+      }
+
+      // If still no name, derive from sectionTag (e.g. "venue-bar" → "Bar")
+
+      if (!venueName && txn.sectionTag) {
+
+        const tag = txn.sectionTag.startsWith('venue-')
+
+          ? txn.sectionTag.slice(6)
+
+          : txn.sectionTag;
+
+        venueName = tag.charAt(0).toUpperCase() + tag.slice(1);
+
+      }
+
+      if (!venueName) venueName = 'Unassigned';
 
       const entry = map.get(venueName) || { total: 0, count: 0 };
 
@@ -15934,19 +16141,55 @@ const CashierDashboard = ({ onLogout }) => {
 
                                       </div>
 
-                                      <button
+                                      <div className="flex items-center gap-1.5 shrink-0">
 
-                                        onClick={() => setEditingMenuItem(item)}
+                                        <button
 
-                                        className="p-2 rounded-lg bg-[#1E3A8A]/10 text-[#1E3A8A] hover:bg-[#1E3A8A] hover:text-white transition-all shrink-0"
+                                          onClick={() => handleToggleAvailability(item)}
 
-                                        title="Edit item"
+                                          className={`p-2 rounded-lg transition-all ${item.isAvailable === false
 
-                                      >
+                                            ? 'bg-gray-200 text-gray-500 hover:bg-gray-300'
 
-                                        <Edit2 size={16} />
+                                            : 'bg-green-100 text-green-700 hover:bg-green-600 hover:text-white'}`}
 
-                                      </button>
+                                          title={item.isAvailable === false ? 'Mark available' : 'Mark unavailable'}
+
+                                        >
+
+                                          {item.isAvailable === false ? <CircleSlash size={16} /> : <Check size={16} />}
+
+                                        </button>
+
+                                        <button
+
+                                          onClick={() => setEditingMenuItem(item)}
+
+                                          className="p-2 rounded-lg bg-[#1E3A8A]/10 text-[#1E3A8A] hover:bg-[#1E3A8A] hover:text-white transition-all shrink-0"
+
+                                          title="Edit item"
+
+                                        >
+
+                                          <Edit2 size={16} />
+
+                                        </button>
+
+                                        <button
+
+                                          onClick={() => handleDeleteMenuItem(item.id, item.n || item.name)}
+
+                                          className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all shrink-0"
+
+                                          title="Delete item"
+
+                                        >
+
+                                          <Trash2 size={16} />
+
+                                        </button>
+
+                                      </div>
 
                                     </div>
 
@@ -15980,11 +16223,13 @@ const CashierDashboard = ({ onLogout }) => {
 
                         venues={editMenuVenues}
 
-                        activeVenueId={editMenuVenues[0]?.id}
+                        activeVenueId={editMenuActiveVenueId}
 
                         printerOptions={specialPrinterOptions}
 
                         showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
+
+                        sections={fetchedSections}
 
                         onClose={() => setEditingMenuItem(null)}
 
@@ -16010,11 +16255,13 @@ const CashierDashboard = ({ onLogout }) => {
 
                         venues={editMenuVenues}
 
-                        activeVenueId={editMenuVenues[0]?.id}
+                        activeVenueId={editMenuActiveVenueId}
 
                         printerOptions={specialPrinterOptions}
 
                         showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
+
+                        sections={fetchedSections}
 
                         onClose={() => setAddingMenuItem(null)}
 

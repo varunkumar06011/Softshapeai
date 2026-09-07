@@ -558,7 +558,7 @@ const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOu
               </span>
             )}
           </div>
-          <h3 className="captain-item-title font-extrabold text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 truncate transition-colors group-hover:text-red-600">
+          <h3 className="captain-item-title font-extrabold text-gray-900 tracking-tight leading-snug mb-0.5 pr-4 whitespace-normal break-words transition-colors group-hover:text-red-600">
             {item.n}
           </h3>
           {item.desc && (
@@ -1096,9 +1096,14 @@ export default function CaptainApp({ onLogout }) {
 
   const kotSubmitStartRef = useRef(0); // timestamp guard against stuck submissions
   // AbortController for the in-flight edgeFetch during KOT submission. Aborted
-  // by the stuck-guard (>15s) or when the captain switches tables — prevents
+  // by the stuck-guard (>25s) or when the captain switches tables — prevents
   // orphaned promises from corrupting state when they eventually resolve.
   const kotAbortRef = useRef(null);
+  // Tracks why kotAbortRef was aborted: 'stuck-guard' | 'table-switch' | null.
+  // Used in the catch block to distinguish silent table-switch aborts from
+  // stuck-guard aborts (which should warn the captain) and API timeouts (which
+  // should auto-retry).
+  const kotAbortReasonRef = useRef(null);
   const printTimeoutRef = useRef(null); // timeout for KOT print acknowledgement
 
   // Bug A: Dedup socket echoes from our own KOT submissions (same pattern as cashier)
@@ -1344,13 +1349,46 @@ export default function CaptainApp({ onLogout }) {
   // When the order was committed but the print failed, retry should call
   // reprintKot(orderId) instead of re-submitting the order. This ref stores
   // the orderId for the reprint path. When null, retry re-submits the order.
-  const retryPrintOrderIdRef = useRef(null);
+  const retryPrintOrderIdRef = useRef((() => {
+    try { return localStorage.getItem('captain_retry_print_order_id') || null; } catch { return null; }
+  })());
   const [retryingPrint, setRetryingPrint] = useState(false);
   // KOTs whose print failed are marked "Print Failed" in kotHistory. This set
   // stores their IDs so socket events (order:created/order:updated/table:updated)
   // don't overwrite the "Print Failed" status back to "KOT Sent" — which would
   // mislead the captain into thinking the kitchen received the order.
-  const failedPrintKotIdsRef = useRef(new Set());
+  // Persisted to localStorage so it survives app reloads (Android killing the
+  // app in background, captain swiping it away, etc). Without persistence, a
+  // print-failed KOT shows as "KOT Sent" after reload — the kitchen never
+  // received it but the captain thinks they did.
+  const failedPrintKotIdsRef = useRef(new Set(
+    (() => {
+      try {
+        const raw = localStorage.getItem('captain_failed_print_kot_ids');
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    })()
+  ));
+  const persistFailedPrintKotIds = useCallback(() => {
+    try {
+      const ids = [...failedPrintKotIdsRef.current];
+      if (ids.length > 0) {
+        localStorage.setItem('captain_failed_print_kot_ids', JSON.stringify(ids));
+      } else {
+        localStorage.removeItem('captain_failed_print_kot_ids');
+      }
+    } catch { /* non-fatal */ }
+  }, []);
+  const persistRetryPrintOrderId = useCallback(() => {
+    try {
+      const orderId = retryPrintOrderIdRef.current;
+      if (orderId) {
+        localStorage.setItem('captain_retry_print_order_id', orderId);
+      } else {
+        localStorage.removeItem('captain_retry_print_order_id');
+      }
+    } catch { /* non-fatal */ }
+  }, []);
 
   const [sendingKOT, setSendingKOT] = useState(false);
 
@@ -3021,6 +3059,7 @@ export default function CaptainApp({ onLogout }) {
     setKotError(null);
     // Abort any in-flight KOT write for the previous table — prevents the
     // orphaned promise from corrupting the new table's state when it resolves.
+    kotAbortReasonRef.current = 'table-switch';
     if (kotAbortRef.current) {
       try { kotAbortRef.current.abort(); } catch { /* already aborted */ }
       kotAbortRef.current = null;
@@ -3408,9 +3447,14 @@ export default function CaptainApp({ onLogout }) {
             if (Date.now() - pendingKot.timestamp < 600000) {
               retryRequestIdRef.current = pendingKot.requestId;
               kotRequestIdRef.current = pendingKot.requestId;
+              // If retryPrintOrderIdRef was restored from localStorage, this
+              // was a print-retry scenario (order committed, print failed).
+              // The retry button should call retryKotPrint(), not re-submit.
+              const isPrintRetry = !!retryPrintOrderIdRef.current;
               setKotError({
                 message: pendingKot.message || 'Previous KOT submission was interrupted. Tap Retry to resend.',
                 retryItems: pendingKot.items || [],
+                isPrintRetry,
               });
             } else {
               // Expired — clear stale entry for this table only
@@ -3519,16 +3563,21 @@ export default function CaptainApp({ onLogout }) {
     };
   }, []);
 
-  const sendIncrementalKOT = async (retryRequestId = null) => {
+  const sendIncrementalKOT = async (retryRequestId = null, autoRetryCount = 0) => {
     // Issue 9: Don't clear previous print timeouts here — each KOT's timeout
     // is self-managed via a local closure variable. Clearing the shared ref
     // would cancel the WRONG timeout if a second KOT was sent before the first
     // one's 30s print ack window expired.
-    // Stuck-guard: if a previous submission has been running for >15s, force-reset
+    // Stuck-guard: if a previous submission has been running for >25s, force-reset
     // AND abort the in-flight edgeFetch so its orphaned promise doesn't corrupt
-    // state when it eventually resolves/rejects.
-    if (isSubmittingKotRef.current && kotSubmitStartRef.current && Date.now() - kotSubmitStartRef.current > 15000) {
-      console.warn('[KOT] Stuck submission detected (>15s), aborting and forcing reset');
+    // state when it eventually resolves/rejects. The 25s threshold gives the
+    // edge write timeout (15s) + 1 retry (1s delay + 15s) = ~31s total, but
+    // the stuck-guard fires at 25s to prevent truly hung submissions from
+    // blocking the captain indefinitely. The edge write timeout (15s) will
+    // normally fire first, producing a real error the captain can act on.
+    if (isSubmittingKotRef.current && kotSubmitStartRef.current && Date.now() - kotSubmitStartRef.current > 25000) {
+      console.warn('[KOT] Stuck submission detected (>25s), aborting and forcing reset');
+      kotAbortReasonRef.current = 'stuck-guard';
       if (kotAbortRef.current) {
         try { kotAbortRef.current.abort(); } catch { /* already aborted */ }
         kotAbortRef.current = null;
@@ -3558,6 +3607,7 @@ export default function CaptainApp({ onLogout }) {
 
     isSubmittingKotRef.current = true;
     kotSubmitStartRef.current = Date.now();
+    kotAbortReasonRef.current = null;
 
     // Create an AbortController for this KOT submission. Passed to edgeFetch
     // via createOrder/updateOrderItems so the stuck-guard or table-switch can
@@ -3589,6 +3639,10 @@ export default function CaptainApp({ onLogout }) {
     // Snapshot items before the API call — needed for retry in the catch block.
     // Must be declared outside the try block so it's accessible in catch.
     var retrySnapshot = [...currentSessionItems];
+    // Set to true in catch block when auto-retry should fire (network error,
+    // not stuck-guard or table-switch). The finally block checks this flag
+    // to skip the 500ms guard delay and immediately re-invoke sendIncrementalKOT.
+    let shouldAutoRetry = false;
 
     try {
 
@@ -4144,6 +4198,8 @@ export default function CaptainApp({ onLogout }) {
 
       // Fix 12C: Clear persisted KOT on success
       try { localStorage.removeItem('captain_pending_kot'); } catch { /* non-fatal */ }
+      // Also clear persisted retry-print state — the KOT succeeded.
+      try { localStorage.removeItem('captain_retry_print_order_id'); } catch { /* non-fatal */ }
 
       if (savedOrder?.offline) {
         // Order was queued offline (edge + cloud both unreachable) — the KOT
@@ -4155,6 +4211,7 @@ export default function CaptainApp({ onLogout }) {
         // from socket events overwriting the status.
         const failedKotId = String(newKOT.id);
         failedPrintKotIdsRef.current.add(failedKotId);
+        persistFailedPrintKotIds();
         setActiveTables(prev => prev.map(t => {
           if (t.backendId !== activeTable?.backendId) return t;
           return { ...t, kotHistory: (t.kotHistory || []).map(k => String(k.id) === failedKotId ? { ...k, s: 'Print Failed', printFailed: true } : k) };
@@ -4162,6 +4219,7 @@ export default function CaptainApp({ onLogout }) {
         setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
         retryRequestIdRef.current = requestId;
         retryPrintOrderIdRef.current = null;
+        persistRetryPrintOrderId();
         setKotError({
           message: 'Network error — kitchen did not receive this order. Tap Retry to resend.',
           retryItems: retrySnapshot,
@@ -4186,12 +4244,14 @@ export default function CaptainApp({ onLogout }) {
           // from socket events overwriting the status back to "KOT Sent".
           const failedKotId = String(newKOT.id);
           failedPrintKotIdsRef.current.add(failedKotId);
+          persistFailedPrintKotIds();
           setActiveTables(prev => prev.map(t => {
             if (t.backendId !== activeTable?.backendId) return t;
             return { ...t, kotHistory: (t.kotHistory || []).map(k => String(k.id) === failedKotId ? { ...k, s: 'Print Failed', printFailed: true } : k) };
           }), { skipPersist: true });
           // Order is committed — retry should reprint, not re-submit.
           retryPrintOrderIdRef.current = savedOrder?.id || existingOrderId || null;
+          persistRetryPrintOrderId();
           setKotError({
             message: `KOT print failed: ${errorDetail}. Tap Retry to reprint.`,
             isPrintRetry: true,
@@ -4224,40 +4284,55 @@ export default function CaptainApp({ onLogout }) {
 
     } catch (err) {
 
-      // Silently swallow intentional aborts (stuck-guard >15s or table switch).
-      // The stuck-guard / table-switch handler already reset the UI state
-      // (setSendingKOT(false), isSubmittingKotRef=false). Showing an error
-      // banner + persisting to localStorage would confuse the captain —
-      // they didn't cancel anything, the system did for safety.
-      if (err.name === 'AbortError' || (err.message && err.message.includes('cancelled'))) {
-        console.log('[KOT] Submission aborted (stuck-guard or table switch) — silently exiting');
+      // Distinguish three abort sources using kotAbortReasonRef:
+      //   'table-switch' — captain switched tables; silent exit (intentional)
+      //   'stuck-guard'  — submission ran >25s; warn captain + restore cart
+      //   null           — API timeout/network error; auto-retry once, then error
+      const isAbort = err.name === 'AbortError' || (err.message && err.message.includes('cancelled'));
+
+      if (isAbort && kotAbortReasonRef.current === 'table-switch') {
+        console.log('[KOT] Submission aborted (table switch) — silently exiting');
         return;
       }
 
+      if (isAbort && kotAbortReasonRef.current === 'stuck-guard') {
+        console.warn('[KOT] Submission aborted (stuck-guard >25s) — warning captain');
+        setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
+        retryRequestIdRef.current = requestId;
+        retryPrintOrderIdRef.current = null;
+        persistRetryPrintOrderId();
+        addNotification('KOT timed out', 'Submission took too long and was cancelled. Check if the kitchen received it before re-sending.', 'warning');
+        setKotError({
+          message: 'KOT submission timed out — the kitchen may have already received it. Tap Retry to resend if needed.',
+          retryItems: retrySnapshot,
+        });
+        return;
+      }
+
+      // Auto-retry on network error/timeout (not stuck-guard, not table-switch).
+      // The edge write timeout (15s) produces a network error that reaches here.
+      // Retry once with the same requestId — the backend's idempotency check
+      // handles the case where the first attempt actually committed.
+      if (autoRetryCount < 1 && !isAbort) {
+        console.warn(`[KOT] Network error, auto-retrying (attempt ${autoRetryCount + 1}):`, err.message);
+        shouldAutoRetry = true;
+        return;
+      }
+
+      // Non-abort error (or auto-retry exhausted) — show error banner
       console.error('[KOT] DB write failed:', err.message);
-
-      // ❌ DB failed — show persistent error banner with Retry instead of success toast.
-
-      // Restore the session items so the captain can retry without re-selecting.
 
       setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
 
-      // Store the requestId so retry reuses it — the backend's idempotency
-      // check will return the existing committed order instead of throwing
-      // "Duplicate KOT detected".
       retryRequestIdRef.current = requestId;
-      // Order was not committed — retry should re-submit, not reprint.
       retryPrintOrderIdRef.current = null;
+      persistRetryPrintOrderId();
 
-      // Edge unreachable: the captain app can't reach the edge server (which
-      // holds the SQLite DB + printer). Cloud is not an option under edge-local
-      // auth. Show a clear actionable message instead of generic network error.
       const isEdgeDown = err.code === 'EDGE_UNREACHABLE';
       const errMsg = isEdgeDown
         ? 'Edge server unreachable — check WiFi or cashier machine'
         : (err.message || 'Network error — kitchen did not receive this order.');
 
-      // Fix 12A: Persist requestId to localStorage for crash recovery
       try {
         localStorage.setItem('captain_pending_kot', JSON.stringify({
           tableId: activeTableId,
@@ -4278,22 +4353,28 @@ export default function CaptainApp({ onLogout }) {
 
     } finally {
 
-      // Delay releasing the KOT submission guard by 500ms so that socket
-      // table:updated / order:created events arriving in the same tick don't
-      // overwrite the optimistic setActiveTables updates above. React batches
-      // state updates, so the guard must stay active until the next render
-      // cycle processes the new table state.
-      setTimeout(() => {
-        isSubmittingKotRef.current = false;
-      }, 500);
-
-      setSendingKOT(false);
-
       kotRequestIdRef.current = null;
-
-      // Clear the AbortController — the fetch has completed (success or error).
-      // A new one is created on the next KOT submission.
       kotAbortRef.current = null;
+      kotAbortReasonRef.current = null;
+
+      if (shouldAutoRetry) {
+        // Reset state immediately for auto-retry — no 500ms guard delay.
+        // The retry gets a fresh kotSubmitStartRef (set at the top of the
+        // function) so the 25s stuck-guard window starts over.
+        isSubmittingKotRef.current = false;
+        setSendingKOT(false);
+        setTimeout(() => {
+          sendIncrementalKOT(requestId, autoRetryCount + 1);
+        }, 100);
+      } else {
+        // Delay releasing the KOT submission guard by 500ms so that socket
+        // table:updated / order:created events arriving in the same tick don't
+        // overwrite the optimistic setActiveTables updates above.
+        setTimeout(() => {
+          isSubmittingKotRef.current = false;
+        }, 500);
+        setSendingKOT(false);
+      }
 
     }
 
@@ -4311,6 +4392,7 @@ export default function CaptainApp({ onLogout }) {
       const retryId = retryRequestIdRef.current;
       retryRequestIdRef.current = null;
       retryPrintOrderIdRef.current = null;
+      persistRetryPrintOrderId();
       setKotError(null);
       sendIncrementalKOT(retryId);
       return;
@@ -4324,6 +4406,7 @@ export default function CaptainApp({ onLogout }) {
       if (allOk) {
         addNotification(`KOT reprinted ✓`, 'success');
         retryPrintOrderIdRef.current = null;
+        persistRetryPrintOrderId();
         retryRequestIdRef.current = null;
         setKotError(null);
         // Clear "Print Failed" status — the kitchen has now received the KOT.
@@ -4331,6 +4414,7 @@ export default function CaptainApp({ onLogout }) {
         const tableBackendId = activeTable?.backendId;
         const failedIds = [...failedPrintKotIdsRef.current];
         failedPrintKotIdsRef.current.clear();
+        persistFailedPrintKotIds();
         if (failedIds.length > 0) {
           setActiveTables(prev => prev.map(t => {
             if (t.backendId !== tableBackendId) return t;
@@ -4976,7 +5060,7 @@ export default function CaptainApp({ onLogout }) {
       className="flex flex-col bg-[#F8FAFC] overflow-hidden font-['Inter',sans-serif] text-[#111827]"
       style={{
         height: 'calc(var(--captain-vh, 1dvh) * 100)',
-        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingTop: 0,
       }}
     >
 
@@ -5798,19 +5882,17 @@ export default function CaptainApp({ onLogout }) {
 
             {/* STICKY SESSION HEADER */}
 
-            <div className={`bg-white border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 shrink-0 z-40 shadow-sm transition-all duration-300 ${isHeaderVisible ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden py-0'}`}>
+            <div className={`bg-white border-b border-gray-100 px-3 sm:px-6 py-2 sm:py-4 flex flex-row items-center justify-between gap-2 sm:gap-4 shrink-0 z-40 shadow-sm transition-all duration-300 ${isHeaderVisible ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden py-0'}`}>
 
-              <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
+              <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
 
                 <button onClick={() => { setView('tables'); setActiveSection('floor'); }} className="p-2.5 bg-gray-50 text-gray-400 hover:text-gray-900 rounded-xl border border-gray-100 transition-all"><ChevronLeft size={20} /></button>
 
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0">
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
 
-                    <h2 className="text-lg font-black tracking-tight uppercase leading-none">Table {activeTable?.displayName || activeTable?.name || activeTable?.id}</h2>
-
-                    <div className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[8px] font-black uppercase tracking-widest border border-blue-100 shrink-0">Live Session #10{activeTable?.id}</div>
+                    <h2 className="text-base sm:text-lg font-black tracking-tight uppercase leading-none truncate">Table {activeTable?.displayName || activeTable?.name || activeTable?.id}</h2>
 
                   </div>
 
@@ -5830,7 +5912,7 @@ export default function CaptainApp({ onLogout }) {
 
               </div>
 
-              <div className="flex gap-2 w-full sm:w-auto">
+              <div className="flex gap-1.5 shrink-0">
 
                 <button
 
@@ -7065,6 +7147,7 @@ export default function CaptainApp({ onLogout }) {
                 setKotError(null);
                 retryRequestIdRef.current = null;
                 retryPrintOrderIdRef.current = null;
+                persistRetryPrintOrderId();
 
               }}
 
@@ -7097,6 +7180,7 @@ export default function CaptainApp({ onLogout }) {
                   retryRequestIdRef.current = null;
 
                   retryPrintOrderIdRef.current = null;
+                  persistRetryPrintOrderId();
 
                   sendIncrementalKOT(retryId);
 

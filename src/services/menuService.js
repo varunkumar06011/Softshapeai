@@ -539,6 +539,54 @@ export async function toggleMenuTypeEdge(id, printerTarget) {
   return parseMenuResponse(res, 'Toggle menu type');
 }
 
+export async function toggleVenueAvailabilityEdge(id, venueId) {
+  if (await isEdgeAvailable()) {
+    try {
+      const body = { ...getEdgeAuthPayload(), venueId };
+      const res = await edgeFetch(`/api/edge/menu/items/${id}/venue-availability`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      console.warn('[menuService] Edge venue-availability toggle failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge venue-availability toggle error, falling back to cloud:', err.message);
+    }
+  }
+  // Cloud fallback
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}/venue-availability`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ venueId }),
+  });
+  return parseMenuResponse(res, 'Toggle venue availability');
+}
+
+export async function toggleSectionAvailabilityEdge(id, sectionId) {
+  if (await isEdgeAvailable()) {
+    try {
+      const body = { ...getEdgeAuthPayload(), sectionId };
+      const res = await edgeFetch(`/api/edge/menu/items/${id}/section-availability`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      console.warn('[menuService] Edge section-availability toggle failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge section-availability toggle error, falling back to cloud:', err.message);
+    }
+  }
+  // Cloud fallback
+  const res = await fetch(apiUrl(`/api/menu/admin/items/${id}/section-availability`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ sectionId }),
+  });
+  return parseMenuResponse(res, 'Toggle section availability');
+}
+
 export function persistMenu(menuItems, restaurantId = getCurrentRestaurantId()) {
   localStorage.setItem(getMenuStorageKey(restaurantId), JSON.stringify(menuItems));
   window.dispatchEvent(

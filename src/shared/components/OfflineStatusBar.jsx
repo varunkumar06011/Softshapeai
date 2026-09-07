@@ -47,11 +47,25 @@ export default function OfflineStatusBar() {
   const [showPendingDetail, setShowPendingDetail] = useState(false);
   const [printFlush, setPrintFlush] = useState({ running: false, result: null });
   const [lastPrintLog, setLastPrintLog] = useState(null);
+  const [barDismissed, setBarDismissed] = useState(false);
 
   // Auto-show conflict panel when conflicts arrive
   useEffect(() => {
     if (hasConflicts) setShowConflicts(true);
   }, [hasConflicts]);
+
+  // Auto-dismiss the green "online with pending" bar after 10 seconds.
+  // The bar is informational — pending actions continue syncing regardless.
+  // Reset dismissal when pending count drops to 0 so a future spike shows it again.
+  useEffect(() => {
+    if (pendingCount === 0) {
+      setBarDismissed(false);
+      return;
+    }
+    if (barDismissed) return;
+    const timer = setTimeout(() => setBarDismissed(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [pendingCount, barDismissed]);
 
   // Poll offline print log so the last failure reason is visible without DevTools
   useEffect(() => {
@@ -84,6 +98,13 @@ export default function OfflineStatusBar() {
 
   // Don't render if everything is fine and no pending actions
   if (isOnline && syncStatus === 'idle' && pendingCount === 0 && !hasConflicts && !hasUnprintedBills && !hasUnacknowledgedConflicts) {
+    return null;
+  }
+
+  // Auto-dismissed: hide the green "online with pending" bar after 10 seconds.
+  // Still show for offline, errors, conflicts, and unprinted bills — those need attention.
+  const isOnlinePendingOnly = isOnline && !isOffline && syncStatus !== 'error' && syncStatus !== 'paused' && !hasConflicts && !hasUnprintedBills && !hasUnacknowledgedConflicts;
+  if (barDismissed && isOnlinePendingOnly) {
     return null;
   }
 

@@ -38,6 +38,7 @@ export default function EditMenuItemModal({
   activeVenueId,
   printerOptions = [],
   showBarType = false,
+  sections = [],
   onClose,
   onSave,
   showRecipe = false,
@@ -98,6 +99,9 @@ export default function EditMenuItemModal({
             ? { [activeVenueId]: Number(form.venuePrice) }
             : {}),
         },
+        // Include section availability map so the edge upserts per-section toggles.
+        // Only send when the modal has sections to edit (cashier edit-menu path).
+        ...(sections.length > 0 ? { sectionAvailabilities: form.sectionAvailabilities || {} } : {}),
       };
       const result = await onSave(payload);
       if (result && !result.success) {
@@ -325,6 +329,50 @@ export default function EditMenuItemModal({
               </div>
             </div>
           </details>
+
+          {/* Section 3b: Section Availability (cashier edit-menu only) */}
+          {sections.length > 0 && (
+            <details className="group border-t border-gray-100 pt-3">
+              <summary className="text-xs font-black uppercase text-gray-500 cursor-pointer mb-3 flex items-center gap-2 list-none">
+                <ChevronDown size={14} className="text-gray-400 group-open:rotate-180 transition-transform" />
+                Section Availability
+              </summary>
+              <div className="space-y-3">
+                <p className="text-[10px] text-gray-400">Toggle which sections can see this item. Unchecked = hidden in that section.</p>
+                {venues.map((venue) => {
+                  const venueSections = sections.filter(s => (s.venueId || s.venue?.id) === venue.id);
+                  if (venueSections.length === 0) return null;
+                  return (
+                    <div key={venue.id}>
+                      <div className="text-[10px] font-black uppercase text-gray-400 mb-1">{venue.label}</div>
+                      <div className="space-y-1.5">
+                        {venueSections.map((s) => {
+                          const sectionId = s.id || s._id;
+                          const isAvailable = form.sectionAvailabilities?.[sectionId] !== false;
+                          return (
+                            <label key={sectionId} className="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isAvailable}
+                                onChange={(e) => update({
+                                  sectionAvailabilities: {
+                                    ...(form.sectionAvailabilities || {}),
+                                    [sectionId]: e.target.checked,
+                                  },
+                                })}
+                                className="accent-[#E53935] w-4 h-4"
+                              />
+                              <span className="text-gray-700">{s.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
 
           {/* Section 4: Recipe (admin only) */}
           {showRecipe && form.menuType !== 'LIQUOR' && onRecipeRowsChange && (

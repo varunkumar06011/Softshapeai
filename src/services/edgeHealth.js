@@ -823,11 +823,11 @@ export function getConnectivityState() {
 
 export const EDGE_FETCH_TIMEOUT_MS = 30_000;
 export const EDGE_READ_TIMEOUT_MS = 3_000; // Fast-fail for reads (tables/sections/venues)
-export const EDGE_WRITE_TIMEOUT_MS = 8_000; // Writes (POST/PUT/PATCH) — fast-fail, no 92s freeze
+export const EDGE_WRITE_TIMEOUT_MS = 15_000; // Writes (POST/PUT/PATCH) — 15s for busy edge servers
 
-// Write methods that use the shorter timeout and no retries. A KOT write that
-// times out after 8s should surface immediately so the captain can retry or
-// fix connectivity — not block for 92s (3×30s + 2×1s) staring at "Sending...".
+// Write methods that use the shorter timeout and no retries. The captain app's
+// KOT flow handles retry at a higher level with idempotency (same requestId)
+// and a fresh stuck-guard window, which is safer than a blind edgeFetch retry.
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 // Cancellation support: callers can pass an external AbortController via
@@ -1011,7 +1011,9 @@ export async function edgeFetch(path, options = {}) {
       // Only retry on network errors (not HTTP error statuses which throw
       // with a .status property). AbortError (timeout) also retries since
       // the edge server may be slow to respond during startup.
-      // Writes never retry (maxRetries=0) — a write timeout surfaces immediately.
+      // Writes never retry (maxRetries=0) — the captain app's KOT flow handles
+      // retry at a higher level with idempotency (same requestId) and a fresh
+      // stuck-guard window, which is safer than a blind edgeFetch retry.
       // Don't retry if the caller cancelled the request — the signal is already
       // aborted so retries would fail instantly and waste 2s on delays.
       if (err?.status) throw err; // HTTP error — don't retry
