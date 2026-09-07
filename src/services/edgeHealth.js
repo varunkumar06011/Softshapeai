@@ -823,7 +823,7 @@ export function getConnectivityState() {
 
 export const EDGE_FETCH_TIMEOUT_MS = 30_000;
 export const EDGE_READ_TIMEOUT_MS = 3_000; // Fast-fail for reads (tables/sections/venues)
-export const EDGE_WRITE_TIMEOUT_MS = 15_000; // Writes (POST/PUT/PATCH) — 15s for busy edge servers
+export const EDGE_WRITE_TIMEOUT_MS = 30_000; // Writes (POST/PUT/PATCH) — 30s for weak WiFi
 
 // Write methods that use the shorter timeout and no retries. The captain app's
 // KOT flow handles retry at a higher level with idempotency (same requestId)
@@ -1313,3 +1313,90 @@ export async function edgeAwareJsonFetch(edgePath, cloudPath, options = {}) {
     method: 'GET',
   });
 }
+
+// ── Native HTTP POST for KOT writes on Android APK ───────────────────────────
+// Bypasses WebView fetch() which kills connections after 8-15s. Uses Android's
+// native HttpURLConnection with a 30s read timeout and OS-level TCP retry.
+// Only used for edge server POST writes (KOT submission). Falls back to
+// edgeFetch() when not running in a native APK (dev/browser testing).
+let _NativeHttpPlugin = null;
+async function _getNativeHttpPlugin() {
+  if (_NativeHttpPlugin !== null) return _NativeHttpPlugin;
+  try {
+    const { Capacitor, registerPlugin } = await import('@capacitor/core');
+    if (!Capacitor.isNativePlatform()) {
+      _NativeHttpPlugin = false;
+      return false;
+    }
+    _NativeHttpPlugin = registerPlugin('NativeHttp');
+    return _NativeHttpPlugin;
+  } catch {
+    _NativeHttpPlugin = false;
+    return false;
+  }
+}
+
+export async function nativeEdgePost(path, body, options = {}) {
+  const plugin = await _getNativeHttpPlugin();
+  if (!plugin) {
+    // Not in APK — fall back to edgeFetch (browser/dev mode)
+    return edgeFetch(path, {
+      ...options,
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+  const edgeUrl = getEdgeUrl();
+  const url = `${edgeUrl}${path}`;
+  const edgeKey = getStoredEdgeApiKey();
+  const runtimeToken = getStoredEdgeRuntimeToken();
+  const localHub = isAndroidLocalCaptainEnabled() ? getStoredCashierHub() : null;
+
+  try {
+    const result = await plugin.post({
+      url,
+      body: JSON.stringify(body),
+      timeout: options.timeoutMs || EDGE_WRITE_TIMEOUT_MS,
+      edgeKey: edgeKey || undefined,
+      authToken: localHub ? undefined : (runtimeToken || undefined),
+      localToken: localHub?.token || undefined,
+    });
+    const status = result.status;
+    const data = result.data;
+    if (status >= 200 && status < 300) {
+      // Mimic the Response object shape that callers expect
+      return {
+        ok: true,
+        status,
+        json: async () => { try { return JSON.parse(data); } catch { return null; } },
+        text: async () => data,
+      };
+    }
+    // HTTP error — throw with status like edgeFetch does
+    const err = new Error(`Edge POST ${path} failed: ${status}`);
+    err.statusCode = status;
+    try { err.body = JSON.parse(data); } catch { /* ignore */ }
+    throw err;
+  } catch (err) {
+    // Native HTTP failed — translate error types for the caller
+    const msg = err.message || '';
+    if (msg.startsWith('TIMEOUT')) {
+      const timeoutErr = new Error(`Edge request to ${path} timed out after ${(options.timeoutMs || EDGE_WRITE_TIMEOUT_MS) / 1000}s`);
+      timeoutErr.name = 'AbortError';
+      throw timeoutErr;
+    }
+    if (msg.startsWith('CONNECT_FAILED')) {
+      const connErr = new Error('Edge server unreachable — check WiFi or cashier machine');
+      connErr.code = 'EDGE_UNREACHABLE';
+      throw connErr;
+    }
+    if (msg.startsWith('HTTP_ERROR')) {
+      const netErr = new Error(`Network error: ${msg}`);
+      netErr.code = 'EDGE_UNREACHABLE';
+      throw netErr;
+    }
+    // Already an HTTP status error from above
+    throw err;
+  }
+}
+

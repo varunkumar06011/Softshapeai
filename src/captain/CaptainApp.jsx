@@ -67,8 +67,9 @@ import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeAvailableFast, isEdgeLocalAuth, edgeFetch, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeAvailableFast, isEdgeLocalAuth, edgeFetch, nativeEdgePost, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
+import { enqueueKot, removeFromQueue, getQueuedKots, hasQueuedKots, setQueueCallbacks } from '../services/kotQueue';
 import secureStorage from '../utils/secureStorage';
 
 
@@ -1332,6 +1333,34 @@ export default function CaptainApp({ onLogout }) {
     }
   }, [activeTableId, view]);
 
+  // Set up KOT queue callbacks — status updates + duplicate detection
+  useEffect(() => {
+    setQueueCallbacks({
+      onStatusChange: ({ tableId, status, message }) => {
+        setKotQueueStatus({ tableId, status, message });
+        if (status === 'sent') {
+          setSendingKOT(false);
+          isSubmittingKotRef.current = false;
+          setTimeout(() => setKotQueueStatus(null), 3000);
+        } else if (status === 'discarded') {
+          setSendingKOT(false);
+          isSubmittingKotRef.current = false;
+          setTableCarts(prev => ({ ...prev, [tableId]: [] }));
+          setTimeout(() => setKotQueueStatus(null), 4000);
+        } else if (status === 'failed') {
+          setSendingKOT(false);
+          isSubmittingKotRef.current = false;
+          setTimeout(() => setKotQueueStatus(null), 5000);
+        }
+      },
+      onDuplicateDetected: ({ tableId, newItems, existingOrderId, requestId, queuedItems }) => {
+        setSendingKOT(false);
+        isSubmittingKotRef.current = false;
+        setDuplicateConfirm({ tableId, newItems, existingOrderId, requestId, queuedItems });
+      },
+    });
+  }, []);
+
   // Cancel-item state
 
   const [cancelLoading,  setCancelLoading]  = useState({});
@@ -1345,6 +1374,10 @@ export default function CaptainApp({ onLogout }) {
   // without re-selecting anything.
 
   const [kotError, setKotError] = useState(null);
+  // Queue status: { tableId, status: 'queued'|'sending'|'sent'|'discarded'|'failed', message }
+  const [kotQueueStatus, setKotQueueStatus] = useState(null);
+  // Duplicate-confirmation dialog: { tableId, newItems, existingOrderId, requestId, queuedItems }
+  const [duplicateConfirm, setDuplicateConfirm] = useState(null);
   const retryRequestIdRef = useRef(null);
   // When the order was committed but the print failed, retry should call
   // reprintKot(orderId) instead of re-submitting the order. This ref stores
@@ -4296,21 +4329,43 @@ export default function CaptainApp({ onLogout }) {
       }
 
       if (isAbort && kotAbortReasonRef.current === 'stuck-guard') {
-        console.warn('[KOT] Submission aborted (stuck-guard >25s) — warning captain');
+        console.warn('[KOT] Submission aborted (stuck-guard >25s) — enqueuing for background retry');
         setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
         retryRequestIdRef.current = requestId;
         retryPrintOrderIdRef.current = null;
         persistRetryPrintOrderId();
-        addNotification('KOT timed out', 'Submission took too long and was cancelled. Check if the kitchen received it before re-sending.', 'warning');
-        setKotError({
-          message: 'KOT submission timed out — the kitchen may have already received it. Tap Retry to resend if needed.',
-          retryItems: retrySnapshot,
+        // Enqueue the same way as a network error — the queue will retry
+        // with duplicate detection when the connection recovers.
+        enqueueKot({
+          requestId,
+          tableId: activeTableId,
+          items: retrySnapshot,
+          apiItems,
+          existingOrderId,
+          activeTable: { backendId: activeTable?.backendId, number: activeTable?.number, id: activeTable?.id },
+          restaurantId: orderRestaurantId,
+          captainName: currentCaptain?.name || undefined,
+          captainId: currentCaptain?.id || undefined,
+          sectionTag: activeTable?.sectionTag || undefined,
+          preReservedKotNumber: preReservedKotNumber || null,
+          sendFn: async (entry) => {
+            if (entry.existingOrderId) {
+              return await updateOrderItems(entry.existingOrderId, entry.apiItems, entry.requestId, entry.captainName, false, null, null, 30000, entry.preReservedKotNumber, entry.tableId, false, null, entry.captainId, false, null);
+            }
+            return await createOrder({ tableId: entry.activeTable?.backendId, tableNumber: entry.activeTable?.number ?? entry.activeTable?.id, restaurantId: entry.restaurantId, items: entry.apiItems, requestId: entry.requestId, captainName: entry.captainName, captainId: entry.captainId, sectionTag: entry.sectionTag, preReservedKotNumber: entry.preReservedKotNumber, localPrinted: false, kotEventIds: null, failFastOnEdgeDown: false, signal: null });
+          },
+          fetchActiveOrder: async (tableId) => {
+            try { const res = await edgeFetch(`/api/edge/tables/${tableId}/active-order`, { method: 'GET', timeoutMs: 5000 }); if (res.ok) { const data = await res.json(); return data?.order || null; } return null; } catch { return null; }
+          },
+          checkDuplicate: true,
+          onSuccess: (result) => { setTableCarts(prev => ({ ...prev, [activeTableId]: [] })); try { localStorage.removeItem('captain_pending_kot'); } catch {} try { localStorage.removeItem('captain_retry_print_order_id'); } catch {} addNotification(`KOT Sent ✓`, 'Queued KOT was delivered to kitchen.', 'success'); },
         });
+        setKotQueueStatus({ tableId: activeTableId, status: 'queued', message: 'Sending... will deliver when connection returns' });
         return;
       }
 
       // Auto-retry on network error/timeout (not stuck-guard, not table-switch).
-      // The edge write timeout (15s) produces a network error that reaches here.
+      // The edge write timeout (30s) produces a network error that reaches here.
       // Retry once with the same requestId — the backend's idempotency check
       // handles the case where the first attempt actually committed.
       if (autoRetryCount < 1 && !isAbort) {
@@ -4319,37 +4374,97 @@ export default function CaptainApp({ onLogout }) {
         return;
       }
 
-      // Non-abort error (or auto-retry exhausted) — show error banner
-      console.error('[KOT] DB write failed:', err.message);
+      // Auto-retry exhausted or non-retryable error — enqueue for background retry.
+      // Instead of showing "Failed", the KOT is saved to localStorage and a
+      // background loop retries every 5s. Before sending, it checks if the
+      // table already has an active order (cashier may have sent it manually)
+      // to prevent double-printing. This mirrors Petpooja's offline sync.
+      console.error('[KOT] Send failed, enqueuing for background retry:', err.message);
 
+      // Keep cart items in case the captain wants to manually discard later
       setTableCarts(prev => ({ ...prev, [activeTableId]: retrySnapshot }));
 
       retryRequestIdRef.current = requestId;
       retryPrintOrderIdRef.current = null;
       persistRetryPrintOrderId();
 
-      const isEdgeDown = err.code === 'EDGE_UNREACHABLE';
-      const errMsg = isEdgeDown
-        ? 'Edge server unreachable — check WiFi or cashier machine'
-        : (err.message || 'Network error — kitchen did not receive this order.');
-
+      // Persist for crash recovery (existing mechanism)
       try {
         localStorage.setItem('captain_pending_kot', JSON.stringify({
           tableId: activeTableId,
           requestId,
           items: retrySnapshot,
-          message: errMsg,
+          message: 'Sending... will deliver when connection returns',
           timestamp: Date.now(),
         }));
       } catch { /* localStorage write error — non-fatal */ }
 
-      setKotError({
-
-        message: errMsg,
-
-        retryItems: retrySnapshot,
-
+      // Enqueue for background retry with duplicate detection
+      enqueueKot({
+        requestId,
+        tableId: activeTableId,
+        items: retrySnapshot,
+        apiItems,
+        existingOrderId,
+        activeTable: { backendId: activeTable?.backendId, number: activeTable?.number, id: activeTable?.id },
+        restaurantId: orderRestaurantId,
+        captainName: currentCaptain?.name || undefined,
+        captainId: currentCaptain?.id || undefined,
+        sectionTag: activeTable?.sectionTag || undefined,
+        preReservedKotNumber: preReservedKotNumber || null,
+        // sendFn: called by the queue's retry loop. Reuses the same requestId
+        // for idempotency. Calls createOrder or updateOrderItems depending on
+        // whether an existing order ID is present.
+        sendFn: async (entry) => {
+          if (entry.existingOrderId) {
+            return await updateOrderItems(
+              entry.existingOrderId, entry.apiItems, entry.requestId,
+              entry.captainName, false, null, null, 30000,
+              entry.preReservedKotNumber, entry.tableId,
+              false, null, entry.captainId, false, null
+            );
+          }
+          return await createOrder({
+            tableId: entry.activeTable?.backendId,
+            tableNumber: entry.activeTable?.number ?? entry.activeTable?.id,
+            restaurantId: entry.restaurantId,
+            items: entry.apiItems,
+            requestId: entry.requestId,
+            captainName: entry.captainName,
+            captainId: entry.captainId,
+            sectionTag: entry.sectionTag,
+            preReservedKotNumber: entry.preReservedKotNumber,
+            localPrinted: false,
+            kotEventIds: null,
+            failFastOnEdgeDown: false,
+            signal: null,
+          });
+        },
+        // fetchActiveOrder: called before send to check for duplicates.
+        // Returns the table's active order with items, or null.
+        fetchActiveOrder: async (tableId) => {
+          try {
+            const edgeUrl = getEdgeUrl();
+            if (!edgeUrl) return null;
+            const res = await edgeFetch(`/api/edge/tables/${tableId}/active-order`, { method: 'GET', timeoutMs: 5000 });
+            if (res.ok) {
+              const data = await res.json();
+              return data?.order || null;
+            }
+            return null;
+          } catch { return null; }
+        },
+        checkDuplicate: true,
+        onSuccess: (result) => {
+          // Clear cart and pending KOT on successful queue delivery
+          setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
+          try { localStorage.removeItem('captain_pending_kot'); } catch { /* non-fatal */ }
+          try { localStorage.removeItem('captain_retry_print_order_id'); } catch { /* non-fatal */ }
+          addNotification(`KOT Sent ✓`, 'Queued KOT was delivered to kitchen.', 'success');
+        },
       });
+
+      setKotQueueStatus({ tableId: activeTableId, status: 'queued', message: 'Sending... will deliver when connection returns' });
 
     } finally {
 
@@ -7103,6 +7218,276 @@ export default function CaptainApp({ onLogout }) {
             Undo
 
           </button>
+
+        </div>
+
+      )}
+
+
+
+      {/* KOT QUEUE STATUS BANNER — shown while KOT is queued for background retry */}
+
+      {kotQueueStatus && (
+
+        <div className="fixed top-0 left-0 right-0 z-[200] flex items-center justify-between gap-4 bg-blue-600 text-white px-5 py-4 shadow-2xl animate-in slide-in-from-top-2 duration-300">
+
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+
+            <Loader2 size={20} className="animate-spin shrink-0" />
+
+            <div className="flex flex-col min-w-0">
+
+              <span className="text-sm font-black truncate">{kotQueueStatus.message}</span>
+
+              {kotQueueStatus.status === 'queued' && (
+
+                <span className="text-[10px] font-bold text-white/80 truncate">KOT saved on phone — will send automatically when WiFi returns</span>
+
+              )}
+
+              {kotQueueStatus.status === 'sending' && (
+
+                <span className="text-[10px] font-bold text-white/80 truncate">Retrying now...</span>
+
+              )}
+
+              {kotQueueStatus.status === 'sent' && (
+
+                <span className="text-[10px] font-bold text-white/80 truncate">Delivered to kitchen ✓</span>
+
+              )}
+
+              {kotQueueStatus.status === 'discarded' && (
+
+                <span className="text-[10px] font-bold text-white/80 truncate">Cashier already sent this order — duplicate discarded</span>
+
+              )}
+
+              {kotQueueStatus.status === 'failed' && (
+
+                <span className="text-[10px] font-bold text-white/80 truncate">Could not deliver after 5 minutes — check with kitchen</span>
+
+              )}
+
+            </div>
+
+          </div>
+
+          {kotQueueStatus.status === 'queued' && (
+
+            <button
+
+              onClick={() => {
+
+                if (kotQueueStatus.tableId) {
+
+                  setTableCarts(prev => ({ ...prev, [kotQueueStatus.tableId]: [] }));
+
+                }
+
+                if (retryRequestIdRef.current) removeFromQueue(retryRequestIdRef.current);
+
+                setKotQueueStatus(null);
+
+                setSendingKOT(false);
+
+                isSubmittingKotRef.current = false;
+
+              }}
+
+              className="px-4 py-2 text-[11px] font-black uppercase tracking-wider border border-white/40 rounded-xl hover:bg-white/10 active:scale-95 transition-all"
+
+            >
+
+              Cancel
+
+            </button>
+
+          )}
+
+        </div>
+
+      )}
+
+
+
+      {/* DUPLICATE CONFIRMATION DIALOG — shown when queue detects cashier already sent the order */}
+
+      {duplicateConfirm && (
+
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/50 p-4">
+
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+
+            <div className="flex items-center gap-3 mb-4">
+
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+
+                <AlertCircle size={20} className="text-amber-600" />
+
+              </div>
+
+              <h3 className="text-base font-black text-gray-900">Table already has an order</h3>
+
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+
+              Table {duplicateConfirm.tableId} already has an order from the cashier.
+
+              {duplicateConfirm.newItems.length > 0 ? (
+
+                <> Would you like to send {duplicateConfirm.newItems.length} additional item{duplicateConfirm.newItems.length > 1 ? 's' : ''} that are not yet on the order?</>
+
+              ) : (
+
+                <> All items are already on the order.</>
+
+              )}
+
+            </p>
+
+            {duplicateConfirm.newItems.length > 0 && (
+
+              <div className="bg-gray-50 rounded-xl p-3 mb-4 max-h-32 overflow-y-auto">
+
+                {duplicateConfirm.newItems.map((item, i) => (
+
+                  <div key={i} className="text-xs font-bold text-gray-700 py-0.5">
+
+                    {item.quantity || item.q || 1}x {item.name || item.n}
+
+                  </div>
+
+                ))}
+
+              </div>
+
+            )}
+
+            <div className="flex gap-2">
+
+              {duplicateConfirm.newItems.length > 0 ? (
+
+                <>
+
+                  <button
+
+                    onClick={() => {
+
+                      // Send only the new items as an update to the existing order
+
+                      const newApiItems = duplicateConfirm.newItems.map(i => ({
+
+                        menuItemId: String(i.id || i.menuItemId || ''),
+
+                        name: i.n || i.name,
+
+                        price: Number(i.p ?? i.price ?? 0),
+
+                        quantity: Number(i.q ?? i.quantity ?? 1),
+
+                        notes: i.notes || null,
+
+                        menuType: ['LIQUOR', 'BAR'].includes(String(i.menuType || 'FOOD').toUpperCase()) ? 'LIQUOR' : 'FOOD',
+
+                        pourFromInventoryItemId: i.pourFromInventoryItemId || null,
+
+                      })).filter(i => !!i.menuItemId);
+
+
+
+                      updateOrderItems(
+
+                        duplicateConfirm.existingOrderId, newApiItems, duplicateConfirm.requestId,
+
+                        currentCaptain?.name || undefined, false, null, null, 30000,
+
+                        null, duplicateConfirm.tableId, false, null, currentCaptain?.id || undefined, false, null
+
+                      ).then(() => {
+
+                        addNotification('Additional items sent ✓', 'success');
+
+                        setTableCarts(prev => ({ ...prev, [duplicateConfirm.tableId]: [] }));
+
+                        try { localStorage.removeItem('captain_pending_kot'); } catch {}
+
+                      }).catch(err => {
+
+                        addNotification('Failed to send additional items', err.message, 'error');
+
+                      }).finally(() => {
+
+                        removeFromQueue(duplicateConfirm.requestId);
+
+                        setDuplicateConfirm(null);
+
+                      });
+
+                    }}
+
+                    className="flex-1 px-4 py-2.5 text-xs font-black uppercase tracking-wider bg-[#E53935] text-white rounded-xl hover:bg-[#B71C1C] active:scale-95 transition-all"
+
+                  >
+
+                    Send {duplicateConfirm.newItems.length} item{duplicateConfirm.newItems.length > 1 ? 's' : ''}
+
+                  </button>
+
+                  <button
+
+                    onClick={() => {
+
+                      removeFromQueue(duplicateConfirm.requestId);
+
+                      setTableCarts(prev => ({ ...prev, [duplicateConfirm.tableId]: [] }));
+
+                      try { localStorage.removeItem('captain_pending_kot'); } catch {}
+
+                      setDuplicateConfirm(null);
+
+                    }}
+
+                    className="flex-1 px-4 py-2.5 text-xs font-black uppercase tracking-wider border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 active:scale-95 transition-all"
+
+                  >
+
+                    Discard
+
+                  </button>
+
+                </>
+
+              ) : (
+
+                <button
+
+                  onClick={() => {
+
+                    removeFromQueue(duplicateConfirm.requestId);
+
+                    setTableCarts(prev => ({ ...prev, [duplicateConfirm.tableId]: [] }));
+
+                    try { localStorage.removeItem('captain_pending_kot'); } catch {}
+
+                    setDuplicateConfirm(null);
+
+                  }}
+
+                  className="flex-1 px-4 py-2.5 text-xs font-black uppercase tracking-wider bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 active:scale-95 transition-all"
+
+                >
+
+                  OK, Discard
+
+                </button>
+
+              )}
+
+            </div>
+
+          </div>
 
         </div>
 
