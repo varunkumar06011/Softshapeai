@@ -18,7 +18,7 @@
 //   disconnectEdgeSocket(); // on unmount / when edge goes down
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getEdgeUrl, isEdgeAvailable } from './edgeHealth';
+import { getEdgeUrl, isEdgeAvailableFast } from './edgeHealth';
 
 let ws = null;
 let reconnectTimer = null;
@@ -154,8 +154,12 @@ function scheduleReconnect() {
   if (reconnectTimer) return;
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
-    // Only reconnect if edge is still available
-    const edgeUp = await isEdgeAvailable().catch(() => false);
+    // Use isEdgeAvailableFast() — direct health check with no 30s cache.
+    // isEdgeAvailable() can return stale false for up to 30s after
+    // resetEdgeCache() is called during normal cashier operations (bill
+    // print, KOT reprint), causing the socket to loop "checking but not
+    // connecting" even though the edge server is perfectly fine.
+    const edgeUp = await isEdgeAvailableFast().catch(() => false);
     if (edgeUp) {
       connectEdgeSocket();
     } else {

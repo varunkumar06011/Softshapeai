@@ -23,7 +23,7 @@
 // each widget independently shows an "unable to load" state.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wallet, Tag, Receipt, Banknote, TrendingUp, Flame, Users, X, Loader2,
@@ -457,6 +457,15 @@ function CategoryBreakdown({ outletId, date }) {
 
   const closeCategory = () => setSelectedCategory(null);
 
+  const [expandedCats, setExpandedCats] = useState(new Set());
+  const toggleCat = useCallback((name) => {
+    setExpandedCats(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }, []);
+
   const categories = data?.categories || [];
   const totalRevenue = data?.summary?.totalRevenue || 0;
 
@@ -512,38 +521,60 @@ function CategoryBreakdown({ outletId, date }) {
                 </tr>
               </thead>
               <tbody>
-                {categories.map((c) => (
-                  <tr
-                    key={c.name}
-                    onClick={() => openCategory(c.name)}
-                    className="border-b border-gray-100 hover:bg-blue-50/50 cursor-pointer transition-colors"
-                    title={`Click to view all ${c.name} items sold`}
-                  >
-                    <td className="px-2 py-2.5 font-bold text-gray-900 flex items-center gap-1.5">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR }}
-                      />
-                      {c.name}
-                      <ArrowUpRight size={12} className="text-gray-300" />
-                    </td>
-                    <td className="px-2 py-2.5 text-right text-gray-700">{c.itemCount}</td>
-                    <td className="px-2 py-2.5 text-right text-gray-700">{c.totalQuantity}</td>
-                    <td className="px-2 py-2.5 text-right font-bold text-gray-900">{inr(c.totalRevenue)}</td>
-                    <td className="px-2 py-2.5 text-right">
-                      <div className="w-16 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.min(c.revenuePercent, 100)}%`,
-                            background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR,
-                          }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-gray-500 font-bold">{c.revenuePercent}%</span>
-                    </td>
-                  </tr>
-                ))}
+                {categories.map((c) => {
+                  const hasSubs = c.subCategories && c.subCategories.length > 0;
+                  const isExpanded = expandedCats.has(c.name);
+                  return (
+                    <Fragment key={c.name}>
+                      <tr
+                        onClick={() => openCategory(c.name)}
+                        className="border-b border-gray-100 hover:bg-blue-50/50 cursor-pointer transition-colors"
+                        title={`Click to view all ${c.name} items sold`}
+                      >
+                        <td className="px-2 py-2.5 font-bold text-gray-900 flex items-center gap-1.5">
+                          {hasSubs && (
+                            <span
+                              className="text-gray-400 text-[10px] w-3 shrink-0 select-none"
+                              onClick={(e) => { e.stopPropagation(); toggleCat(c.name); }}
+                            >
+                              {isExpanded ? '▼' : '▶'}
+                            </span>
+                          )}
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR }}
+                          />
+                          {c.name}
+                          <ArrowUpRight size={12} className="text-gray-300" />
+                        </td>
+                        <td className="px-2 py-2.5 text-right text-gray-700">{c.itemCount}</td>
+                        <td className="px-2 py-2.5 text-right text-gray-700">{c.totalQuantity}</td>
+                        <td className="px-2 py-2.5 text-right font-bold text-gray-900">{inr(c.totalRevenue)}</td>
+                        <td className="px-2 py-2.5 text-right">
+                          <div className="w-16 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.min(c.revenuePercent, 100)}%`,
+                                background: CATEGORY_COLORS[c.name] || FALLBACK_COLOR,
+                              }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-gray-500 font-bold">{c.revenuePercent}%</span>
+                        </td>
+                      </tr>
+                      {isExpanded && hasSubs && c.subCategories.map((sc) => (
+                        <tr key={`${c.name}-${sc.name}`} className="border-b border-gray-50 bg-gray-50/50">
+                          <td className="px-2 py-2 pl-8 text-gray-600">└ {sc.name}</td>
+                          <td className="px-2 py-2 text-right text-gray-500">{sc.itemCount}</td>
+                          <td className="px-2 py-2 text-right text-gray-500">{sc.totalQuantity}</td>
+                          <td className="px-2 py-2 text-right font-semibold text-gray-700">{inr(sc.totalRevenue)}</td>
+                          <td className="px-2 py-2 text-right text-[10px] text-gray-400 font-bold">{sc.revenuePercent}%</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
             <p className="text-[10px] text-gray-400 font-bold mt-2">Click a category to see item-wise sales</p>

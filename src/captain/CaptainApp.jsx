@@ -67,7 +67,7 @@ import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
 import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeAvailableFast, isEdgeLocalAuth, edgeFetch, nativeEdgePost, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeAvailableFast, isEdgeLocalAuth, edgeFetch, nativeEdgePost, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, edgeAwareJsonFetch, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { enqueueKot, removeFromQueue, getQueuedKots, hasQueuedKots, setQueueCallbacks } from '../services/kotQueue';
 import secureStorage from '../utils/secureStorage';
@@ -1606,21 +1606,20 @@ export default function CaptainApp({ onLogout }) {
 
   }, []);
 
-  // Fetch today's specials sold by this captain from the same backend endpoint
-  // the admin leaderboard uses (today-specials-by-staff). Picks this captain's
-  // row so the captain sees their own special-sales count + revenue live.
+  // Fetch today's specials sold by this captain. Uses edge server first
+  // (local SQLite — fast, works on LAN even with weak WiFi), falls back
+  // to cloud if edge is unavailable. Picks this captain's row so the
+  // captain sees their own special-sales count + revenue live.
   const loadCaptainSpecials = useCallback(async (captainId) => {
     if (!captainId) return;
     try {
       const todayISO = new Date().toISOString().slice(0, 10);
-      const res = await fetch(`${API_BASE}/api/analytics/today-specials-by-staff?startDate=${todayISO}&endDate=${todayISO}&_cb=${Date.now()}`, {
-        headers: { ...getAuthHeaders() },
-        cache: 'no-store',
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const me = (data.staff || []).find(s => s.userId === captainId);
+      const qs = `startDate=${todayISO}&endDate=${todayISO}&_cb=${Date.now()}`;
+      const data = await edgeAwareJsonFetch(
+        `/api/edge/analytics/today-specials-by-staff?${qs}`,
+        `/api/analytics/today-specials-by-staff?${qs}`,
+      );
+      const me = (data?.staff || []).find(s => s.userId === captainId);
       setCaptainSpecials({
         soldCount: me ? Number(me.soldCount || 0) : 0,
         revenue: me ? Math.round(Number(me.revenue || 0)) : 0,
@@ -2126,9 +2125,15 @@ export default function CaptainApp({ onLogout }) {
   // miss table:updated / order:created events. When the tab returns to foreground,
   // force a full table refetch and socket reconnect to recover missed state before
   // the captain can send a KOT (which would otherwise hit a stale activeOrderIdRef).
+  // Throttled to 5 seconds to prevent refetch storms when the captain taps the
+  // screen or gets notifications (each fires a focus event).
   useEffect(() => {
+    let lastResyncAt = 0;
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastResyncAt < 5000) return; // throttle: max 1 refetch per 5s
+      lastResyncAt = now;
       console.log('[CaptainApp] Tab foregrounded — forcing table resync');
       const socket = getSocket();
       if (socket && !socket.connected) {

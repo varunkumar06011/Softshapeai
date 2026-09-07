@@ -2809,6 +2809,8 @@ export function MenuPage({ onAddDish }) {
 
   const [newCatName, setNewCatName] = useState('');
 
+  const [newCatReportCategory, setNewCatReportCategory] = useState('Food');
+
   const [catSaving, setCatSaving] = useState(false);
 
 
@@ -3005,7 +3007,7 @@ export function MenuPage({ onAddDish }) {
 
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
-        body: JSON.stringify({ name: newCatName.trim() }),
+        body: JSON.stringify({ name: newCatName.trim(), reportCategory: newCatReportCategory }),
 
       });
 
@@ -4306,6 +4308,26 @@ export function MenuPage({ onAddDish }) {
               disabled={catSaving}
 
             />
+
+            <select
+
+              value={newCatReportCategory}
+
+              onChange={(e) => setNewCatReportCategory(e.target.value)}
+
+              className="px-2 py-1.5 border border-gray-200 rounded text-sm font-bold focus:outline-none focus:border-[#E53935] bg-white"
+
+              title="Sales category (parent bucket for reports)"
+
+            >
+
+              <option value="Food">Food</option>
+
+              <option value="Beverages">Beverages</option>
+
+              <option value="Liquor">Liquor</option>
+
+            </select>
 
             <button
 
@@ -17645,6 +17667,8 @@ export function BarMenuPage() {
 
   const [newCatInline, setNewCatInline] = useState('');
 
+  const [newCatInlineReportCategory, setNewCatInlineReportCategory] = useState('Food');
+
 
 
   const fetchBarCategories = useCallback(async () => {
@@ -17695,7 +17719,7 @@ export function BarMenuPage() {
 
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
 
-        body: JSON.stringify({ name: newCatInline.trim() }),
+        body: JSON.stringify({ name: newCatInline.trim(), reportCategory: newCatInlineReportCategory }),
 
       });
 
@@ -19100,6 +19124,26 @@ export function BarMenuPage() {
                     className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935]"
 
                   />
+
+                  <select
+
+                    value={newCatInlineReportCategory}
+
+                    onChange={(e) => setNewCatInlineReportCategory(e.target.value)}
+
+                    className="border border-gray-200 rounded-xl px-2 py-2 text-[13px] font-bold focus:outline-none focus:border-[#E53935] bg-white"
+
+                    title="Sales category (parent bucket for reports)"
+
+                  >
+
+                    <option value="Food">Food</option>
+
+                    <option value="Beverages">Beverages</option>
+
+                    <option value="Liquor">Liquor</option>
+
+                  </select>
 
                   <button
 

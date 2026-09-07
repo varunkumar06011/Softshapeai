@@ -785,7 +785,7 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
         if (mountedRef.current && !cancelledRef.current) {
           loadTables();
         }
-      }, 300);
+      }, 2000);
     });
 
     // On edge reconnect, do an immediate full refresh (non-debounced) to
@@ -797,24 +797,16 @@ export function useTableSync({ shouldSkipTableUpdate = null } = {}) {
     };
     window.addEventListener('edge:reconnect', handleEdgeReconnect);
 
-    // Periodic edge refresh: every 60 seconds, trigger a loadTables() call
-    // to catch any missed edge events (WebSocket dropped, event lost, etc).
-    // This is a safety net — the real-time WebSocket + reconnect refresh
-    // handle the common cases, but periodic polling ensures correctness
-    // even if an event is silently dropped.
-    const EDGE_POLL_INTERVAL_MS = 60_000;
-    const edgePollTimer = setInterval(() => {
-      if (mountedRef.current && !cancelledRef.current) {
-        loadTables();
-      }
-    }, EDGE_POLL_INTERVAL_MS);
+    // NOTE: The 60-second periodic poll was removed — the edge WebSocket
+    // (with 2s debounce) and cloud Socket.IO reconnect refetch already
+    // cover real-time updates. The poll was causing unnecessary refetches
+    // every minute even when nothing changed, contributing to table flicker.
 
     return () => {
       mountedRef.current = false;
       cancelledRef.current = true;
       abortControllerRef.current?.abort();
       releaseSocket();
-      clearInterval(edgePollTimer);
       window.removeEventListener('edge:reconnect', handleEdgeReconnect);
       // Disconnect edge socket when no more table sync instances are active
       disconnectEdgeSocket();

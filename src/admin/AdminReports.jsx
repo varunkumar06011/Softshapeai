@@ -18,7 +18,7 @@
 //   - Search and filter within report data
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
@@ -1261,6 +1261,7 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [expandedCats, setExpandedCats] = useState(new Set());
 
   const fetchData = async () => {
     setLoading(true); setError(null);
@@ -1282,13 +1283,20 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   };
   const doExcel = () => {
     if (!data) return;
+    const subRows = [];
+    data.categories.forEach((c) => {
+      subRows.push({ name: c.name, itemCount: c.itemCount, totalQuantity: c.totalQuantity, totalRevenue: c.totalRevenue, revenuePercent: c.revenuePercent });
+      (c.subCategories || []).forEach((sc) => {
+        subRows.push({ name: `  └ ${sc.name}`, itemCount: sc.itemCount, totalQuantity: sc.totalQuantity, totalRevenue: sc.totalRevenue, revenuePercent: sc.revenuePercent });
+      });
+    });
     downloadExcel({ title: 'Category-wise Sales', dateRange: dateRangeText, filename: 'Categorywise-Sales',
       sheets: [{ name: 'Categories', headers: [
         { key: 'name', label: 'Category' }, { key: 'itemCount', label: 'Items' },
         { key: 'totalQuantity', label: 'Qty Sold' },
         { key: 'totalRevenue', label: 'Revenue', format: 'money' },
         { key: 'revenuePercent', label: 'Rev %', format: 'percent' },
-      ], rows: data.categories }],
+      ], rows: subRows }],
     });
   };
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [data, dateFilter]);
@@ -1305,9 +1313,17 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
   const categoryColors = { Food: '#B71C1C', Liquor: '#E53935', Beverages: '#2563EB' };
   const colors = pieData.map((c) => categoryColors[c.name] || '#EF9A9A');
 
+  const toggleCat = (name) => {
+    setExpandedCats(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-6">
-      <ReportHeader title="Category-wise Sales" subtitle="Revenue by menu category">
+      <ReportHeader title="Category-wise Sales" subtitle="Revenue by menu category — click a category to expand sub-categories">
         <DownloadButtons onPDF={doPDF} onExcel={doExcel} />
       </ReportHeader>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1338,20 +1354,38 @@ function CategorywiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                 </tr>
               </thead>
               <tbody>
-                {data.categories.map((c) => (
-                  <tr key={c.name} className="border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5]">
-                    <td className="px-3 py-3 font-bold text-gray-900">{c.name}</td>
-                    <td className="px-3 py-3 text-right text-gray-700">{c.itemCount}</td>
-                    <td className="px-3 py-3 text-right text-gray-700">{c.totalQuantity}</td>
-                    <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={c.totalRevenue} /></td>
-                    <td className="px-3 py-3 text-right">
-                      <div className="w-16 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
-                        <div className={`h-full rounded-full ${c.name === 'Beverages' ? 'bg-blue-200' : c.name === 'Liquor' ? 'bg-red-300' : 'bg-red-200'}`} style={{ width: `${Math.min(c.revenuePercent, 100)}%` }} />
-                      </div>
-                      <span className="text-[10px] text-gray-500 font-bold">{c.revenuePercent}%</span>
-                    </td>
-                  </tr>
-                ))}
+                {data.categories.map((c) => {
+                  const hasSubs = c.subCategories && c.subCategories.length > 0;
+                  const isExpanded = expandedCats.has(c.name);
+                  return (
+                    <Fragment key={c.name}>
+                      <tr className={`border-b border-[#FFCDD2]/50 hover:bg-[#FFF5F5] ${hasSubs ? 'cursor-pointer' : ''}`} onClick={hasSubs ? () => toggleCat(c.name) : undefined}>
+                        <td className="px-3 py-3 font-bold text-gray-900">
+                          {hasSubs && <span className="inline-block w-4 mr-1 text-gray-400">{isExpanded ? '▼' : '▶'}</span>}
+                          {c.name}
+                        </td>
+                        <td className="px-3 py-3 text-right text-gray-700">{c.itemCount}</td>
+                        <td className="px-3 py-3 text-right text-gray-700">{c.totalQuantity}</td>
+                        <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={c.totalRevenue} /></td>
+                        <td className="px-3 py-3 text-right">
+                          <div className="w-16 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
+                            <div className={`h-full rounded-full ${c.name === 'Beverages' ? 'bg-blue-200' : c.name === 'Liquor' ? 'bg-red-300' : 'bg-red-200'}`} style={{ width: `${Math.min(c.revenuePercent, 100)}%` }} />
+                          </div>
+                          <span className="text-[10px] text-gray-500 font-bold">{c.revenuePercent}%</span>
+                        </td>
+                      </tr>
+                      {isExpanded && hasSubs && c.subCategories.map((sc) => (
+                        <tr key={`${c.name}-${sc.name}`} className="border-b border-[#FFCDD2]/30 bg-[#FAFAFA]">
+                          <td className="px-3 py-2 pl-8 text-gray-600">└ {sc.name}</td>
+                          <td className="px-3 py-2 text-right text-gray-500">{sc.itemCount}</td>
+                          <td className="px-3 py-2 text-right text-gray-500">{sc.totalQuantity}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-gray-700"><Money value={sc.totalRevenue} /></td>
+                          <td className="px-3 py-2 text-right text-[10px] text-gray-400 font-bold">{sc.revenuePercent}%</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

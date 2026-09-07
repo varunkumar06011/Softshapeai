@@ -179,25 +179,31 @@ export async function ensureEdgeRuntimeToken() {
 }
 
 export function resetEdgeCache() {
+  // Only reset the timestamp so the next isEdgeAvailable() call does a fresh
+  // health check. Do NOT set _edgeAvailable = false — that causes the edge
+  // socket reconnect loop and other callers to assume the edge is down for
+  // up to 30 seconds, even though the edge server is perfectly fine. This
+  // was the root cause of "edge keeps checking but not connecting" — normal
+  // cashier operations (bill print, KOT reprint) called resetEdgeCache(),
+  // which nuked the availability state and prevented socket reconnection.
   _edgeLastCheck = 0;
-  _edgeAvailable = false;
-  _connectivityState = 'checking';
   _connectivityLastCheck = 0;
 }
 
 /**
  * Manually invalidate the edge health cache. Call this after a known edge server
  * restart or when the user manually changes the edge URL.
+ *
+ * Only resets the cache timestamps so the next check runs fresh. Does NOT clear
+ * the discovered edge URL — clearing it mid-operation causes getEdgeUrl() to
+ * fall back to 127.0.0.1:3101 (localhost), which doesn't work on the captain's
+ * phone. The URL should only be cleared by resetEdgeCache() during a full
+ * re-discovery cycle, not during normal cache invalidation.
  */
 export function invalidateEdgeHealthCache() {
   _edgeLastCheck = 0;
-  _edgeAvailable = false;
-  _discoveredEdgeUrl = null;
   _discoveryLastFailed = 0;
-  _connectivityState = 'checking';
   _connectivityLastCheck = 0;
-  // Clear persisted discovered URL so getEdgeUrl() doesn't return a stale one.
-  try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
   // Intentionally does NOT clear _discoveryFailReason — it's a diagnostic,
   // not a health cache. See comment at the variable declaration.
 }

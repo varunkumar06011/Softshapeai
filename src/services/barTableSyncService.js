@@ -713,7 +713,7 @@ export function useBarTableSync({ shouldSkipTableUpdate = null } = {}) {
         if (mountedRef.current && !cancelledRef.current) {
           loadTables();
         }
-      }, 300);
+      }, 2000);
     });
 
     return () => {
