@@ -593,15 +593,18 @@ export async function isEdgeAvailable() {
   if (isHttpsBrowserContext()) return false;
 
   const now = Date.now();
-  if (now - _edgeLastCheck < EDGE_CHECK_INTERVAL_MS) return _edgeAvailable;
+  const edgeUrl = getEdgeUrl();
+  const isLocalEdge = edgeUrl.includes('127.0.0.1') || edgeUrl.includes('localhost');
+  const checkInterval = isLocalEdge ? 10_000 : EDGE_CHECK_INTERVAL_MS;
+  if (now - _edgeLastCheck < checkInterval) return _edgeAvailable;
   _edgeLastCheck = now;
 
-  const edgeUrl = getEdgeUrl();
+  const checkTimeout = isLocalEdge ? 1500 : EDGE_CHECK_TIMEOUT_MS;
 
   // Try the current edge URL health check first
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), checkTimeout);
     const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (res.ok) {
@@ -630,7 +633,11 @@ export async function isEdgeAvailable() {
   // DEFAULT_EDGE_URL or a stale discovered URL. This handles DHCP IP changes
   // where the cashier desktop gets a new LAN IP and the old discovered URL
   // becomes unreachable.
-  if (!_edgeAvailable) {
+  // Skip LAN discovery entirely when the edge URL is localhost — the edge server
+  // runs on the same machine (cashier desktop). Scanning 253 LAN IPs when the
+  // server is on 127.0.0.1 is wasteful and causes a 19s UI freeze cascade when
+  // the edge server is briefly busy (e.g. during a sync cycle).
+  if (!_edgeAvailable && !edgeUrl.includes('127.0.0.1') && !edgeUrl.includes('localhost')) {
     // Skip discovery if it recently failed — avoids re-probing on every poll cycle.
     if (Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
       return _edgeAvailable;
@@ -768,9 +775,11 @@ export async function getEdgeConnectivityState() {
   _connectivityLastCheck = now;
 
   try {
+    const edgeUrl = getEdgeUrl();
+    const isLocal = edgeUrl.includes('127.0.0.1') || edgeUrl.includes('localhost');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
-    const res = await fetch(`${getEdgeUrl()}/health`, { signal: controller.signal });
+    const timeoutId = setTimeout(() => controller.abort(), isLocal ? 1500 : EDGE_CHECK_TIMEOUT_MS);
+    const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (res.ok) {
       const health = await res.json().catch(() => ({}));

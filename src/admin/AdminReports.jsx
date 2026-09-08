@@ -109,12 +109,14 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
         reportCategory: category,
         quantitySold: 0,
         totalRevenue: 0,
+        totalRevenueWithGst: 0,
         orderCount: 0,
       });
     }
     const rec = itemMap.get(key);
     rec.quantitySold += it.quantitySold || it.quantity || 0;
     rec.totalRevenue += it.totalRevenue || it.revenue || 0;
+    rec.totalRevenueWithGst += (it.totalRevenueWithGst ?? it.revenueWithGst ?? (it.totalRevenue || it.revenue || 0));
     rec.orderCount += it.orderCount || 0;
   }
 
@@ -146,6 +148,7 @@ async function fetchItemwiseAnalytics(startDate, endDate, categoryFilter = 'all'
       quantitySold: it.quantitySold,
       unitPrice: it.unitPrice,
       totalRevenue: it.totalRevenue,
+      totalRevenueWithGst: it.totalRevenueWithGst,
       revenuePercent: backendSummary.totalRevenue > 0
         ? (it.totalRevenue / backendSummary.totalRevenue) * 100
         : (visibleTotalRevenue > 0 ? (it.totalRevenue / visibleTotalRevenue) * 100 : 0),
@@ -1031,6 +1034,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
       { key: 'reportCategory', label: 'Type' }, { key: 'quantitySold', label: 'Qty Sold' },
       { key: 'unitPrice', label: 'Unit Price', format: 'money' },
       { key: 'totalRevenue', label: 'Total Revenue', format: 'money' },
+      { key: 'totalRevenueWithGst', label: 'Revenue + GST', format: 'money' },
       { key: 'revenuePercent', label: 'Rev %', format: 'percent' },
     ];
     downloadPDF({ title: 'Item-wise Sales', dateRange: dateRangeText, headers, rows: data.items, filename: 'Itemwise-Sales' });
@@ -1043,6 +1047,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
         { key: 'reportCategory', label: 'Type' }, { key: 'quantitySold', label: 'Qty Sold' },
         { key: 'unitPrice', label: 'Unit Price', format: 'money' },
         { key: 'totalRevenue', label: 'Total Revenue', format: 'money' },
+        { key: 'totalRevenueWithGst', label: 'Revenue + GST', format: 'money' },
         { key: 'revenuePercent', label: 'Rev %', format: 'percent' },
       ], rows: data.items }],
     });
@@ -1112,6 +1117,7 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400 cursor-pointer" onClick={() => toggleSort('totalRevenue')}>
                   Revenue <ArrowUpDown size={10} className="inline ml-1" />
                 </th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Revenue + GST</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Rev %</th>
                 <th className="px-3 py-3 text-center text-[10px] font-black uppercase tracking-widest text-gray-400">Cost</th>
               </tr>
@@ -1134,6 +1140,9 @@ function ItemwiseSalesReport({ dateFilter, outletId, onDownloadRef }) {
                   <td className="px-3 py-3 text-right font-bold text-gray-700">{it.quantitySold}</td>
                   <td className="px-3 py-3 text-right font-bold text-gray-700"><Money value={it.unitPrice} /></td>
                   <td className="px-3 py-3 text-right font-bold text-gray-900"><Money value={it.totalRevenue} /></td>
+                  <td className="px-3 py-3 text-right font-bold text-gray-700">
+                    {it.reportCategory === 'Food' ? <Money value={it.totalRevenueWithGst ?? it.totalRevenue} /> : <span className="text-gray-400">—</span>}
+                  </td>
                   <td className="px-3 py-3 text-right">
                     <div className="w-20 h-2 bg-gray-100 rounded-full ml-auto overflow-hidden">
                       <div className="h-full bg-[#B71C1C] rounded-full" style={{ width: `${Math.min(it.revenuePercent, 100)}%` }} />
