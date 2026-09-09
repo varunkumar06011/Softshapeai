@@ -86,6 +86,23 @@ export default function AdminPurchases() {
   const [pendingVendorRowIndex, setPendingVendorRowIndex] = useState(null);
   const [backendOnline, setBackendOnline] = useState(isBackendReachable());
 
+  // ── Vendor ledger (per-date) state ──────────────────────────────────────────
+  // Replaces the flat vendor list with a daily ledger. Reads from the new
+  // read-only GET /api/vendor-ledger endpoint. Edits reuse the existing
+  // POST /api/purchase-orders and POST /api/vendors/:id/payments endpoints,
+  // so there is still a single source of financial truth.
+  const [ledgerDate, setLedgerDate] = useState(getKolkataDateString());
+  const [ledgerRows, setLedgerRows] = useState([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerError, setLedgerError] = useState('');
+  // Per-vendor inline entry drafts: { [vendorId]: { paymentAmount, paymentMethod } }
+  const [ledgerDrafts, setLedgerDrafts] = useState({});
+  // Which vendor row has its inline entry panel expanded (vendorId | null)
+  const [ledgerExpanded, setLedgerExpanded] = useState(null);
+  // Save status per vendor: { [vendorId]: { kind, status: 'saving'|'saved'|'error', msg } }
+  const [ledgerSaving, setLedgerSaving] = useState({});
+  const [ledgerSearch, setLedgerSearch] = useState('');
+
   // Per-tenant, per-outlet, per-date draft key — prevents cross-tenant/cross-outlet leakage
   const getDraftKey = useCallback((outlet, date) =>
     `dailyPurchaseDraft_${restaurant?.id || user?.id || 'unknown'}_${outlet || 'all'}_${date}`,
@@ -264,13 +281,29 @@ export default function AdminPurchases() {
     }
   }, []);
 
+  // ── Load vendor ledger (per-date) ────────────────────────────────────────────
+  // Read-only daily ledger from GET /api/vendor-ledger?date=...
+  const loadVendorLedger = useCallback(async (date) => {
+    setLedgerLoading(true);
+    setLedgerError('');
+    try {
+      const data = await apiFetch(`/api/vendor-ledger?date=${date}`, { timeout: API_TIMEOUT_DEFAULT_MS });
+      setLedgerRows(data || []);
+    } catch (err) {
+      setLedgerError(err.message || 'Failed to load vendor ledger');
+      setLedgerRows([]);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (view === 'vendors') loadVendors();
+    if (view === 'vendors') { loadVendors(); loadVendorLedger(ledgerDate); }
     else if (view === 'po-grid') loadPOs();
     else if (view === 'vendor-detail' && selectedVendorId) loadVendorDetail(selectedVendorId);
     else if (view === 'po-detail' && selectedPOId) loadPODetail(selectedPOId);
     else if (view === 'daily-entry') loadVendors();
-  }, [view, selectedVendorId, selectedPOId, loadVendors, loadPOs, loadVendorDetail, loadPODetail]);
+  }, [view, selectedVendorId, selectedPOId, ledgerDate, loadVendors, loadVendorLedger, loadPOs, loadVendorDetail, loadPODetail]);
 
   const showSuccess = (msg) => {
     setSuccess(msg);
@@ -319,6 +352,93 @@ export default function AdminPurchases() {
       setSaving(false);
     }
   };
+
+  // ── Vendor Ledger (per-date) inline entry ─────────────────────────────────────
+  // Edits reuse the existing POST /api/purchase-orders (single synthetic line
+  // item) and POST /api/vendors/:id/payments endpoints — no new write path, so
+  // the ledger numbers can never drift from outstandingBalance shown elsewhere.
+  const updateLedgerDraft = (vendorId, field, value) => {
+    setLedgerDrafts((prev) => ({
+      ...prev,
+      [vendorId]: { ...(prev[vendorId] || {}), [field]: value },
+    }));
+  };
+
+  const clearLedgerSaveStatus = (vendorId, kind) => {
+    setTimeout(() => {
+      setLedgerSaving((prev) => {
+        const cur = prev[vendorId];
+        if (cur && cur.kind === kind && cur.status === 'saved') {
+          const next = { ...prev };
+          delete next[vendorId];
+          return next;
+        }
+        return prev;
+      });
+    }, 1500);
+  };
+
+  // Record a purchase for a vendor on the selected ledger date via the existing
+  // POST /api/purchase-orders endpoint (one synthetic line item).
+  // Purchases are NOT editable from the ledger — they are entered via the Daily
+  // Entry view (DailyPurchaseEntry rows tied to inventory). The ledger only
+  // displays them (aggregated by the backend from DailyPurchaseEntry + POs).
+  // Only payments are editable inline here (LIABILITY_PAYMENT expenditure).
+
+  // Record a payment for a vendor on the selected ledger date via the existing
+  // POST /api/vendors/:id/payments endpoint.
+  const handleLedgerPayment = async (vendorId) => {
+    const draft = ledgerDrafts[vendorId] || {};
+    const amt = parseFloat(draft.paymentAmount);
+    if (!amt || amt <= 0 || isNaN(amt)) { setLedgerError('Enter a valid payment amount'); return; }
+    const method = draft.paymentMethod || 'CASH';
+    if (!PAYMENT_METHODS.includes(method)) { setLedgerError('Select a valid payment method'); return; }
+    setLedgerError('');
+    setLedgerSaving((prev) => ({ ...prev, [vendorId]: { kind: 'payment', status: 'saving' } }));
+    try {
+      await apiFetch(`/api/vendors/${vendorId}/payments`, {
+        method: 'POST',
+        timeout: API_TIMEOUT_DEFAULT_MS,
+        body: JSON.stringify({ amount: amt, paymentMethod: method, paymentDate: ledgerDate }),
+      });
+      setLedgerSaving((prev) => ({ ...prev, [vendorId]: { kind: 'payment', status: 'saved' } }));
+      setLedgerDrafts((prev) => ({ ...prev, [vendorId]: { ...(prev[vendorId] || {}), paymentAmount: '' } }));
+      await loadVendorLedger(ledgerDate);
+      clearLedgerSaveStatus(vendorId, 'payment');
+    } catch (err) {
+      setLedgerSaving((prev) => ({ ...prev, [vendorId]: { kind: 'payment', status: 'error', msg: err.message } }));
+      setLedgerError(err.message || 'Failed to save payment');
+    }
+  };
+
+  // Ledger date labels (DD/MM/YYYY) for the column headers.
+  const ledgerDateLabel = useMemo(() => {
+    const [y, m, d] = ledgerDate.split('-');
+    return `${d}/${m}/${y}`;
+  }, [ledgerDate]);
+  const ledgerPrevDateLabel = useMemo(() => {
+    const [y, m, d] = ledgerDate.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d - 1));
+    const yy = dt.getUTCFullYear();
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    return `${dd}/${mm}/${yy}`;
+  }, [ledgerDate]);
+
+  // Totals across ALL vendors (independent of the search filter).
+  const ledgerTotals = useMemo(() => ledgerRows.reduce((acc, r) => {
+    acc.opening += r.openingBalance;
+    acc.purchases += r.purchasesOnDate;
+    acc.payments += r.paymentsOnDate;
+    acc.closing += r.closingBalance;
+    return acc;
+  }, { opening: 0, purchases: 0, payments: 0, closing: 0 }), [ledgerRows]);
+
+  const filteredLedgerRows = useMemo(() => {
+    if (!ledgerSearch.trim()) return ledgerRows;
+    const q = ledgerSearch.trim().toLowerCase();
+    return ledgerRows.filter((r) => r.name.toLowerCase().includes(q));
+  }, [ledgerRows, ledgerSearch]);
 
   // ── PO Form ──────────────────────────────────────────────────────────────────
   const [poForm, setPoForm] = useState({
@@ -1080,16 +1200,36 @@ export default function AdminPurchases() {
         </div>
       )}
 
-      {/* ── Vendor List View ───────────────────────────────────────────────────── */}
+      {/* ── Vendor Daily Ledger View ─────────────────────────────────────────────── */}
       {view === 'vendors' && (
         <>
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-tour="admin-purchases-vendors">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 flex items-center gap-2">
                 <Store size={18} className="text-[#E53935]" />
-                Vendors
+                Vendor Balances
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 text-xs font-bold text-gray-600">
+                  <Calendar size={14} className="text-gray-400" />
+                  <input
+                    type="date"
+                    value={ledgerDate}
+                    max={getKolkataDateString()}
+                    onChange={(e) => setLedgerDate(e.target.value || getKolkataDateString())}
+                    className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                  />
+                </div>
+                <div className="flex items-center gap-1 bg-gray-50 rounded-lg px-2 py-1.5">
+                  <Search size={14} className="text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search vendor..."
+                    value={ledgerSearch}
+                    onChange={(e) => setLedgerSearch(e.target.value)}
+                    className="bg-transparent text-xs font-bold outline-none w-28"
+                  />
+                </div>
                 <button
                   onClick={handleRecalcBalances}
                   disabled={recalcingBalances}
@@ -1097,7 +1237,7 @@ export default function AdminPurchases() {
                   title="Recalculate all vendor outstanding balances"
                 >
                   {recalcingBalances ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  Recalc Balances
+                  Recalc
                 </button>
                 <button
                   onClick={() => setShowVendorForm(true)}
@@ -1108,75 +1248,158 @@ export default function AdminPurchases() {
                 </button>
               </div>
             </div>
+            <p className="text-[11px] font-bold text-gray-400 mt-2">
+              VENDOR BALANCES — {ledgerDateLabel}
+            </p>
           </div>
 
-          {vendors.length === 0 ? (
+          {(ledgerLoading && ledgerRows.length === 0) ? (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
+              <Loader2 size={24} className="mx-auto text-gray-300 animate-spin mb-2" />
+              <p className="text-xs text-gray-400 font-bold">Loading vendor ledger…</p>
+            </div>
+          ) : ledgerRows.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
               <Store size={32} className="mx-auto text-gray-300 mb-2" />
               <p className="text-xs text-gray-400 font-bold">No vendors yet. Create one to start tracking purchases.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-black uppercase text-gray-400">Name</th>
-                    <th className="text-left px-4 py-2 font-black uppercase text-gray-400">Contact</th>
-                    <th className="text-right px-4 py-2 font-black uppercase text-gray-400">Outstanding</th>
-                    <th className="text-center px-4 py-2 font-black uppercase text-gray-400">Status</th>
-                    <th className="px-4 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vendors.map((v) => (
-                    <tr
-                      key={v.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => { setSelectedVendorId(v.id); setView('vendor-detail'); }}
-                    >
-                      <td className="px-4 py-3 font-bold text-gray-800">{v.name}</td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {v.contactPerson || v.phone || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-black">
-                        <span className={parseFloat(v.outstandingBalance) > 0 ? 'text-[#E53935]' : 'text-gray-400'}>
-                          ₹{round2(v.outstandingBalance).toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${v.isActive ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                          {v.isActive ? 'Active' : 'Retired'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {v.isActive && parseFloat(v.outstandingBalance) > 0 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedVendorId(v.id);
-                              setShowVendorPaymentForm(true);
-                              setView('vendor-detail');
-                              loadVendorDetail(v.id);
-                            }}
-                            className="text-[10px] font-bold text-green-600 hover:bg-green-50 px-2 py-1 rounded mr-2"
-                          >
-                            Payment
-                          </button>
-                        )}
-                        {v.isActive && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRetireVendor(v.id); }}
-                            className="text-[10px] font-bold text-gray-400 hover:text-red-600"
-                          >
-                            Retire
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {ledgerError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-2 text-xs font-bold text-red-600 flex items-center gap-2">
+                  <AlertCircle size={14} /> {ledgerError}
+                </div>
+              )}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto max-h-[68vh] overflow-y-auto">
+                  <table className="w-full text-xs min-w-[760px]">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-black uppercase text-gray-400">Vendor</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Balance on {ledgerPrevDateLabel}</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Purchases on {ledgerDateLabel}</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Payments on {ledgerDateLabel}</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Balance on {ledgerDateLabel}</th>
+                        <th className="px-4 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLedgerRows.map((r) => {
+                        const sv = ledgerSaving[r.vendorId];
+                        const draft = ledgerDrafts[r.vendorId] || {};
+                        const expanded = ledgerExpanded === r.vendorId;
+                        return (
+                          <React.Fragment key={r.vendorId}>
+                            <tr className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="px-4 py-3 font-bold text-gray-800">
+                                <button
+                                  onClick={() => { setSelectedVendorId(r.vendorId); setView('vendor-detail'); }}
+                                  className="text-left hover:text-[#E53935] flex items-center gap-2"
+                                >
+                                  {r.name}
+                                  {!r.isActive && (
+                                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">Retired</span>
+                                  )}
+                                </button>
+                              </td>
+                              <td className="px-4 py-3 text-right font-bold text-gray-600">
+                                ₹{round2(r.openingBalance).toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3 text-right font-black text-gray-800">
+                                ₹{round2(r.purchasesOnDate).toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3 text-right font-black text-gray-800">
+                                ₹{round2(r.paymentsOnDate).toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3 text-right font-black">
+                                <span className={r.closingBalance > 0 ? 'text-[#E53935]' : 'text-gray-400'}>
+                                  ₹{round2(r.closingBalance).toLocaleString()}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                {r.isActive && (
+                                  <button
+                                    onClick={() => setLedgerExpanded(expanded ? null : r.vendorId)}
+                                    className="text-[10px] font-bold text-green-600 hover:bg-green-50 px-2 py-1 rounded mr-1"
+                                    title="Record a payment for this vendor"
+                                  >
+                                    <Plus size={12} className="inline" /> Payment
+                                  </button>
+                                )}
+                                {r.isActive && (
+                                  <button
+                                    onClick={() => handleRetireVendor(r.vendorId)}
+                                    className="text-[10px] font-bold text-gray-400 hover:text-red-600"
+                                  >
+                                    Retire
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                            {expanded && r.isActive && (
+                              <tr className="border-b border-gray-100 bg-gray-50/60">
+                                <td colSpan={6} className="px-4 py-3">
+                                  <div className="flex flex-wrap items-end gap-3">
+                                    {/* Purchases are entered via the Daily Entry view, not here.
+                                        The ledger only displays them (read-only). */}
+                                    {/* Payment entry */}
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[9px] font-black uppercase text-gray-400">Payment on {ledgerDateLabel}</span>
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          placeholder="Amount"
+                                          value={draft.paymentAmount || ''}
+                                          onChange={(e) => updateLedgerDraft(r.vendorId, 'paymentAmount', e.target.value)}
+                                          onKeyDown={(e) => { if (e.key === 'Enter') handleLedgerPayment(r.vendorId); }}
+                                          className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold w-24 outline-none focus:border-[#E53935]"
+                                        />
+                                        <select
+                                          value={draft.paymentMethod || 'CASH'}
+                                          onChange={(e) => updateLedgerDraft(r.vendorId, 'paymentMethod', e.target.value)}
+                                          className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                                        >
+                                          {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                        <button
+                                          onClick={() => handleLedgerPayment(r.vendorId)}
+                                          disabled={sv?.kind === 'payment' && sv?.status === 'saving'}
+                                          className="flex items-center gap-1 text-[10px] font-black uppercase text-white bg-green-600 hover:bg-green-700 px-2 py-1.5 rounded disabled:opacity-50"
+                                        >
+                                          {sv?.kind === 'payment' && sv?.status === 'saving' ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                                          Save
+                                        </button>
+                                      </div>
+                                    </div>
+                                    {/* Save status */}
+                                    <div className="text-[10px] font-bold">
+                                      {sv?.status === 'saving' && <span className="text-gray-500 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Saving…</span>}
+                                      {sv?.status === 'saved' && <span className="text-green-600 flex items-center gap-1"><CheckCircle size={11} /> Saved</span>}
+                                      {sv?.status === 'error' && <span className="text-red-600 flex items-center gap-1" title={sv.msg}><AlertCircle size={11} /> Save failed — retry</span>}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-200 sticky bottom-0 z-10">
+                      <tr className="font-black">
+                        <td className="px-4 py-3 text-gray-700 uppercase text-[11px]">Totals {ledgerSearch.trim() && <span className="text-gray-400 normal-case font-bold">(all vendors)</span>}</td>
+                        <td className="px-4 py-3 text-right text-gray-700">₹{round2(ledgerTotals.opening).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-gray-800">₹{round2(ledgerTotals.purchases).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-gray-800">₹{round2(ledgerTotals.payments).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-[#E53935]">₹{round2(ledgerTotals.closing).toLocaleString()}</td>
+                        <td className="px-4 py-3"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
 
           <div className="flex gap-2">
