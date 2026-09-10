@@ -19,6 +19,19 @@ vi.mock('../printOffline', () => ({
   flushQueuedPrintJobs: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock edgeHealth: these tests exercise the cloud bulk-sync path, so the edge
+// server must be reported as unavailable. Without this, the mocked global fetch
+// makes the edge health probe succeed and create-order/update-items actions get
+// edge-replayed (edgeSynced) instead of reaching /api/orders/offline-sync.
+vi.mock('../../services/edgeHealth', () => ({
+  isEdgeLocalAuth: () => false,
+  isEdgeAvailable: async () => false,
+  edgeFetch: vi.fn().mockRejectedValue(new Error('edge unavailable')),
+  getEdgeUrl: () => null,
+  getStoredEdgeApiKey: () => null,
+  getStoredEdgeRuntimeToken: () => null,
+}));
+
 import {
   getSyncStatus,
   subscribeSyncStatus,

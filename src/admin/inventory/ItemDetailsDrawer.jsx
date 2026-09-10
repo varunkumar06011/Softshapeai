@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { fetchTransactions } from '../../services/barInventoryApi';
 import { fetchKitchenLedger } from '../../services/kitchenInventoryApi';
-import { MOVEMENT_TYPE_LABELS, MOVEMENT_TYPE_COLORS, MOVEMENT_TYPE_SIGN } from './inventoryConstants';
+import { MOVEMENT_TYPE_LABELS, MOVEMENT_TYPE_COLORS, MOVEMENT_TYPE_SIGN, isBeerItem, fmtBeerBottles } from './inventoryConstants';
 
 export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, onStockAdjustment }) {
   const [transactions, setTransactions] = useState([]);
@@ -53,6 +53,8 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
     ? (Number(item.reorderLevelBottles) || 0) * (bottleSizeMl || 1)
     : (Number(item.reorderLevel) || 0);
   const unit = tab === 'bar' ? 'ml' : item.unit;
+  const beer = tab === 'bar' && isBeerItem(item);
+  const fmtQty = (v) => beer ? fmtBeerBottles(v, bottleSizeMl) : `${Number(v).toFixed(2)} ${unit}`;
   const rate = tab === 'bar' ? Number(item.purchaseRate) || 0 : Number(item.price) || 0;
   const stockValue = tab === 'bar'
     ? (Number(item.stockValue) || (bottleSizeMl > 0 ? (currentStock / bottleSizeMl) * rate : 0))
@@ -100,7 +102,7 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="text-xs text-gray-500 uppercase tracking-wide">Current Stock</div>
               <div className={`text-xl font-bold mt-1 ${isLow ? 'text-red-600' : 'text-gray-900'}`}>
-                {currentStock.toFixed(2)} {unit}
+                {fmtQty(currentStock)}
               </div>
               {isLow && <div className="text-xs text-red-500 font-medium">Below reorder level</div>}
             </div>
@@ -175,7 +177,7 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
                         </div>
                       </div>
                       <div className={`text-sm font-semibold ${qty >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {sign}{Math.abs(qty).toFixed(2)} {unit}
+                        {sign}{beer ? fmtBeerBottles(Math.abs(qty), bottleSizeMl) : `${Math.abs(qty).toFixed(2)} ${unit}`}
                       </div>
                     </div>
                   );

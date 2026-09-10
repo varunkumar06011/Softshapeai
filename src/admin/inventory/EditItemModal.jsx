@@ -14,7 +14,52 @@ import { useState, useEffect } from 'react';
 import { updateInventoryItem } from '../../services/barInventoryApi';
 import { updateKitchenItem } from '../../services/kitchenInventoryApi';
 
-export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
+const OTHER = '__other__';
+const STANDARD_BOTTLE_SIZES = ['90', '180', '250', '275', '330', '375', '500', '650', '750', '1000'];
+const DEFAULT_BAR_CATEGORIES = ['Whisky', 'Brandy', 'Rum', 'Vodka', 'Gin', 'Beer', 'Wine', 'Liqueur', 'Cool Drinks', 'Liquor'];
+
+// Dropdown of known values with an "Other…" escape that swaps to a free input.
+// The current value is always offered even if it isn't in the option list.
+function SelectOrCustom({ value, onChange, options, placeholder, type = 'text' }) {
+  const [custom, setCustom] = useState(false);
+  if (custom) {
+    return (
+      <div className="flex gap-2">
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoFocus
+          className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+        />
+        <button
+          type="button"
+          onClick={() => setCustom(false)}
+          className="px-3 py-2.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-500 hover:bg-gray-50"
+        >
+          List
+        </button>
+      </div>
+    );
+  }
+  const opts = value !== '' && !options.includes(value) ? [value, ...options] : options;
+  return (
+    <select
+      value={value}
+      onChange={(e) => (e.target.value === OTHER ? setCustom(true) : onChange(e.target.value))}
+      className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+    >
+      {value === '' && <option value="" disabled>{placeholder}</option>}
+      {opts.map((o) => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+      <option value={OTHER}>Other…</option>
+    </select>
+  );
+}
+
+export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -25,7 +70,7 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
   const [bottleSize, setBottleSize] = useState('');
   const [reorderLevel, setReorderLevel] = useState('');
   const [purchaseRate, setPurchaseRate] = useState('');
-  const [sellingPricePerMl, setSellingPricePerMl] = useState('');
+  const [sellingPriceBtl, setSellingPriceBtl] = useState(''); // entered per bottle, stored per ml
   const [isHiddenFromReport, setIsHiddenFromReport] = useState(false);
 
   // Kitchen fields
@@ -44,7 +89,13 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
         setBottleSize(item.bottleSizeMl != null ? String(item.bottleSizeMl) : '');
         setReorderLevel(item.reorderLevelBottles != null ? String(item.reorderLevelBottles) : '');
         setPurchaseRate(item.purchaseRate != null ? String(item.purchaseRate) : '');
-        setSellingPricePerMl(item.sellingPricePerMl != null ? String(item.sellingPricePerMl) : '');
+        // Stored per-ml; entered per bottle in the UI.
+        const sizeMl = Number(item.bottleSizeMl) || 0;
+        setSellingPriceBtl(item.sellingPricePerMl != null
+          ? (sizeMl > 0
+              ? String(Math.round(Number(item.sellingPricePerMl) * sizeMl * 100) / 100)
+              : String(item.sellingPricePerMl))
+          : '');
         setIsHiddenFromReport(item.isHiddenFromReport === true);
       } else {
         setName(item.name || '');
@@ -75,7 +126,10 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
           bottleSizeMl: bottleSize !== '' ? Number(bottleSize) : undefined,
           reorderLevelBottles: reorderLevel === '' ? 0 : Number(reorderLevel),
           purchaseRate: purchaseRate !== '' ? Number(purchaseRate) : null,
-          sellingPricePerMl: sellingPricePerMl !== '' ? Number(sellingPricePerMl) : null,
+          // UI enters ₹/bottle; the ledger/report math needs ₹/ml.
+          sellingPricePerMl: sellingPriceBtl !== ''
+            ? (bottleSizeNum > 0 ? Number(sellingPriceBtl) / bottleSizeNum : Number(sellingPriceBtl))
+            : null,
           isHiddenFromReport,
         });
       } else {
@@ -97,6 +151,10 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
   };
 
   if (!open || !item) return null;
+
+  const bottleSizeNum = Number(bottleSize) || 0;
+  const brandOptions = [...new Set((items || []).map((i) => i.brand).filter(Boolean))].sort();
+  const categoryOptions = [...new Set([...(items || []).map((i) => i.category).filter(Boolean), ...DEFAULT_BAR_CATEGORIES])].sort();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -141,30 +199,30 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-                <input
-                  type="text"
+                <SelectOrCustom
                   value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                  onChange={setBrand}
+                  options={brandOptions}
+                  placeholder="Select brand"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <input
-                  type="text"
+                <SelectOrCustom
                   value={barCategory}
-                  onChange={(e) => setBarCategory(e.target.value)}
-                  placeholder="e.g. Whisky, Beer, Vodka"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                  onChange={setBarCategory}
+                  options={categoryOptions}
+                  placeholder="Select category"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Bottle Size (ml)</label>
-                <input
-                  type="number"
+                <SelectOrCustom
                   value={bottleSize}
-                  onChange={(e) => setBottleSize(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                  onChange={setBottleSize}
+                  options={STANDARD_BOTTLE_SIZES}
+                  placeholder="Select size"
+                  type="number"
                 />
               </div>
               <div>
@@ -188,17 +246,21 @@ export function EditItemModal({ open, item, tab, date, onClose, onSaved }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (₹ per ml)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Selling Price (₹ per {bottleSizeNum > 0 ? 'bottle' : 'ml'})
+                </label>
                 <input
                   type="number"
-                  value={sellingPricePerMl}
-                  onChange={(e) => setSellingPricePerMl(e.target.value)}
-                  placeholder="e.g. 2.5"
+                  value={sellingPriceBtl}
+                  onChange={(e) => setSellingPriceBtl(e.target.value)}
+                  placeholder={bottleSizeNum > 0 ? 'e.g. 1200' : 'e.g. 2.5'}
                   step="0.01"
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  Persistent per-ml selling price used in the Liquor Stock &amp; Sales Report.
+                  {bottleSizeNum > 0 && sellingPriceBtl !== ''
+                    ? `= ₹${(Number(sellingPriceBtl) / bottleSizeNum).toFixed(2)} per ml — used in the Liquor Stock & Sales Report`
+                    : 'Set a bottle size to enter the price per bottle.'}
                 </p>
               </div>
               <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">

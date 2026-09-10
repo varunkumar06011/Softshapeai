@@ -50,6 +50,11 @@ import { markKitchenItemsSynced } from './kitchenQueue';
 
 const LOW_QUOTA_RATIO = 0.8;
 
+// If an action was accepted by the edge sidecar but the edge has been
+// unreachable for this long, the data may be trapped in the edge's SQLite.
+// Fall back to the cloud path so the work isn't stranded on a dead process.
+const EDGE_STALE_FALLBACK_MS = 10 * 60 * 1000;
+
 /**
  * Warn if IndexedDB is using more than 80% of the estimated storage quota.
  * Returns true if the quota looks healthy, false if the app is close to full.
@@ -645,12 +650,32 @@ export async function syncPendingActions() {
     const readyActions = [];
     const blockedActions = [];
 
+    // Probe the edge once per cycle instead of inside the per-action loop —
+    // the result is identical for every action and repeated probes add latency.
+    // A probe error means unreachable.
+    const edgeReachable = await isEdgeAvailable().catch(() => false);
+
+    // Precompute once: whether any save-transaction action is still pending.
+    // Previously this was an allActions.some() scan inside the loop (O(n²)).
+    const hasPendingSaveTxn = allActions.some(a =>
+      a.actionType === 'save-transaction' &&
+      a.status !== 'failed-permanent' &&
+      a.status !== 'conflict'
+    );
+
     for (const action of allActions) {
       // Skip actions being handled by the edge server's sync worker.
       // They'll be removed once the edge server confirms cloud sync.
-      // Fall back to cloud sync only if the edge sync dead-lettered.
+      // Fall back to cloud sync if the edge sync dead-lettered, or if the edge
+      // has been unreachable long enough that the data is effectively stranded.
       if (action.edgeSynced && !action.edgeSyncFailed) {
-        continue;
+        const staleMs = action.edgeSyncedAt ? Date.now() - action.edgeSyncedAt : 0;
+        if (!edgeReachable && staleMs > EDGE_STALE_FALLBACK_MS && isBackendReachable()) {
+          action.edgeSyncFailed = true;
+          await updatePendingAction(action.id, { edgeSyncFailed: true });
+        } else {
+          continue;
+        }
       }
       // settle-order actions target the edge server's /api/edge/order/settle
       // endpoint, not the cloud's offline-sync. When the edge is up, they are
@@ -660,7 +685,7 @@ export async function syncPendingActions() {
       // offline-sync endpoint can process them. This ensures settlements reach
       // the cloud even if the cashier navigated away from the dashboard.
       if (action.actionType === 'settle-order') {
-        const edgeUp = isEdgeLocalAuth() || await isEdgeAvailable();
+        const edgeUp = isEdgeLocalAuth() || edgeReachable;
         if (edgeUp) {
           continue; // drainSettlementQueue will handle it via edge
         }
@@ -707,12 +732,7 @@ export async function syncPendingActions() {
         // action's entityId to the cloud transaction ID and clears the
         // dependency. If the save-transaction fails permanently, we let
         // the confirm-payment through so it can also fail with a clear error.
-        const pendingSaveTxn = allActions.some(a =>
-          a.actionType === 'save-transaction' &&
-          a.status !== 'failed-permanent' &&
-          a.status !== 'conflict'
-        );
-        if (pendingSaveTxn) {
+        if (hasPendingSaveTxn) {
           blockedActions.push(action);
         } else {
           readyActions.push(action);
@@ -833,6 +853,13 @@ export async function syncPendingActions() {
             await setOrderIdMapping(action.offlineOrderId, realId);
             await updatePendingActionEntityIds(action.offlineOrderId, realId);
             console.log(`[SyncEngine] Mapped ${action.offlineOrderId} → ${realId}, updated child actions`);
+            // If this action previously went through the edge, child actions were
+            // already rewritten to the edge's orderId — remap them to the cloud id.
+            if (action.edgeOrderId && action.edgeOrderId !== realId) {
+              await setOrderIdMapping(action.edgeOrderId, realId);
+              await updatePendingActionEntityIds(action.edgeOrderId, realId);
+              console.log(`[SyncEngine] Remapped edge order ${action.edgeOrderId} → ${realId} after cloud fallback`);
+            }
           } else {
             // ID not in response — try recovery strategies immediately on every
             // attempt rather than waiting for 3 failures. The order exists on the

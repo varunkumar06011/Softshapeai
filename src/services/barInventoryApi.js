@@ -191,7 +191,10 @@ export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
           })
           .map((i) => {
             const ml = parseMlFromName((i.n || i.name || '').toLowerCase());
-            return { inventoryItemId: i.id, label: `${ml}ml`, bottleSize: ml };
+            // These are MENU item ids, not BarInventoryItem ids — keep null so
+            // callers never send them as pourFromInventoryItemId (the backend
+            // would reject them). Backend resolution handles the fallback.
+            return { inventoryItemId: i.barInventoryItemId || i.bar_inventory_item_id || null, label: `${ml}ml`, bottleSize: ml };
           })
           .sort((a, b) => b.bottleSize - a.bottleSize);
         return { menuItemId, menuName: tapped.n || tapped.name, isPeg: true, bottles };
@@ -241,6 +244,8 @@ export async function updateInventoryItem(id, data) {
 
 // Set physical closing count for an item on a date (physical count reconciliation)
 export async function setItemStock(itemId, physicalMl, opts = {}) {
+  // Backward compat: legacy callers pass the notes string as the third arg.
+  if (typeof opts === 'string') opts = { notes: opts };
   const res = await fetch(apiUrl('/api/bar/inventory/physical-count'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -249,6 +254,7 @@ export async function setItemStock(itemId, physicalMl, opts = {}) {
       date: opts.date || getKolkataDateString(),
       physicalClosingMl: physicalMl,
       notes: opts.notes,
+      requestId: opts.requestId,
       restaurantId: getCurrentRestaurantId(),
     }),
   });
@@ -307,12 +313,12 @@ export async function recordPurchase(data) {
 }
 
 // Record / edit a Non-AC sale for a date (safe edit via CORRECTION movements)
-export async function recordNonAcSale({ itemId, date, quantityMl, bottles, sellingPrice, sellingPricePerMl, notes, reason }) {
+export async function recordNonAcSale({ itemId, date, quantityMl, bottles, sellingPrice, sellingPricePerMl, notes, reason, requestId }) {
   const res = await fetch(apiUrl('/api/bar/inventory/non-ac-sale'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({
-      itemId, date: date || getKolkataDateString(), quantityMl, bottles, sellingPrice, sellingPricePerMl, notes, reason,
+      itemId, date: date || getKolkataDateString(), quantityMl, bottles, sellingPrice, sellingPricePerMl, notes, reason, requestId,
       restaurantId: getCurrentRestaurantId(),
     }),
   });

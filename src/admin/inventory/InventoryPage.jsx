@@ -217,7 +217,7 @@ export function InventoryPage() {
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_KITCHEN} onSaved={handleSaved} />
-            <EditItemModal open={editOpen} item={editItem} tab={TAB_KITCHEN} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
+            <EditItemModal open={editOpen} item={editItem} items={inventory.items} tab={TAB_KITCHEN} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={inventory.items} tab={TAB_KITCHEN} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={inventory.items} tab={TAB_KITCHEN} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_KITCHEN} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
@@ -252,7 +252,7 @@ export function InventoryPage() {
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} onSaved={handleSaved} />
-            <EditItemModal open={editOpen} item={editItem} tab={TAB_BAR} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
+            <EditItemModal open={editOpen} item={editItem} items={combinedItems} tab={TAB_BAR} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} date={inventory.fromDate || undefined} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
@@ -320,7 +320,7 @@ export function InventoryPage() {
         modals={
           <>
             <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} onSaved={handleSaved} />
-            <EditItemModal open={editOpen} item={editItem} tab={tab} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
+            <EditItemModal open={editOpen} item={editItem} items={tab === 'bar' ? combinedItems : inventory.items} tab={tab} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} date={inventory.fromDate || undefined} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />

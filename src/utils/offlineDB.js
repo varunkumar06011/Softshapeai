@@ -264,14 +264,12 @@ export async function pruneOldPendingActions(maxAgeMs = 7 * 24 * 60 * 60 * 1000)
     const cutoff = Date.now() - maxAgeMs;
     const req = store.getAll();
     req.onsuccess = () => {
+      // Only prune actions confirmed synced. Any other status (error, conflict,
+      // auth_error, failed-permanent) may represent work that never reached a
+      // server — deleting it is silent data loss. The sync engine's auto-reset
+      // machinery keeps retrying those instead.
       const toDelete = req.result.filter(a =>
-        a.createdAt < cutoff && (
-          a.status === 'synced' ||
-          a.status === 'failed-permanent' ||
-          a.status === 'error' ||
-          a.status === 'conflict' ||
-          a.status === 'auth_error'
-        )
+        a.createdAt < cutoff && a.status === 'synced'
       );
       for (const action of toDelete) {
         store.delete(action.id);

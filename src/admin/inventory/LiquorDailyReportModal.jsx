@@ -28,8 +28,11 @@ import {
   setItemStock,
   updateInventoryItem,
   saveManualReportItems,
+  getOrCreateRequestId,
+  clearRequestId,
 } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
+import { isBeerItem, fmtBeerBottles } from './inventoryConstants';
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
@@ -48,6 +51,11 @@ function fmtBtl(ml, size) {
   if (s <= 0) return `${Math.round(v)}ml`;
   const b = v / s;
   return `${b % 1 === 0 ? b : b.toFixed(2)} btl`;
+}
+
+// Beer rows display pure bottle counts; everything else stays in ml.
+function fmtRowMl(r, v) {
+  return isBeerItem(r) ? fmtBeerBottles(v, r.bottleSizeMl) : fmtMl(v);
 }
 
 function numEq(a, b) {
@@ -97,14 +105,14 @@ function buildPrintHtml({ date, items, manualItems, businessPosition }) {
       <td class="center">${serialNum}</td>
       <td class="left">${escapeHtml(r.name)}</td>
       <td class="center">${r.bottleSizeMl}ml</td>
-      <td class="right">${fmtMl(r.openingMl)}</td>
-      <td class="right">${(Number(r.purchasedMl) || 0) > 0 ? fmtMl(r.purchasedMl) : '\u2014'}</td>
-      <td class="right">${acSale > 0 ? fmtMl(acSale) : '\u2014'}</td>
-      <td class="right">${nonAcSale > 0 ? fmtMl(nonAcSale) : '\u2014'}</td>
-      <td class="right">${(Number(r.wastageMl) || 0) > 0 ? fmtMl(r.wastageMl) : '\u2014'}</td>
-      <td class="right bold">${fmtMl(r.systemClosingMl)}</td>
-      <td class="right">${r.physicalClosingMl != null ? fmtMl(r.physicalClosingMl) : '\u2014'}</td>
-      <td class="right ${Number(r.varianceMl) !== 0 && r.varianceMl != null ? 'neg' : 'muted'}">${r.varianceMl != null ? fmtMl(r.varianceMl) : '\u2014'}</td>
+      <td class="right">${fmtRowMl(r, r.openingMl)}</td>
+      <td class="right">${(Number(r.purchasedMl) || 0) > 0 ? fmtRowMl(r, r.purchasedMl) : '\u2014'}</td>
+      <td class="right">${acSale > 0 ? fmtRowMl(r, acSale) : '\u2014'}</td>
+      <td class="right">${nonAcSale > 0 ? fmtRowMl(r, nonAcSale) : '\u2014'}</td>
+      <td class="right">${(Number(r.wastageMl) || 0) > 0 ? fmtRowMl(r, r.wastageMl) : '\u2014'}</td>
+      <td class="right bold">${fmtRowMl(r, r.systemClosingMl)}</td>
+      <td class="right">${r.physicalClosingMl != null ? fmtRowMl(r, r.physicalClosingMl) : '\u2014'}</td>
+      <td class="right ${Number(r.varianceMl) !== 0 && r.varianceMl != null ? 'neg' : 'muted'}">${r.varianceMl != null ? fmtRowMl(r, r.varianceMl) : '\u2014'}</td>
       <td class="right">${fmtInr(r.totalRevenue)}</td>
       <td class="right ${Number(r.profit) < 0 ? 'neg' : ''}">${fmtInr(r.profit)}</td>
     </tr>`;
@@ -388,14 +396,19 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         });
       }
       // 2. Non-AC sale edits → NON_AC_SALE / CORRECTION movements
+      //    Per-item requestId keeps retries/double-saves from double-applying.
       for (const [itemId, ml] of Object.entries(nonAcEdits)) {
         if (!(Number(ml) >= 0)) continue;
-        await recordNonAcSale({ itemId, date: reportDate, quantityMl: Number(ml) });
+        const key = `bar-nonac:${itemId}:${reportDate}:${ml}`;
+        await recordNonAcSale({ itemId, date: reportDate, quantityMl: Number(ml), requestId: getOrCreateRequestId(key) });
+        clearRequestId(key);
       }
-      // 2. Physical closing edits → physical-count endpoint
+      // 3. Physical closing edits → physical-count endpoint
       for (const [itemId, ml] of Object.entries(physicalEdits)) {
         if (!(Number(ml) >= 0)) continue;
-        await setItemStock(itemId, Number(ml), { date: reportDate, notes: 'Physical count (report edit)' });
+        const key = `bar-physical:${itemId}:${reportDate}:${ml}`;
+        await setItemStock(itemId, Number(ml), { date: reportDate, notes: 'Physical count (report edit)', requestId: getOrCreateRequestId(key) });
+        clearRequestId(key);
       }
       // 3. Manual PDF-only rows
       await saveManualReportItems({ date: reportDate, items: manualItems });
@@ -563,9 +576,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                             <div className="font-medium text-gray-900">{r.name}</div>
                             <div className="text-gray-400">{r.brand} · {r.bottleSizeMl}ml</div>
                           </td>
-                          <td className="px-2 py-1.5 text-right">{fmtMl(r.openingMl)}</td>
-                          <td className="px-2 py-1.5 text-right text-green-700">{fmtMl(r.purchasedMl)}</td>
-                          <td className="px-2 py-1.5 text-right">{fmtMl(r.acSaleMl)}</td>
+                          <td className="px-2 py-1.5 text-right">{fmtRowMl(r, r.openingMl)}</td>
+                          <td className="px-2 py-1.5 text-right text-green-700">{fmtRowMl(r, r.purchasedMl)}</td>
+                          <td className="px-2 py-1.5 text-right">{fmtRowMl(r, r.acSaleMl)}</td>
                           <td className="px-2 py-1.5 text-right">
                             <input
                               type="number"
@@ -587,8 +600,8 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                               className={`w-20 px-1.5 py-1 text-right rounded border text-xs ${nonAcPriceEdits[r.id] !== undefined ? 'border-purple-400 bg-purple-50' : 'border-gray-200'}`}
                             />
                           </td>
-                          <td className="px-2 py-1.5 text-right text-orange-600">{fmtMl(r.wastageMl)}</td>
-                          <td className="px-2 py-1.5 text-right font-medium">{fmtMl(r.systemClosingMl)}</td>
+                          <td className="px-2 py-1.5 text-right text-orange-600">{fmtRowMl(r, r.wastageMl)}</td>
+                          <td className="px-2 py-1.5 text-right font-medium">{fmtRowMl(r, r.systemClosingMl)}</td>
                           <td className="px-2 py-1.5 text-right">
                             <input
                               type="number"
@@ -601,7 +614,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                             <div className="text-[9px] text-gray-400">{physVal !== '' ? fmtBtl(physVal, r.bottleSizeMl) : ''}</div>
                           </td>
                           <td className={`px-2 py-1.5 text-right ${Number(r.varianceMl) !== 0 && r.varianceMl != null ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
-                            {r.varianceMl != null ? fmtMl(r.varianceMl) : '—'}
+                            {r.varianceMl != null ? fmtRowMl(r, r.varianceMl) : '—'}
                           </td>
                           <td className="px-2 py-1.5 text-right">{fmtInr(r.stockValue)}</td>
                           <td className="px-2 py-1.5 text-right">{fmtInr(r.totalRevenue)}</td>

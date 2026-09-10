@@ -7,17 +7,25 @@
 // Bottle sizes and remaining stock are shown (single unified stock pool).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, Wine } from 'lucide-react';
 
 export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLoading, onSelect, onSkip, onClose }) {
   const [selectedId, setSelectedId] = useState(null);
+  const [wasOpen, setWasOpen] = useState(false);
 
-  useEffect(() => {
+  // Reset + pre-select the default bottle each time the picker opens, so the
+  // captain sees which bottle will be used without asking: the linked SKU
+  // (isDefault), else the 750ml bottle. (Adjust-state-during-render pattern.)
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
     if (isOpen) {
-      setSelectedId(null);
+      const def = (bottles || []).find((b) => b.isDefault && b.inventoryItemId)
+        || (bottles || []).find((b) => Number(b.bottleSize) === 750 && b.inventoryItemId)
+        || null;
+      setSelectedId(def ? def.inventoryItemId : null);
     }
-  }, [isOpen]);
+  }
 
   if (!isOpen) return null;
 
@@ -84,9 +92,9 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
                 Pour from which bottle?
               </p>
               <div className="space-y-2">
-                {bottles.map((bottle) => (
+                {bottles.map((bottle, idx) => (
                   <button
-                    key={bottle.inventoryItemId}
+                    key={bottle.inventoryItemId ?? `${bottle.label}-${idx}`}
                     onClick={() => setSelectedId(bottle.inventoryItemId)}
                     className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 transition-all ${
                       selectedId === bottle.inventoryItemId
@@ -127,7 +135,7 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
               onClick={onSkip}
               className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-black uppercase hover:bg-gray-50 transition-colors"
             >
-              Skip
+              {(bottles || []).some((b) => Number(b.bottleSize) === 750) ? 'Skip (750ml)' : 'Skip'}
             </button>
             <button
               onClick={handleConfirm}

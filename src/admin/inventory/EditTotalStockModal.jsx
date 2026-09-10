@@ -72,11 +72,13 @@ export function EditTotalStockModal({ open, item, date, onClose, onSaved }) {
 
       // 2. Update opening stock via an OPENING movement (append-only ledger)
       if (hasStockChange) {
-        const actionKey = `bar-edit-stock:${item.id}`;
-        const requestId = getOrCreateRequestId(actionKey);
         const newOpeningMl = bottleSize > 0
           ? Math.round(newOpeningBtl * bottleSize * 100) / 100
           : Math.round(newOpeningBtl * 100) / 100;
+        // Key includes the payload — same edit retries reuse it, a different
+        // value or date gets a fresh requestId.
+        const actionKey = `bar-edit-stock:${item.id}:${newOpeningMl}:${date || 'today'}`;
+        const requestId = getOrCreateRequestId(actionKey);
 
         await adjustStock({
           itemId: item.id,

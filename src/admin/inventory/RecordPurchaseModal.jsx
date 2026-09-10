@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo } from 'react';
-import { recordPurchase } from '../../services/barInventoryApi';
+import { recordPurchase, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
 import { createKitchenEntry } from '../../services/kitchenInventoryApi';
 import { getUnitOptions, convertToBaseUnit, normalizeUnit } from '../../shared/utils/unitConversion';
 
@@ -128,9 +128,13 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
 
     try {
       if (tab === 'bar') {
+        // Idempotency key scoped to item + payload — retries reuse it, a
+        // different quantity/cost gets a fresh one, success clears it.
+        const actionKey = `bar-purchase:${purchaseItemId}:${purchaseMode}:${purchaseMode === 'bottles' ? purchaseBottles : quantity}:${costPerBottle || 0}`;
         const body = {
           itemId: purchaseItemId,
           notes: notes || undefined,
+          requestId: getOrCreateRequestId(actionKey),
         };
         if (purchaseMode === 'bottles') {
           // Backend multiplies bottles by the item's master bottleSizeMl
@@ -141,6 +145,7 @@ export function RecordPurchaseModal({ open, item, items, tab, onClose, onSaved }
         if (Number(costPerBottle) > 0) body.costPerBottle = Number(costPerBottle);
 
         await recordPurchase(body);
+        clearRequestId(actionKey);
       } else {
         const baseUnit = selectedItem.unit || purchaseUnit;
         const { effectiveQty } = convertToBaseUnit(quantity, purchaseUnit || baseUnit, baseUnit);

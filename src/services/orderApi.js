@@ -2072,6 +2072,11 @@ export async function saveTransaction({
 
 }) {
 
+  // requestId is generated once and sent on every path (direct cloud POST,
+  // edge write, and any queued replay) so a retry after a lost response is
+  // deduplicated server-side instead of creating a second transaction.
+  const requestId = generateRequestId();
+
   const txnBody = {
 
     restaurantId, orderId, tableNumber, captainId, amount, method,
@@ -2080,7 +2085,7 @@ export async function saveTransaction({
 
     cgst, sgst, grandTotal, roundOff, tipAmount, sectionId, sectionTag,
 
-    billNumber, platform,
+    billNumber, platform, requestId,
 
   };
 
@@ -3472,6 +3477,8 @@ export async function printBill(orderId, { restaurantId, tableNumber, discountPe
       method: 'POST',
 
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+
+      signal: AbortSignal.timeout(15_000),
 
     });
 

@@ -66,6 +66,27 @@ export const SUMMARY_CARDS = [
   { key: 'todayUsage', label: "Today's Usage", color: 'text-orange-600' },
 ];
 
+// Beer/breezer items are served as whole bottles, never poured — display
+// pure bottle counts (floor for positives) instead of "bottles + ml".
+export const BEER_KEYWORDS = [
+  'beer', 'lager', 'ale', 'bira', 'carlsberg', 'budweiser',
+  'kingfisher', 'kf', 'coolberg', 'stok', 'draught', 'breezer',
+];
+
+export function isBeerItem(item) {
+  if (!item) return false;
+  const category = String(item.category?.name || item.category || '').toLowerCase();
+  if (category.includes('beer') || category.includes('breezer')) return true;
+  const name = String(item.name || '').toLowerCase();
+  return BEER_KEYWORDS.some((k) => name.includes(k));
+}
+
+export function fmtBeerBottles(ml, bottleSizeMl) {
+  const size = Number(bottleSizeMl) || 0;
+  if (size <= 0) return `${Math.round(Number(ml) || 0)} ml`;
+  return `${Math.trunc((Number(ml) || 0) / size)} btl`;
+}
+
 // Page sizes
 export const PAGE_SIZE = 10;
 

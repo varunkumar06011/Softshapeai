@@ -32,7 +32,6 @@ export default function VenueSectionView({
   isSyncing = false,
   refetch = null,
   extraTables = [],
-  onAddExtraTable = null,
   onRemoveExtraTable = null,
   compactMode = false,
 }) {
@@ -104,17 +103,6 @@ export default function VenueSectionView({
       {sectionTables.map((table) => (
         <div key={table.backendId || table.id} className="relative">
           <VenueTableCard table={table} sectionName={sectionName} onClick={() => onTableSelect && onTableSelect(table)} compactMode={compactMode} />
-          {/* Add Extra (+) button — on all non-cleaning tables (extra tables run concurrently with parent) */}
-          {onAddExtraTable && !['Cleaning', 'CLEANING'].includes(table.status) && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddExtraTable(table);
-              }}
-              className="absolute top-1 left-1 w-5 h-5 bg-green-500 text-white rounded-full flex items-center justify-center text-[10px] font-black hover:bg-green-600 z-20 shadow"
-              title={`Add extra session for table ${table.number}`}
-            >+</button>
-          )}
         </div>
       ))}
       {sectionExtraTables.map((table) => (

@@ -7373,74 +7373,6 @@ const CashierDashboard = ({ onLogout }) => {
 
   // ── Venue extra table helpers (shared between bar and restaurant sections) ──
 
-  const handleAddVenueExtraTable = (parentTable) => {
-
-    const localCount = extraTables.filter(et => et.baseBackendId === parentTable.backendId).length;
-
-    const serverExtraCount = (parentTable.orders || []).filter(o => o.isExtraTable).length;
-
-    const existingCount = Math.max(localCount, serverExtraCount);
-
-    const prefix = (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('family') ? 'F' :
-
-                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('parcel') ? 'P' :
-
-                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('gobox') ? 'GB' :
-
-                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('conference') ? 'C' :
-
-                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('room') ? 'R' :
-
-                   (parentTable.sectionName || parentTable.section?.name || '').toLowerCase().includes('pdr') ? 'PDR' :
-
-                   'V';
-
-    const extraId = existingCount === 0 ? `${prefix}${parentTable.number}-X` : `${prefix}${parentTable.number}-X${existingCount + 1}`;
-
-    const localOrderId = `extra-${extraId}-${Date.now()}`;
-
-    setExtraTables(prev => [...prev, {
-
-      id: extraId,
-
-      number: extraId,
-
-      backendId: parentTable.backendId,
-
-      baseBackendId: parentTable.backendId,
-
-      isExtra: true,
-
-      localOrderId,
-
-      status: 'Free',
-
-      sectionId: parentTable.sectionId,
-
-      section: parentTable.section,
-
-      sectionName: parentTable.sectionName,
-
-      sectionTag: parentTable.sectionTag,
-
-      kotHistory: [],
-
-      currentBill: 0,
-
-      activeOrder: null,
-
-      captainId: null,
-
-      guests: 0,
-
-      time: null,
-
-    }]);
-
-  };
-
-
-
   const handleRemoveVenueExtraTable = (extraTable) => {
 
     const extraItems = getAllOrderItems(extraTable);
@@ -10706,10 +10638,23 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleBottleSkip = () => {
     if (!bottlePickerItem) return;
-    // Clear sticky — user explicitly skipped bottle selection
     const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
-    if (itemId) stickyBottleRef.current[itemId] = undefined;
-    addToCart(bottlePickerItem, bottlePickerQty);
+    // Skip = use the picker's default bottle: the mapped SKU (750ml for peg
+    // items, same-size for bottle items like a takeaway 180). Only when no
+    // default exists do we fall back to a 750 — then sticky it.
+    const defaultBottle = (bottlePickerBottles || []).find(
+      (b) => b.isDefault && b.inventoryItemId,
+    ) || (bottlePickerBottles || []).find(
+      (b) => Number(b.bottleSize) === 750 && b.inventoryItemId,
+    );
+    if (defaultBottle) {
+      if (itemId) setStickyBottle(itemId, defaultBottle.inventoryItemId);
+      addToCart(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: defaultBottle.inventoryItemId });
+    } else {
+      // No usable SKU — leave the pour unset; backend resolves the linked item.
+      if (itemId) stickyBottleRef.current[itemId] = undefined;
+      addToCart(bottlePickerItem, bottlePickerQty);
+    }
     setShowBottlePicker(false);
     setBottlePickerItem(null);
     setBottlePickerBottles([]);
@@ -13372,8 +13317,6 @@ const CashierDashboard = ({ onLogout }) => {
                                 refetch={activeOutlet === 'bar' || activeOutlet === 'both' ? refetchBarTables : refetchRestaurantTables}
 
                                 extraTables={extraTables}
-
-                                onAddExtraTable={handleAddVenueExtraTable}
 
                                 onRemoveExtraTable={handleRemoveVenueExtraTable}
 

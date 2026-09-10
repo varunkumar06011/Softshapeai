@@ -56,7 +56,7 @@ export function StockAdjustmentModal({ open, item, items, tab, date, defaultType
     const q = itemSearch.trim().toLowerCase();
     if (!q) return searchableItems;
     return searchableItems.filter((it) => {
-      const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
+      const name = it.itemName || it.name || it.menuItem?.name;
       return name?.toLowerCase().includes(q);
     });
   }, [searchableItems, itemSearch, tab]);
@@ -124,14 +124,15 @@ export function StockAdjustmentModal({ open, item, items, tab, date, defaultType
     setSaving(true);
     setError(null);
 
-    // Idempotency key scoped to the actual selected item id.
-    const actionKey = `bar-adjust:${adjustItemId}`;
-    const requestId = tab === 'bar' ? getOrCreateRequestId(actionKey) : undefined;
     const movementDate = date || getKolkataDateString();
     const bottleSizeMl = Number(selectedItem.bottleSizeMl) || 0;
     const amountMl = openingUnit === 'btl' && bottleSizeMl > 0
       ? Math.round(amountNum * bottleSizeMl * 100) / 100
       : amountNum;
+    // Idempotency key scoped to the full operation — a retry of the same edit
+    // reuses it, a genuinely different edit gets a fresh one, success clears it.
+    const actionKey = `bar-adjust:${adjustItemId}:${adjustType}:${amountMl}:${movementDate}`;
+    const requestId = tab === 'bar' ? getOrCreateRequestId(actionKey) : undefined;
 
     try {
       if (tab === 'bar') {
@@ -146,7 +147,9 @@ export function StockAdjustmentModal({ open, item, items, tab, date, defaultType
               : { quantityMl: amountMl }),
             reason: `${reason}${notes ? ': ' + notes : ''}` || undefined,
             notes: notes || undefined,
+            requestId,
           });
+          clearRequestId(actionKey);
         } else {
           // ADD / REMOVE / WASTAGE / OPENING → adjust-stock movement
           let adjustmentType;
@@ -277,11 +280,12 @@ export function StockAdjustmentModal({ open, item, items, tab, date, defaultType
                   </div>
                 ) : (
                   filteredPickerItems.map((it) => {
-                    const name = it.itemName || (tab === 'bar' ? it.menuItem?.name : it.name);
+                    const name = it.itemName || it.name || it.menuItem?.name;
                     const stock = tab === 'bar'
                       ? (Number(it.systemClosingMl ?? it.currentStockMl) || 0)
                       : (Number(it.currentStock) || 0);
                     const itUnit = tab === 'bar' ? 'ml' : it.unit;
+                    const itBottleSize = Number(it.bottleSizeMl) || 0;
                     return (
                       <button
                         key={it.id}
@@ -292,6 +296,9 @@ export function StockAdjustmentModal({ open, item, items, tab, date, defaultType
                           <div className="text-sm font-semibold text-gray-900">{name}</div>
                           <div className="text-xs text-gray-500 mt-0.5">
                             Current: {stock.toFixed(2)} {itUnit}
+                            {tab === 'bar' && itBottleSize > 0 && (
+                              <span className="ml-1 text-gray-400">({(stock / itBottleSize).toFixed(2)} btl)</span>
+                            )}
                           </div>
                         </div>
                         <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -820,7 +820,12 @@ export default function CaptainApp({ onLogout }) {
           const data = await edgeFetch('/api/edge/sections', { timeoutMs: EDGE_READ_TIMEOUT_MS });
           const rawSections = Array.isArray(data) ? data : data?.sections || [];
           if (!cancelled) {
-            setFetchedSections(rawSections);
+            // Reuse the previous array when the payload is identical so
+            // downstream effects keyed on effectiveSections don't re-fire on
+            // every refetch (e.g. edge reconnect flaps).
+            setFetchedSections(prev =>
+              JSON.stringify(prev) === JSON.stringify(rawSections) ? prev : rawSections
+            );
             setSectionsFetchFailed(false);
           }
           return true;
@@ -840,7 +845,10 @@ export default function CaptainApp({ onLogout }) {
         }
         const data = await r.json();
         if (!cancelled) {
-          setFetchedSections(Array.isArray(data) ? data : data.sections || []);
+          const nextSections = Array.isArray(data) ? data : data.sections || [];
+          setFetchedSections(prev =>
+            JSON.stringify(prev) === JSON.stringify(nextSections) ? prev : nextSections
+          );
           setSectionsFetchFailed(false);
         }
         return true;
@@ -889,7 +897,7 @@ export default function CaptainApp({ onLogout }) {
   // network call. This prevents the "Loading sections..." spinner from getting
   // stuck indefinitely when tables are present but the sections endpoint fails.
   const derivedSections = useMemo(() => {
-    if (fetchedSections.length > 0) return [];
+    if (fetchedSections.length > 0) return { sig: '', value: [] };
     const seen = new Map();
     for (const t of [...(tables || []), ...(barTables || [])]) {
       const sec = t?.section;
@@ -903,11 +911,21 @@ export default function CaptainApp({ onLogout }) {
         sectionTag: sec.sectionTag || (sec.venueId ? `venue-${sec.venueId}` : sec.name),
       });
     }
-    return Array.from(seen.values());
+    const value = Array.from(seen.values());
+    return { sig: value.map(s => `${s.id}:${s.sectionTag}`).join('|'), value };
   }, [fetchedSections, tables, barTables]);
 
+  // Publish a stable derived-sections array. tables/barTables change identity on
+  // every background sync; only swap the published array when the section set
+  // actually changed so downstream effects/memos keyed on effectiveSections
+  // don't re-fire on every sync (that was the session/cart reset bug).
+  const [stableDerived, setStableDerived] = useState({ sig: '', value: [] });
+  if (stableDerived.sig !== derivedSections.sig) {
+    setStableDerived(derivedSections);
+  }
+
   // Effective sections: fetched from API, or derived from tables as fallback.
-  const effectiveSections = fetchedSections.length > 0 ? fetchedSections : derivedSections;
+  const effectiveSections = fetchedSections.length > 0 ? fetchedSections : stableDerived.value;
 
   const { menuItems: restaurantMenu, setMenuItems: setRestaurantMenu, categories: restaurantCategories, loading: restaurantMenuLoading, refreshMenu } = useMenuSync();
 
@@ -1683,7 +1701,9 @@ export default function CaptainApp({ onLogout }) {
   useEffect(() => { activeTablesRef.current = activeTables; }, [activeTables]);
 
   const activeTable = useMemo(() =>
-    activeTables.find(t => t.id === activeTableId),
+    // activeTableId is persisted in localStorage and rehydrates as a string
+    // while t.id is a number — compare as strings so the lookup survives reloads.
+    activeTables.find(t => String(t.id) === String(activeTableId)),
   [activeTables, activeTableId]);
 
 
@@ -2171,10 +2191,14 @@ export default function CaptainApp({ onLogout }) {
         localStorage.setItem(getTenantScopedKey('captain_recently_terminated'), JSON.stringify(recentlyTerminatedRef.current));
       } catch {}
       setTimeout(() => terminatedTableIdsRef.current.delete(tableId), 15000);
-      // Clear cart for this table from localStorage-backed state
+      // Clear cart for this table from localStorage-backed state.
+      // tableCarts is keyed by display id (table.id); tableId here is the
+      // backend id — resolve both so the draft is actually removed.
       setTableCarts(prev => {
         const next = { ...prev };
+        const settled = activeTablesRef.current.find(t => String(t.backendId) === String(tableId));
         delete next[tableId];
+        if (settled) delete next[settled.id];
         return next;
       });
       // If this is the currently active table, reset all session state
@@ -2635,19 +2659,30 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-  // Reset tableSubCategory when switching outlets — use first fetched section
+  // Keep tableSubCategory pointed at a real section for the active outlet.
+  // Render-phase correction (React's "adjust state during render" pattern):
+  // only fires when the current value no longer resolves to a section — a
+  // background sync must never reset the session or the captain's selection.
+  const outletSections = effectiveSections.filter(s => {
+    const sectionOutlet = isBarLikeVenue(s.venue?.venueType) ? 'bar' : 'restaurant';
+    return activeOutlet === 'both' || sectionOutlet === activeOutlet;
+  });
+  const fallbackSection = outletSections[0] || effectiveSections[0];
+  if (
+    fallbackSection &&
+    !outletSections.some(s => (sectionTagToSource[s.sectionTag] || s.name) === tableSubCategory)
+  ) {
+    setTableSubCategory(sectionTagToSource[fallbackSection.sectionTag] || fallbackSection.name);
+  }
+
+  // Clear the active session ONLY when the outlet genuinely switches
+  // (restaurant ↔ bar) so restaurant cart items don't bleed into bar and vice
+  // versa. Background syncs that rebuild effectiveSections must never wipe the
+  // captain's open table session and draft cart.
+  const prevOutletRef = useRef(activeOutlet);
   useEffect(() => {
-    const matchingSection = effectiveSections.find(s => {
-      const sectionOutlet = isBarLikeVenue(s.venue?.venueType) ? 'bar' : 'restaurant';
-      if (activeOutlet === 'both') return true;
-      return sectionOutlet === activeOutlet;
-    }) || effectiveSections[0];
-    if (matchingSection) {
-      const sourceKey = sectionTagToSource[matchingSection.sectionTag] || matchingSection.name;
-      setTableSubCategory(sourceKey);
-    }
-
-
+    if (prevOutletRef.current === activeOutlet) return;
+    prevOutletRef.current = activeOutlet;
 
     // Clear the active session so restaurant cart items don't bleed into bar (and vice versa)
 
@@ -2673,9 +2708,7 @@ export default function CaptainApp({ onLogout }) {
 
     setKotError(null);
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-
-  }, [activeOutlet, effectiveSections, sectionTagToSource]);
+  }, [activeOutlet]);
 
 
 
@@ -2735,7 +2768,13 @@ export default function CaptainApp({ onLogout }) {
 
       const cleaned = Object.fromEntries(
 
-        Object.entries(prev).filter(([k]) => validIds.has(k))
+        // Keep carts whose table still exists, plus any cart holding unsent
+
+        // (Pending) items — a transient refetch must not drop a live draft.
+
+        Object.entries(prev).filter(([k, items]) =>
+
+          validIds.has(k) || (Array.isArray(items) && items.some(i => i.s === 'Pending')))
 
       );
 
@@ -3086,7 +3125,13 @@ export default function CaptainApp({ onLogout }) {
         });
       }
     }
-    setTableCarts(prev => ({ ...prev, [table.id]: [] }));
+    // Preserve a draft cart with unsent (Pending) items for this table — e.g.
+    // after an accidental close or a background sync reset — instead of wiping it.
+    setTableCarts(prev => {
+      const existing = prev[table.id];
+      if (Array.isArray(existing) && existing.some(i => i.s === 'Pending')) return prev;
+      return { ...prev, [table.id]: [] };
+    });
     stickyBottleRef.current = {}; // clear sticky bottle selections on table switch
     lastConfirmedItemsRef.current = [];
     activeOrderIdRef.current = null;
@@ -3223,26 +3268,17 @@ export default function CaptainApp({ onLogout }) {
             setBottlePickerBottles(res.bottles);
             setShowBottlePicker(true);
           } else {
-            // No bottles in stock — show empty picker with Skip
-            setBottlePickerItem(liquorQtyItem);
-            setBottlePickerQty(qty);
-            setBottlePickerBottles([]);
-            setShowBottlePicker(true);
+            // No bottles to pick — add directly; the backend resolves the
+            // deduction (same-brand 750ml when available).
+            addItemToSession(liquorQtyItem, qty);
           }
         })
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem failed:', err?.message);
           setBottlePickerLoading(false);
-          // Offline — if we have sticky memory, use it (best effort)
-          if (remembered) {
-            addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-          } else {
-            // No sticky and offline — show picker with empty bottles (Skip)
-            setBottlePickerItem(liquorQtyItem);
-            setBottlePickerQty(qty);
-            setBottlePickerBottles([]);
-            setShowBottlePicker(true);
-          }
+          // Offline — if we have sticky memory, use it (best effort);
+          // otherwise add without a pour override and let the backend resolve.
+          addItemToSession(liquorQtyItem, qty, remembered ? { pourFromInventoryItemId: remembered } : undefined);
         });
       setLiquorQtyItem(null);
       return;
@@ -3268,10 +3304,24 @@ export default function CaptainApp({ onLogout }) {
 
   const handleBottleSkip = () => {
     if (!bottlePickerItem) return;
-    // Clear sticky — user explicitly skipped bottle selection
     const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
-    if (itemId) stickyBottleRef.current[itemId] = undefined;
-    addItemToSession(bottlePickerItem, bottlePickerQty);
+    // Skip = use the picker's default bottle: the mapped SKU (750ml for peg
+    // items, same-size for bottle items like a takeaway 180). Only when no
+    // default exists do we fall back to a 750 — then sticky it so the picker
+    // doesn't reopen on the next tap.
+    const defaultBottle = (bottlePickerBottles || []).find(
+      (b) => b.isDefault && b.inventoryItemId,
+    ) || (bottlePickerBottles || []).find(
+      (b) => Number(b.bottleSize) === 750 && b.inventoryItemId,
+    );
+    if (defaultBottle) {
+      if (itemId) setStickyBottle(itemId, defaultBottle.inventoryItemId);
+      addItemToSession(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: defaultBottle.inventoryItemId });
+    } else {
+      // No usable SKU — leave the pour unset; backend resolves the linked item.
+      if (itemId) stickyBottleRef.current[itemId] = undefined;
+      addItemToSession(bottlePickerItem, bottlePickerQty);
+    }
     setShowBottlePicker(false);
     setBottlePickerItem(null);
     setBottlePickerBottles([]);
@@ -3404,24 +3454,16 @@ export default function CaptainApp({ onLogout }) {
               setShowBottlePicker(true);
             }
           } else {
-            setBottlePickerItem(item);
-            setBottlePickerQty(1);
-            setBottlePickerBottles([]);
-            setShowBottlePicker(true);
+            // No bottles to pick — add directly; backend resolves the deduction.
+            addItemToSessionRef.current(item, 1);
           }
         })
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem (directAdd) failed:', err?.message);
           setBottlePickerLoading(false);
-          // Offline — use sticky memory as best-effort fallback
-          if (remembered) {
-            addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
-          } else {
-            setBottlePickerItem(item);
-            setBottlePickerQty(1);
-            setBottlePickerBottles([]);
-            setShowBottlePicker(true);
-          }
+          // Offline — use sticky memory as best-effort fallback; otherwise
+          // add without a pour override and let the backend resolve it.
+          addItemToSessionRef.current(item, 1, remembered ? { pourFromInventoryItemId: remembered } : undefined);
         });
     } else {
       addItemToSessionRef.current(item, 1);
@@ -3510,19 +3552,20 @@ export default function CaptainApp({ onLogout }) {
     }
 
     if (activeTableId) {
-      // Ensure the cart for this table starts empty so stale items never appear.
-      // (If the table truly has a live session, the sync service will populate it via socket.)
+      // Clear stale residue but preserve unsent (Pending) draft items — a
+      // background sync or re-open must not destroy the captain's in-progress
+      // cart. (If the table truly has a live session, the sync service will
+      // populate it via socket.)
       setTableCarts(prev => {
-        const hadCart = prev[activeTableId] && prev[activeTableId].length > 0;
-        if (hadCart) {
-          return { ...prev, [activeTableId]: [] };
-        }
-        return prev;
+        const existing = prev[activeTableId];
+        if (!existing || existing.length === 0) return prev;
+        if (existing.some(i => i.s === 'Pending')) return prev;
+        return { ...prev, [activeTableId]: [] };
       });
 
       // Re-seed from live state so second KOT on a reloaded session works correctly
       const liveTableEntry = activeTables.find(
-        t => t.backendId === activeTableId || t.id === activeTableId
+        t => String(t.backendId) === String(activeTableId) || String(t.id) === String(activeTableId)
       );
 
       const liveOrder = liveTableEntry?.activeOrder;
@@ -3894,7 +3937,7 @@ export default function CaptainApp({ onLogout }) {
         } // end fallback local print
 
         // Now call the API with the correct localPrinted flag.
-        const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+        const activeTableEntry = activeTables.find(t => String(t.id) === String(activeTableId) || String(t.backendId) === String(activeTableId));
         const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
 
         try {
@@ -4071,7 +4114,7 @@ export default function CaptainApp({ onLogout }) {
         const edgeKotNumToSend = edgeHasPrintedIds ? edgePreReservedKotNumber : null;
 
         if (existingOrderId) {
-          const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+          const activeTableEntry = activeTables.find(t => String(t.id) === String(activeTableId) || String(t.backendId) === String(activeTableId));
           const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
           const response = await updateOrderItems(existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true, kotAbortRef.current?.signal);
           savedOrder = response?.order || response;
@@ -4100,7 +4143,7 @@ export default function CaptainApp({ onLogout }) {
             if (createErr.statusCode === 409 && createErr.existingOrderId) {
               console.warn('[KOT] Table already has an active order, retrying as update:', createErr.existingOrderId);
               activeOrderIdRef.current = createErr.existingOrderId;
-              const activeTableEntry = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+              const activeTableEntry = activeTables.find(t => String(t.id) === String(activeTableId) || String(t.backendId) === String(activeTableId));
               const lastUpdatedAt = activeTableEntry?.activeOrder?.updatedAt;
               const response = await updateOrderItems(createErr.existingOrderId, apiItems, requestId, currentCaptain?.name || undefined, false, null, lastUpdatedAt, 12000, edgeKotNumToSend, activeTableEntry?.backendId || activeTableId, edgeHasPrintedIds, edgeKotIdsToSend, currentCaptain?.id || undefined, true, kotAbortRef.current?.signal);
               savedOrder = response?.order || response;
@@ -4807,7 +4850,7 @@ export default function CaptainApp({ onLogout }) {
   const requestFinalBill = async () => {
 
     // Re-fetch from live tables in case state is stale
-    const liveTable = activeTables.find(t => t.id === activeTableId || t.backendId === activeTableId);
+    const liveTable = activeTables.find(t => String(t.id) === String(activeTableId) || String(t.backendId) === String(activeTableId));
     const orderId = liveTable?.activeOrder?.id;
 
     const previousStatus = liveTable?.status || TABLE_STATUS.PREPARING;
@@ -4816,7 +4859,7 @@ export default function CaptainApp({ onLogout }) {
 
     // 1. Update UI immediately
     setActiveTables(prev => prev.map(t => {
-      if (t.id === activeTableId || t.backendId === activeTableId) {
+      if (String(t.id) === String(activeTableId) || String(t.backendId) === String(activeTableId)) {
 
         return { ...t, status: TABLE_STATUS.BILLING };
 
@@ -4866,7 +4909,7 @@ export default function CaptainApp({ onLogout }) {
       addNotification('Cannot request bill — no active order found. Refresh and retry.', 'error');
 
       setActiveTables(prev => prev.map(t => {
-        if (t.id === activeTableId || t.backendId === activeTableId) {
+        if (String(t.id) === String(activeTableId) || String(t.backendId) === String(activeTableId)) {
           return { ...t, status: previousStatus };
         }
         return t;

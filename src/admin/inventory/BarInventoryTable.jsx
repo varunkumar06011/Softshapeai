@@ -16,7 +16,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMemo, useState } from 'react';
-import { setItemStock } from '../../services/barInventoryApi';
+import { setItemStock, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
+import { isBeerItem as isBeerRow } from './inventoryConstants';
 
 function fmtQty(n) {
   if (n == null || Number.isNaN(Number(n))) return '0';
@@ -29,12 +30,26 @@ function fmtInr(n) {
   return `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 }
 
-function fmtMlAsBottles(ml, bottleSizeMl) {
+// Beers are never poured — display whole-bottle counts only.
+function fmtMlAsBottles(ml, bottleSizeMl, isBeer = false) {
   const totalMl = Number(ml) || 0;
   const size = Number(bottleSizeMl) || 0;
   if (size <= 0) return `${fmtQty(totalMl)} ml`;
+  if (isBeer) return `${fmtQty(Math.trunc(totalMl / size))} btl`;
   const bottles = totalMl / size;
   return `${fmtQty(Math.round(bottles * 100) / 100)} btl`;
+}
+
+// Group key: brand (or name) with size words stripped + case normalized, so
+// "100 PIPERS", "100 Pipers 750ml" etc. collapse into one brand group.
+function brandKey(item) {
+  const base = String(item?.brand || item?.name || 'other')
+    .toLowerCase()
+    .replace(/\s*\d+\s*(?:ml|l(?:tr|itre|iter)?|l)\b/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return base || 'other';
 }
 
 export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView, onRefresh, date, onDelete, onEditStock }) {
@@ -68,12 +83,14 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
     if (!groupByBrandMode) return null;
     const groups = new Map();
     for (const item of filtered) {
-      const brand = item.brand || item.name || 'Other';
-      if (!groups.has(brand)) {
-        groups.set(brand, { brand, category: item.category, items: [], totals: { opening: 0, purchased: 0, acSale: 0, nonAcSale: 0, wastage: 0, closing: 0, closingValue: 0 } });
+      const key = brandKey(item);
+      if (!groups.has(key)) {
+        groups.set(key, { brand: item.brand || item.name || 'Other', category: item.category, items: [], sizeCounts: new Map(), totals: { opening: 0, purchased: 0, acSale: 0, nonAcSale: 0, wastage: 0, closing: 0, closingValue: 0 } });
       }
-      const g = groups.get(brand);
+      const g = groups.get(key);
       g.items.push(item);
+      const size = Number(item.bottleSizeMl) || 0;
+      g.sizeCounts.set(size, (g.sizeCounts.get(size) || 0) + (Number(item.systemClosingMl) || 0));
       g.totals.opening += Number(item.openingMl) || 0;
       g.totals.purchased += Number(item.purchasedMl) || 0;
       g.totals.acSale += Number(item.acSaleMl) || 0;
@@ -110,7 +127,9 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
     const physicalMl = Math.round(newBottles * item.bottleSizeMl);
     setSaving(true);
     try {
-      await setItemStock(item.id, physicalMl, { date, notes: 'Physical count (inline edit)' });
+      const key = `bar-physical:${item.id}:${date || 'today'}:${physicalMl}`;
+      await setItemStock(item.id, physicalMl, { date, notes: 'Physical count (inline edit)', requestId: getOrCreateRequestId(key) });
+      clearRequestId(key);
       setEditingClosing(null);
       if (onRefresh) onRefresh();
     } catch (e) {
@@ -135,6 +154,7 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
   // ── Row renderer ─────────────────────────────────────────────────────────
   const renderRow = (item, sno, indent = false) => {
     const isEditing = editingClosing === item.id;
+    const beer = isBeerRow(item);
     return (
       <tr key={item.id} className={`border-b border-gray-100 hover:bg-gray-50 ${indent ? 'bg-gray-50/50' : ''}`}>
         <td className="px-3 py-2 text-sm text-gray-500">{sno}</td>
@@ -144,11 +164,11 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
         <td className="px-3 py-2 text-sm text-gray-600">{item.brand}</td>
         <td className="px-3 py-2 text-sm text-gray-600">{item.category}</td>
         <td className="px-3 py-2 text-sm text-gray-600">{item.bottleSizeMl}ml</td>
-        <td className="px-3 py-2 text-sm text-right text-gray-700">{fmtMlAsBottles(item.openingMl, item.bottleSizeMl)}</td>
-        <td className="px-3 py-2 text-sm text-right text-green-700">{fmtMlAsBottles(item.purchasedMl, item.bottleSizeMl)}</td>
-        <td className="px-3 py-2 text-sm text-right text-gray-700">{fmtMlAsBottles(item.totalStockMl, item.bottleSizeMl)}</td>
-        <td className="px-3 py-2 text-sm text-right text-blue-700">{fmtMlAsBottles(item.acSaleMl, item.bottleSizeMl)}</td>
-        <td className="px-3 py-2 text-sm text-right text-purple-700">{fmtMlAsBottles(item.nonAcSaleMl, item.bottleSizeMl)}</td>
+        <td className="px-3 py-2 text-sm text-right text-gray-700">{fmtMlAsBottles(item.openingMl, item.bottleSizeMl, beer)}</td>
+        <td className="px-3 py-2 text-sm text-right text-green-700">{fmtMlAsBottles(item.purchasedMl, item.bottleSizeMl, beer)}</td>
+        <td className="px-3 py-2 text-sm text-right text-gray-700">{fmtMlAsBottles(item.totalStockMl, item.bottleSizeMl, beer)}</td>
+        <td className="px-3 py-2 text-sm text-right text-blue-700">{fmtMlAsBottles(item.acSaleMl, item.bottleSizeMl, beer)}</td>
+        <td className="px-3 py-2 text-sm text-right text-purple-700">{fmtMlAsBottles(item.nonAcSaleMl, item.bottleSizeMl, beer)}</td>
         <td className="px-3 py-2 text-sm text-right font-semibold text-gray-800">
           {isEditing ? (
             <div className="flex items-center gap-1 justify-end">
@@ -181,10 +201,10 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
               className="hover:underline"
               title="Click to enter physical count"
             >
-              {fmtMlAsBottles(item.systemClosingMl, item.bottleSizeMl)}
+              {fmtMlAsBottles(item.systemClosingMl, item.bottleSizeMl, beer)}
               {item.varianceMl != null && Number(item.varianceMl) !== 0 && (
                 <span className={`ml-1 text-xs ${Number(item.varianceMl) < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  ({Number(item.varianceMl) > 0 ? '+' : ''}{fmtMlAsBottles(item.varianceMl, item.bottleSizeMl)})
+                  ({Number(item.varianceMl) > 0 ? '+' : ''}{fmtMlAsBottles(item.varianceMl, item.bottleSizeMl, beer)})
                 </span>
               )}
             </button>
@@ -325,7 +345,15 @@ function FragmentGroup({ group, expanded, onToggle, renderRow, snoRef }) {
         <td className="px-3 py-2 text-sm text-gray-500">{expanded ? '▾' : '▸'}</td>
         <td className="px-3 py-2 text-sm font-bold text-gray-800" colSpan={2}>{group.brand}</td>
         <td className="px-3 py-2 text-sm text-gray-600">{group.category}</td>
-        <td className="px-3 py-2 text-sm text-gray-400">{group.items.length} size{group.items.length !== 1 ? 's' : ''}</td>
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap gap-1" title={`${group.items.length} size${group.items.length !== 1 ? 's' : ''}`}>
+            {[...group.sizeCounts.entries()].sort((a, b) => a[0] - b[0]).map(([size, ml]) => (
+              <span key={size} className="px-1 py-0.5 text-xs bg-gray-100 text-gray-700 rounded whitespace-nowrap">
+                {size}ml: {fmtQty(Math.trunc(ml / size))} btl
+              </span>
+            ))}
+          </div>
+        </td>
         <td className="px-3 py-2 text-sm text-right text-gray-500">{fmtQty(t.opening)} ml</td>
         <td className="px-3 py-2 text-sm text-right text-green-700">{fmtQty(t.purchased)} ml</td>
         <td className="px-3 py-2 text-sm text-right text-gray-500">{fmtQty(t.opening + t.purchased)} ml</td>

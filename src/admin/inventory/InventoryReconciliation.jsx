@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../../services/apiConfig';
-import { setItemStock } from '../../services/barInventoryApi';
+import { setItemStock, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
 import { Loader2, RefreshCw, AlertTriangle, CheckCircle, Search } from 'lucide-react';
 
@@ -59,7 +59,9 @@ export function InventoryReconciliation() {
     try {
       for (const [itemId, ml] of entries) {
         if (!(Number(ml) >= 0)) continue;
-        await setItemStock(itemId, Number(ml), { date: snapshotDate, notes: 'Physical count (reconciliation)' });
+        const key = `bar-physical:${itemId}:${snapshotDate}:${ml}`;
+        await setItemStock(itemId, Number(ml), { date: snapshotDate, notes: 'Physical count (reconciliation)', requestId: getOrCreateRequestId(key) });
+        clearRequestId(key);
       }
       await load();
     } catch (err) {

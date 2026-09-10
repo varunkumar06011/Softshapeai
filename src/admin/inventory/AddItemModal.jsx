@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { createInventoryItem, fetchUnlinkedItems } from '../../services/barInventoryApi';
+import { createInventoryItem, fetchUnlinkedItems, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
 import { createKitchenItem, createKitchenEntry } from '../../services/kitchenInventoryApi';
 
 export function AddItemModal({ open, onClose, tab, onSaved }) {
@@ -130,6 +130,9 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
 
     setSaving(true);
     setError(null);
+    // Idempotency key tied to the item identity + payload — retries reuse it,
+    // a corrected create (different size/opening) gets a fresh one.
+    const actionKey = `bar-item-create:${selectedMenuItemId || displayName.trim().toLowerCase()}:${bottleSize}:${openingStockNum}`;
     try {
       await createInventoryItem({
         menuItemId: selectedMenuItemId || undefined,
@@ -139,9 +142,11 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
         bottleSizeMl: Number(bottleSize),
         openingStockBottles: openingStockNum,
         reorderLevelBottles: reorderLevelNum,
+        requestId: getOrCreateRequestId(actionKey),
         ...(costPerBottle !== '' && { purchaseRate: Number(costPerBottle) }),
         ...(sellingPricePerMl !== '' && { sellingPricePerMl: Number(sellingPricePerMl) }),
       });
+      clearRequestId(actionKey);
       onSaved?.();
       handleClose();
     } catch (err) {
