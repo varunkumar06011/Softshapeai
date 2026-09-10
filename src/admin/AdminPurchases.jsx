@@ -86,6 +86,20 @@ export default function AdminPurchases() {
   const [pendingVendorRowIndex, setPendingVendorRowIndex] = useState(null);
   const [backendOnline, setBackendOnline] = useState(isBackendReachable());
 
+  // ── Vendor ledger (per-date) state ──────────────────────────────────────────
+  // Editable daily ledger: Opening + Purchases − Payments = Closing.
+  // Closing carries forward as the next day's Opening (backend cascades on save).
+  // Purchases are hybrid: manual entry + Daily Entry totals (added by backend).
+  const [ledgerDate, setLedgerDate] = useState(getKolkataDateString());
+  const [ledgerRows, setLedgerRows] = useState([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerError, setLedgerError] = useState('');
+  // Per-vendor editable drafts: { [vendorId]: { opening, purchases, payments } }
+  const [ledgerDrafts, setLedgerDrafts] = useState({});
+  // Save status per vendor: { [vendorId]: { status: 'saving'|'saved'|'error', msg } }
+  const [ledgerSaving, setLedgerSaving] = useState({});
+  const [ledgerSearch, setLedgerSearch] = useState('');
+
   // Per-tenant, per-outlet, per-date draft key — prevents cross-tenant/cross-outlet leakage
   const getDraftKey = useCallback((outlet, date) =>
     `dailyPurchaseDraft_${restaurant?.id || user?.id || 'unknown'}_${outlet || 'all'}_${date}`,
@@ -264,13 +278,39 @@ export default function AdminPurchases() {
     }
   }, []);
 
+  // ── Load vendor ledger (per-date) ────────────────────────────────────────────
+  // Fetches ledger rows and initializes editable drafts from the loaded data.
+  const loadVendorLedger = useCallback(async (date) => {
+    setLedgerLoading(true);
+    setLedgerError('');
+    try {
+      const data = await apiFetch(`/api/vendor-ledger?date=${date}`, { timeout: API_TIMEOUT_DEFAULT_MS });
+      setLedgerRows(data || []);
+      // Initialize editable drafts from loaded data (manual portions only)
+      const drafts = {};
+      for (const r of (data || [])) {
+        drafts[r.vendorId] = {
+          opening: String(r.openingBalance),
+          purchases: String(r.manualPurchases ?? 0),
+          payments: String(r.payments),
+        };
+      }
+      setLedgerDrafts(drafts);
+    } catch (err) {
+      setLedgerError(err.message || 'Failed to load vendor ledger');
+      setLedgerRows([]);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (view === 'vendors') loadVendors();
+    if (view === 'vendors') { loadVendors(); loadVendorLedger(ledgerDate); }
     else if (view === 'po-grid') loadPOs();
     else if (view === 'vendor-detail' && selectedVendorId) loadVendorDetail(selectedVendorId);
     else if (view === 'po-detail' && selectedPOId) loadPODetail(selectedPOId);
     else if (view === 'daily-entry') loadVendors();
-  }, [view, selectedVendorId, selectedPOId, loadVendors, loadPOs, loadVendorDetail, loadPODetail]);
+  }, [view, selectedVendorId, selectedPOId, ledgerDate, loadVendors, loadVendorLedger, loadPOs, loadVendorDetail, loadPODetail]);
 
   const showSuccess = (msg) => {
     setSuccess(msg);
@@ -319,6 +359,79 @@ export default function AdminPurchases() {
       setSaving(false);
     }
   };
+
+  // ── Vendor Ledger (per-date) inline editing ──────────────────────────────────
+  // Each row has editable Opening, Purchases (manual), and Payments fields.
+  // Closing = Opening + (manual Purchases + Daily Entry total) − Payments.
+  // On Save, PUT /api/vendor-ledger/:vendorId persists the values and cascades
+  // the new closing forward as the opening of all subsequent existing entries.
+  const updateLedgerDraft = (vendorId, field, value) => {
+    setLedgerDrafts((prev) => ({
+      ...prev,
+      [vendorId]: { ...(prev[vendorId] || {}), [field]: value },
+    }));
+  };
+
+  // Live closing calculation from the draft + the row's Daily Entry total.
+  const computeDraftClosing = (vendorId, row) => {
+    const draft = ledgerDrafts[vendorId] || {};
+    const opening = parseFloat(draft.opening) || 0;
+    const manualPurchases = parseFloat(draft.purchases) || 0;
+    const dailyEntry = row?.dailyEntryPurchases || 0;
+    const payments = parseFloat(draft.payments) || 0;
+    return round2(opening + manualPurchases + dailyEntry - payments);
+  };
+
+  const handleLedgerSave = async (vendorId) => {
+    const draft = ledgerDrafts[vendorId] || {};
+    const opening = parseFloat(draft.opening) || 0;
+    const purchases = parseFloat(draft.purchases) || 0;
+    const payments = parseFloat(draft.payments) || 0;
+    setLedgerError('');
+    setLedgerSaving((prev) => ({ ...prev, [vendorId]: { status: 'saving' } }));
+    try {
+      await apiFetch(`/api/vendor-ledger/${vendorId}`, {
+        method: 'PUT',
+        timeout: API_TIMEOUT_DEFAULT_MS,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: ledgerDate, openingBalance: opening, purchases, payments }),
+      });
+      setLedgerSaving((prev) => ({ ...prev, [vendorId]: { status: 'saved' } }));
+      await loadVendorLedger(ledgerDate);
+      setTimeout(() => {
+        setLedgerSaving((prev) => {
+          if (prev[vendorId]?.status === 'saved') {
+            const next = { ...prev }; delete next[vendorId]; return next;
+          }
+          return prev;
+        });
+      }, 1500);
+    } catch (err) {
+      setLedgerSaving((prev) => ({ ...prev, [vendorId]: { status: 'error', msg: err.message } }));
+      setLedgerError(err.message || 'Failed to save ledger entry');
+    }
+  };
+
+  // Ledger date label (DD/MM/YYYY) for the subtitle.
+  const ledgerDateLabel = useMemo(() => {
+    const [y, m, d] = ledgerDate.split('-');
+    return `${d}/${m}/${y}`;
+  }, [ledgerDate]);
+
+  // Totals across ALL vendors (independent of the search filter).
+  const ledgerTotals = useMemo(() => ledgerRows.reduce((acc, r) => {
+    acc.opening += r.openingBalance;
+    acc.purchases += r.purchases;
+    acc.payments += r.payments;
+    acc.closing += r.closingBalance;
+    return acc;
+  }, { opening: 0, purchases: 0, payments: 0, closing: 0 }), [ledgerRows]);
+
+  const filteredLedgerRows = useMemo(() => {
+    if (!ledgerSearch.trim()) return ledgerRows;
+    const q = ledgerSearch.trim().toLowerCase();
+    return ledgerRows.filter((r) => r.name.toLowerCase().includes(q));
+  }, [ledgerRows, ledgerSearch]);
 
   // ── PO Form ──────────────────────────────────────────────────────────────────
   const [poForm, setPoForm] = useState({
@@ -1080,16 +1193,36 @@ export default function AdminPurchases() {
         </div>
       )}
 
-      {/* ── Vendor List View ───────────────────────────────────────────────────── */}
+      {/* ── Vendor Daily Ledger View ─────────────────────────────────────────────── */}
       {view === 'vendors' && (
         <>
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-tour="admin-purchases-vendors">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 flex items-center gap-2">
                 <Store size={18} className="text-[#E53935]" />
-                Vendors
+                Vendor Balances
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 text-xs font-bold text-gray-600">
+                  <Calendar size={14} className="text-gray-400" />
+                  <input
+                    type="date"
+                    value={ledgerDate}
+                    max={getKolkataDateString()}
+                    onChange={(e) => setLedgerDate(e.target.value || getKolkataDateString())}
+                    className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold outline-none focus:border-[#E53935]"
+                  />
+                </div>
+                <div className="flex items-center gap-1 bg-gray-50 rounded-lg px-2 py-1.5">
+                  <Search size={14} className="text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search vendor..."
+                    value={ledgerSearch}
+                    onChange={(e) => setLedgerSearch(e.target.value)}
+                    className="bg-transparent text-xs font-bold outline-none w-28"
+                  />
+                </div>
                 <button
                   onClick={handleRecalcBalances}
                   disabled={recalcingBalances}
@@ -1097,7 +1230,7 @@ export default function AdminPurchases() {
                   title="Recalculate all vendor outstanding balances"
                 >
                   {recalcingBalances ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  Recalc Balances
+                  Recalc
                 </button>
                 <button
                   onClick={() => setShowVendorForm(true)}
@@ -1108,75 +1241,164 @@ export default function AdminPurchases() {
                 </button>
               </div>
             </div>
+            <p className="text-[11px] font-bold text-gray-400 mt-2">
+              DAILY VENDOR LEDGER — {ledgerDateLabel} · Closing carries forward as next day's Opening
+            </p>
           </div>
 
-          {vendors.length === 0 ? (
+          {(ledgerLoading && ledgerRows.length === 0) ? (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
+              <Loader2 size={24} className="mx-auto text-gray-300 animate-spin mb-2" />
+              <p className="text-xs text-gray-400 font-bold">Loading vendor ledger…</p>
+            </div>
+          ) : ledgerRows.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
               <Store size={32} className="mx-auto text-gray-300 mb-2" />
               <p className="text-xs text-gray-400 font-bold">No vendors yet. Create one to start tracking purchases.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-black uppercase text-gray-400">Name</th>
-                    <th className="text-left px-4 py-2 font-black uppercase text-gray-400">Contact</th>
-                    <th className="text-right px-4 py-2 font-black uppercase text-gray-400">Outstanding</th>
-                    <th className="text-center px-4 py-2 font-black uppercase text-gray-400">Status</th>
-                    <th className="px-4 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vendors.map((v) => (
-                    <tr
-                      key={v.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => { setSelectedVendorId(v.id); setView('vendor-detail'); }}
-                    >
-                      <td className="px-4 py-3 font-bold text-gray-800">{v.name}</td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {v.contactPerson || v.phone || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-black">
-                        <span className={parseFloat(v.outstandingBalance) > 0 ? 'text-[#E53935]' : 'text-gray-400'}>
-                          ₹{round2(v.outstandingBalance).toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${v.isActive ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                          {v.isActive ? 'Active' : 'Retired'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {v.isActive && parseFloat(v.outstandingBalance) > 0 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedVendorId(v.id);
-                              setShowVendorPaymentForm(true);
-                              setView('vendor-detail');
-                              loadVendorDetail(v.id);
-                            }}
-                            className="text-[10px] font-bold text-green-600 hover:bg-green-50 px-2 py-1 rounded mr-2"
-                          >
-                            Payment
-                          </button>
-                        )}
-                        {v.isActive && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRetireVendor(v.id); }}
-                            className="text-[10px] font-bold text-gray-400 hover:text-red-600"
-                          >
-                            Retire
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {ledgerError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-2 text-xs font-bold text-red-600 flex items-center gap-2">
+                  <AlertCircle size={14} /> {ledgerError}
+                </div>
+              )}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto max-h-[68vh] overflow-y-auto">
+                  <table className="w-full text-xs min-w-[860px]">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-black uppercase text-gray-400">Vendor</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Opening Balance</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Purchases</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Payments</th>
+                        <th className="text-right px-4 py-2 font-black uppercase text-gray-400 whitespace-nowrap">Closing Balance</th>
+                        <th className="px-4 py-2"></th>
+                      </tr>
+                      <tr className="bg-gray-50/50 border-b border-gray-100">
+                        <td colSpan={5} className="px-4 py-1 text-[10px] font-bold text-gray-400 text-right">
+                          Opening&nbsp;Balance&nbsp;+&nbsp;Purchases&nbsp;−&nbsp;Payments&nbsp;=&nbsp;Closing&nbsp;Balance
+                        </td>
+                        <td></td>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLedgerRows.map((r) => {
+                        const sv = ledgerSaving[r.vendorId];
+                        const draft = ledgerDrafts[r.vendorId] || {};
+                        const draftClosing = computeDraftClosing(r.vendorId, r);
+                        const isDirty = round2(draftClosing) !== round2(r.closingBalance) ||
+                          parseFloat(draft.opening) !== round2(r.openingBalance) ||
+                          parseFloat(draft.purchases) !== round2(r.manualPurchases ?? 0) ||
+                          parseFloat(draft.payments) !== round2(r.payments);
+                        return (
+                          <tr key={r.vendorId} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="px-4 py-2.5 font-bold text-gray-800">
+                              <button
+                                onClick={() => { setSelectedVendorId(r.vendorId); setView('vendor-detail'); }}
+                                className="text-left hover:text-[#E53935] flex items-center gap-2"
+                              >
+                                {r.name}
+                                {!r.isActive && (
+                                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">Retired</span>
+                                )}
+                              </button>
+                            </td>
+                            {/* Opening Balance — editable */}
+                            <td className="px-2 py-2.5 text-right">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={draft.opening ?? ''}
+                                onChange={(e) => updateLedgerDraft(r.vendorId, 'opening', e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleLedgerSave(r.vendorId); }}
+                                disabled={!r.isActive}
+                                className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold w-24 text-right outline-none focus:border-[#E53935] disabled:bg-gray-50 disabled:text-gray-400"
+                              />
+                            </td>
+                            {/* Purchases — editable manual portion + Daily Entry badge */}
+                            <td className="px-2 py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={draft.purchases ?? ''}
+                                  onChange={(e) => updateLedgerDraft(r.vendorId, 'purchases', e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleLedgerSave(r.vendorId); }}
+                                  disabled={!r.isActive}
+                                  className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold w-20 text-right outline-none focus:border-[#E53935] disabled:bg-gray-50 disabled:text-gray-400"
+                                />
+                                {r.dailyEntryPurchases > 0 && (
+                                  <span className="text-[9px] font-bold text-blue-500 whitespace-nowrap" title="From Daily Entry">
+                                    +{r.dailyEntryPurchases}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            {/* Payments — editable */}
+                            <td className="px-2 py-2.5 text-right">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={draft.payments ?? ''}
+                                onChange={(e) => updateLedgerDraft(r.vendorId, 'payments', e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleLedgerSave(r.vendorId); }}
+                                disabled={!r.isActive}
+                                className="bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-bold w-24 text-right outline-none focus:border-[#E53935] disabled:bg-gray-50 disabled:text-gray-400"
+                              />
+                            </td>
+                            {/* Closing Balance — computed live */}
+                            <td className="px-4 py-2.5 text-right font-black">
+                              <span className={draftClosing > 0 ? 'text-[#E53935]' : 'text-gray-400'}>
+                                ₹{round2(draftClosing).toLocaleString()}
+                              </span>
+                            </td>
+                            {/* Actions */}
+                            <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                              {r.isActive && (
+                                <button
+                                  onClick={() => handleLedgerSave(r.vendorId)}
+                                  disabled={sv?.status === 'saving' || !isDirty}
+                                  className="flex items-center gap-1 text-[10px] font-black uppercase text-white bg-green-600 hover:bg-green-700 px-2 py-1.5 rounded disabled:opacity-40 disabled:cursor-default ml-auto"
+                                  title={isDirty ? 'Save and cascade to subsequent days' : 'No changes'}
+                                >
+                                  {sv?.status === 'saving' ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                                  Save
+                                </button>
+                              )}
+                              {sv?.status === 'saved' && (
+                                <span className="text-green-600 flex items-center gap-0.5 mt-0.5 justify-end"><CheckCircle size={10} /> Saved</span>
+                              )}
+                              {sv?.status === 'error' && (
+                                <span className="text-red-600 flex items-center gap-0.5 mt-0.5 justify-end" title={sv.msg}><AlertCircle size={10} /> Failed</span>
+                              )}
+                              {r.isActive && (
+                                <button
+                                  onClick={() => handleRetireVendor(r.vendorId)}
+                                  className="text-[10px] font-bold text-gray-400 hover:text-red-600 mt-1 block ml-auto"
+                                >
+                                  Retire
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-200 sticky bottom-0 z-10">
+                      <tr className="font-black">
+                        <td className="px-4 py-3 text-gray-700 uppercase text-[11px]">Totals {ledgerSearch.trim() && <span className="text-gray-400 normal-case font-bold">(all vendors)</span>}</td>
+                        <td className="px-4 py-3 text-right text-gray-700">₹{round2(ledgerTotals.opening).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-gray-800">₹{round2(ledgerTotals.purchases).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-gray-800">₹{round2(ledgerTotals.payments).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-[#E53935]">₹{round2(ledgerTotals.closing).toLocaleString()}</td>
+                        <td className="px-4 py-3"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
 
           <div className="flex gap-2">
