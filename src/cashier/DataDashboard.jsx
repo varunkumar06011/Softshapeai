@@ -33,8 +33,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { edgeAwareJsonFetch } from '../services/edgeHealth';
-import { fetchReportDailySales, fetchReportCategorywise, fetchReportItemwise } from '../services/reportsApi';
+import { edgeFetch } from '../services/edgeHealth';
 import { getKolkataDateString, shiftKolkataDate } from '../shared/utils/dateFormat';
 
 const CATEGORY_COLORS = { Food: '#B71C1C', Liquor: '#E53935', Beverages: '#2563EB' };
@@ -44,6 +43,39 @@ const CATEGORY_TO_OUTLET_TYPE = {
   Liquor: 'liquor',
   Beverages: 'beverages',
 };
+
+// Edge-only report helpers. The cashier Data Dashboard reads exclusively from
+// the local edge SQLite — cloud is never consulted, so a cloud outage never
+// blanks the dashboard. The edge endpoints ignore the outletId query param
+// (they use the edge session's restaurantId), so we pass 'all' for both
+// restaurant/bar/both modes to keep the query well-formed.
+async function edgeReportDailySales(startDate, endDate) {
+  const qs = new URLSearchParams({ startDate, endDate, outletId: 'all' });
+  const res = await edgeFetch(`/api/edge/reports/daily-sales?${qs}`);
+  if (!res.ok) throw new Error(`Edge daily-sales failed (${res.status})`);
+  return res.json();
+}
+
+async function edgeReportCategorywise(startDate, endDate) {
+  const qs = new URLSearchParams({ startDate, endDate, outletId: 'all' });
+  const res = await edgeFetch(`/api/edge/reports/categorywise-sales?${qs}`);
+  if (!res.ok) throw new Error(`Edge categorywise-sales failed (${res.status})`);
+  return res.json();
+}
+
+async function edgeReportItemwise(startDate, endDate, outletType) {
+  const qs = new URLSearchParams({ startDate, endDate, outletType, outletId: 'all' });
+  const res = await edgeFetch(`/api/edge/reports/itemwise-sales?${qs}`);
+  if (!res.ok) throw new Error(`Edge itemwise-sales failed (${res.status})`);
+  return res.json();
+}
+
+async function edgeAnalytics(path, params) {
+  const qs = new URLSearchParams(params);
+  const res = await edgeFetch(`${path}?${qs}`);
+  if (!res.ok) throw new Error(`Edge analytics failed (${res.status})`);
+  return res.json();
+}
 
 function inr(n) {
   return `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -107,7 +139,7 @@ function SummaryTiles({ totalSales, discounts, expenditure, finalAmount, txnsCou
 }
 
 // ── Widget 2: Sales Attribution — last 7 days ──────────────────────────────
-function SalesAttributionChart({ outletId }) {
+function SalesAttributionChart() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -119,7 +151,7 @@ function SalesAttributionChart({ outletId }) {
     setError(null);
     try {
       const { startDate, endDate } = getLast7DayRange();
-      const res = await fetchReportDailySales(startDate, endDate, outletId || 'all');
+      const res = await edgeReportDailySales(startDate, endDate);
       if (gen !== genRef.current) return;
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -141,7 +173,7 @@ function SalesAttributionChart({ outletId }) {
     } finally {
       if (gen === genRef.current) setLoading(false);
     }
-  }, [outletId]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -191,7 +223,7 @@ function SalesAttributionChart({ outletId }) {
 }
 
 // ── Widget 3: Today Specials Sold ──────────────────────────────────────────
-function TodaySpecialsSold({ outletId, date }) {
+function TodaySpecialsSold({ date }) {
   const [specials, setSpecials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -203,14 +235,9 @@ function TodaySpecialsSold({ outletId, date }) {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (outletId && outletId !== 'all') params.set('outletId', outletId);
       params.set('startDate', date);
       params.set('endDate', date);
-      const qsStr = params.toString();
-      const data = await edgeAwareJsonFetch(
-        `/api/edge/analytics/today-specials-sold?${qsStr}`,
-        `/api/analytics/today-specials-sold?${qsStr}`,
-      );
+      const data = await edgeAnalytics('/api/edge/analytics/today-specials-sold', params);
       if (gen !== genRef.current) return;
       setSpecials(data.specials || []);
     } catch (err) {
@@ -219,7 +246,7 @@ function TodaySpecialsSold({ outletId, date }) {
     } finally {
       if (gen === genRef.current) setLoading(false);
     }
-  }, [outletId, date]);
+  }, [date]);
 
   useEffect(() => {
     load();
@@ -271,7 +298,7 @@ function TodaySpecialsSold({ outletId, date }) {
 }
 
 // ── Widget 4: Today Special Captain Leader ─────────────────────────────────
-function CaptainLeader({ outletId, date }) {
+function CaptainLeader({ date }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -284,14 +311,9 @@ function CaptainLeader({ outletId, date }) {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (outletId && outletId !== 'all') params.set('outletId', outletId);
       params.set('startDate', date);
       params.set('endDate', date);
-      const qsStr = params.toString();
-      const data = await edgeAwareJsonFetch(
-        `/api/edge/analytics/today-specials-by-staff?${qsStr}`,
-        `/api/analytics/today-specials-by-staff?${qsStr}`,
-      );
+      const data = await edgeAnalytics('/api/edge/analytics/today-specials-by-staff', params);
       if (gen !== genRef.current) return;
       // Show only captains who actually sold at least one special today — keeps the
       // cashier leaderboard focused on the day's competition rather than every
@@ -304,7 +326,7 @@ function CaptainLeader({ outletId, date }) {
     } finally {
       if (gen === genRef.current) setLoading(false);
     }
-  }, [outletId, date]);
+  }, [date]);
 
   useEffect(() => {
     load();
@@ -401,7 +423,7 @@ function CaptainLeader({ outletId, date }) {
 }
 
 // ── Widget 5: Category Breakdown + item drill-in popup ─────────────────────
-function CategoryBreakdown({ outletId, date }) {
+function CategoryBreakdown({ date }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -416,7 +438,7 @@ function CategoryBreakdown({ outletId, date }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchReportCategorywise(date, date, outletId || 'all');
+      const res = await edgeReportCategorywise(date, date);
       if (gen !== genRef.current) return;
       setData(res);
     } catch (err) {
@@ -425,7 +447,7 @@ function CategoryBreakdown({ outletId, date }) {
     } finally {
       if (gen === genRef.current) setLoading(false);
     }
-  }, [outletId, date]);
+  }, [date]);
 
   useEffect(() => {
     load();
@@ -442,7 +464,7 @@ function CategoryBreakdown({ outletId, date }) {
     setDrillError(null);
     setDrillLoading(true);
     try {
-      const res = await fetchReportItemwise(date, date, outletType, outletId || 'all');
+      const res = await edgeReportItemwise(date, date, outletType);
       // Filter to the chosen report category (itemwise endpoint with outletType
       // already filters server-side, but Beverages normalization can leak other
       // types when outletType is 'all' — guard client-side too).
@@ -453,7 +475,7 @@ function CategoryBreakdown({ outletId, date }) {
     } finally {
       setDrillLoading(false);
     }
-  }, [date, outletId]);
+  }, [date]);
 
   const closeCategory = () => setSelectedCategory(null);
 
@@ -679,7 +701,6 @@ export default function DataDashboard({
   discountedTxnsCount = 0,
   expendituresCount = 0,
   date = null,
-  outletId = 'all',
   onDateChange,
 }) {
   // Local date state mirrors the parent prop but lets the cashier change the
@@ -738,16 +759,16 @@ export default function DataDashboard({
       />
 
       {/* Widget 2: Sales Attribution — full width */}
-      <SalesAttributionChart outletId={outletId} />
+      <SalesAttributionChart />
 
       {/* Widgets 3 & 4: side-by-side on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <TodaySpecialsSold outletId={outletId} date={today} />
-        <CaptainLeader outletId={outletId} date={today} />
+        <TodaySpecialsSold date={today} />
+        <CaptainLeader date={today} />
       </div>
 
       {/* Widget 5: Category Breakdown — full width */}
-      <CategoryBreakdown outletId={outletId} date={today} />
+      <CategoryBreakdown date={today} />
     </div>
   );
 }

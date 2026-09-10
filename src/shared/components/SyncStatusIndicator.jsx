@@ -39,12 +39,20 @@ export default function SyncStatusIndicator() {
 
       try {
         const status = await edgeFetch('/api/edge/sync/status');
-        setPendingCount(status.pendingCount || 0);
+        // Backward-compatible pending count: support both the new aggregate
+        // field and the older per-category fields so the indicator works
+        // against both old and new edge servers.
+        const total =
+          status.pendingCount ??
+          (Number(status.pendingOrders || 0)
+            + Number(status.pendingExpenditures || 0)
+            + Number(status.pendingWalkins || 0));
+        setPendingCount(total);
         setLastSync(status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleTimeString() : null);
         setSyncFailures(status.consecutiveFailures || 0);
 
-        if (status.pendingCount > 0) {
-          setState('syncing');
+        if (total > 0) {
+          setState(status.consecutiveFailures > 0 ? 'retrying' : 'syncing');
         } else if (status.consecutiveFailures > 0) {
           setState('offline');
         } else {
@@ -90,6 +98,14 @@ export default function SyncStatusIndicator() {
       bg: 'bg-yellow-50',
       border: 'border-yellow-200',
       text: `Syncing ${pendingCount} record${pendingCount !== 1 ? 's' : ''}...`,
+      spin: true,
+    },
+    retrying: {
+      icon: RefreshCw,
+      color: 'text-orange-600',
+      bg: 'bg-orange-50',
+      border: 'border-orange-200',
+      text: `Sync retrying — ${pendingCount} record${pendingCount !== 1 ? 's' : ''} pending`,
       spin: true,
     },
     offline: {
