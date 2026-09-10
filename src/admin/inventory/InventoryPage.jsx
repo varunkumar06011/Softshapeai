@@ -76,9 +76,10 @@ export function InventoryPage() {
   }, [combinedItems]);
 
   // Fetch bar inventory items + daily records when tab is bar
-  const fetchCombined = useCallback(async () => {
+  const fetchCombined = useCallback(async (opts = {}) => {
+    const { silent = false } = opts;
     if (tab !== TAB_BAR || !restaurant?.id) return;
-    setCombinedLoading(true);
+    if (!silent) setCombinedLoading(true);
     try {
       const date = inventory.fromDate || getKolkataDateString();
       const data = await fetchBarInventory(date);
@@ -112,7 +113,7 @@ export function InventoryPage() {
       setCombinedItems([]);
       setCombinedSummary(null);
     } finally {
-      setCombinedLoading(false);
+      if (!silent) setCombinedLoading(false);
     }
   }, [tab, restaurant?.id, inventory.fromDate]);
 
@@ -191,8 +192,8 @@ export function InventoryPage() {
   };
 
   const handleSaved = () => {
-    inventory.refresh();
-    fetchCombined();
+    inventory.refresh({ silent: true });
+    fetchCombined({ silent: true });
   };
 
   // Food-only outlet: no tab bar needed

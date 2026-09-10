@@ -56,9 +56,10 @@ export function useInventoryData(tab, restaurant) {
 
   // Fetch inventory data — uses fromDate for the daily entry lookup so the
   // "Opening" column reflects the selected date range start.
-  const fetchData = useCallback(async (signal) => {
+  const fetchData = useCallback(async (signal, opts = {}) => {
+    const { silent = false } = opts;
     if (!restaurant?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       let data;
@@ -79,7 +80,7 @@ export function useInventoryData(tab, restaurant) {
       setError(err.message || 'Failed to load inventory');
       setItems([]);
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted && !silent) setLoading(false);
     }
   }, [tab, restaurant?.id, fromDate, toDate]);
 
@@ -95,13 +96,13 @@ export function useInventoryData(tab, restaurant) {
   // fresh one. This prevents a stale socket event from overwriting the current
   // tab's data if a tab switch happened between the event firing and the fetch
   // completing.
-  const refetchForSocket = useCallback(() => {
+  const refetchForSocket = useCallback((opts = {}) => {
     if (latestControllerRef.current) {
       latestControllerRef.current.abort();
     }
     const controller = new AbortController();
     latestControllerRef.current = controller;
-    fetchData(controller.signal);
+    fetchData(controller.signal, opts);
   }, [fetchData]);
 
   // Fetch top-selling data (for usage card) — uses the selected date range
@@ -210,8 +211,8 @@ export function useInventoryData(tab, restaurant) {
     return { totalItems, lowStock, stockValue, todayUsage };
   }, [items, topSelling, tab]);
 
-  const refresh = useCallback(() => {
-    refetchForSocket();
+  const refresh = useCallback((opts = {}) => {
+    refetchForSocket(opts);
   }, [refetchForSocket]);
 
   return {

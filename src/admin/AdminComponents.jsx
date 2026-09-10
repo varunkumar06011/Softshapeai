@@ -3381,11 +3381,9 @@ export function MenuPage({ onAddDish }) {
 
 
 
-        // Re-fetch admin list + POS menu so GST flag is confirmed from server
-        await Promise.all([
-          fetchAdminItems().catch(() => {}),
-          refreshMenu().catch(() => {}),
-        ]);
+        // Background re-sync only (no loading spinner) — optimistic update
+        // already applied the change to adminItems + global menu above.
+        refreshMenu().catch(() => {});
 
       } else {
 
@@ -5882,9 +5880,10 @@ export function Payroll() {
 
 
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (opts = {}) => {
 
-    setLoading(true);
+    const { silent = false } = opts;
+    if (!silent) setLoading(true);
 
     try {
 
@@ -5925,7 +5924,7 @@ export function Payroll() {
 
     } finally {
 
-      setLoading(false);
+      if (!silent) setLoading(false);
 
     }
 
@@ -5973,7 +5972,7 @@ export function Payroll() {
 
       setIdempotencyKey('');
 
-      loadData();
+      loadData({ silent: true });
 
     } catch (err) {
 
@@ -6049,7 +6048,7 @@ export function Payroll() {
         });
       }
 
-      await loadData();
+      await loadData({ silent: true });
 
       setEditValues((prev) => {
         const next = { ...prev };
@@ -6076,7 +6075,7 @@ export function Payroll() {
       await apiFetch(`/api/payroll/employees/${employeeId}`, {
         method: 'DELETE',
       });
-      loadData();
+      loadData({ silent: true });
     } catch (err) {
       console.error('[Payroll] Delete employee failed:', err);
       alert(err.message || 'Failed to delete employee');
@@ -6105,7 +6104,7 @@ export function Payroll() {
 
       setPayAmount('');
 
-      loadData();
+      loadData({ silent: true });
 
     } catch (err) {
 
@@ -6128,7 +6127,7 @@ export function Payroll() {
       setAdvanceAmount('');
       setAdvanceReason('');
       loadAdvanceHistory(advanceModal.id);
-      loadData();
+      loadData({ silent: true });
     } catch (err) {
       console.error('[Payroll] Add manual advance failed:', err);
       alert(err.message || 'Failed to add manual advance');
@@ -6211,7 +6210,7 @@ export function Payroll() {
       setImportFile(null);
       setImportPreview(null);
       setEditedProposed([]);
-      loadData();
+      loadData({ silent: true });
       alert(`Import complete: ${data.created} created, ${data.updated} updated${data.errors.length ? `, ${data.errors.length} errors` : ''}`);
     } catch (err) {
       console.error('[Payroll] Import commit failed:', err);
@@ -20182,9 +20181,10 @@ export function Attendance() {
 
 
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (opts = {}) => {
 
-    setLoading(true);
+    const { silent = false } = opts;
+    if (!silent) setLoading(true);
 
     setError('');
 
@@ -20206,7 +20206,7 @@ export function Attendance() {
 
     } finally {
 
-      setLoading(false);
+      if (!silent) setLoading(false);
 
     }
 
@@ -20274,10 +20274,10 @@ export function Attendance() {
 
     try {
       await markAttendance({ employeeId, date, status });
-      loadData();
+      loadData({ silent: true });
     } catch (err) {
       setError(err.message || 'Failed to mark attendance');
-      loadData();
+      loadData({ silent: true });
     } finally {
       setMarkingIds(prev => {
         const next = new Set(prev);
@@ -20300,10 +20300,10 @@ export function Attendance() {
       const items = ids.map(employeeId => ({ employeeId, status }));
       await markAttendanceBulk({ date, items });
       setSelectedIds(new Set());
-      loadData();
+      loadData({ silent: true });
     } catch (err) {
       setError(err.message || 'Failed to mark attendance for selected employees');
-      loadData();
+      loadData({ silent: true });
     } finally {
       setMarkingIds(prev => {
         const next = new Set(prev);
@@ -20340,7 +20340,7 @@ export function Attendance() {
 
       await checkIn(id);
 
-      loadData();
+      loadData({ silent: true });
 
     } catch (err) {
 
@@ -20362,7 +20362,7 @@ export function Attendance() {
 
       await checkOut(id);
 
-      loadData();
+      loadData({ silent: true });
 
     } catch (err) {
 
@@ -20385,7 +20385,7 @@ export function Attendance() {
 
       await apiFetch(`/api/payroll/employees/${employeeId}`, { method: 'DELETE' });
 
-      loadData();
+      loadData({ silent: true });
 
     } catch (err) {
 
