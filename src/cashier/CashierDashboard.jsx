@@ -1317,26 +1317,16 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Sticky bottle selection per menu item — remembers which bottle the cashier
   // picked for each peg item so they don't have to pick again on every tap.
-  // Cleared when KOT is sent or cart is cleared. Entries expire after 3 minutes.
+  // Persists until the bottle is exhausted, table is switched, or user skips.
+  // NOT cleared on KOT send — bartender continues pouring from same bottle.
   const stickyBottleRef = useRef({});
-  const STICKY_BOTTLE_TTL_MS = 3 * 60 * 1000; // 3 minutes
-
-  // Clear sticky bottle memory whenever cart becomes empty — covers all
-  // setCart([]) calls (table switch, KOT send, trash button, order clear, etc.)
-  useEffect(() => {
-    if (cart.length === 0) {
-      stickyBottleRef.current = {};
-    }
-  }, [cart.length]);
 
   const getStickyBottle = useCallback((itemId) => {
     if (!itemId) return null;
     const entry = stickyBottleRef.current[itemId];
     if (!entry) return null;
     if (typeof entry === 'string') return entry; // legacy format
-    if (entry.bottleId && Date.now() - entry.ts < STICKY_BOTTLE_TTL_MS) return entry.bottleId;
-    delete stickyBottleRef.current[itemId];
-    return null;
+    return entry.bottleId || null;
   }, []);
 
   const setStickyBottle = useCallback((itemId, bottleId) => {
@@ -2558,56 +2548,25 @@ const CashierDashboard = ({ onLogout }) => {
 
   // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles
 
+  // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles.
+  // Edge-only: the cashier reads exclusively from the local edge SQLite. The
+  // cloud is never consulted for expenditures, so a cloud outage never blanks
+  // the tile. The edge endpoint authenticates via the edge runtime token, so
+  // it works for both PIN and JWT auth.
   const loadExpenditureSummary = useCallback(async (dateParam) => {
-
     if (!dateParam) {
-
       setExpenditureSummary({ totalAmount: 0, count: 0 });
-
       return;
-
     }
-
-    // Edge-first: try the edge server's local SQLite before hitting the cloud.
-    // Works for both PIN and JWT auth — the edge endpoint authenticates via
-    // the edge runtime token, not the cloud JWT.
-    if (isEdgeLocalAuth() || await isEdgeAvailable()) {
-
-      try {
-
-        const summary = await edgeFetch(`/api/edge/expenditures/today-summary?date=${dateParam}`);
-
-        setExpenditureSummary(summary || { totalAmount: 0, count: 0 });
-
-      } catch {
-
-        // Edge failed — fall through to cloud only if not PIN auth
-        if (isEdgeLocalAuth()) {
-
-          setExpenditureSummary({ totalAmount: 0, count: 0 });
-
-          return;
-
-        }
-
-      }
-
-    }
-
     try {
-
-      const summary = await apiFetch(`/api/expenditures/today-summary?date=${dateParam}`);
-
+      const summary = await edgeFetch(`/api/edge/expenditures/today-summary?date=${dateParam}`);
       setExpenditureSummary(summary || { totalAmount: 0, count: 0 });
-
     } catch (err) {
-
-      console.error('[ExpenditureSummary] Failed to load:', err);
-
-      setExpenditureSummary({ totalAmount: 0, count: 0 });
-
+      console.error('[ExpenditureSummary] Edge load failed:', err);
+      // Do not silently show ₹0 as a confirmed result when the load failed.
+      // Keep the previous summary so the tile doesn't flicker to a misleading
+      // zero on a transient edge hiccup.
     }
-
   }, []);
 
 
@@ -3034,12 +2993,6 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-      // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles
-
-      loadExpenditureSummary(dateParam);
-
-
-
       // Only cache today's data + add version stamp
 
       if (filter === 'today') {
@@ -3104,6 +3057,14 @@ const CashierDashboard = ({ onLogout }) => {
 
         setTxnsLoading(false);
 
+      }
+
+      // Load expenditure summary independently of transaction-loading success.
+      // Previously this only ran inside the try block, so a transaction fetch
+      // failure (cache fallback) silently skipped expenditures and the tile
+      // showed ₹0. Now it always runs for this date.
+      if (myGeneration === loadTxnsGenerationRef.current) {
+        loadExpenditureSummary(dateParam);
       }
 
     }
@@ -10329,68 +10290,43 @@ const CashierDashboard = ({ onLogout }) => {
 
     const q = searchQuery.trim().toLowerCase();
 
-
+    const searchActive = q.length > 0;
 
     const filtered = mapped.filter((item) => {
-
-      // 0. Menu type filter (FOOD / LIQUOR / DESSERTS / ALL)
-
-      if (selectedMenuType === 'FOOD' && item.menuType === 'LIQUOR') return false;
-
-      if (selectedMenuType === 'LIQUOR' && item.menuType !== 'LIQUOR') return false;
-
-      if (selectedMenuType === 'DESSERTS') {
-
-        const cat = String(item.c || item.category || '').toLowerCase();
-
-        return cat.includes('dessert');
-
-      }
-
-
-
-      // 1. Diet filter
-
-      if (activeDiet !== 'All' && item.t !== activeDiet) return false;
-
-
-
-      // 2. Search query filter
-
-      if (q.length > 0) {
-
-        if (!itemMatchesQuery(item, q)) return false;
-
-      } else {
-
-        // 3. Category filter (only active if no search query)
-
-        if (selectedCategory !== 'All') {
-
-          if (selectedCategory === 'Today Special') {
-
-            const now = Date.now();
-
-            if (!(item.isSpecial && item.active && (!item.expiresAt || now < item.expiresAt) && (item.specialChannel === 'CASHIER' || item.specialChannel === 'BOTH'))) {
-
-              return false;
-
-            }
-
-          } else if ((item.c || item.category) !== selectedCategory) {
-
-            return false;
-
-          }
-
+      // When a search query is active, ignore menu-type, diet, and category
+      // filters so the search is global across all available items. Only
+      // genuine venue/section availability (applied earlier above) still
+      // restricts results. This fixes "Water Bottle" disappearing when a
+      // stale diet or menu-type filter was left selected.
+      if (!searchActive) {
+        // 0. Menu type filter (FOOD / LIQUOR / DESSERTS / ALL)
+        if (selectedMenuType === 'FOOD' && item.menuType === 'LIQUOR') return false;
+        if (selectedMenuType === 'LIQUOR' && item.menuType !== 'LIQUOR') return false;
+        if (selectedMenuType === 'DESSERTS') {
+          const cat = String(item.c || item.category || '').toLowerCase();
+          return cat.includes('dessert');
         }
 
+        // 1. Diet filter
+        if (activeDiet !== 'All' && item.t !== activeDiet) return false;
+
+        // 2. Category filter (only active when not searching)
+        if (selectedCategory !== 'All') {
+          if (selectedCategory === 'Today Special') {
+            const now = Date.now();
+            if (!(item.isSpecial && item.active && (!item.expiresAt || now < item.expiresAt) && (item.specialChannel === 'CASHIER' || item.specialChannel === 'BOTH'))) {
+              return false;
+            }
+          } else if (String(item.c || item.category || '').trim().toLowerCase() !== String(selectedCategory).trim().toLowerCase()) {
+            return false;
+          }
+        }
+      } else {
+        // Search active: only apply the search match.
+        if (!itemMatchesQuery(item, q)) return false;
       }
 
-
-
       return true;
-
     });
 
 
@@ -10696,20 +10632,24 @@ const CashierDashboard = ({ onLogout }) => {
         .then((res) => {
           setBottlePickerLoading(false);
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
-            // Sticky bottle still in stock? → add directly, skip picker
-            if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
-              addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-              setSearchQuery('');
-              setSelectedCategory('All');
-              setActiveDiet('All');
-            } else {
-              // Remembered bottle out of stock — clear it and show picker
-              if (remembered) stickyBottleRef.current[itemId] = undefined;
-              setBottlePickerItem(liquorQtyItem);
-              setBottlePickerQty(qty);
-              setBottlePickerBottles(res.bottles);
-              setShowBottlePicker(true);
+            // Sticky bottle still in stock with enough ml? → add directly, skip picker
+            const neededMl = (res.deductionMl || 30) * qty;
+            if (remembered) {
+              const bottle = res.bottles.find(b => b.inventoryItemId === remembered);
+              if (bottle && bottle.currentStockMl >= neededMl) {
+                addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
+                setSearchQuery('');
+                setSelectedCategory('All');
+                setActiveDiet('All');
+                return;
+              }
             }
+            // Remembered bottle exhausted/insufficient/not found — clear and show picker
+            if (remembered) stickyBottleRef.current[itemId] = undefined;
+            setBottlePickerItem(liquorQtyItem);
+            setBottlePickerQty(qty);
+            setBottlePickerBottles(res.bottles);
+            setShowBottlePicker(true);
           } else {
             // No bottles in stock — skip picker, add with auto deduction
             addToCart(liquorQtyItem, qty);
@@ -12058,8 +11998,6 @@ const CashierDashboard = ({ onLogout }) => {
 
         lastAnyItemAddedRef.current = 0;
 
-        stickyBottleRef.current = {}; // clear sticky bottle selections after KOT
-
         setExpandedNoteItemId(null);
 
         setIsKotSuccess(true);
@@ -12219,8 +12157,6 @@ const CashierDashboard = ({ onLogout }) => {
               lastKotCartSignatureRef.current = null;
 
               lastAnyItemAddedRef.current = 0;
-
-              stickyBottleRef.current = {}; // clear sticky bottle selections after KOT
 
               setIsKotSuccess(true);
 
@@ -12690,8 +12626,6 @@ const CashierDashboard = ({ onLogout }) => {
                   expendituresCount={expenditureSummary?.count || 0}
 
                   date={dashboardDate}
-
-                  outletId={activeOutlet === 'both' ? 'all' : activeOutlet}
 
                   onDateChange={handleDashboardDateChange}
 

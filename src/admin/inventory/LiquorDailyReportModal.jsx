@@ -15,6 +15,9 @@
 //
 // "Save" persists all pending edits; "Save & Generate PDF" saves first,
 // refetches, then prints so the PDF always reflects the database.
+//
+// PDF output: Only items that had activity that day (AC sale, Non-AC sale,
+// wastage, or purchase) appear in the PDF. Zero-activity items are excluded.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react';
@@ -30,7 +33,7 @@ import { getKolkataDateString } from '../../shared/utils/dateFormat';
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `\u20B9${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtMl(n) {
@@ -62,82 +65,178 @@ function escapeHtml(str) {
 }
 
 // ── Printable HTML for the report ────────────────────────────────────────────
+// Shows ONLY items that had activity that day (AC sale, Non-AC sale, wastage, or purchase).
+// Items with zero activity are excluded — the admin only sees what actually moved.
 function buildPrintHtml({ date, items, manualItems, businessPosition }) {
   const visible = items.filter((i) => !i.isHiddenFromReport);
-  const rows = visible.map((r, idx) => `
-    <tr>
-      <td>${idx + 1}</td>
-      <td class="left">${escapeHtml(r.name)}${r.brand ? ` <span class="muted">(${escapeHtml(r.brand)})</span>` : ''}</td>
-      <td>${r.bottleSizeMl}ml</td>
-      <td class="num">${fmtMl(r.openingMl)}</td>
-      <td class="num">${fmtMl(r.purchasedMl)}</td>
-      <td class="num">${fmtMl(r.acSaleMl)}</td>
-      <td class="num">${fmtMl(r.nonAcSaleMl)}</td>
-      <td class="num">${fmtMl(r.wastageMl)}</td>
-      <td class="num">${fmtMl(r.systemClosingMl)}</td>
-      <td class="num">${r.physicalClosingMl != null ? fmtMl(r.physicalClosingMl) : '—'}</td>
-      <td class="num">${r.varianceMl != null ? fmtMl(r.varianceMl) : '—'}</td>
-      <td class="num">${fmtInr(r.stockValue)}</td>
-      <td class="num">${fmtInr(r.totalRevenue)}</td>
-      <td class="num">${fmtInr(r.profit)}</td>
-    </tr>`).join('');
 
-  const manualRows = (manualItems || []).filter((m) => !m.isHidden).map((m) => `
-    <tr>
-      <td></td>
-      <td class="left">${escapeHtml(m.itemName)} <span class="muted">[manual]</span></td>
-      <td>${m.qty ? `${m.qty}` : '—'}</td>
-      <td class="num">${m.opening ?? '—'}</td>
-      <td class="num">${m.received ?? '—'}</td>
-      <td class="num">${m.sale ?? '—'}</td>
-      <td class="num">—</td>
-      <td class="num">—</td>
-      <td class="num">${m.closing ?? '—'}</td>
-      <td class="num">—</td>
-      <td class="num">—</td>
-      <td class="num">${m.purchaseCost ? fmtInr(m.purchaseCost) : '—'}</td>
-      <td class="num">${m.saleAmount ? fmtInr(m.saleAmount) : '—'}</td>
-      <td class="num">${m.profit ? fmtInr(m.profit) : '—'}</td>
-    </tr>`).join('');
+  // Only show items that had activity that day
+  const soldItems = visible.filter((r) =>
+    (Number(r.acSaleMl) || 0) > 0 ||
+    (Number(r.nonAcSaleMl) || 0) > 0 ||
+    (Number(r.wastageMl) || 0) > 0 ||
+    (Number(r.purchasedMl) || 0) > 0
+  );
 
-  const bp = businessPosition || {};
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Liquor Report ${date}</title>
-<style>
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #111; margin: 16px; }
-  h1 { font-size: 16px; margin: 0 0 4px; }
-  .muted { color: #777; }
-  .bp { display: flex; flex-wrap: wrap; gap: 10px 24px; margin: 12px 0; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
-  .bp div { min-width: 130px; }
-  .bp .lbl { font-size: 9px; text-transform: uppercase; color: #666; }
-  .bp .val { font-weight: bold; font-size: 12px; }
-  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
-  th, td { border: 1px solid #ccc; padding: 4px 6px; text-align: center; }
-  th { background: #f3f4f6; font-size: 10px; }
-  td.left, th.left { text-align: left; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .section { margin-top: 14px; font-weight: bold; font-size: 12px; }
-</style></head><body>
-  <h1>Daily Liquor Stock &amp; Sales Report — ${escapeHtml(date)}</h1>
-  <div class="bp">
-    <div><div class="lbl">Opening Stock Value</div><div class="val">${fmtInr(bp.openingStockValue)}</div></div>
-    <div><div class="lbl">Purchases Value</div><div class="val">${fmtInr(bp.purchases)}</div></div>
-    <div><div class="lbl">Total Available</div><div class="val">${fmtInr(bp.totalAvailable)}</div></div>
-    <div><div class="lbl">AC Sales</div><div class="val">${fmtInr(bp.acSales)}</div></div>
-    <div><div class="lbl">Non-AC Sales</div><div class="val">${fmtInr(bp.nonAcSales)}</div></div>
-    <div><div class="lbl">Total Revenue</div><div class="val">${fmtInr(bp.totalRevenue)}</div></div>
-    <div><div class="lbl">Consumption Cost</div><div class="val">${fmtInr(bp.consumptionCost)}</div></div>
-    <div><div class="lbl">Closing Stock Value</div><div class="val">${fmtInr(bp.closingStockValue)}</div></div>
-    <div><div class="lbl">Profit</div><div class="val">${fmtInr(bp.profit)}</div></div>
-  </div>
-  <div class="section">Item-wise Report (ml columns are in ml)</div>
+  // Group by category for cleaner presentation
+  const byCategory = {};
+  for (const r of soldItems) {
+    const cat = r.category || 'Other';
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(r);
+  }
+
+  let serialNum = 0;
+  const categorySections = Object.keys(byCategory).sort().map((cat) => {
+    const catRows = byCategory[cat].map((r) => {
+      serialNum++;
+      const acSale = Number(r.acSaleMl) || 0;
+      const nonAcSale = Number(r.nonAcSaleMl) || 0;
+      return `
+    <tr>
+      <td class="center">${serialNum}</td>
+      <td class="left">${escapeHtml(r.name)}</td>
+      <td class="center">${r.bottleSizeMl}ml</td>
+      <td class="right">${fmtMl(r.openingMl)}</td>
+      <td class="right">${(Number(r.purchasedMl) || 0) > 0 ? fmtMl(r.purchasedMl) : '\u2014'}</td>
+      <td class="right">${acSale > 0 ? fmtMl(acSale) : '\u2014'}</td>
+      <td class="right">${nonAcSale > 0 ? fmtMl(nonAcSale) : '\u2014'}</td>
+      <td class="right">${(Number(r.wastageMl) || 0) > 0 ? fmtMl(r.wastageMl) : '\u2014'}</td>
+      <td class="right bold">${fmtMl(r.systemClosingMl)}</td>
+      <td class="right">${r.physicalClosingMl != null ? fmtMl(r.physicalClosingMl) : '\u2014'}</td>
+      <td class="right ${Number(r.varianceMl) !== 0 && r.varianceMl != null ? 'neg' : 'muted'}">${r.varianceMl != null ? fmtMl(r.varianceMl) : '\u2014'}</td>
+      <td class="right">${fmtInr(r.totalRevenue)}</td>
+      <td class="right ${Number(r.profit) < 0 ? 'neg' : ''}">${fmtInr(r.profit)}</td>
+    </tr>`;
+    }).join('');
+
+    return `
+  <div class="cat-header">${escapeHtml(cat)} <span class="cat-count">(${byCategory[cat].length} ${byCategory[cat].length === 1 ? 'item' : 'items'})</span></div>
   <table>
     <thead><tr>
-      <th>#</th><th class="left">Item</th><th>Size</th><th>Opening</th><th>Purchases</th>
-      <th>AC Sale</th><th>Non-AC Sale</th><th>Wastage</th><th>Sys. Closing</th>
-      <th>Phys. Closing</th><th>Variance</th><th>Stock Value</th><th>Sale Amount</th><th>Profit</th>
+      <th>#</th><th class="left">Item</th><th>Bottle</th><th>Opening</th><th>Purchase</th>
+      <th>AC Sale</th><th>Non-AC</th><th>Wastage</th><th>Closing</th>
+      <th>Phys. Close</th><th>Variance</th><th>Sale Amt</th><th>Profit</th>
     </tr></thead>
-    <tbody>${rows}${manualRows}</tbody>
-  </table>
+    <tbody>${catRows}</tbody>
+  </table>`;
+  }).join('');
+
+  const manualFiltered = (manualItems || []).filter((m) => !m.isHidden && m.itemName);
+  const manualRows = manualFiltered.map((m, idx) => `
+    <tr>
+      <td class="center">${serialNum + idx + 1}</td>
+      <td class="left">${escapeHtml(m.itemName)} <span class="muted">[manual]</span></td>
+      <td class="center">${m.qty || '\u2014'}</td>
+      <td class="right">${m.opening ?? '\u2014'}</td>
+      <td class="right">${m.received ?? '\u2014'}</td>
+      <td class="right">${m.sale ?? '\u2014'}</td>
+      <td class="right">\u2014</td>
+      <td class="right">\u2014</td>
+      <td class="right">${m.closing ?? '\u2014'}</td>
+      <td class="right">\u2014</td>
+      <td class="right">\u2014</td>
+      <td class="right">${m.saleAmount ? fmtInr(m.saleAmount) : '\u2014'}</td>
+      <td class="right">${m.profit ? fmtInr(m.profit) : '\u2014'}</td>
+    </tr>`).join('');
+
+  const manualSection = manualRows ? `
+  <div class="cat-header">Manual Items</div>
+  <table>
+    <thead><tr>
+      <th>#</th><th class="left">Item</th><th>Qty</th><th>Opening</th><th>Received</th>
+      <th>Sale</th><th>Non-AC</th><th>Wastage</th><th>Closing</th>
+      <th>Phys. Close</th><th>Variance</th><th>Sale Amt</th><th>Profit</th>
+    </tr></thead>
+    <tbody>${manualRows}</tbody>
+  </table>` : '';
+
+  const bp = businessPosition || {};
+  const totalItemsSold = soldItems.length + manualFiltered.length;
+  const totalAcMl = soldItems.reduce((s, r) => s + (Number(r.acSaleMl) || 0), 0);
+  const totalNonAcMl = soldItems.reduce((s, r) => s + (Number(r.nonAcSaleMl) || 0), 0);
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Liquor Report ${date}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1a1a1a; margin: 0; padding: 24px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #E53935; padding-bottom: 12px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; margin: 0; color: #1a1a1a; font-weight: 700; }
+  .header .sub { font-size: 11px; color: #666; margin-top: 2px; }
+  .header .date-box { text-align: right; }
+  .header .date-box .lbl { font-size: 9px; text-transform: uppercase; color: #999; letter-spacing: 1px; }
+  .header .date-box .val { font-size: 18px; font-weight: 700; color: #E53935; }
+  .bp { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+  .bp-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px 12px; }
+  .bp-card .lbl { font-size: 8px; text-transform: uppercase; color: #6c757d; letter-spacing: 0.5px; font-weight: 600; }
+  .bp-card .val { font-weight: 700; font-size: 14px; color: #1a1a1a; margin-top: 3px; }
+  .bp-card.accent { border-left: 4px solid #E53935; }
+  .bp-card.profit { border-left: 4px solid #43a047; }
+  .bp-card.loss { border-left: 4px solid #e53935; }
+  .summary-bar { display: flex; gap: 24px; background: #1a1a1a; color: #fff; border-radius: 8px; padding: 10px 16px; margin-bottom: 18px; font-size: 11px; }
+  .summary-bar .item { display: flex; gap: 6px; align-items: center; }
+  .summary-bar .item .lbl { color: #aaa; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
+  .summary-bar .item .val { font-weight: 700; font-size: 13px; }
+  .cat-header { background: #E53935; color: #fff; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 6px 6px 0 0; margin-top: 14px; }
+  .cat-header .cat-count { font-weight: 400; font-size: 10px; opacity: 0.85; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 4px; }
+  th, td { border: 1px solid #dee2e6; padding: 5px 8px; text-align: center; font-size: 10px; }
+  th { background: #f1f3f5; font-weight: 600; color: #495057; text-transform: uppercase; font-size: 9px; letter-spacing: 0.3px; }
+  td.left, th.left { text-align: left; }
+  td.right, th.right { text-align: right; font-variant-numeric: tabular-nums; }
+  td.center, th.center { text-align: center; }
+  td.bold { font-weight: 700; }
+  td.neg { color: #e53935; font-weight: 600; }
+  td.muted { color: #adb5bd; }
+  .muted { color: #999; }
+  tbody tr:nth-child(even) { background: #fafbfc; }
+  .footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid #dee2e6; display: flex; justify-content: space-between; font-size: 9px; color: #999; }
+  .no-sale { text-align: center; padding: 24px; color: #999; font-size: 13px; }
+  @media print {
+    body { padding: 12px; }
+    .header { page-break-after: avoid; }
+    .cat-header { page-break-after: avoid; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+    thead { display: table-header-group; }
+  }
+</style></head><body>
+  <div class="header">
+    <div>
+      <h1>Daily Liquor & Beer Report</h1>
+      <div class="sub">Vgrand Lounge \u2014 Bar Inventory Summary</div>
+    </div>
+    <div class="date-box">
+      <div class="lbl">Report Date</div>
+      <div class="val">${escapeHtml(date)}</div>
+    </div>
+  </div>
+
+  <div class="summary-bar">
+    <div class="item"><span class="lbl">Items Sold</span><span class="val">${totalItemsSold}</span></div>
+    <div class="item"><span class="lbl">AC Consumption</span><span class="val">${fmtMl(totalAcMl)} ml</span></div>
+    <div class="item"><span class="lbl">Non-AC Consumption</span><span class="val">${fmtMl(totalNonAcMl)} ml</span></div>
+    <div class="item"><span class="lbl">Total Revenue</span><span class="val">${fmtInr(bp.totalRevenue)}</span></div>
+    <div class="item"><span class="lbl">Profit</span><span class="val">${fmtInr(bp.profit)}</span></div>
+  </div>
+
+  <div class="bp">
+    <div class="bp-card accent"><div class="lbl">Opening Stock Value</div><div class="val">${fmtInr(bp.openingStockValue)}</div></div>
+    <div class="bp-card"><div class="lbl">Purchases Value</div><div class="val">${fmtInr(bp.purchases)}</div></div>
+    <div class="bp-card"><div class="lbl">Total Available</div><div class="val">${fmtInr(bp.totalAvailable)}</div></div>
+    <div class="bp-card"><div class="lbl">Consumption Cost</div><div class="val">${fmtInr(bp.consumptionCost)}</div></div>
+    <div class="bp-card accent"><div class="lbl">AC Sales</div><div class="val">${fmtInr(bp.acSales)}</div></div>
+    <div class="bp-card accent"><div class="lbl">Non-AC Sales</div><div class="val">${fmtInr(bp.nonAcSales)}</div></div>
+    <div class="bp-card"><div class="lbl">Closing Stock Value</div><div class="val">${fmtInr(bp.closingStockValue)}</div></div>
+    <div class="bp-card ${Number(bp.profit) >= 0 ? 'profit' : 'loss'}"><div class="lbl">Net Profit</div><div class="val">${fmtInr(bp.profit)}</div></div>
+  </div>
+
+  ${soldItems.length === 0 && !manualRows ? '<div class="no-sale">No sales recorded for this date.</div>' : categorySections + manualSection}
+
+  <div class="footer">
+    <div>Generated by SoftShape POS \u2014 Bar Inventory System</div>
+    <div>Report Date: ${escapeHtml(date)}</div>
+  </div>
 </body></html>`;
 }
 
@@ -151,7 +250,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
   // Pending edits (ml values): applied on Save
   const [nonAcEdits, setNonAcEdits] = useState({});      // { itemId: ml }
+  const [nonAcPriceEdits, setNonAcPriceEdits] = useState({}); // { itemId: price per ml }
   const [physicalEdits, setPhysicalEdits] = useState({}); // { itemId: ml }
+  const [showAllItems, setShowAllItems] = useState(false);
   // Manual PDF-only rows
   const [manualItems, setManualItems] = useState([]);
 
@@ -159,7 +260,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     if (open) {
       setReportDate(date || getKolkataDateString());
       setNonAcEdits({});
+      setNonAcPriceEdits({});
       setPhysicalEdits({});
+      setShowAllItems(false);
       setManualItems([]);
       setError(null);
       setSavedMsg(false);
@@ -176,6 +279,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setData(json);
       setManualItems((json.manualItems || []).map((m) => ({ ...m })));
       setNonAcEdits({});
+      setNonAcPriceEdits({});
       setPhysicalEdits({});
     } catch (err) {
       setError(err.message || 'Failed to load report');
@@ -193,6 +297,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const bp = data?.businessPosition || {};
 
   const hasPendingChanges = Object.keys(nonAcEdits).length > 0
+    || Object.keys(nonAcPriceEdits).length > 0
     || Object.keys(physicalEdits).length > 0
     || manualItems.length !== (data?.manualItems?.length ?? 0)
     || manualItems.some((m) => m.id == null || m._dirty);
@@ -203,6 +308,17 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const next = { ...prev };
       const item = items.find((i) => i.id === itemId);
       const current = Number(item?.nonAcSaleMl) || 0;
+      if (value === '' || numEq(Number(value), current)) delete next[itemId];
+      else next[itemId] = Number(value);
+      return next;
+    });
+  };
+
+  const handleNonAcPriceEdit = (itemId, value) => {
+    setNonAcPriceEdits((prev) => {
+      const next = { ...prev };
+      const item = items.find((i) => i.id === itemId);
+      const current = Number(item?.sellingPricePerMl) || 0;
       if (value === '' || numEq(Number(value), current)) delete next[itemId];
       else next[itemId] = Number(value);
       return next;
@@ -263,7 +379,15 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     setError(null);
     setSavedMsg(false);
     try {
-      // 1. Non-AC sale edits → NON_AC_SALE / CORRECTION movements
+      // 1. Non-AC prices are manual and independent of AC POS prices.
+      for (const [itemId, pricePerMl] of Object.entries(nonAcPriceEdits)) {
+        if (!(Number(pricePerMl) >= 0)) continue;
+        await updateInventoryItem(itemId, {
+          sellingPricePerMl: Number(pricePerMl),
+          date: reportDate,
+        });
+      }
+      // 2. Non-AC sale edits → NON_AC_SALE / CORRECTION movements
       for (const [itemId, ml] of Object.entries(nonAcEdits)) {
         if (!(Number(ml) >= 0)) continue;
         await recordNonAcSale({ itemId, date: reportDate, quantityMl: Number(ml) });
@@ -281,6 +405,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setData(json);
       setManualItems((json.manualItems || []).map((m) => ({ ...m })));
       setNonAcEdits({});
+      setNonAcPriceEdits({});
       setPhysicalEdits({});
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 2500);
@@ -316,7 +441,13 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
 
   if (!open) return null;
 
-  const visibleItems = items;
+  const activityItems = items.filter((r) =>
+    (Number(r.acSaleMl) || 0) > 0
+    || (Number(r.nonAcSaleMl) || 0) > 0
+    || (Number(r.purchasedMl) || 0) > 0
+    || (Number(r.wastageMl) || 0) > 0,
+  );
+  const visibleItems = showAllItems ? items : activityItems;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -386,6 +517,18 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
               </div>
 
               {/* Item-wise table */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-gray-500">
+                  {showAllItems ? `Showing all ${items.length} brands for Non-AC entry` : `Showing ${activityItems.length} brands with activity on this date`}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAllItems((value) => !value)}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  {showAllItems ? 'Show activity only' : 'Show all brands'}
+                </button>
+              </div>
               <div className="border border-gray-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
@@ -396,6 +539,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                       <th className="px-2 py-2 text-right">Purchases</th>
                       <th className="px-2 py-2 text-right">AC Sale</th>
                       <th className="px-2 py-2 text-right">Non-AC Sale (ml)</th>
+                      <th className="px-2 py-2 text-right">Non-AC Price (₹/ml)</th>
                       <th className="px-2 py-2 text-right">Wastage</th>
                       <th className="px-2 py-2 text-right">Sys. Closing</th>
                       <th className="px-2 py-2 text-right">Phys. Closing (ml)</th>
@@ -409,8 +553,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                   <tbody className="divide-y divide-gray-100">
                     {visibleItems.map((r, idx) => {
                       const nonAcVal = nonAcEdits[r.id] !== undefined ? nonAcEdits[r.id] : r.nonAcSaleMl;
+                      const nonAcPriceVal = nonAcPriceEdits[r.id] !== undefined ? nonAcPriceEdits[r.id] : (r.sellingPricePerMl ?? '');
                       const physVal = physicalEdits[r.id] !== undefined ? physicalEdits[r.id] : (r.physicalClosingMl ?? '');
-                      const edited = nonAcEdits[r.id] !== undefined || physicalEdits[r.id] !== undefined;
+                      const edited = nonAcEdits[r.id] !== undefined || nonAcPriceEdits[r.id] !== undefined || physicalEdits[r.id] !== undefined;
                       return (
                         <tr key={r.id} className={r.isHiddenFromReport ? 'opacity-40' : ''}>
                           <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
@@ -430,6 +575,17 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                               className={`w-20 px-1.5 py-1 text-right rounded border text-xs ${nonAcEdits[r.id] !== undefined ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}
                             />
                             <div className="text-[9px] text-gray-400">{fmtBtl(nonAcVal, r.bottleSizeMl)}</div>
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={nonAcPriceVal ?? ''}
+                              onChange={(e) => handleNonAcPriceEdit(r.id, e.target.value)}
+                              placeholder="₹/ml"
+                              className={`w-20 px-1.5 py-1 text-right rounded border text-xs ${nonAcPriceEdits[r.id] !== undefined ? 'border-purple-400 bg-purple-50' : 'border-gray-200'}`}
+                            />
                           </td>
                           <td className="px-2 py-1.5 text-right text-orange-600">{fmtMl(r.wastageMl)}</td>
                           <td className="px-2 py-1.5 text-right font-medium">{fmtMl(r.systemClosingMl)}</td>

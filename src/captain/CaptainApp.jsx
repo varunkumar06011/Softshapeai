@@ -1438,19 +1438,16 @@ export default function CaptainApp({ onLogout }) {
 
   // Sticky bottle selection per menu item — remembers which bottle the captain
   // picked for each peg item so they don't have to pick again on every tap.
-  // Cleared when KOT is sent (cart cleared). Keyed by menuItemId.
-  // Entries expire after 3 minutes so stale selections don't persist forever.
+  // Persists until the bottle is exhausted, table is switched, or user skips.
+  // NOT cleared on KOT send — captain continues pouring from same bottle.
   const stickyBottleRef = useRef({});
-  const STICKY_BOTTLE_TTL_MS = 3 * 60 * 1000; // 3 minutes
 
   const getStickyBottle = useCallback((itemId) => {
     if (!itemId) return null;
     const entry = stickyBottleRef.current[itemId];
     if (!entry) return null;
     if (typeof entry === 'string') return entry; // legacy format
-    if (entry.bottleId && Date.now() - entry.ts < STICKY_BOTTLE_TTL_MS) return entry.bottleId;
-    delete stickyBottleRef.current[itemId];
-    return null;
+    return entry.bottleId || null;
   }, []);
 
   const setStickyBottle = useCallback((itemId, bottleId) => {
@@ -3210,17 +3207,21 @@ export default function CaptainApp({ onLogout }) {
         .then((res) => {
           setBottlePickerLoading(false);
           if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
-            // Sticky bottle still in stock? → add directly, skip picker
-            if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
-              addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-            } else {
-              // Remembered bottle is out of stock or not found — clear it and show picker
-              if (remembered) stickyBottleRef.current[itemId] = undefined;
-              setBottlePickerItem(liquorQtyItem);
-              setBottlePickerQty(qty);
-              setBottlePickerBottles(res.bottles);
-              setShowBottlePicker(true);
+            // Sticky bottle still in stock with enough ml? → add directly, skip picker
+            const neededMl = (res.deductionMl || 30) * qty;
+            if (remembered) {
+              const bottle = res.bottles.find(b => b.inventoryItemId === remembered);
+              if (bottle && bottle.currentStockMl >= neededMl) {
+                addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
+                return;
+              }
             }
+            // Remembered bottle exhausted/insufficient/not found — clear and show picker
+            if (remembered) stickyBottleRef.current[itemId] = undefined;
+            setBottlePickerItem(liquorQtyItem);
+            setBottlePickerQty(qty);
+            setBottlePickerBottles(res.bottles);
+            setShowBottlePicker(true);
           } else {
             // No bottles in stock — show empty picker with Skip
             setBottlePickerItem(liquorQtyItem);
