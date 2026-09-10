@@ -9,6 +9,7 @@ import { apiFetch, isBackendReachable, subscribeReachability } from '../services
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import { useAuth } from '../context/AuthContext';
 import html2canvas from 'html2canvas';
+import { canvasToA4PdfBlob } from '../shared/utils/canvasToPdf';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 import PurchaseReportTemplate from './components/PurchaseReportTemplate';
 import PurchaseHistory from './components/PurchaseHistory';
@@ -1107,28 +1108,28 @@ export default function AdminPurchases() {
       document.body.removeChild(container);
       container = null;
 
-      // Convert to PNG blob
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1.0));
+      // Convert to multi-page A4 PDF (portrait for the narrow purchase layout)
+      const blob = await canvasToA4PdfBlob(canvas, { orientation: 'portrait' });
       if (!blob) {
-        setError('Failed to generate report image.');
+        setError('Failed to generate report PDF.');
         if (whatsappTab) try { whatsappTab.close(); } catch {}
         return;
       }
 
-      const fileName = `Daily-Purchase-${dailyEntryDate}.png`;
-      const file = new File([blob], fileName, { type: 'image/png' });
+      const fileName = `Daily-Purchase-${dailyEntryDate}.pdf`;
+      const file = new File([blob], fileName, { type: 'application/pdf' });
 
       const shareText = `${restaurant?.name ? `${restaurant.name} — ` : ''}Daily Purchase Entry on ${dailyEntryDate}`;
 
       if (isMobile && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
-        // Mobile: use Web Share API (opens native WhatsApp with image attached)
+        // Mobile: use Web Share API (opens native WhatsApp with PDF attached)
         await navigator.share({
           title: `Daily Purchase Entry — ${dailyEntryDate}`,
           text: shareText,
           files: [file],
         });
       } else {
-        // Desktop: download image, then navigate the pre-opened tab to WhatsApp Web
+        // Desktop: download PDF, then navigate the pre-opened tab to WhatsApp Web
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1152,13 +1153,13 @@ export default function AdminPurchases() {
           // Tab was blocked earlier, try again (may still fail)
           window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
         }
-        showSuccess('Image downloaded. Attach it in WhatsApp Web (opened in new tab).');
+        showSuccess('PDF downloaded. Attach it in WhatsApp Web (opened in new tab).');
       }
     } catch (err) {
       console.error('[AdminPurchases] WhatsApp share failed:', err);
       if (whatsappTab) try { whatsappTab.close(); } catch {}
       if (err.name !== 'AbortError') {
-        setError('Failed to generate/share report image. Please try again.');
+        setError('Failed to generate/share report PDF. Please try again.');
       }
     } finally {
       // Cleanup if something failed mid-render

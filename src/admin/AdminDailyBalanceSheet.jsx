@@ -11,6 +11,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { apiFetch } from '../services/apiConfig';
 import { useAuth } from '../context/AuthContext';
+import { canvasToA4PdfBlob } from '../shared/utils/canvasToPdf';
 import BalanceSheetReportTemplate from './components/BalanceSheetReportTemplate';
 
 // ── Pure client-side calculation (mirrors backend calculateRunningBalance) ────
@@ -1151,13 +1152,13 @@ export default function AdminDailyBalanceSheet() {
     }
   }, [accessibleOutlets, outletId, restaurant?.name, selectedDate, sheet?.status, totalSales, totalExpenditures, effectiveTotalExpenditures, expenditures, expenditureGroups, adjustments, balanceCalc.closingBalance, balanceCalc.netSales, balanceCalc.nonCashExpenditures, overrides.openingBalance, computedSales, user?.name, logoBase64, bankCollections]);
 
-  // ── WhatsApp share: generate PNG and share via Web Share API ───────────────
+  // ── WhatsApp share: generate multi-page A4 PDF and share ───────────────────
   const handleWhatsAppShare = async () => {
     setStatusLoading(true);
     setError(null);
     try {
-      // 1. Save all pending edits before generating the image so values
-      //    persist after refresh and the image reflects the saved state.
+      // 1. Save all pending edits before generating the PDF so values
+      //    persist after refresh and the PDF reflects the saved state.
       if (dirty && !isLocked) {
         await doSave();
       }
@@ -1176,7 +1177,7 @@ export default function AdminDailyBalanceSheet() {
       const outletName = accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || 'Unknown Outlet';
       const message = `Daily Balance Sheet Report\nDate: ${selectedDate}\nOutlet: ${outletName}\nClosing Balance: ₹${balanceCalc.closingBalance.toLocaleString('en-IN')}\nFinal Balance: ₹${bankBalanceComputed.finalBalance.toLocaleString('en-IN')}`;
 
-      // Generate PNG from the template
+      // Build template data
       const dateObj = new Date(selectedDate + 'T00:00:00');
       const dateStr = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
@@ -1292,60 +1293,56 @@ export default function AdminDailyBalanceSheet() {
         root.unmount();
         document.body.removeChild(container);
 
-        // Convert canvas to PNG blob
-        canvas.toBlob(async (blob) => {
-          if (!blob) {
-            throw new Error('Failed to generate PNG');
-          }
+        // Convert canvas to multi-page A4 PDF (landscape for the wide 900px layout)
+        const blob = await canvasToA4PdfBlob(canvas, { orientation: 'landscape' });
+        const fileName = `Daily-Balance-Sheet-${selectedDate}.pdf`;
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+        const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
 
-          const file = new File([blob], `Daily-Balance-Sheet-${selectedDate}.png`, { type: 'image/png' });
-          const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
-
-          if (isNative) {
-            // Capacitor native app: write PNG to cache and open native share dialog
-            const base64 = await blobToBase64(blob);
-            await Filesystem.writeFile({
-              path: file.name,
-              data: base64,
-              directory: Directory.Cache,
-              recursive: true,
-            });
-            const fileUri = await Filesystem.getUri({
-              path: file.name,
-              directory: Directory.Cache,
-            });
-            await Share.share({
+        if (isNative) {
+          // Capacitor native app: write PDF to cache and open native share dialog
+          const base64 = await blobToBase64(blob);
+          await Filesystem.writeFile({
+            path: file.name,
+            data: base64,
+            directory: Directory.Cache,
+            recursive: true,
+          });
+          const fileUri = await Filesystem.getUri({
+            path: file.name,
+            directory: Directory.Cache,
+          });
+          await Share.share({
+            title: 'Daily Balance Sheet',
+            text: message,
+            url: fileUri.uri,
+            dialogTitle: 'Share via',
+          });
+        } else {
+          // Web: check if mobile or desktop
+          const isMobileWeb = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+          if (isMobileWeb && navigator.share && navigator.canShare({ files: [file] })) {
+            // Mobile Web: use Web Share API with file
+            await navigator.share({
               title: 'Daily Balance Sheet',
               text: message,
-              url: fileUri.uri,
-              dialogTitle: 'Share via',
+              files: [file],
             });
           } else {
-            // Web: check if mobile or desktop
-            const isMobileWeb = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-            if (isMobileWeb && navigator.share && navigator.canShare({ files: [file] })) {
-              // Mobile Web: use Web Share API with file
-              await navigator.share({
-                title: 'Daily Balance Sheet',
-                text: message,
-                files: [file],
-              });
-            } else {
-              // Desktop: download PNG and open WhatsApp Web
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = file.name;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
+            // Desktop: download PDF and open WhatsApp Web
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
 
-              const whatsappUrl = `https://web.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-              window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-            }
+            const whatsappUrl = `https://web.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+            window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
           }
-        }, 'image/png');
+        }
       } catch (err) {
         if (container.parentNode) {
           document.body.removeChild(container);
@@ -1353,7 +1350,7 @@ export default function AdminDailyBalanceSheet() {
         throw err;
       }
     } catch (err) {
-      setError(err.message || 'Failed to generate image for WhatsApp');
+      setError(err.message || 'Failed to generate PDF for WhatsApp');
     } finally {
       setStatusLoading(false);
     }
