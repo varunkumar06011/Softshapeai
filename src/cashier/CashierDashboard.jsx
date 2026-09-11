@@ -2549,23 +2549,33 @@ const CashierDashboard = ({ onLogout }) => {
   // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles
 
   // Load expenditure total for the same date so the dashboard can show Expenditures + Final Amount tiles.
-  // Edge-only: the cashier reads exclusively from the local edge SQLite. The
-  // cloud is never consulted for expenditures, so a cloud outage never blanks
-  // the tile. The edge endpoint authenticates via the edge runtime token, so
-  // it works for both PIN and JWT auth.
+  // The primary source must match the Expenditures tab: PIN (edge-local)
+  // sessions read the edge DB, JWT sessions read the cloud — a cloud-created
+  // expenditure never reaches edge SQLite, so an edge-only read misses it.
   const loadExpenditureSummary = useCallback(async (dateParam) => {
     if (!dateParam) {
       setExpenditureSummary({ totalAmount: 0, count: 0 });
       return;
     }
+    const edgeLocal = isEdgeLocalAuth();
+    try {
+      const summary = edgeLocal
+        ? await edgeFetch(`/api/edge/expenditures/today-summary?date=${dateParam}`)
+        : await apiFetch(`/api/expenditures/today-summary?date=${dateParam}`);
+      setExpenditureSummary(summary || { totalAmount: 0, count: 0 });
+      return;
+    } catch (err) {
+      console.error('[ExpenditureSummary] Primary load failed:', err);
+    }
+    // JWT sessions can still read the edge copy as a degraded fallback.
+    // PIN sessions have no valid cloud credentials, so there is nothing else
+    // to try — keep the previous summary instead of flashing a misleading ₹0.
+    if (edgeLocal) return;
     try {
       const summary = await edgeFetch(`/api/edge/expenditures/today-summary?date=${dateParam}`);
       setExpenditureSummary(summary || { totalAmount: 0, count: 0 });
     } catch (err) {
-      console.error('[ExpenditureSummary] Edge load failed:', err);
-      // Do not silently show ₹0 as a confirmed result when the load failed.
-      // Keep the previous summary so the tile doesn't flicker to a misleading
-      // zero on a transient edge hiccup.
+      console.error('[ExpenditureSummary] Edge fallback failed:', err);
     }
   }, []);
 
@@ -10563,7 +10573,10 @@ const CashierDashboard = ({ onLogout }) => {
       getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId, activeMenuItems)
         .then((res) => {
           setBottlePickerLoading(false);
-          if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
+          // Only open the picker when at least one option maps to a real
+          // inventory SKU — menu-derived fallback rows (inventoryItemId null)
+          // can't be honoured as pour targets, so showing them only confuses.
+          if (res && res.isPeg && res.bottles && res.bottles.some((b) => b.inventoryItemId)) {
             // Sticky bottle still in stock with enough ml? → add directly, skip picker
             const neededMl = (res.deductionMl || 30) * qty;
             if (remembered) {

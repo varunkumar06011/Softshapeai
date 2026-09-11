@@ -11,8 +11,13 @@ import { useState } from 'react';
 import { X, Wine } from 'lucide-react';
 
 export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLoading, onSelect, onSkip, onClose }) {
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedKey, setSelectedKey] = useState(null);
   const [wasOpen, setWasOpen] = useState(false);
+
+  // Selection identity must be per-option, not per inventoryItemId: the
+  // menu-derived fallback legitimately emits options whose inventoryItemId is
+  // null, and comparing on that field would make every such row look selected.
+  const keyFor = (b, idx) => b.inventoryItemId ?? `opt-${b.bottleSize}-${idx}`;
 
   // Reset + pre-select the default bottle each time the picker opens, so the
   // captain sees which bottle will be used without asking: the linked SKU
@@ -23,7 +28,7 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
       const def = (bottles || []).find((b) => b.isDefault && b.inventoryItemId)
         || (bottles || []).find((b) => Number(b.bottleSize) === 750 && b.inventoryItemId)
         || null;
-      setSelectedId(def ? def.inventoryItemId : null);
+      setSelectedKey(def ? def.inventoryItemId : null);
     }
   }
 
@@ -32,9 +37,12 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
   const loading = isLoading;
 
   const handleConfirm = () => {
-    if (selectedId) {
-      onSelect(selectedId);
+    const picked = (bottles || []).find((b, idx) => keyFor(b, idx) === selectedKey);
+    if (picked && picked.inventoryItemId) {
+      onSelect(picked.inventoryItemId);
     } else {
+      // No real inventory SKU behind this option — same as Skip: let the
+      // backend resolve the default bottle.
       onSkip();
     }
   };
@@ -94,16 +102,16 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
               <div className="space-y-2">
                 {bottles.map((bottle, idx) => (
                   <button
-                    key={bottle.inventoryItemId ?? `${bottle.label}-${idx}`}
-                    onClick={() => setSelectedId(bottle.inventoryItemId)}
+                    key={keyFor(bottle, idx)}
+                    onClick={() => setSelectedKey(keyFor(bottle, idx))}
                     className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 transition-all ${
-                      selectedId === bottle.inventoryItemId
+                      selectedKey === keyFor(bottle, idx)
                         ? 'border-amber-500 bg-amber-50'
                         : 'border-gray-200 bg-white hover:border-amber-200'
                     }`}
                   >
                     <div className="flex flex-col items-start">
-                      <span className={`text-sm font-black ${selectedId === bottle.inventoryItemId ? 'text-amber-700' : 'text-gray-700'}`}>
+                      <span className={`text-sm font-black ${selectedKey === keyFor(bottle, idx) ? 'text-amber-700' : 'text-gray-700'}`}>
                         {bottle.label}{bottle.bottleSize ? ` · ${bottle.bottleSize}ml` : ''}
                       </span>
                       {(bottle.stockDisplay || bottle.currentStockMl != null) && (
@@ -114,12 +122,12 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
                     </div>
                     <span
                       className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                        selectedId === bottle.inventoryItemId
+                        selectedKey === keyFor(bottle, idx)
                           ? 'border-amber-500 bg-amber-500'
                           : 'border-gray-300'
                       }`}
                     >
-                      {selectedId === bottle.inventoryItemId && (
+                      {selectedKey === keyFor(bottle, idx) && (
                         <span className="w-2 h-2 rounded-full bg-white" />
                       )}
                     </span>

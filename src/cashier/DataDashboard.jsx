@@ -49,32 +49,26 @@ const CATEGORY_TO_OUTLET_TYPE = {
 // blanks the dashboard. The edge endpoints ignore the outletId query param
 // (they use the edge session's restaurantId), so we pass 'all' for both
 // restaurant/bar/both modes to keep the query well-formed.
+// edgeFetch() already throws on non-2xx and returns the parsed JSON body —
+// there is no Response object to inspect here.
 async function edgeReportDailySales(startDate, endDate) {
   const qs = new URLSearchParams({ startDate, endDate, outletId: 'all' });
-  const res = await edgeFetch(`/api/edge/reports/daily-sales?${qs}`);
-  if (!res.ok) throw new Error(`Edge daily-sales failed (${res.status})`);
-  return res.json();
+  return edgeFetch(`/api/edge/reports/daily-sales?${qs}`);
 }
 
 async function edgeReportCategorywise(startDate, endDate) {
   const qs = new URLSearchParams({ startDate, endDate, outletId: 'all' });
-  const res = await edgeFetch(`/api/edge/reports/categorywise-sales?${qs}`);
-  if (!res.ok) throw new Error(`Edge categorywise-sales failed (${res.status})`);
-  return res.json();
+  return edgeFetch(`/api/edge/reports/categorywise-sales?${qs}`);
 }
 
 async function edgeReportItemwise(startDate, endDate, outletType) {
   const qs = new URLSearchParams({ startDate, endDate, outletType, outletId: 'all' });
-  const res = await edgeFetch(`/api/edge/reports/itemwise-sales?${qs}`);
-  if (!res.ok) throw new Error(`Edge itemwise-sales failed (${res.status})`);
-  return res.json();
+  return edgeFetch(`/api/edge/reports/itemwise-sales?${qs}`);
 }
 
 async function edgeAnalytics(path, params) {
   const qs = new URLSearchParams(params);
-  const res = await edgeFetch(`${path}?${qs}`);
-  if (!res.ok) throw new Error(`Edge analytics failed (${res.status})`);
-  return res.json();
+  return edgeFetch(`${path}?${qs}`);
 }
 
 function inr(n) {

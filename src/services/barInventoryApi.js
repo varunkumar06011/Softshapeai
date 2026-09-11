@@ -183,20 +183,24 @@ export async function getBottlesForMenuItem(menuItemId, menuItems = []) {
       const tapBase = normalizeBaseName(tapName);
       const PICKER_SIZES = [30, 60, 90, 180, 375];
       if (PICKER_SIZES.includes(tapMl)) {
-        const bottles = menuItems
-          .filter((i) => {
-            const name = (i.n || i.name || '').toLowerCase();
-            const ml = parseMlFromName(name);
-            return ml && ml >= tapMl && normalizeBaseName(name) === tapBase;
-          })
-          .map((i) => {
-            const ml = parseMlFromName((i.n || i.name || '').toLowerCase());
-            // These are MENU item ids, not BarInventoryItem ids — keep null so
-            // callers never send them as pourFromInventoryItemId (the backend
-            // would reject them). Backend resolution handles the fallback.
-            return { inventoryItemId: i.barInventoryItemId || i.bar_inventory_item_id || null, label: `${ml}ml`, bottleSize: ml };
-          })
-          .sort((a, b) => b.bottleSize - a.bottleSize);
+        // One option per physical bottle size. The menu can hold several rows
+        // of the same size (and 'both' mode concatenates restaurant+bar lists),
+        // so dedupe — preferring the row that carries a real inventory link.
+        const bySize = new Map();
+        for (const i of menuItems) {
+          const name = (i.n || i.name || '').toLowerCase();
+          const ml = parseMlFromName(name);
+          if (!ml || ml < tapMl || normalizeBaseName(name) !== tapBase) continue;
+          // These are MENU item ids, not BarInventoryItem ids — keep null so
+          // callers never send them as pourFromInventoryItemId (the backend
+          // would reject them). Backend resolution handles the fallback.
+          const invId = i.barInventoryItemId || i.bar_inventory_item_id || null;
+          const existing = bySize.get(ml);
+          if (!existing || (!existing.inventoryItemId && invId)) {
+            bySize.set(ml, { inventoryItemId: invId, label: `${ml}ml`, bottleSize: ml });
+          }
+        }
+        const bottles = [...bySize.values()].sort((a, b) => b.bottleSize - a.bottleSize);
         return { menuItemId, menuName: tapped.n || tapped.name, isPeg: true, bottles };
       }
     }

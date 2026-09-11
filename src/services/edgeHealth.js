@@ -1305,19 +1305,20 @@ function handleConnectionStateChanged(data) {
 //     '/api/analytics/today-specials-sold?startDate=...',
 //   );
 export async function edgeAwareJsonFetch(edgePath, cloudPath, options = {}) {
-  // Try edge server first (works for PIN-logged-in devices)
+  // Try edge server first (works for PIN-logged-in devices). edgeFetch()
+  // already throws on non-2xx and resolves with the parsed JSON body — it is
+  // not a Response, so res.ok/res.status checks here would always fail and
+  // silently discard good edge data.
   if (await isEdgeAvailable()) {
     try {
-      const res = await edgeFetch(edgePath, { ...options, method: 'GET' });
-      if (res.ok) return await res.json();
-      // If edge returned a non-transient error, don't fall back — surface it
-      if (res.status !== 401 && res.status !== 502 && res.status !== 503) {
-        let message = `Request failed (${res.status})`;
-        try { const body = await res.json(); if (body?.error) message = body.error; } catch { /* ignore */ }
-        throw new Error(message);
-      }
+      return await edgeFetch(edgePath, { ...options, method: 'GET' });
     } catch (err) {
-      // Edge failed (unreachable, timeout, etc.) — fall through to cloud
+      // Surface definite API errors; only fall back to cloud for
+      // transient/auth-recoverable failures (or no response at all).
+      const status = err?.status ?? err?.statusCode;
+      if (status && status !== 401 && status !== 502 && status !== 503) {
+        throw err;
+      }
     }
   }
   // Fall back to the shared cloud client. It refreshes expired user JWTs and

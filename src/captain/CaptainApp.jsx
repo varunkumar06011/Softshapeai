@@ -3251,7 +3251,10 @@ export default function CaptainApp({ onLogout }) {
       getBottlesForMenuItem(itemId, activeMenuItems)
         .then((res) => {
           setBottlePickerLoading(false);
-          if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
+          // Only open the picker when at least one option maps to a real
+          // inventory SKU — menu-derived fallback rows (inventoryItemId null)
+          // can't be honoured as pour targets, so showing them only confuses.
+          if (res && res.isPeg && res.bottles && res.bottles.some((b) => b.inventoryItemId)) {
             // Sticky bottle still in stock with enough ml? → add directly, skip picker
             const neededMl = (res.deductionMl || 30) * qty;
             if (remembered) {
@@ -3442,7 +3445,10 @@ export default function CaptainApp({ onLogout }) {
       getBottlesForMenuItem(itemId, activeMenuItemsRef.current)
         .then((res) => {
           setBottlePickerLoading(false);
-          if (res && res.isPeg && res.bottles && res.bottles.length > 0) {
+          // Only open the picker when at least one option maps to a real
+          // inventory SKU — menu-derived fallback rows (inventoryItemId null)
+          // can't be honoured as pour targets, so showing them only confuses.
+          if (res && res.isPeg && res.bottles && res.bottles.some((b) => b.inventoryItemId)) {
             // Sticky bottle still in stock? → add directly, skip picker
             if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
               addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
@@ -4404,7 +4410,9 @@ export default function CaptainApp({ onLogout }) {
             return await createOrder({ tableId: entry.activeTable?.backendId, tableNumber: entry.activeTable?.number ?? entry.activeTable?.id, restaurantId: entry.restaurantId, items: entry.apiItems, requestId: entry.requestId, captainName: entry.captainName, captainId: entry.captainId, sectionTag: entry.sectionTag, preReservedKotNumber: entry.preReservedKotNumber, localPrinted: false, kotEventIds: null, failFastOnEdgeDown: false, signal: null });
           },
           fetchActiveOrder: async (tableId) => {
-            try { const res = await edgeFetch(`/api/edge/tables/${tableId}/active-order`, { method: 'GET', timeoutMs: 5000 }); if (res.ok) { const data = await res.json(); return data?.order || null; } return null; } catch { return null; }
+            // edgeFetch resolves with the parsed JSON body (and throws on
+            // non-2xx) — it is not a Response, so .ok/.json() don't apply.
+            try { const data = await edgeFetch(`/api/edge/tables/${tableId}/active-order`, { method: 'GET', timeoutMs: 5000 }); return data?.order || null; } catch { return null; }
           },
           checkDuplicate: true,
           onSuccess: (result) => { setTableCarts(prev => ({ ...prev, [activeTableId]: [] })); try { localStorage.removeItem('captain_pending_kot'); } catch {} try { localStorage.removeItem('captain_retry_print_order_id'); } catch {} addNotification(`KOT Sent ✓`, 'Queued KOT was delivered to kitchen.', 'success'); },
@@ -4495,12 +4503,10 @@ export default function CaptainApp({ onLogout }) {
           try {
             const edgeUrl = getEdgeUrl();
             if (!edgeUrl) return null;
-            const res = await edgeFetch(`/api/edge/tables/${tableId}/active-order`, { method: 'GET', timeoutMs: 5000 });
-            if (res.ok) {
-              const data = await res.json();
-              return data?.order || null;
-            }
-            return null;
+            // edgeFetch resolves with the parsed JSON body (and throws on
+            // non-2xx) — it is not a Response, so .ok/.json() don't apply.
+            const data = await edgeFetch(`/api/edge/tables/${tableId}/active-order`, { method: 'GET', timeoutMs: 5000 });
+            return data?.order || null;
           } catch { return null; }
         },
         checkDuplicate: true,
