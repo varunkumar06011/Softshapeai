@@ -200,7 +200,10 @@ function buildPrintHtml({ date, items, manualItems, businessPosition, outletName
   tbody tr:nth-child(even) { background: #fafbfc; }
   .footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid #dee2e6; display: flex; justify-content: space-between; font-size: 9px; color: #999; }
   .no-sale { text-align: center; padding: 24px; color: #999; font-size: 13px; }
+  .screen-toolbar { position: fixed; top: 10px; right: 10px; z-index: 10; }
+  .screen-toolbar button { background: #1a1a1a; color: #fff; border: none; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
   @media print {
+    .screen-toolbar { display: none; }
     body { padding: 12px; }
     .header { page-break-after: avoid; }
     .cat-header { page-break-after: avoid; }
@@ -209,9 +212,12 @@ function buildPrintHtml({ date, items, manualItems, businessPosition, outletName
     thead { display: table-header-group; }
   }
 </style></head><body>
+  <div class="screen-toolbar">
+    <button onclick="window.print()">Save as PDF / Print</button>
+  </div>
   <div class="header">
     <h1>Liquor Stock &amp; Sales Report</h1>
-    <div class="sub">${escapeHtml(outletName || 'Vgrand Lounge')} \u2014 Wing: Non-AC</div>
+    <div class="sub">${escapeHtml(outletName || 'Vgrand Lounge')}</div>
     <div class="date-line">Report Date: ${escapeHtml(date)}</div>
   </div>
 
@@ -450,7 +456,6 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
     win.document.write(html);
     win.document.close();
     win.focus();
-    win.print();
   };
 
   if (!open) return null;
