@@ -165,6 +165,29 @@ function buildPrintHtml({ date, items, manualItems, businessPosition, outletName
   const totalAcMl = soldItems.reduce((s, r) => s + (Number(r.acSaleMl) || 0), 0);
   const totalNonAcMl = soldItems.reduce((s, r) => s + (Number(r.nonAcSaleMl) || 0), 0);
 
+  // Business Position groups (printed layout): Stock / AC (POS) / Non-AC (Admin) / AC+Non-AC.
+  // Backend returns sales + totals; the AC/Non-AC consumption split is derived
+  // per-item from saleMl × (purchaseRate / bottleSizeMl) — same as the live page.
+  const costPerMl = (r) => (Number(r.bottleSizeMl) > 0 ? (Number(r.purchaseRate) || 0) / Number(r.bottleSizeMl) : 0);
+  const acConsumption = soldItems.reduce((s, r) => s + (Number(r.acSaleMl) || 0) * costPerMl(r), 0);
+  const nonAcConsumption = soldItems.reduce((s, r) => s + (Number(r.nonAcSaleMl) || 0) * costPerMl(r), 0);
+  const acSalesV = Number(bp.acSales) || 0;
+  const nonAcSalesV = Number(bp.nonAcSales) || 0;
+  const acProfitV = acSalesV - acConsumption;
+  const nonAcProfitV = nonAcSalesV - nonAcConsumption;
+  const totalSalesV = acSalesV + nonAcSalesV;
+  const totalConsumptionV = acConsumption + nonAcConsumption;
+  const totalProfitV = totalSalesV - totalConsumptionV;
+  const pct = (profit, cost) => (cost > 0 ? `${Math.round((profit / cost) * 100)}%` : '—');
+
+  const bpGroup = (title, cards) => `
+  <div class="bp-group">
+    <div class="bp-title">${title}</div>
+    <div class="bp">${cards}</div>
+  </div>`;
+  const bpCard = (label, val, cls = '') =>
+    `<div class="bp-card ${cls}"><div class="lbl">${label}</div><div class="val">${val}</div></div>`;
+
   return `<!doctype html><html><head><meta charset="utf-8"><title>Liquor Report ${date}</title>
 <style>
   * { box-sizing: border-box; }
@@ -174,11 +197,14 @@ function buildPrintHtml({ date, items, manualItems, businessPosition, outletName
   .header .sub { font-size: 12px; color: #333; margin-top: 3px; font-weight: 600; }
   .header .date-line { font-size: 11px; color: #555; margin-top: 2px; }
   .note-strip { background: #eef4fd; border: 1px solid #d3e0f4; color: #3a5a8c; font-size: 9.5px; text-align: center; padding: 5px 10px; border-radius: 4px; margin-bottom: 14px; }
-  .bp { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+  .bp-group { margin-bottom: 14px; }
+  .bp-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #333; margin-bottom: 5px; }
+  .bp { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .bp-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px 12px; }
   .bp-card .lbl { font-size: 8px; text-transform: uppercase; color: #6c757d; letter-spacing: 0.5px; font-weight: 600; }
   .bp-card .val { font-weight: 700; font-size: 14px; color: #1a1a1a; margin-top: 3px; }
-  .bp-card.accent { border-left: 4px solid #E53935; }
+  .bp-card.sales-ac { background: #eef4fd; border-color: #d3e0f4; }
+  .bp-card.sales-manual { background: #fdf3e7; border-color: #f0dfc2; }
   .bp-card.profit { border-left: 4px solid #43a047; }
   .bp-card.loss { border-left: 4px solid #e53935; }
   .summary-bar { display: flex; gap: 24px; background: #1a1a1a; color: #fff; border-radius: 8px; padding: 10px 16px; margin-bottom: 18px; font-size: 11px; }
@@ -233,16 +259,29 @@ function buildPrintHtml({ date, items, manualItems, businessPosition, outletName
     <div class="item"><span class="lbl">Profit</span><span class="val">${fmtInr(bp.profit)}</span></div>
   </div>
 
-  <div class="bp">
-    <div class="bp-card accent"><div class="lbl">Opening Stock Value</div><div class="val">${fmtInr(bp.openingStockValue)}</div></div>
-    <div class="bp-card"><div class="lbl">Purchases Value</div><div class="val">${fmtInr(bp.purchases)}</div></div>
-    <div class="bp-card"><div class="lbl">Total Available</div><div class="val">${fmtInr(bp.totalAvailable)}</div></div>
-    <div class="bp-card"><div class="lbl">Consumption Cost</div><div class="val">${fmtInr(bp.consumptionCost)}</div></div>
-    <div class="bp-card accent"><div class="lbl">AC Sales</div><div class="val">${fmtInr(bp.acSales)}</div></div>
-    <div class="bp-card accent"><div class="lbl">Non-AC Sales</div><div class="val">${fmtInr(bp.nonAcSales)}</div></div>
-    <div class="bp-card"><div class="lbl">Closing Stock Value</div><div class="val">${fmtInr(bp.closingStockValue)}</div></div>
-    <div class="bp-card ${Number(bp.profit) >= 0 ? 'profit' : 'loss'}"><div class="lbl">Net Profit</div><div class="val">${fmtInr(bp.profit)}</div></div>
-  </div>
+  ${bpGroup('Business Position \u2014 Stock',
+    bpCard('Opening Stock Value', fmtInr(bp.openingStockValue))
+    + bpCard('Purchase Value', fmtInr(bp.purchases))
+    + bpCard('Consumption', fmtInr(bp.consumptionCost))
+    + bpCard('Closing Stock Value', fmtInr(bp.closingStockValue)))}
+
+  ${bpGroup('Business Position \u2014 AC (POS)',
+    bpCard('AC Sales', fmtInr(acSalesV), 'sales-ac')
+    + bpCard('AC Consumption', fmtInr(acConsumption))
+    + bpCard('AC Profit', fmtInr(acProfitV), acProfitV >= 0 ? 'profit' : 'loss')
+    + bpCard('AC Profit %', pct(acProfitV, acConsumption)))}
+
+  ${bpGroup('Business Position \u2014 Non-AC (Admin)',
+    bpCard('Non-AC Sales', fmtInr(nonAcSalesV), 'sales-manual')
+    + bpCard('Non-AC Consumption', fmtInr(nonAcConsumption))
+    + bpCard('Non-AC Profit', fmtInr(nonAcProfitV), nonAcProfitV >= 0 ? 'profit' : 'loss')
+    + bpCard('Non-AC Profit %', pct(nonAcProfitV, nonAcConsumption)))}
+
+  ${bpGroup('Business Position \u2014 AC + Non-AC',
+    bpCard('AC + Non-AC Sales', fmtInr(totalSalesV))
+    + bpCard('AC + Non-AC Consumption', fmtInr(totalConsumptionV))
+    + bpCard('AC + Non-AC Profit', fmtInr(totalProfitV), totalProfitV >= 0 ? 'profit' : 'loss')
+    + bpCard('AC + Non-AC Profit %', pct(totalProfitV, totalConsumptionV)))}
 
   ${soldItems.length === 0 && !manualRows ? '<div class="no-sale">No sales recorded for this date.</div>' : categorySections + manualSection}
 
