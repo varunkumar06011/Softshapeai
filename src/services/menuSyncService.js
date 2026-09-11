@@ -14,10 +14,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { fetchMenuFromBackend } from "./menuService";
+import { fetchMenuFromBackend, getMenuStorageKey } from "./menuService";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
-import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
-import { isEdgeLocalAuth, isEdgeAvailable, onRuntimeStateChange } from "./edgeHealth";
+import { getScopedCacheKey, getTenantScopedKey, clearTenantCaches, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
+import { isEdgeLocalAuth, onRuntimeStateChange, getEdgeRestaurantId } from "./edgeHealth";
+import secureStorage from "../utils/secureStorage";
 
 // ── MenuSnapshot state machine ───────────────────────────────────────────────
 // States: loading, ready, stale, empty, unavailable
@@ -109,6 +110,24 @@ if (typeof window !== "undefined") {
       }
     }
   });
+
+  // Consume the background-sync result dispatched by menuService: the fast
+  // IndexedDB path returns a cached menu immediately while the fresh fetch
+  // continues in the background — without this listener the refreshed menu
+  // only ever reached the cache, never the UI, so the session kept serving
+  // a stale menu until the next launch.
+  window.addEventListener("menu-synced", (event) => {
+    const items = event.detail?.items;
+    if (!Array.isArray(items) || items.length === 0) return;
+    globalMenu = items;
+    _loadError = null;
+    try {
+      localStorage.setItem(getStorageKey(), JSON.stringify(globalMenu));
+      recordMenuCacheTimestamp();
+    } catch { /* storage error — non-fatal */ }
+    notifySubscribers();
+    dispatchMenuEvent(globalMenu);
+  });
 }
 
 /**
@@ -152,6 +171,36 @@ async function loadInitialMenu() {
     _isLoading = !globalMenu || globalMenu.length === 0;
     _loadError = null;
     notifySubscribers();
+
+    // Wrong-outlet residue: if the login session's outlet differs from the
+    // outlet the edge server is linked to (e.g. the edge was briefly linked to
+    // a sibling outlet and the app session was never re-authenticated), every
+    // tenant-scoped cache and the session identity point at the wrong
+    // restaurant. Clear them and force a fresh login so the session re-binds.
+    // Only edge-local PIN sessions are hard-bound to the linked outlet — a
+    // JWT/admin session can legitimately view a different outlet, so don't
+    // nuke it just because a nearby edge server is linked elsewhere.
+    const sessionRestaurantId = isEdgeLocalAuth() ? getCurrentRestaurantId() : null;
+    const edgeRestaurantId = sessionRestaurantId
+      ? await getEdgeRestaurantId().catch(() => null)
+      : null;
+    if (sessionRestaurantId && edgeRestaurantId && edgeRestaurantId !== sessionRestaurantId) {
+      console.warn(`[MenuSync] Session outlet (${sessionRestaurantId}) differs from linked edge outlet (${edgeRestaurantId}) — clearing stale session`);
+      clearTenantCaches(sessionRestaurantId);
+      for (const key of ['cashier_sections_cache', 'cashier_active_outlet', 'softshape_selected_subcategory', 'cashier_active_tab']) {
+        try { localStorage.removeItem(getTenantScopedKey(key, sessionRestaurantId)); } catch { /* ignore */ }
+      }
+      try { localStorage.removeItem(getMenuStorageKey(sessionRestaurantId)); } catch { /* ignore */ }
+      secureStorage.removeItem('ss_token');
+      secureStorage.removeItem('ss_preauth_token');
+      try {
+        localStorage.removeItem('ss_user');
+        localStorage.removeItem('ss_restaurant');
+      } catch { /* ignore */ }
+      const loginPath = window.location.pathname.startsWith('/captain') ? '/captain' : '/cashier';
+      window.location.href = loginPath;
+      return;
+    }
 
     try {
       const apiItems = await fetchMenuFromBackend();

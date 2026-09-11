@@ -90,7 +90,7 @@ import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
 
 import { setLocalPrinterMapping } from '../utils/offlineDB';
 
-import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, resetEdgeCache, backfillMissingTransactions } from '../services/edgeHealth';
+import { isEdgeAvailable, edgeFetch, isEdgeLocalAuth, getEdgeUrl, getStoredEdgeApiKey, getStoredEdgeRuntimeToken, resetEdgeCache, backfillMissingTransactions, getEdgeRestaurantId } from '../services/edgeHealth';
 
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 
@@ -886,6 +886,12 @@ const CashierDashboard = ({ onLogout }) => {
 
       const useEdgeDirect = isEdgeLocal;
 
+      // When the login session belongs to a different outlet than the linked
+      // edge (e.g. an earlier wrong-outlet connect), the tenant-scoped caches
+      // hold the sibling outlet's sections — key them by the edge's id instead.
+      const sectionsTenantId = (await getEdgeRestaurantId()) || getCurrentRestaurantId();
+      const effectiveSectionsKey = getTenantScopedKey('cashier_sections_cache', sectionsTenantId);
+
       if (useEdgeDirect || await isEdgeAvailable()) {
 
         try {
@@ -906,9 +912,9 @@ const CashierDashboard = ({ onLogout }) => {
 
           try {
 
-            localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+            localStorage.setItem(effectiveSectionsKey, JSON.stringify(sections));
 
-            cacheSections(getCurrentRestaurantId(), sections).catch(() => {});
+            cacheSections(sectionsTenantId, sections).catch(() => {});
 
           } catch (e) {
 
@@ -958,9 +964,9 @@ const CashierDashboard = ({ onLogout }) => {
 
             try {
 
-              localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+              localStorage.setItem(effectiveSectionsKey, JSON.stringify(sections));
 
-              cacheSections(getCurrentRestaurantId(), sections).catch(() => {});
+              cacheSections(sectionsTenantId, sections).catch(() => {});
 
             } catch (e) {
 
@@ -1022,9 +1028,9 @@ const CashierDashboard = ({ onLogout }) => {
 
         try {
 
-          localStorage.setItem(SECTIONS_CACHE_KEY, JSON.stringify(sections));
+          localStorage.setItem(effectiveSectionsKey, JSON.stringify(sections));
 
-          cacheSections(getCurrentRestaurantId(), sections).catch(() => {});
+          cacheSections(sectionsTenantId, sections).catch(() => {});
 
         } catch (e) {
 
@@ -1040,7 +1046,7 @@ const CashierDashboard = ({ onLogout }) => {
 
         try {
 
-          const cached = await getCachedSections(getCurrentRestaurantId());
+          const cached = await getCachedSections(sectionsTenantId);
 
           if (cached && cached.length > 0) {
 
@@ -1625,6 +1631,14 @@ const CashierDashboard = ({ onLogout }) => {
   const { menuItems: barMenuItems, loading: barMenuLoading, setGlobalMenu: setGlobalBarMenu } = useBarMenuSync();
 
   const menuLoading = activeOutlet === 'bar' || activeOutlet === 'both' ? barMenuLoading : restaurantMenuLoading;
+
+  // Deduplicate on id/n: both menu stores fetch the same /api/edge/menu/items
+  // payload, so a naive spread renders every item twice when outlet is 'both'.
+  // Bar-mapped items win so liquor keeps bottle fields (isBottleItem etc.).
+  const mergedMenuItems = useMemo(
+    () => Array.from(new Map([...menuItems, ...barMenuItems].map(i => [i.id || i.n, i])).values()),
+    [menuItems, barMenuItems]
+  );
 
   const [barMenuTab, setBarMenuTab] = useState('food');
 
@@ -2553,10 +2567,10 @@ const CashierDashboard = ({ onLogout }) => {
   // sessions read the edge DB, JWT sessions read the cloud — a cloud-created
   // expenditure never reaches edge SQLite, so an edge-only read misses it.
   const loadExpenditureSummary = useCallback(async (dateParam) => {
-    if (!dateParam) {
-      setExpenditureSummary({ totalAmount: 0, count: 0 });
-      return;
-    }
+    // The tile label reads "(Today)" whenever no dashboard date is picked —
+    // so a range filter (month/all) with no single date must still show
+    // today's total, not a forced ₹0.
+    if (!dateParam) dateParam = getKolkataDateString();
     const edgeLocal = isEdgeLocalAuth();
     try {
       const summary = edgeLocal
@@ -2593,9 +2607,12 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (!silent) setTxnsLoading(true);
 
-    try {
+    // Hoisted above try{}: the finally block reads dateParam for the
+    // expenditure summary — a `let` inside try would be out of scope there,
+    // throwing a ReferenceError that silently kept the tile at ₹0 forever.
+    let dateParam = null;
 
-      let dateParam = null;
+    try {
 
       let monthParam = null;
 
@@ -3697,7 +3714,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const source = activeOutlet === 'restaurant' ? menuItems
 
-      : activeOutlet === 'both' ? [...menuItems, ...barMenuItems]
+      : activeOutlet === 'both' ? mergedMenuItems
 
       : barMenuItems;
 
@@ -3707,7 +3724,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       .sort((a, b) => (a.n || '').toLowerCase().localeCompare((b.n || '').toLowerCase()));
 
-  }, [menuItems, barMenuItems, activeOutlet]);
+  }, [menuItems, barMenuItems, mergedMenuItems, activeOutlet]);
 
 
 
@@ -9566,7 +9583,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     if (activeOutlet === 'both') {
 
-      const items = [...menuItems, ...barMenuItems].filter(i => i.isAvailable !== false);
+      const items = mergedMenuItems.filter(i => i.isAvailable !== false);
 
       const cats = items.map(i => i.category || i.c).filter(Boolean);
 
@@ -9580,7 +9597,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     return ['All', ...new Set(cats)];
 
-  }, [activeOutlet, categories, menuItems, barMenuItems]);
+  }, [activeOutlet, categories, menuItems, barMenuItems, mergedMenuItems]);
 
 
 
@@ -9664,7 +9681,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const items = activeOutlet === 'bar' ? barMenuItems
 
-      : activeOutlet === 'both' ? [...menuItems, ...barMenuItems]
+      : activeOutlet === 'both' ? mergedMenuItems
 
       : menuItems;
 
@@ -9672,15 +9689,19 @@ const CashierDashboard = ({ onLogout }) => {
 
     const q = menuEditSearch.toLowerCase();
 
-    return items.filter(i =>
+    return items
 
-      (i.n || i.name || '').toLowerCase().includes(q) ||
+      .filter(i =>
 
-      (i.c || i.category || '').toLowerCase().includes(q)
+        (i.n || i.name || '').toLowerCase().includes(q) ||
 
-    );
+        (i.c || i.category || '').toLowerCase().includes(q)
 
-  }, [activeOutlet, menuItems, barMenuItems, menuEditSearch]);
+      )
+
+      .sort((a, b) => getSearchRank(a, menuEditSearch) - getSearchRank(b, menuEditSearch) || (a.n || '').localeCompare(b.n || ''));
+
+  }, [activeOutlet, menuItems, barMenuItems, mergedMenuItems, menuEditSearch]);
 
 
 
@@ -9992,7 +10013,7 @@ const CashierDashboard = ({ onLogout }) => {
 
       : activeOutlet === 'both'
 
-        ? [...menuItems, ...barMenuItems].filter(i => i.isAvailable !== false)
+        ? mergedMenuItems.filter(i => i.isAvailable !== false)
 
         : barMenuItems.filter(i => i.isAvailable !== false);
 
@@ -10018,7 +10039,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const now = Date.now();
 
-    const allItemsForSpecials = activeOutlet === 'restaurant' ? menuItems : activeOutlet === 'both' ? [...menuItems, ...barMenuItems] : barMenuItems;
+    const allItemsForSpecials = activeOutlet === 'restaurant' ? menuItems : activeOutlet === 'both' ? mergedMenuItems : barMenuItems;
 
     const hasTodaySpecial = allItemsForSpecials.some(
 
@@ -10028,7 +10049,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     return ['All', ...(hasTodaySpecial ? ['Today Special'] : []), ...new Set(cats)];
 
-  }, [selectedMenuType, activeOutlet, menuItems, barMenuItems]);
+  }, [selectedMenuType, activeOutlet, menuItems, barMenuItems, mergedMenuItems]);
 
 
 
@@ -10036,7 +10057,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     const now = Date.now();
 
-    const source = activeOutlet === 'restaurant' ? menuItems : activeOutlet === 'both' ? [...menuItems, ...barMenuItems] : barMenuItems;
+    const source = activeOutlet === 'restaurant' ? menuItems : activeOutlet === 'both' ? mergedMenuItems : barMenuItems;
 
     return (source || []).filter(
 
@@ -10044,7 +10065,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     );
 
-  }, [menuItems, barMenuItems, activeOutlet]);
+  }, [menuItems, barMenuItems, mergedMenuItems, activeOutlet]);
 
 
 
@@ -10062,7 +10083,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     } else if (activeOutlet === 'both') {
 
-      itemsToFilter = [...menuItems, ...barMenuItems].filter(i => i.isAvailable !== false);
+      itemsToFilter = mergedMenuItems.filter(i => i.isAvailable !== false);
 
     } else {
 
@@ -10295,7 +10316,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     return filtered;
 
-  }, [activeOutlet, menuItems, barMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, tableSubCategory, fetchedSections, sectionTagToSource]);
+  }, [activeOutlet, menuItems, barMenuItems, mergedMenuItems, searchQuery, selectedCategory, selectedMenuType, activeDiet, selectedTable, tableSubCategory, fetchedSections, sectionTagToSource]);
 
 
 
@@ -15079,7 +15100,7 @@ const CashierDashboard = ({ onLogout }) => {
 
                                   key={cat}
 
-                                  onClick={() => setSelectedCategory(cat)}
+                                  onClick={() => { setSearchQuery(''); setSelectedCategory(cat); }}
 
                                   className={`px-6 py-4 rounded-xl text-base font-black uppercase transition-all duration-200 border shrink-0 hover:scale-[1.03] active:scale-95 flex items-center gap-2 ${
 
@@ -16921,17 +16942,23 @@ const CashierDashboard = ({ onLogout }) => {
 
         const committedItems = getBillableItems(selectedTable);
 
-        const allMenuItems = (activeOutlet === 'bar' || activeOutlet === 'both') ? barMenuItems : menuItems;
+        const allMenuItems = activeOutlet === 'bar' ? barMenuItems
 
+          : activeOutlet === 'both' ? mergedMenuItems
+
+          : menuItems;
+
+        // Same relevance ranking as the main POS grid — without it the match
+        // was returned in menu order and the exact item often wasn't first.
         const searchResults = billEditSearch.trim().length > 1
 
-          ? allMenuItems.filter(m =>
+          ? allMenuItems
 
-            m.isAvailable !== false &&
+            .filter(m => m.isAvailable !== false && itemMatchesQuery(m, billEditSearch))
 
-            (m.name || m.n || '').toLowerCase().includes(billEditSearch.toLowerCase())
+            .sort((a, b) => getSearchRank(a, billEditSearch) - getSearchRank(b, billEditSearch) || (a.n || '').localeCompare(b.n || ''))
 
-          ).slice(0, 12)
+            .slice(0, 12)
 
           : [];
 

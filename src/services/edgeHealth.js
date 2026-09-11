@@ -226,6 +226,38 @@ export function prewarmEdgeHealth() {
   isEdgeAvailable().catch(() => {});
 }
 
+// The outlet id the linked edge server is actually bound to, read from /health.
+// Cached briefly so callers can resolve tenant-scoped cache keys without
+// hammering the endpoint on every read.
+let _edgeRestaurantId = null;
+let _edgeRestaurantIdAt = 0;
+const EDGE_RESTAURANT_ID_TTL_MS = 60_000;
+
+/**
+ * Returns the restaurantId the linked edge server is bound to, or null when
+ * the edge is unreachable / not linked. When this differs from
+ * getCurrentRestaurantId() (e.g. the app was logged in while the edge was
+ * linked to a different outlet), tenant-scoped caches hold the wrong outlet's
+ * data and callers should trust the edge id instead.
+ */
+export async function getEdgeRestaurantId({ force = false } = {}) {
+  if (!force && _edgeRestaurantId && Date.now() - _edgeRestaurantIdAt < EDGE_RESTAURANT_ID_TTL_MS) {
+    return _edgeRestaurantId;
+  }
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
+    const res = await fetch(`${getEdgeUrl()}/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const health = await res.json().catch(() => ({}));
+      _edgeRestaurantId = health.restaurantId || null;
+      _edgeRestaurantIdAt = Date.now();
+    }
+  } catch { /* edge unreachable — keep last known value */ }
+  return _edgeRestaurantId;
+}
+
 /**
  * Wait for the edge server to become fully operational (isOperational: true).
  * The Runtime returns isOperational=false while BOOTING/STARTING (downloading

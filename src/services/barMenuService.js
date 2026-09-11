@@ -14,7 +14,8 @@
 import { apiUrl, getAuthHeaders } from "./apiConfig";
 import { getBarMenuCacheKey } from "../utils/cacheKeys";
 import { getMenuStorageKey } from "./menuService";
-import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, triggerEdgeConfigResync } from "./edgeHealth";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { isEdgeAvailable, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, triggerEdgeConfigResync, getEdgeRestaurantId } from "./edgeHealth";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 // Default placeholder images for items without uploaded images
@@ -358,7 +359,18 @@ async function fetchRestaurantItemsRaw() {
 
 export async function fetchBarMenuFromBackend(options = {}) {
   const { bypassCache = false } = options;
-  const restaurantId = getMenuStorageKey().split('_').pop() || 'default';
+  let restaurantId = getCurrentRestaurantId() || 'default';
+
+  // Same tenant-poison guard as fetchMenuFromBackend: when the session was
+  // logged in under a different outlet than the linked edge, scoped caches
+  // hold the sibling outlet's data — trust the edge's restaurantId instead.
+  if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+    const edgeRestaurantId = await getEdgeRestaurantId();
+    if (edgeRestaurantId && edgeRestaurantId !== restaurantId) {
+      console.warn(`[BarMenu] Session restaurantId (${restaurantId}) differs from edge (${edgeRestaurantId}) — using edge id`);
+      restaurantId = edgeRestaurantId;
+    }
+  }
 
   // ── Path 0: IndexedDB cache (instant render) ───────────────────────────────
   // Skipped when bypassCache is set (e.g. after a config.changed event) so we

@@ -16,7 +16,7 @@
 import { API_BASE, apiUrl, getAuthHeaders } from "./apiConfig";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { getScopedCacheKey, LEGACY_UNSCOPED_KEYS } from "../utils/cacheKeys";
-import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, waitForEdgeReady, triggerEdgeConfigResync } from "./edgeHealth.js";
+import { isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, edgeFetch, EDGE_READ_TIMEOUT_MS, waitForEdgeReady, triggerEdgeConfigResync, getEdgeRestaurantId } from "./edgeHealth.js";
 import { getCachedMenu, cacheMenu } from "../utils/offlineDB";
 
 async function edgeFetchMenuItems() {
@@ -220,6 +220,19 @@ export async function fetchMenuFromBackend(restaurantId = getCurrentRestaurantId
   if (!restaurantId || restaurantId === 'null' || restaurantId === 'undefined') {
     console.warn("[MenuService] No valid restaurantId provided, skipping backend fetch.");
     return readStoredMenu();
+  }
+
+  // Tenant-poison guard: if the login session belongs to a different outlet
+  // than the linked edge server (e.g. an earlier wrong-outlet connect left
+  // ss_user.restaurantId pointing at a sibling), every tenant-scoped cache key
+  // resolves to the wrong bucket and would serve that outlet's menu. The edge
+  // server always serves its own linked outlet — trust its restaurantId.
+  if (isEdgeLocalAuth() || await isEdgeAvailable()) {
+    const edgeRestaurantId = await getEdgeRestaurantId();
+    if (edgeRestaurantId && edgeRestaurantId !== restaurantId) {
+      console.warn(`[MenuService] Session restaurantId (${restaurantId}) differs from edge (${edgeRestaurantId}) — using edge id`);
+      restaurantId = edgeRestaurantId;
+    }
   }
 
   // ── Path 0: IndexedDB cache (instant render) ───────────────────────────────
