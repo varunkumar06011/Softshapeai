@@ -33,6 +33,7 @@ import {
 } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
 import { isBeerItem, fmtBeerBottles } from './inventoryConstants';
+import { useAuth } from '../../context/AuthContext';
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
@@ -75,7 +76,7 @@ function escapeHtml(str) {
 // ── Printable HTML for the report ────────────────────────────────────────────
 // Shows ONLY items that had activity that day (AC sale, Non-AC sale, wastage, or purchase).
 // Items with zero activity are excluded — the admin only sees what actually moved.
-function buildPrintHtml({ date, items, manualItems, businessPosition }) {
+function buildPrintHtml({ date, items, manualItems, businessPosition, outletName }) {
   const visible = items.filter((i) => !i.isHiddenFromReport);
 
   // Only show items that had activity that day
@@ -168,12 +169,11 @@ function buildPrintHtml({ date, items, manualItems, businessPosition }) {
 <style>
   * { box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1a1a1a; margin: 0; padding: 24px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #E53935; padding-bottom: 12px; margin-bottom: 16px; }
-  .header h1 { font-size: 20px; margin: 0; color: #1a1a1a; font-weight: 700; }
-  .header .sub { font-size: 11px; color: #666; margin-top: 2px; }
-  .header .date-box { text-align: right; }
-  .header .date-box .lbl { font-size: 9px; text-transform: uppercase; color: #999; letter-spacing: 1px; }
-  .header .date-box .val { font-size: 18px; font-weight: 700; color: #E53935; }
+  .header { text-align: center; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 2px solid #1a1a1a; }
+  .header h1 { font-size: 19px; margin: 0; color: #1a1a1a; font-weight: 700; }
+  .header .sub { font-size: 12px; color: #333; margin-top: 3px; font-weight: 600; }
+  .header .date-line { font-size: 11px; color: #555; margin-top: 2px; }
+  .note-strip { background: #eef4fd; border: 1px solid #d3e0f4; color: #3a5a8c; font-size: 9.5px; text-align: center; padding: 5px 10px; border-radius: 4px; margin-bottom: 14px; }
   .bp { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
   .bp-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px 12px; }
   .bp-card .lbl { font-size: 8px; text-transform: uppercase; color: #6c757d; letter-spacing: 0.5px; font-weight: 600; }
@@ -210,14 +210,13 @@ function buildPrintHtml({ date, items, manualItems, businessPosition }) {
   }
 </style></head><body>
   <div class="header">
-    <div>
-      <h1>Daily Liquor & Beer Report</h1>
-      <div class="sub">Vgrand Lounge \u2014 Bar Inventory Summary</div>
-    </div>
-    <div class="date-box">
-      <div class="lbl">Report Date</div>
-      <div class="val">${escapeHtml(date)}</div>
-    </div>
+    <h1>Liquor Stock &amp; Sales Report</h1>
+    <div class="sub">${escapeHtml(outletName || 'Vgrand Lounge')} \u2014 Wing: Non-AC</div>
+    <div class="date-line">Report Date: ${escapeHtml(date)}</div>
+  </div>
+
+  <div class="note-strip">
+    Non-AC = admin-entered, database-driven &middot; AC Bar = POS billing, database-driven. All values reflect the latest saved database data.
   </div>
 
   <div class="summary-bar">
@@ -249,6 +248,7 @@ function buildPrintHtml({ date, items, manualItems, businessPosition }) {
 }
 
 export default function LiquorDailyReportModal({ open, date, onClose, onSaved }) {
+  const { restaurant } = useAuth();
   const [reportDate, setReportDate] = useState(date || '');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -440,6 +440,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       items: fresh.items || [],
       manualItems: fresh.manualItems || [],
       businessPosition: fresh.businessPosition || {},
+      outletName: restaurant?.name,
     });
     const win = window.open('', '_blank', 'width=1100,height=800');
     if (!win) {
