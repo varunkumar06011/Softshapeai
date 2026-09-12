@@ -15,10 +15,7 @@
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '₹0';
-  const v = Number(n);
-  if (Math.abs(v) >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
-  if (Math.abs(v) >= 1000) return `₹${(v / 1000).toFixed(1)}K`;
-  return `₹${Math.round(v)}`;
+  return `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
 }
 
 function fmtPct(n) {
