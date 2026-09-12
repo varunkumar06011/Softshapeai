@@ -185,41 +185,65 @@ export function useInventoryData(tab, restaurant) {
   const filteredItems = useMemo(() => {
     let result = items;
 
-    // Search filter — supports fuzzy matching for spelling mistakes.
-    // Exact substring matches are always included and ranked first;
-    // fuzzy matches (within a Levenshtein distance threshold) follow.
+    // Search filter — broad matching for maximum visibility:
+    //   1. Normalized substring (ignores spaces/case/punctuation) — "kf" matches "K F Strong"
+    //   2. Acronym match — first letters of each word form an acronym; "kf" matches "K F Strong" → "kfs"
+    //   3. Per-word match — query matches any individual word (with fuzzy tolerance)
+    //   4. Full-name fuzzy (Levenshtein) — catches spelling mistakes
+    // Exact matches rank first, then acronym, then per-word, then fuzzy.
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.trim().toLowerCase();
       const qNorm = q.replace(/[^a-z0-9]/g, '');
       const maxDist = Math.max(1, Math.floor(qNorm.length * 0.3)); // 30% tolerance
+      const qTokens = qNorm.split(/\s+/).filter(Boolean);
 
       const scored = [];
       for (const item of result) {
         const name = (item.name || '').toLowerCase();
         const nameNorm = name.replace(/[^a-z0-9]/g, '');
+        const words = name.split(/\s+/).filter(Boolean);
+        const wordsNorm = nameNorm.split(/\s+/).filter(Boolean);
 
-        // Exact substring match — top priority
+        // 1. Exact / normalized substring match — score 0
         if (nameNorm.includes(qNorm) || name.includes(q)) {
           scored.push({ item, score: 0 });
           continue;
         }
 
-        // Fuzzy: check Levenshtein distance against each word in the name
-        const words = nameNorm.split(/\s+/).filter(Boolean);
+        // 2. Acronym match — first letters of each word concatenated.
+        // "K F Strong 650ml" → acronym "kfs6". "kf" is a substring of "kfs6".
+        const acronym = words.map((w) => w[0] || '').join('');
+        if (acronym && acronym.includes(qNorm)) {
+          scored.push({ item, score: 1 });
+          continue;
+        }
+
+        // 3. Per-word match — query is a substring of any word, or fuzzy
+        // match against any word. "kf" matches "kingfisher" word → "k" is
+        // a prefix but also check if query is a prefix of any word.
+        let wordMatched = false;
         let bestDist = Infinity;
-        for (const w of words) {
+        for (const w of wordsNorm) {
+          if (w.includes(qNorm)) { wordMatched = true; break; }
+          // Prefix match: query matches the start of a word
+          if (w.startsWith(qNorm)) { wordMatched = true; break; }
+          // Fuzzy per-word
           const d = levenshtein(qNorm, w, maxDist);
           if (d < bestDist) bestDist = d;
         }
-        // Also check against the full normalized name (for multi-word queries)
+        if (wordMatched) {
+          scored.push({ item, score: 2 });
+          continue;
+        }
+
+        // 4. Full-name fuzzy (Levenshtein) — spelling mistakes
         const fullDist = levenshtein(qNorm, nameNorm, maxDist);
         if (fullDist < bestDist) bestDist = fullDist;
-
         if (bestDist <= maxDist) {
-          scored.push({ item, score: bestDist });
+          scored.push({ item, score: 3 + bestDist });
         }
       }
-      // Sort: exact matches (score 0) first, then by fuzzy distance
+      // Sort: exact (0) → acronym (1) → per-word (2) → fuzzy (3+)
       scored.sort((a, b) => a.score - b.score);
       result = scored.map((s) => s.item);
     }
