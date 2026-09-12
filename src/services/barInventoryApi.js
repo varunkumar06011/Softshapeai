@@ -447,6 +447,27 @@ export async function retryDeduction(orderId) {
   return parseResponse(res);
 }
 
+// Edit daily record fields (Opening / Purchases / AC Sale) for a date.
+// Creates append-only movements on the backend so the change persists
+// everywhere (daily record, stock, downstream days) — not just in the PDF.
+export async function editDailyRecord({ itemId, date, openingMl, purchasedMl, acSaleMl, notes, requestId }) {
+  const res = await fetch(apiUrl('/api/bar/inventory/daily-record-edit'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({
+      itemId,
+      date,
+      openingMl: openingMl != null ? Number(openingMl) : undefined,
+      purchasedMl: purchasedMl != null ? Number(purchasedMl) : undefined,
+      acSaleMl: acSaleMl != null ? Number(acSaleMl) : undefined,
+      notes,
+      requestId,
+      restaurantId: getCurrentRestaurantId(),
+    }),
+  });
+  return parseResponse(res);
+}
+
 // ── Manual report items (PDF-only rows) ──────────────────────────────────────
 
 export async function fetchManualReportItems(date) {

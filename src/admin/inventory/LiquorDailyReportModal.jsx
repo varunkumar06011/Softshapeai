@@ -28,6 +28,7 @@ import {
   setItemStock,
   updateInventoryItem,
   saveManualReportItems,
+  editDailyRecord,
   getOrCreateRequestId,
   clearRequestId,
 } from '../../services/barInventoryApi';
@@ -305,6 +306,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const [nonAcEdits, setNonAcEdits] = useState({});      // { itemId: ml }
   const [nonAcPriceEdits, setNonAcPriceEdits] = useState({}); // { itemId: price per ml }
   const [physicalEdits, setPhysicalEdits] = useState({}); // { itemId: ml }
+  const [openingEdits, setOpeningEdits] = useState({});   // { itemId: ml }
+  const [purchasedEdits, setPurchasedEdits] = useState({}); // { itemId: ml }
+  const [acSaleEdits, setAcSaleEdits] = useState({});     // { itemId: ml }
   const [showAllItems, setShowAllItems] = useState(false);
   // Manual PDF-only rows
   const [manualItems, setManualItems] = useState([]);
@@ -315,6 +319,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setNonAcEdits({});
       setNonAcPriceEdits({});
       setPhysicalEdits({});
+      setOpeningEdits({});
+      setPurchasedEdits({});
+      setAcSaleEdits({});
       setShowAllItems(false);
       setManualItems([]);
       setError(null);
@@ -334,6 +341,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setNonAcEdits({});
       setNonAcPriceEdits({});
       setPhysicalEdits({});
+      setOpeningEdits({});
+      setPurchasedEdits({});
+      setAcSaleEdits({});
     } catch (err) {
       setError(err.message || 'Failed to load report');
       setData(null);
@@ -352,6 +362,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
   const hasPendingChanges = Object.keys(nonAcEdits).length > 0
     || Object.keys(nonAcPriceEdits).length > 0
     || Object.keys(physicalEdits).length > 0
+    || Object.keys(openingEdits).length > 0
+    || Object.keys(purchasedEdits).length > 0
+    || Object.keys(acSaleEdits).length > 0
     || manualItems.length !== (data?.manualItems?.length ?? 0)
     || manualItems.some((m) => m.id == null || m._dirty);
 
@@ -383,6 +396,39 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       const next = { ...prev };
       const item = items.find((i) => i.id === itemId);
       const current = item?.physicalClosingMl;
+      if (value === '' || numEq(Number(value), current)) delete next[itemId];
+      else next[itemId] = Number(value);
+      return next;
+    });
+  };
+
+  const handleOpeningEdit = (itemId, value) => {
+    setOpeningEdits((prev) => {
+      const next = { ...prev };
+      const item = items.find((i) => i.id === itemId);
+      const current = Number(item?.openingMl) || 0;
+      if (value === '' || numEq(Number(value), current)) delete next[itemId];
+      else next[itemId] = Number(value);
+      return next;
+    });
+  };
+
+  const handlePurchasedEdit = (itemId, value) => {
+    setPurchasedEdits((prev) => {
+      const next = { ...prev };
+      const item = items.find((i) => i.id === itemId);
+      const current = Number(item?.purchasedMl) || 0;
+      if (value === '' || numEq(Number(value), current)) delete next[itemId];
+      else next[itemId] = Number(value);
+      return next;
+    });
+  };
+
+  const handleAcSaleEdit = (itemId, value) => {
+    setAcSaleEdits((prev) => {
+      const next = { ...prev };
+      const item = items.find((i) => i.id === itemId);
+      const current = Number(item?.acSaleMl) || 0;
       if (value === '' || numEq(Number(value), current)) delete next[itemId];
       else next[itemId] = Number(value);
       return next;
@@ -455,6 +501,22 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
         await setItemStock(itemId, Number(ml), { date: reportDate, notes: 'Physical count (report edit)', requestId: getOrCreateRequestId(key) });
         clearRequestId(key);
       }
+      // 4. Opening / Purchases / AC Sale edits → daily-record-edit endpoint
+      const dailyFields = [openingEdits, purchasedEdits, acSaleEdits];
+      const allItemIds = new Set(dailyFields.flatMap((e) => Object.keys(e)));
+      for (const itemId of allItemIds) {
+        const key = `bar-daily-edit:${itemId}:${reportDate}`;
+        await editDailyRecord({
+          itemId,
+          date: reportDate,
+          openingMl: openingEdits[itemId] != null ? openingEdits[itemId] : undefined,
+          purchasedMl: purchasedEdits[itemId] != null ? purchasedEdits[itemId] : undefined,
+          acSaleMl: acSaleEdits[itemId] != null ? acSaleEdits[itemId] : undefined,
+          notes: 'PDF to Admin edit',
+          requestId: getOrCreateRequestId(key),
+        });
+        clearRequestId(key);
+      }
       // 3. Manual PDF-only rows
       await saveManualReportItems({ date: reportDate, items: manualItems });
 
@@ -465,6 +527,9 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
       setNonAcEdits({});
       setNonAcPriceEdits({});
       setPhysicalEdits({});
+      setOpeningEdits({});
+      setPurchasedEdits({});
+      setAcSaleEdits({});
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 2500);
       onSaved?.();
@@ -518,7 +583,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           <div>
             <h2 className="text-lg font-bold text-gray-900">Daily Liquor Report — PDF to Admin</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              Permanent daily records. Past-date edits write correction movements and rebuild all following days.
+              Permanent daily records. Opening, Purchases, AC Sale, Non-AC Sale & Physical Closing are editable — edits persist to the database and rebuild all following days.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -613,7 +678,11 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                       const nonAcVal = nonAcEdits[r.id] !== undefined ? nonAcEdits[r.id] : r.nonAcSaleMl;
                       const nonAcPriceVal = nonAcPriceEdits[r.id] !== undefined ? nonAcPriceEdits[r.id] : (r.sellingPricePerMl ?? '');
                       const physVal = physicalEdits[r.id] !== undefined ? physicalEdits[r.id] : (r.physicalClosingMl ?? '');
-                      const edited = nonAcEdits[r.id] !== undefined || nonAcPriceEdits[r.id] !== undefined || physicalEdits[r.id] !== undefined;
+                      const openingVal = openingEdits[r.id] !== undefined ? openingEdits[r.id] : (r.openingMl ?? '');
+                      const purchasedVal = purchasedEdits[r.id] !== undefined ? purchasedEdits[r.id] : (r.purchasedMl ?? '');
+                      const acSaleVal = acSaleEdits[r.id] !== undefined ? acSaleEdits[r.id] : (r.acSaleMl ?? '');
+                      const edited = nonAcEdits[r.id] !== undefined || nonAcPriceEdits[r.id] !== undefined || physicalEdits[r.id] !== undefined
+                        || openingEdits[r.id] !== undefined || purchasedEdits[r.id] !== undefined || acSaleEdits[r.id] !== undefined;
                       return (
                         <tr key={r.id} className={r.isHiddenFromReport ? 'opacity-40' : ''}>
                           <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
@@ -621,9 +690,36 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
                             <div className="font-medium text-gray-900">{r.name}</div>
                             <div className="text-gray-400">{r.brand} · {r.bottleSizeMl}ml</div>
                           </td>
-                          <td className="px-2 py-1.5 text-right">{fmtRowMl(r, r.openingMl)}</td>
-                          <td className="px-2 py-1.5 text-right text-green-700">{fmtRowMl(r, r.purchasedMl)}</td>
-                          <td className="px-2 py-1.5 text-right">{fmtRowMl(r, r.acSaleMl)}</td>
+                          <td className="px-2 py-1.5 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              value={openingVal}
+                              onChange={(e) => handleOpeningEdit(r.id, e.target.value)}
+                              className={`w-20 px-1.5 py-1 text-right rounded border text-xs ${openingEdits[r.id] !== undefined ? 'border-teal-400 bg-teal-50' : 'border-gray-200'}`}
+                            />
+                            <div className="text-[9px] text-gray-400">{fmtBtl(openingVal, r.bottleSizeMl)}</div>
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              value={purchasedVal}
+                              onChange={(e) => handlePurchasedEdit(r.id, e.target.value)}
+                              className={`w-20 px-1.5 py-1 text-right rounded border text-xs ${purchasedEdits[r.id] !== undefined ? 'border-green-400 bg-green-50' : 'border-gray-200'}`}
+                            />
+                            <div className="text-[9px] text-gray-400">{fmtBtl(purchasedVal, r.bottleSizeMl)}</div>
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              value={acSaleVal}
+                              onChange={(e) => handleAcSaleEdit(r.id, e.target.value)}
+                              className={`w-20 px-1.5 py-1 text-right rounded border text-xs ${acSaleEdits[r.id] !== undefined ? 'border-rose-400 bg-rose-50' : 'border-gray-200'}`}
+                            />
+                            <div className="text-[9px] text-gray-400">{fmtBtl(acSaleVal, r.bottleSizeMl)}</div>
+                          </td>
                           <td className="px-2 py-1.5 text-right">
                             <input
                               type="number"
