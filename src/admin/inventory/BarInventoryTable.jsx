@@ -61,6 +61,7 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [quickFilter, setQuickFilter] = useState('all'); // all | sold | lowstock | highprofit | negative
 
   // ── Filtering ────────────────────────────────────────────────────────────
   const searchFiltered = useMemo(() => {
@@ -73,10 +74,47 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
     );
   }, [items, search]);
 
-  const filtered = useMemo(
+  const nonAcFiltered = useMemo(
     () => (showNonAcOnly ? searchFiltered.filter((i) => Number(i.nonAcSaleMl) > 0) : searchFiltered),
     [searchFiltered, showNonAcOnly],
   );
+
+  // ── Quick filter + sort ──────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    let rows = nonAcFiltered;
+    const costPerMl = (i) => Number(i.bottleSizeMl) > 0 ? (Number(i.purchaseRate) || 0) / Number(i.bottleSizeMl) : 0;
+    const profit = (i) => (Number(i.acRevenue) || 0) + (Number(i.nonAcRevenue) || 0) - ((Number(i.acSaleMl) || 0) + (Number(i.nonAcSaleMl) || 0)) * costPerMl(i);
+
+    switch (quickFilter) {
+      case 'sold':
+        rows = rows.filter((i) => (Number(i.acSaleMl) || 0) + (Number(i.nonAcSaleMl) || 0) > 0);
+        rows = [...rows].sort((a, b) => ((Number(b.acSaleMl) || 0) + (Number(b.nonAcSaleMl) || 0)) - ((Number(a.acSaleMl) || 0) + (Number(a.nonAcSaleMl) || 0)));
+        break;
+      case 'lowstock':
+        rows = rows.filter((i) => i.isLowStock === true);
+        rows = [...rows].sort((a, b) => (Number(a.systemClosingMl) || 0) - (Number(b.systemClosingMl) || 0));
+        break;
+      case 'highprofit':
+        rows = rows.filter((i) => profit(i) > 0);
+        rows = [...rows].sort((a, b) => profit(b) - profit(a));
+        break;
+      case 'negative':
+        rows = rows.filter((i) => Number(i.systemClosingMl) < 0);
+        rows = [...rows].sort((a, b) => (Number(a.systemClosingMl) || 0) - (Number(b.systemClosingMl) || 0));
+        break;
+      default:
+        break; // all — keep original order
+    }
+    return rows;
+  }, [nonAcFiltered, quickFilter]);
+
+  const quickFilters = [
+    { key: 'all', label: 'All Items' },
+    { key: 'sold', label: "Today's Sold" },
+    { key: 'lowstock', label: 'Low Stock' },
+    { key: 'highprofit', label: 'High Profit' },
+    { key: 'negative', label: 'Negative Stock' },
+  ];
 
   // ── Group by brand ───────────────────────────────────────────────────────
   const brandGroups = useMemo(() => {
@@ -241,7 +279,24 @@ export function BarInventoryTable({ items, search, onNonAcDeduct, onEdit, onView
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
       {/* Filter bar */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 bg-gray-50/50 flex-wrap">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50/50 flex-wrap">
+        {/* Quick filter chips */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {quickFilters.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setQuickFilter(f.key)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+                quickFilter === f.key
+                  ? 'bg-[#E53935] text-white'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="h-4 w-px bg-gray-200 mx-1" />
         <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
           <input
             type="checkbox"

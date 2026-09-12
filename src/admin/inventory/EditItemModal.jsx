@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { updateInventoryItem } from '../../services/barInventoryApi';
+import { updateInventoryItem, adjustStock, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
 import { updateKitchenItem } from '../../services/kitchenInventoryApi';
 
 const OTHER = '__other__';
@@ -73,6 +73,11 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
   const [sellingPriceBtl, setSellingPriceBtl] = useState(''); // entered per bottle, stored per ml
   const [isHiddenFromReport, setIsHiddenFromReport] = useState(false);
 
+  // Optional opening stock entry (bar only) — creates an OPENING movement for
+  // the modal's date after the master fields are saved. Empty = skip.
+  const [openingStock, setOpeningStock] = useState('');
+  const [openingUnit, setOpeningUnit] = useState('btl'); // 'btl' or 'ml'
+
   // Kitchen fields
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
@@ -97,6 +102,8 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
               : String(item.sellingPricePerMl))
           : '');
         setIsHiddenFromReport(item.isHiddenFromReport === true);
+        setOpeningStock('');
+        setOpeningUnit('btl');
       } else {
         setName(item.name || '');
         setCategory(item.category || '');
@@ -132,6 +139,26 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
             : null,
           isHiddenFromReport,
         });
+
+        // Optional opening stock entry — creates an OPENING movement for the
+        // modal's date. This is an absolute override (latest OPENING wins).
+        const openingNum = Number(openingStock);
+        if (openingStock !== '' && !Number.isNaN(openingNum) && openingNum > 0) {
+          const movementDate = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+          const sizeMl = Number(item.bottleSizeMl) || bottleSizeNum || 0;
+          const openingMl = openingUnit === 'btl' && sizeMl > 0
+            ? Math.round(openingNum * sizeMl * 100) / 100
+            : openingNum;
+          const actionKey = `bar-edit-opening:${item.id}:${openingMl}:${movementDate}`;
+          await adjustStock({
+            itemId: item.id,
+            adjustmentType: 'OPENING',
+            quantityMl: openingMl,
+            date: movementDate,
+            requestId: getOrCreateRequestId(actionKey),
+          });
+          clearRequestId(actionKey);
+        }
       } else {
         await updateKitchenItem(item.id, {
           name: name.trim(),
@@ -178,14 +205,66 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
           {tab === 'bar' ? (
             <>
               {/* Bar item master edit — updates BarInventoryItem only (no stock movement).
-                  To change stock, use Stock Adjustment or the inline closing edit. */}
+                  Opening stock below creates an OPENING movement for the modal's date. */}
               <div className="bg-gray-50 rounded-lg p-3">
                 <div className="text-xs text-gray-500 uppercase tracking-wide">Current Stock</div>
                 <div className="text-lg font-bold text-gray-900 mt-0.5">
                   {Number(item.currentStockMl || item.systemClosingMl || 0).toFixed(2)}
                   <span className="text-sm font-normal text-gray-500 ml-1">ml</span>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Stock changes happen via movements (Purchase, Adjustment, Non-AC sale, Physical count).</p>
+                <p className="text-xs text-gray-400 mt-1">Enter opening stock below to set today's starting stock. Sales auto-deduct from it.</p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Opening Stock <span className="text-gray-400 font-normal text-xs">(optional)</span>
+                  </label>
+                  {bottleSizeNum > 0 && (
+                    <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => { setOpeningUnit('btl'); setOpeningStock(''); }}
+                        className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                          openingUnit === 'btl' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Bottles
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setOpeningUnit('ml'); setOpeningStock(''); }}
+                        className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                          openingUnit === 'ml' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        ml
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  value={openingStock}
+                  onChange={(e) => setOpeningStock(e.target.value)}
+                  placeholder={openingUnit === 'btl' && bottleSizeNum > 0 ? 'e.g. 12' : 'e.g. 9000'}
+                  className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 ${
+                    openingStock !== '' ? 'border-purple-300 bg-purple-50' : 'border-gray-200'
+                  }`}
+                />
+                {openingStock !== '' && Number(openingStock) > 0 && bottleSizeNum > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {openingUnit === 'btl'
+                      ? `= ${Math.round(Number(openingStock) * bottleSizeNum).toLocaleString('en-IN')} ml (${bottleSizeNum} ml per bottle)`
+                      : `= ${(Number(openingStock) / bottleSizeNum).toFixed(2)} bottles (${bottleSizeNum} ml per bottle)`}
+                  </p>
+                )}
+                {openingStock !== '' && Number(openingStock) > 0 && (
+                  <p className="text-xs text-purple-600 mt-1">
+                    Sets opening for {date || 'today'} — overrides previous day's closing.
+                  </p>
+                )}
               </div>
 
               <div>

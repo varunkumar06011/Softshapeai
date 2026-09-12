@@ -197,7 +197,19 @@ async function _flushQueue() {
       _notifyStatusChange(entry.tableId, 'sent', 'KOT Sent ✓');
       removeFromQueue(entry.requestId);
       if (entry.onSuccess) entry.onSuccess(result);
-    } catch {
+    } catch (err) {
+      // If the order was already created by someone else (e.g., the cashier
+      // sent the same items while this KOT was queued for retry), the API
+      // returns 409 with existingOrderId. Discard the queued KOT — the
+      // kitchen already received the order. Re-sending would create a
+      // duplicate KOT print (the kitchen prepares the same food twice).
+      if ((err?.statusCode === 409 || err?.status === 409) && err?.existingOrderId) {
+        console.log('[KOT Queue] Order already exists (409) — discarding duplicate');
+        _notifyStatusChange(entry.tableId, 'discarded', 'KOT was already sent from cashier. Duplicate discarded.');
+        removeFromQueue(entry.requestId);
+        if (entry.onSuccess) entry.onSuccess({ id: err.existingOrderId, duplicate: true });
+        return;
+      }
       // Still failing — increment retry count, keep in queue
       entry.retryCount = (entry.retryCount || 0) + 1;
       _saveQueue(queue);
