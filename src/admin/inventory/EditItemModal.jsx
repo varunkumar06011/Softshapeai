@@ -159,8 +159,9 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
 
         // Optional opening stock entry — creates an OPENING movement for the
         // modal's date. This is an absolute override (latest OPENING wins).
+        // Allow 0 to zero out an existing opening.
         const openingNum = Number(openingStock);
-        if (openingStock !== '' && !Number.isNaN(openingNum) && openingNum > 0) {
+        if (openingStock !== '' && !Number.isNaN(openingNum) && openingNum >= 0) {
           const movementDate = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
           const sizeMl = Number(item.bottleSizeMl) || bottleSizeNum || 0;
           const openingMl = openingUnit === 'btl' && sizeMl > 0
