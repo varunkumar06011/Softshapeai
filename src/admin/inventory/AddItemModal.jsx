@@ -4,11 +4,60 @@
 //   Kitchen: freestanding form (name, category, unit, rate, opening, threshold)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createInventoryItem, fetchUnlinkedItems, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
 import { createKitchenItem, createKitchenEntry } from '../../services/kitchenInventoryApi';
 
-export function AddItemModal({ open, onClose, tab, onSaved }) {
+// Dropdown with an "Add new…" option. Selecting it reveals a text input so the
+// user can enter a value not yet in the system. "Back to list" returns to the
+// dropdown of existing values.
+function DropdownOrNew({ label, options, mode, setMode, picked, setPicked, newVal, setNewVal, placeholder, inputType = 'text', required = false }) {
+  const inputClass = 'w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400';
+  const handleSelect = (e) => {
+    const v = e.target.value;
+    if (v === '__add_new__') { setMode('new'); setNewVal(''); }
+    else { setPicked(v); }
+  };
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}{required && ' *'}</label>
+      {mode === 'new' ? (
+        <div className="flex gap-2">
+          <input
+            type={inputType}
+            value={newVal}
+            onChange={(e) => setNewVal(e.target.value)}
+            placeholder={placeholder}
+            autoFocus
+            className={inputClass}
+          />
+          <button
+            type="button"
+            onClick={() => { setMode('pick'); setNewVal(''); }}
+            className="px-3 py-2.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 shrink-0"
+            title="Back to list"
+          >
+            List
+          </button>
+        </div>
+      ) : (
+        <select
+          value={picked}
+          onChange={handleSelect}
+          className={inputClass}
+        >
+          <option value="">— Select —</option>
+          {options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+          <option value="__add_new__">+ Add new…</option>
+        </select>
+      )}
+    </div>
+  );
+}
+
+export function AddItemModal({ open, onClose, tab, onSaved, existingItems = [] }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -23,6 +72,42 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
   const [reorderLevel, setReorderLevel] = useState('');
   const [costPerBottle, setCostPerBottle] = useState('');
   const [sellingPricePerMl, setSellingPricePerMl] = useState('');
+
+  // "Add new..." toggle state for each dropdown field
+  const [brandMode, setBrandMode] = useState('pick');   // 'pick' | 'new'
+  const [categoryMode, setCategoryMode] = useState('pick');
+  const [sizeMode, setSizeMode] = useState('pick');
+  const [newBrand, setNewBrand] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [newBottleSize, setNewBottleSize] = useState('');
+
+  // Derive unique sorted option lists from existing bar inventory items
+  const brandOptions = useMemo(() => {
+    const set = new Set();
+    for (const it of existingItems) {
+      const v = (it.brand || '').trim();
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [existingItems]);
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set();
+    for (const it of existingItems) {
+      const v = (it.category || '').trim();
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [existingItems]);
+
+  const sizeOptions = useMemo(() => {
+    const set = new Set();
+    for (const it of existingItems) {
+      const v = Number(it.bottleSizeMl);
+      if (v > 0) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [existingItems]);
 
   // Kitchen-specific state
   const [name, setName] = useState('');
@@ -50,31 +135,52 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [open]);
 
-  // Auto-fill brand + bottle size from the selected menu item name
+  // Auto-fill brand + bottle size from the selected menu item name.
+  // If the derived value is not already in the dropdown options, switch that
+  // field to "new" mode so the value is visible in the text input.
   useEffect(() => {
     if (!selectedMenuItemId) return;
     const mi = menuItems.find((m) => m.id === selectedMenuItemId);
     if (!mi) return;
     const miName = mi.name || '';
     if (!displayName) setDisplayName(miName);
-    if (!brand) {
+    if (brandMode === 'pick' && !brand) {
       const base = miName.toLowerCase()
         .replace(/\s*\d+\s*(?:ml|l(?:tr|itre|iter)?|l)\b/gi, ' ')
         .replace(/[^a-z0-9\s]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      setBrand(base.split(' ').map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(' '));
+      const derived = base.split(' ').map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
+      if (derived && !brandOptions.includes(derived)) {
+        setBrandMode('new');
+        setNewBrand(derived);
+      } else {
+        setBrand(derived);
+      }
     }
-    if (!barCategory) {
+    if (categoryMode === 'pick' && !barCategory) {
       const catName = mi.category?.name || '';
-      setBarCategory(catName);
+      if (catName && !categoryOptions.includes(catName)) {
+        setCategoryMode('new');
+        setNewCategory(catName);
+      } else {
+        setBarCategory(catName);
+      }
     }
-    if (!bottleSize) {
+    if (sizeMode === 'pick' && !bottleSize) {
       const mlMatch = miName.match(/(\d+)\s*ml\b/i);
       const ltrMatch = miName.match(/(\d+)\s*l(?:tr|itre|iter)?\b/i);
-      if (mlMatch) setBottleSize(mlMatch[1]);
-      else if (ltrMatch) setBottleSize(String(Number(ltrMatch[1]) * 1000));
-      else setBottleSize('750');
+      let derivedSize = '';
+      if (mlMatch) derivedSize = mlMatch[1];
+      else if (ltrMatch) derivedSize = String(Number(ltrMatch[1]) * 1000);
+      else derivedSize = '750';
+      const asNum = Number(derivedSize);
+      if (asNum > 0 && !sizeOptions.includes(asNum)) {
+        setSizeMode('new');
+        setNewBottleSize(derivedSize);
+      } else {
+        setBottleSize(derivedSize);
+      }
     }
   }, [selectedMenuItemId, menuItems]);
 
@@ -97,6 +203,12 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     setReorderLevel('');
     setCostPerBottle('');
     setSellingPricePerMl('');
+    setBrandMode('pick');
+    setCategoryMode('pick');
+    setSizeMode('pick');
+    setNewBrand('');
+    setNewCategory('');
+    setNewBottleSize('');
     setName('');
     setCategory('');
     setUnit('gm');
@@ -117,7 +229,11 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
       setError('Display name is required');
       return;
     }
-    if (Number(bottleSize) <= 0) {
+    // Resolve final brand / category / bottle size from pick or "add new" mode
+    const finalBrand = brandMode === 'new' ? newBrand.trim() : brand.trim();
+    const finalCategory = categoryMode === 'new' ? newCategory.trim() : barCategory.trim();
+    const finalBottleSize = sizeMode === 'new' ? newBottleSize : bottleSize;
+    if (Number(finalBottleSize) <= 0) {
       setError('Bottle size must be greater than 0');
       return;
     }
@@ -132,14 +248,14 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
     setError(null);
     // Idempotency key tied to the item identity + payload — retries reuse it,
     // a corrected create (different size/opening) gets a fresh one.
-    const actionKey = `bar-item-create:${selectedMenuItemId || displayName.trim().toLowerCase()}:${bottleSize}:${openingStockNum}`;
+    const actionKey = `bar-item-create:${selectedMenuItemId || displayName.trim().toLowerCase()}:${finalBottleSize}:${openingStockNum}`;
     try {
       await createInventoryItem({
         menuItemId: selectedMenuItemId || undefined,
         name: displayName.trim(),
-        brand: brand.trim() || displayName.trim(),
-        category: barCategory.trim() || 'Liquor',
-        bottleSizeMl: Number(bottleSize),
+        brand: finalBrand || displayName.trim(),
+        category: finalCategory || 'Liquor',
+        bottleSizeMl: Number(finalBottleSize),
         openingStockBottles: openingStockNum,
         reorderLevelBottles: reorderLevelNum,
         requestId: getOrCreateRequestId(actionKey),
@@ -260,36 +376,41 @@ export function AddItemModal({ open, onClose, tab, onSaved }) {
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-                <input
-                  type="text"
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                  placeholder="e.g. Royal Stag"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <input
-                  type="text"
-                  value={barCategory}
-                  onChange={(e) => setBarCategory(e.target.value)}
-                  placeholder="e.g. Whisky, Beer, Vodka"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bottle Size (ml) *</label>
-                <input
-                  type="number"
-                  value={bottleSize}
-                  onChange={(e) => setBottleSize(e.target.value)}
-                  placeholder="e.g. 750"
-                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-                />
-              </div>
+              <DropdownOrNew
+                label="Brand"
+                options={brandOptions}
+                mode={brandMode}
+                setMode={setBrandMode}
+                picked={brand}
+                setPicked={setBrand}
+                newVal={newBrand}
+                setNewVal={setNewBrand}
+                placeholder="e.g. Royal Stag"
+              />
+              <DropdownOrNew
+                label="Category"
+                options={categoryOptions}
+                mode={categoryMode}
+                setMode={setCategoryMode}
+                picked={barCategory}
+                setPicked={setBarCategory}
+                newVal={newCategory}
+                setNewVal={setNewCategory}
+                placeholder="e.g. Whisky, Beer, Vodka"
+              />
+              <DropdownOrNew
+                label="Bottle Size (ml)"
+                options={sizeOptions}
+                mode={sizeMode}
+                setMode={setSizeMode}
+                picked={bottleSize}
+                setPicked={setBottleSize}
+                newVal={newBottleSize}
+                setNewVal={setNewBottleSize}
+                placeholder="e.g. 750"
+                inputType="number"
+                required
+              />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Opening Stock (bottles)</label>
                 <input

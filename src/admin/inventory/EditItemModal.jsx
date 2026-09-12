@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { updateInventoryItem, adjustStock, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
+import { updateInventoryItem, adjustStock, fetchUnlinkedItems, getOrCreateRequestId, clearRequestId } from '../../services/barInventoryApi';
 import { updateKitchenItem } from '../../services/kitchenInventoryApi';
 
 const OTHER = '__other__';
@@ -85,6 +85,10 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
   const [rate, setRate] = useState('');
   const [lowStockThreshold, setLowStockThreshold] = useState('');
 
+  // Menu item link (bar only)
+  const [unlinkedMenuItems, setUnlinkedMenuItems] = useState([]);
+  const [linkMenuItemId, setLinkMenuItemId] = useState(''); // '' = no change, '__none__' = unlink, '<id>' = link
+
   useEffect(() => {
     if (item && open) {
       if (tab === 'bar') {
@@ -115,6 +119,17 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
     }
   }, [item, open, tab]);
 
+  // Fetch unlinked LIQUOR menu items for the link dropdown (bar only)
+  useEffect(() => {
+    if (open && tab === 'bar') {
+      fetchUnlinkedItems()
+        .then((data) => setUnlinkedMenuItems(data?.items || []))
+        .catch(() => setUnlinkedMenuItems([]));
+    }
+    // Reset link selection when the modal opens
+    if (open) setLinkMenuItemId('');
+  }, [open, tab]);
+
   const handleSave = async () => {
     if (!item) return;
     setSaving(true);
@@ -138,6 +153,8 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
             ? (bottleSizeNum > 0 ? Number(sellingPriceBtl) / bottleSizeNum : Number(sellingPriceBtl))
             : null,
           isHiddenFromReport,
+          // Menu item link: '' = no change, '__none__' = unlink, '<id>' = link
+          ...(linkMenuItemId !== '' && { menuItemId: linkMenuItemId === '__none__' ? null : linkMenuItemId }),
         });
 
         // Optional opening stock entry — creates an OPENING movement for the
@@ -275,6 +292,27 @@ export function EditItemModal({ open, item, items, tab, date, onClose, onSaved }
                   onChange={(e) => setDisplayName(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Link Menu Item</label>
+                <select
+                  value={linkMenuItemId}
+                  onChange={(e) => setLinkMenuItemId(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                >
+                  <option value="">— No change —</option>
+                  {item.linkedMenuItemId && (
+                    <option value="__none__">— Unlink ({item.linkedMenuItemName}) —</option>
+                  )}
+                  {unlinkedMenuItems.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {item.linkedMenuItemId
+                    ? `Currently linked: ${item.linkedMenuItemName || 'unknown'}`
+                    : 'Not linked to any menu item'}
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>

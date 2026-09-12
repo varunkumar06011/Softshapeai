@@ -251,7 +251,7 @@ export function InventoryPage() {
         onEditStock={handleEditStock}
         modals={
           <>
-            <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} onSaved={handleSaved} />
+            <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={TAB_BAR} existingItems={combinedItems} onSaved={handleSaved} />
             <EditItemModal open={editOpen} item={editItem} items={combinedItems} tab={TAB_BAR} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={combinedItems.length > 0 ? combinedItems : inventory.items} tab={TAB_BAR} date={inventory.fromDate || undefined} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
@@ -319,7 +319,7 @@ export function InventoryPage() {
         onEditStock={handleEditStock}
         modals={
           <>
-            <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} onSaved={handleSaved} />
+            <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} tab={tab} existingItems={tab === 'bar' ? combinedItems : inventory.items} onSaved={handleSaved} />
             <EditItemModal open={editOpen} item={editItem} items={tab === 'bar' ? combinedItems : inventory.items} tab={tab} date={inventory.fromDate || undefined} onClose={() => setEditOpen(false)} onSaved={handleSaved} />
             <RecordPurchaseModal open={purchaseOpen} item={purchaseItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} onClose={() => setPurchaseOpen(false)} onSaved={handleSaved} />
             <StockAdjustmentModal open={adjustOpen} item={adjustItem} items={tab === 'bar' && combinedItems.length > 0 ? combinedItems : inventory.items} tab={tab} date={inventory.fromDate || undefined} defaultType={adjustDefaultType} onClose={() => setAdjustOpen(false)} onSaved={handleSaved} />
