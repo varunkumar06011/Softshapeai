@@ -11,6 +11,36 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSocket } from '../../hooks/useSocket';
+
+// Levenshtein distance with an early-exit cap — returns Infinity if the
+// distance exceeds maxDist, making it fast enough for per-keystroke fuzzy
+// search across hundreds of items.
+function levenshtein(a, b, maxDist = Infinity) {
+  const al = a.length;
+  const bl = b.length;
+  if (Math.abs(al - bl) > maxDist) return Infinity;
+  if (al === 0) return bl;
+  if (bl === 0) return al;
+  let prev = new Array(bl + 1);
+  let curr = new Array(bl + 1);
+  for (let j = 0; j <= bl; j++) prev[j] = j;
+  for (let i = 1; i <= al; i++) {
+    curr[0] = i;
+    let rowMin = i;
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,        // deletion
+        curr[j - 1] + 1,    // insertion
+        prev[j - 1] + cost, // substitution
+      );
+      if (curr[j] < rowMin) rowMin = curr[j];
+    }
+    if (rowMin > maxDist) return Infinity;
+    [prev, curr] = [curr, prev];
+  }
+  return prev[bl];
+}
 import {
   fetchBarInventory,
   fetchBarTopSelling,
@@ -155,13 +185,43 @@ export function useInventoryData(tab, restaurant) {
   const filteredItems = useMemo(() => {
     let result = items;
 
-    // Search filter
+    // Search filter — supports fuzzy matching for spelling mistakes.
+    // Exact substring matches are always included and ranked first;
+    // fuzzy matches (within a Levenshtein distance threshold) follow.
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.trim().toLowerCase();
-      result = result.filter((item) => {
-        const name = item.name;
-        return name?.toLowerCase().includes(q);
-      });
+      const qNorm = q.replace(/[^a-z0-9]/g, '');
+      const maxDist = Math.max(1, Math.floor(qNorm.length * 0.3)); // 30% tolerance
+
+      const scored = [];
+      for (const item of result) {
+        const name = (item.name || '').toLowerCase();
+        const nameNorm = name.replace(/[^a-z0-9]/g, '');
+
+        // Exact substring match — top priority
+        if (nameNorm.includes(qNorm) || name.includes(q)) {
+          scored.push({ item, score: 0 });
+          continue;
+        }
+
+        // Fuzzy: check Levenshtein distance against each word in the name
+        const words = nameNorm.split(/\s+/).filter(Boolean);
+        let bestDist = Infinity;
+        for (const w of words) {
+          const d = levenshtein(qNorm, w, maxDist);
+          if (d < bestDist) bestDist = d;
+        }
+        // Also check against the full normalized name (for multi-word queries)
+        const fullDist = levenshtein(qNorm, nameNorm, maxDist);
+        if (fullDist < bestDist) bestDist = fullDist;
+
+        if (bestDist <= maxDist) {
+          scored.push({ item, score: bestDist });
+        }
+      }
+      // Sort: exact matches (score 0) first, then by fuzzy distance
+      scored.sort((a, b) => a.score - b.score);
+      result = scored.map((s) => s.item);
     }
 
     // Category filter
