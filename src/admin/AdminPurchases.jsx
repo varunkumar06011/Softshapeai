@@ -361,6 +361,21 @@ export default function AdminPurchases() {
     }
   };
 
+  const handleRestoreVendor = async (id) => {
+    if (!confirm('Restore this vendor? They will become active again for new PO creation.')) return;
+    setError('');
+    setSaving(true);
+    try {
+      await apiFetch(`/api/vendors/${id}/restore`, { method: 'POST' });
+      showSuccess('Vendor restored');
+      loadVendors();
+    } catch (err) {
+      setError(err.message || 'Failed to restore vendor');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // ── Vendor Ledger (per-date) inline editing ──────────────────────────────────
   // Each row has editable Opening, Purchases (manual), and Payments fields.
   // Closing = Opening + (manual Purchases + Daily Entry total) − Payments.
@@ -1379,6 +1394,14 @@ export default function AdminPurchases() {
                                   className="text-[10px] font-bold text-gray-400 hover:text-red-600 mt-1 block ml-auto"
                                 >
                                   Retire
+                                </button>
+                              )}
+                              {!r.isActive && (
+                                <button
+                                  onClick={() => handleRestoreVendor(r.vendorId)}
+                                  className="text-[10px] font-bold text-gray-400 hover:text-green-600 mt-1 block ml-auto"
+                                >
+                                  Restore
                                 </button>
                               )}
                             </td>
