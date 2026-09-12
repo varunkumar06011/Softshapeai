@@ -202,6 +202,26 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
   const [activityLog, setActivityLog] = useState([]);
   const [kitchenLowStockAlerts, setKitchenLowStockAlerts] = useState([]);
   const [barLowStockAlerts, setBarLowStockAlerts] = useState([]);
+  // Low-stock alerts should fire ONCE per item per day. Track acknowledged
+  // IDs in a ref persisted to localStorage (keyed by date) so the toast does
+  // not reappear on every sale or on page reload. Resets each new day so a
+  // restocked-then-depleted item can alert again.
+  const acknowledgedLowStockRef = useRef(new Set());
+  const persistAcknowledgedLowStock = useCallback(() => {
+    try {
+      const key = `ss_ack_low_stock:${getKolkataDateString()}`;
+      localStorage.setItem(key, JSON.stringify([...acknowledgedLowStockRef.current]));
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    try {
+      const key = `ss_ack_low_stock:${getKolkataDateString()}`;
+      const raw = localStorage.getItem(key);
+      acknowledgedLowStockRef.current = new Set(raw ? JSON.parse(raw) : []);
+    } catch {
+      acknowledgedLowStockRef.current = new Set();
+    }
+  }, []);
   const [dashboardScope, setDashboardScope] = useState(() => {
     try {
       const saved = localStorage.getItem('ss_dashboard_scope');
@@ -311,10 +331,14 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
 
     // Kitchen low-stock alerts (Phase 5)
     const onKitchenLowStock = (payload) => {
+      const id = payload?.ingredientId;
+      if (!id || acknowledgedLowStockRef.current.has(`k:${id}`)) return;
       console.log('[AdminDashboard] Kitchen low-stock:', payload);
+      acknowledgedLowStockRef.current.add(`k:${id}`);
+      persistAcknowledgedLowStock();
       setKitchenLowStockAlerts((prev) => {
-        const filtered = prev.filter((a) => a.ingredientId !== payload.ingredientId);
-        return [...filtered, { ...payload, timestamp: Date.now() }];
+        const filtered = prev.filter((a) => a.ingredientId !== id);
+        return [...filtered, { ...payload, ingredientId: id, timestamp: Date.now() }];
       });
     };
     socket.on('kitchen:low-stock', onKitchenLowStock);
@@ -322,9 +346,13 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
     // Bar low-stock alerts (real-time from POS deduction, Non-AC sales, wastage)
     const onBarLowStock = (payload) => {
       if (!payload?.item) return;
+      const id = payload.item.id;
+      if (acknowledgedLowStockRef.current.has(`b:${id}`)) return;
+      acknowledgedLowStockRef.current.add(`b:${id}`);
+      persistAcknowledgedLowStock();
       setBarLowStockAlerts((prev) => {
-        const filtered = prev.filter((a) => a.id !== payload.item.id);
-        return [...filtered, { ...payload.item, timestamp: Date.now() }];
+        const filtered = prev.filter((a) => a.id !== id);
+        return [...filtered, { ...payload.item, id, timestamp: Date.now() }];
       });
     };
     socket.on('bar:low-stock', onBarLowStock);
