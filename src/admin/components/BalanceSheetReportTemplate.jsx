@@ -4,7 +4,7 @@
  */
 
 import {
-  Store, Calendar, ClipboardList, TrendingUp, ArrowDownCircle,
+  Store, Calendar, TrendingUp, ArrowDownCircle,
 } from 'lucide-react';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -12,12 +12,6 @@ const inr = (n) =>
   '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inrPlain = (n) => '₹' + Math.round(Number(n)).toLocaleString('en-IN');
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
-
-const STATUS_STYLES = {
-  DRAFT: { background: '#FEF3C7', color: '#B45309' },
-  SUBMITTED: { background: '#DCFCE7', color: '#15803D' },
-  LOCKED: { background: '#E5E7EB', color: '#4B5563' },
-};
 
 // ── Small building blocks ───────────────────────────────────────────────
 function MetaItem({ icon: Icon, label, children }) {
@@ -147,11 +141,6 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
             {data.date}
             <div className="text-xs font-medium" style={{ color: '#9CA3AF' }}>{data.weekday}</div>
           </MetaItem>
-          <MetaItem icon={ClipboardList} label="STATUS">
-            <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={{ background: STATUS_STYLES[data.status]?.background, color: STATUS_STYLES[data.status]?.color }}>
-              {data.status}
-            </span>
-          </MetaItem>
         </div>
         <div className="text-right text-[11px] leading-5" style={{ color: '#6B7280' }}>
           <div><span className="font-bold" style={{ color: '#9CA3AF' }}>GENERATED ON: </span>{data.generatedOn}</div>
@@ -182,8 +171,8 @@ export default function BalanceSheetReportTemplate({ data, logoSrc }) {
           {data.venueSales.map((row, idx) => (
             <TableRow key={idx} icon={row.icon} iconColor={row.color} label={row.label} amount={row.amount} />
           ))}
-          <TotalRow label="Gross Sales" amount={data.grossSales} />
           <TableRow label="Swiggy + Zomato" amount={data.aggregatorSales} muted />
+          <TotalRow label="Gross Sales" amount={data.grossSales} />
           <TotalRow label="Net Sales (after Swiggy + Zomato deduction)" amount={data.netSales} />
         </div>
 

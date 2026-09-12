@@ -4,14 +4,13 @@ import {
   Plus, Minus, Trash2, Save, Send, CheckCircle, TrendingUp, Wallet,
   ArrowRight, Edit3, X, ChevronDown, ChevronRight, Info, CreditCard,
 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { apiFetch } from '../services/apiConfig';
 import { useAuth } from '../context/AuthContext';
-import { canvasToA4PdfBlob } from '../shared/utils/canvasToPdf';
+import { canvasToA4PdfBlob, canvasToA4PdfDoc } from '../shared/utils/canvasToPdf';
 import BalanceSheetReportTemplate from './components/BalanceSheetReportTemplate';
 
 // ── Pure client-side calculation (mirrors backend calculateRunningBalance) ────
@@ -122,6 +121,19 @@ async function blobToBase64(blob) {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+// Y-positions (in canvas px) of each top-level report section's top edge —
+// safe lines where a page break won't cut through a row or card.
+function collectReportBreakPoints(container, canvas) {
+  const reportEl = container.querySelector('#balance-sheet-report');
+  if (!reportEl) return [];
+  const reportRect = reportEl.getBoundingClientRect();
+  if (reportRect.height <= 0) return [];
+  const pxScale = canvas.height / reportRect.height;
+  return Array.from(reportEl.children)
+    .map((el) => (el.getBoundingClientRect().top - reportRect.top) * pxScale)
+    .filter((y) => y > 1 && y < canvas.height - 1);
 }
 
 async function shareOrDownloadPDF(blob, filename) {
@@ -1016,7 +1028,6 @@ export default function AdminDailyBalanceSheet() {
       outletName,
       date: dateStr,
       weekday,
-      status: sheet?.status || 'DRAFT',
       generatedOn,
       generatedBy: user?.name || 'Admin',
       totalSales,
@@ -1113,37 +1124,14 @@ export default function AdminDailyBalanceSheet() {
         backgroundColor: '#ffffff',
       });
 
+      const breakPoints = collectReportBreakPoints(container, canvas);
+
       // Cleanup React root
       root.unmount();
       document.body.removeChild(container);
 
       // Convert to PDF — A4 LANDSCAPE for the wide 900px layout
-      const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = 297; // A4 landscape width in mm
-      const pdfHeight = 210; // A4 landscape height in mm
-      const margin = 10;
-      const usableWidth = pdfWidth - 2 * margin;
-      const imgHeight = (canvas.height * usableWidth) / canvas.width;
-
-      const doc = new jsPDF('l', 'mm', 'a4');
-      if (imgHeight <= pdfHeight - 2 * margin) {
-        doc.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight);
-      } else {
-        // Multi-page: split the image across pages
-        let remainingHeight = imgHeight;
-        let yOffset = 0;
-        const pageContentHeight = pdfHeight - 2 * margin;
-        while (remainingHeight > 0) {
-          doc.addImage(imgData, 'PNG', margin, margin - yOffset, usableWidth, imgHeight);
-          remainingHeight -= pageContentHeight;
-          if (remainingHeight > 0) {
-            doc.addPage();
-            yOffset += pageContentHeight;
-          }
-        }
-      }
-      
-      return doc;
+      return canvasToA4PdfDoc(canvas, { orientation: 'landscape', breakPoints });
     } catch (err) {
       if (container.parentNode) {
         document.body.removeChild(container);
@@ -1194,7 +1182,6 @@ export default function AdminDailyBalanceSheet() {
         outletName,
         date: dateStr,
         weekday,
-        status: sheet?.status || 'DRAFT',
         generatedOn,
         generatedBy: user?.name || 'Admin',
         totalSales,
@@ -1289,12 +1276,14 @@ export default function AdminDailyBalanceSheet() {
           backgroundColor: '#ffffff',
         });
 
+        const breakPoints = collectReportBreakPoints(container, canvas);
+
         // Cleanup React root
         root.unmount();
         document.body.removeChild(container);
 
         // Convert canvas to multi-page A4 PDF (landscape for the wide 900px layout)
-        const blob = await canvasToA4PdfBlob(canvas, { orientation: 'landscape' });
+        const blob = await canvasToA4PdfBlob(canvas, { orientation: 'landscape', breakPoints });
         const fileName = `Daily-Balance-Sheet-${selectedDate}.pdf`;
         const file = new File([blob], fileName, { type: 'application/pdf' });
         const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
