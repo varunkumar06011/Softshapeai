@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Loader2, Plus, Trash2, Save, Store, Package, ArrowLeft,
   CheckCircle, AlertCircle, X, Truck, CreditCard, Ban,
-  ChevronRight, Search, MessageCircle, Calendar, WifiOff, RefreshCw,
+  ChevronRight, Search, MessageCircle, Calendar, WifiOff, RefreshCw, Share2,
 } from 'lucide-react';
 import { apiFetch, isBackendReachable, subscribeReachability } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
@@ -12,6 +12,8 @@ import html2canvas from 'html2canvas';
 import { canvasToA4PdfBlob } from '../shared/utils/canvasToPdf';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
 import PurchaseReportTemplate from './components/PurchaseReportTemplate';
+import VendorLedgerReportTemplate from './components/VendorLedgerReportTemplate';
+import VendorStatementTemplate from './components/VendorStatementTemplate';
 import PurchaseHistory from './components/PurchaseHistory';
 import { getUnitOptions } from '../shared/utils/unitConversion';
 import { PAYMENT_METHODS, API_TIMEOUT_SHORT_MS, API_TIMEOUT_DEFAULT_MS, API_TIMEOUT_SAVE_DAILY_MS } from '../shared/utils/constants';
@@ -84,6 +86,10 @@ export default function AdminPurchases() {
   const [dailySaving, setDailySaving] = useState(false);
   const [deletingIdx, setDeletingIdx] = useState(null);
   const [sharing, setSharing] = useState(false);
+  // Vendor PDF sharing state — one flag for the all-vendors ledger PDF,
+  // one per-vendor id for individual statement generation.
+  const [sharingLedger, setSharingLedger] = useState(false);
+  const [sharingVendorId, setSharingVendorId] = useState(null);
   const [pendingVendorRowIndex, setPendingVendorRowIndex] = useState(null);
   const [backendOnline, setBackendOnline] = useState(isBackendReachable());
 
@@ -1184,6 +1190,242 @@ export default function AdminPurchases() {
     }
   };
 
+  // ── Vendor PDF sharing ───────────────────────────────────────────────────────
+
+  // Y-positions (canvas px) of elements marked data-bp inside the report —
+  // safe cut lines where a page break won't slice through a row or card.
+  const collectVendorBreakPoints = (container, canvas, reportSelector) => {
+    const reportEl = container.querySelector(reportSelector);
+    if (!reportEl) return [];
+    const reportRect = reportEl.getBoundingClientRect();
+    if (reportRect.height <= 0) return [];
+    const pxScale = canvas.height / reportRect.height;
+    return Array.from(reportEl.querySelectorAll('[data-bp]'))
+      .map((el) => (el.getBoundingClientRect().top - reportRect.top) * pxScale)
+      .filter((y) => y > 1 && y < canvas.height - 1);
+  };
+
+  // Render a report template off-screen → multi-page A4 PDF blob.
+  const renderVendorPdfBlob = async (templateEl, reportSelector) => {
+    let container = null;
+    let root = null;
+    try {
+      container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '900px';
+      container.style.background = '#ffffff';
+      document.body.appendChild(container);
+
+      root = createRoot(container);
+      root.render(templateEl);
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const imgs = container.querySelectorAll('img');
+      if (imgs.length > 0) {
+        await Promise.all(Array.from(imgs).map((img) =>
+          img.complete ? Promise.resolve() : new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = resolve;
+          })
+        ));
+      }
+
+      const canvas = await html2canvas(container, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: '#ffffff',
+        imageTimeout: 5000,
+      });
+
+      const breakPoints = collectVendorBreakPoints(container, canvas, reportSelector);
+
+      root.unmount();
+      root = null;
+      document.body.removeChild(container);
+      container = null;
+
+      return await canvasToA4PdfBlob(canvas, { orientation: 'portrait', breakPoints });
+    } finally {
+      if (root) { try { root.unmount(); } catch { /* already unmounted */ } }
+      if (container && container.parentNode) { try { document.body.removeChild(container); } catch { /* already removed */ } }
+    }
+  };
+
+  // Deliver a generated PDF: Web Share API on mobile, download + pre-opened
+  // WhatsApp Web tab on desktop. `whatsappTab` must be opened inside the user
+  // gesture before any await to dodge popup blockers.
+  const deliverVendorPdf = async (blob, fileName, shareText, whatsappTab) => {
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    if (isMobile && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+      await navigator.share({ title: fileName, text: shareText, files: [file] });
+      if (whatsappTab) { try { whatsappTab.close(); } catch { /* already closed */ } }
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    const whatsappUrl = `https://web.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
+    if (whatsappTab) {
+      try {
+        whatsappTab.location.href = whatsappUrl;
+      } catch {
+        whatsappTab.close();
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      }
+    } else {
+      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    }
+    showSuccess('PDF downloaded. Attach it in WhatsApp Web (opened in new tab).');
+  };
+
+  const openWhatsAppTab = () => {
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) return null;
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      setError('Popup blocked. Please allow popups for this site to open WhatsApp Web, then try again.');
+      return undefined;
+    }
+    try {
+      tab.document.write('<html><head><title>Opening WhatsApp Web…</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f0f2f5;color:#333}p{text-align:center;font-size:16px}</style></head><body><p>Preparing WhatsApp Web…<br>Please wait.</p></body></html>');
+    } catch { /* cross-origin, ignore */ }
+    return tab;
+  };
+
+  const reportMeta = () => {
+    const dateObj = new Date(ledgerDate + 'T00:00:00');
+    const now = new Date();
+    const outletName = outletId === 'all'
+      ? 'All Outlets'
+      : (accessibleOutlets.find((o) => o.id === outletId)?.name || restaurant?.name || restaurant?.businessName || 'Outlet');
+    return {
+      outletName,
+      date: dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      weekday: dateObj.toLocaleDateString('en-US', { weekday: 'long' }),
+      generatedOn: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' | ' +
+        now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      generatedBy: user?.name || 'Admin',
+    };
+  };
+
+  // Share the all-vendors balance summary for the selected ledger date.
+  const handleShareVendorLedger = async () => {
+    if (ledgerRows.length === 0) {
+      setError('No vendors to share.');
+      return;
+    }
+    setError('');
+    setSharingLedger(true);
+    const whatsappTab = openWhatsAppTab();
+    if (whatsappTab === undefined) { setSharingLedger(false); return; }
+
+    try {
+      const templateData = {
+        ...reportMeta(),
+        rows: ledgerRows,
+        totals: ledgerTotals,
+      };
+      const blob = await renderVendorPdfBlob(
+        <VendorLedgerReportTemplate
+          data={templateData}
+          logoSrc={restaurant?.logoUrl || '/logo softshape.ai.png'}
+        />,
+        '#vendor-ledger-report'
+      );
+      if (!blob) throw new Error('PDF generation failed');
+      await deliverVendorPdf(
+        blob,
+        `Vendor-Balances-${ledgerDate}.pdf`,
+        `${templateData.outletName ? `${templateData.outletName} — ` : ''}Vendor Balances as of ${ledgerDate}`,
+        whatsappTab
+      );
+    } catch (err) {
+      console.error('[AdminPurchases] Vendor ledger share failed:', err);
+      if (whatsappTab) { try { whatsappTab.close(); } catch { /* already closed */ } }
+      if (err.name !== 'AbortError') {
+        setError('Failed to generate/share vendor balances PDF. Please try again.');
+      }
+    } finally {
+      setSharingLedger(false);
+    }
+  };
+
+  // Share a single vendor's statement: account summary for the ledger date
+  // plus their full purchase-order history.
+  const handleShareVendorStatement = async (vendorId) => {
+    setError('');
+    setSharingVendorId(vendorId);
+    const whatsappTab = openWhatsAppTab();
+    if (whatsappTab === undefined) { setSharingVendorId(null); return; }
+
+    try {
+      // Prefer the already-loaded detail when sharing the open vendor page.
+      let vendor = (view === 'vendor-detail' && vendorDetail && vendorDetail.id === vendorId)
+        ? vendorDetail
+        : null;
+      if (!vendor) {
+        vendor = await apiFetch(`/api/vendors/${vendorId}`, { timeout: API_TIMEOUT_DEFAULT_MS });
+      }
+
+      // Ledger row for this vendor on the selected date — reuse loaded rows
+      // when available, else fetch fresh (vendor-detail view may not have them).
+      let ledgerRow = ledgerRows.find((r) => r.vendorId === vendorId) || null;
+      if (!ledgerRow) {
+        try {
+          const rows = await apiFetch(`/api/vendor-ledger?date=${ledgerDate}`, { timeout: API_TIMEOUT_DEFAULT_MS });
+          ledgerRow = (rows || []).find((r) => r.vendorId === vendorId) || null;
+        } catch { /* statement still generates without the ledger row */ }
+      }
+
+      const templateData = {
+        ...reportMeta(),
+        vendor,
+        opening: ledgerRow?.openingBalance ?? vendor.outstandingBalance ?? 0,
+        purchases: ledgerRow?.purchases ?? 0,
+        payments: ledgerRow?.payments ?? 0,
+        closing: ledgerRow?.closingBalance ?? vendor.outstandingBalance ?? 0,
+      };
+
+      const blob = await renderVendorPdfBlob(
+        <VendorStatementTemplate
+          data={templateData}
+          logoSrc={restaurant?.logoUrl || '/logo softshape.ai.png'}
+        />,
+        '#vendor-statement-report'
+      );
+      if (!blob) throw new Error('PDF generation failed');
+
+      const safeName = String(vendor.name || 'vendor').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+      await deliverVendorPdf(
+        blob,
+        `Vendor-Statement-${safeName}-${ledgerDate}.pdf`,
+        `Vendor Statement — ${vendor.name} as of ${ledgerDate} · Outstanding: ₹${round2(templateData.closing).toLocaleString()}`,
+        whatsappTab
+      );
+    } catch (err) {
+      console.error('[AdminPurchases] Vendor statement share failed:', err);
+      if (whatsappTab) { try { whatsappTab.close(); } catch { /* already closed */ } }
+      if (err.name !== 'AbortError') {
+        setError('Failed to generate/share vendor statement PDF. Please try again.');
+      }
+    } finally {
+      setSharingVendorId(null);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────────
   if (loading && view !== 'po-form' && view !== 'daily-entry') {
     return (
@@ -1247,6 +1489,15 @@ export default function AdminPurchases() {
                 >
                   {recalcingBalances ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                   Recalc
+                </button>
+                <button
+                  onClick={handleShareVendorLedger}
+                  disabled={sharingLedger || ledgerRows.length === 0}
+                  className="flex items-center gap-1 text-xs font-black uppercase text-green-600 hover:bg-green-50 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                  title="Share all vendor balances as PDF via WhatsApp"
+                >
+                  {sharingLedger ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                  Share PDF
                 </button>
                 <button
                   onClick={() => setShowVendorForm(true)}
@@ -1388,6 +1639,15 @@ export default function AdminPurchases() {
                               {sv?.status === 'error' && (
                                 <span className="text-red-600 flex items-center gap-0.5 mt-0.5 justify-end" title={sv.msg}><AlertCircle size={10} /> Failed</span>
                               )}
+                              <button
+                                onClick={() => handleShareVendorStatement(r.vendorId)}
+                                disabled={sharingVendorId === r.vendorId}
+                                className="flex items-center gap-1 text-[10px] font-black uppercase text-green-600 hover:bg-green-50 px-2 py-1 rounded disabled:opacity-40 ml-auto mt-1"
+                                title="Share this vendor's statement as PDF"
+                              >
+                                {sharingVendorId === r.vendorId ? <Loader2 size={11} className="animate-spin" /> : <Share2 size={11} />}
+                                Share
+                              </button>
                               {r.isActive && (
                                 <button
                                   onClick={() => handleRetireVendor(r.vendorId)}
@@ -1455,7 +1715,18 @@ export default function AdminPurchases() {
               <ArrowLeft size={14} />
               Back to Vendors
             </button>
-            <h3 className="text-lg font-black text-gray-800">{vendorDetail.name}</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-black text-gray-800">{vendorDetail.name}</h3>
+              <button
+                onClick={() => handleShareVendorStatement(vendorDetail.id)}
+                disabled={sharingVendorId === vendorDetail.id}
+                className="flex items-center gap-1 text-xs font-black uppercase text-green-600 hover:bg-green-50 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                title="Share this vendor's statement as PDF via WhatsApp"
+              >
+                {sharingVendorId === vendorDetail.id ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                Share PDF
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-3 mt-3 text-xs">
               {vendorDetail.contactPerson && <div><span className="text-gray-400 font-bold">Contact:</span> <span className="font-bold text-gray-700">{vendorDetail.contactPerson}</span></div>}
               {vendorDetail.phone && <div><span className="text-gray-400 font-bold">Phone:</span> <span className="font-bold text-gray-700">{vendorDetail.phone}</span></div>}
