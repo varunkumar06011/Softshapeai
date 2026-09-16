@@ -22,6 +22,7 @@ import { StockAdjustmentModal } from './StockAdjustmentModal';
 import { ItemDetailsDrawer } from './ItemDetailsDrawer';
 import { StockSheetPrintModal } from './StockSheetPrintModal';
 import LiquorDailyReportModal from './LiquorDailyReportModal';
+import LiquorMappingModal from './LiquorMappingModal';
 import { EditTotalStockModal } from './EditTotalStockModal';
 import { fetchBarInventory, deleteInventoryItem } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
@@ -49,6 +50,7 @@ export function InventoryPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [printSheetOpen, setPrintSheetOpen] = useState(false);
   const [liquorReportOpen, setLiquorReportOpen] = useState(false);
+  const [liquorMappingOpen, setLiquorMappingOpen] = useState(false);
   const [editStockItem, setEditStockItem] = useState(null);
   const [editStockOpen, setEditStockOpen] = useState(false);
 
@@ -147,6 +149,7 @@ export function InventoryPage() {
 
   const handlePrintSheet = () => setPrintSheetOpen(true);
   const handleLiquorReport = () => setLiquorReportOpen(true);
+  const handleLiquorMapping = () => setLiquorMappingOpen(true);
 
   // Non-AC sale entry reuses the Stock Adjustment modal pre-set to 'nonac'.
   // It creates NON_AC_SALE / CORRECTION movements on the single stock pool.
@@ -240,6 +243,7 @@ export function InventoryPage() {
         onImport={handleImport}
         onPrintSheet={handlePrintSheet}
         onLiquorReport={handleLiquorReport}
+        onLiquorMapping={handleLiquorMapping}
         onEdit={handleEdit}
         onView={handleView}
         combinedItems={combinedItems}
@@ -258,6 +262,7 @@ export function InventoryPage() {
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={TAB_BAR} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={TAB_BAR} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
+            <LiquorMappingModal open={liquorMappingOpen} onClose={() => setLiquorMappingOpen(false)} onSaved={handleSaved} />
             <EditTotalStockModal open={editStockOpen} item={editStockItem} date={inventory.fromDate || undefined} onClose={() => setEditStockOpen(false)} onSaved={handleSaved} />
           </>
         }
@@ -308,6 +313,7 @@ export function InventoryPage() {
         onImport={handleImport}
         onPrintSheet={handlePrintSheet}
         onLiquorReport={handleLiquorReport}
+        onLiquorMapping={handleLiquorMapping}
         onEdit={handleEdit}
         onView={handleView}
         combinedItems={combinedItems}
@@ -326,6 +332,7 @@ export function InventoryPage() {
             <ItemDetailsDrawer open={viewOpen} item={viewItem} tab={tab} onClose={() => setViewOpen(false)} onRecordPurchase={handleDrawerPurchase} onStockAdjustment={handleDrawerAdjust} />
             <StockSheetPrintModal open={printSheetOpen} tab={tab} restaurant={restaurant} defaultDate={inventory.fromDate || undefined} onClose={() => setPrintSheetOpen(false)} />
             <LiquorDailyReportModal open={liquorReportOpen} date={inventory.fromDate || undefined} onClose={() => setLiquorReportOpen(false)} onSaved={handleSaved} />
+            <LiquorMappingModal open={liquorMappingOpen} onClose={() => setLiquorMappingOpen(false)} onSaved={handleSaved} />
             <EditTotalStockModal open={editStockOpen} item={editStockItem} date={inventory.fromDate || undefined} onClose={() => setEditStockOpen(false)} onSaved={handleSaved} />
           </>
         }
@@ -336,7 +343,7 @@ export function InventoryPage() {
 }
 
 // Inner content component (shared between all outlet types)
-function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onEdit, onView, modals, combinedItems, combinedLoading, combinedSummary, onNonAcDeduct, onRefresh, onDelete, onEditStock }) {
+function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStockAdjustment, onImport, onPrintSheet, onLiquorReport, onLiquorMapping, onEdit, onView, modals, combinedItems, combinedLoading, combinedSummary, onNonAcDeduct, onRefresh, onDelete, onEditStock }) {
   const { loading, error } = inventory;
 
   return (
@@ -363,6 +370,7 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
         onImport={onImport}
         onPrintSheet={onPrintSheet}
         onLiquorReport={tab === 'bar' ? onLiquorReport : undefined}
+        onLiquorMapping={tab === 'bar' ? onLiquorMapping : undefined}
       />
 
       {/* Error state */}

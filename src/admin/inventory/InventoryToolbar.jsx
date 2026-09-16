@@ -18,6 +18,7 @@ export function InventoryToolbar({
   onImport,
   onPrintSheet,
   onLiquorReport,
+  onLiquorMapping,
 }) {
   const handleResetDates = () => {
     setFromDate('');
@@ -111,6 +112,20 @@ export function InventoryToolbar({
             </svg>
             Print / PDF
           </button>
+          {onLiquorMapping && (
+            <button
+              onClick={onLiquorMapping}
+              className="px-3 sm:px-4 py-2.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              title="Map liquor menu items to inventory bottles and deduction ml"
+            >
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.414-1.414m10.828.828a4 4 0 000-5.656l-3-3a4 4 0 00-5.656 5.656l-1.414 1.414" />
+              </svg>
+              <span className="hidden sm:inline">Liquor Mapping</span>
+              <span className="sm:hidden">Mapping</span>
+            </button>
+          )}
           {onLiquorReport && (
             <button
               onClick={onLiquorReport}

@@ -16,6 +16,7 @@
 //   GET    /deduction-check  POST /retry-deduction/:orderId
 //   POST   /manual-report-items  GET /manual-report-items
 //   GET    /bottles-for-menu/:menuItemId           GET /opening-preview/:itemId
+//   GET    /menu-mappings   PUT /menu-link/:menuItemId   (liquor mapping UI)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { apiUrl, getAuthHeaders } from './apiConfig';
@@ -222,6 +223,34 @@ function normalizeBaseName(name) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// ── Liquor menu → bottle mapping ─────────────────────────────────────────────
+// Backs the Liquor Mapping modal: each LIQUOR menu item is linked to the
+// BarInventoryItem it deducts from plus the ml deducted per unit.
+export async function fetchLiquorMappings() {
+  const rId = getCurrentRestaurantId();
+  if (!rId) throw new Error('No restaurant context');
+  const res = await fetch(apiUrl(`/api/bar/inventory/menu-mappings?restaurantId=${rId}`), {
+    cache: 'no-store',
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(res);
+}
+
+// Set a menu item's bottle link and/or deduction ml.
+// barInventoryItemId: bottle id to link, null to unlink, undefined = unchanged
+// deductionMl: positive number, null = auto (name parse → 30ml default)
+export async function saveLiquorMapping(menuItemId, { barInventoryItemId, deductionMl }) {
+  const body = {};
+  if (barInventoryItemId !== undefined) body.barInventoryItemId = barInventoryItemId;
+  if (deductionMl !== undefined) body.deductionMl = deductionMl;
+  const res = await fetch(apiUrl(`/api/bar/inventory/menu-link/${menuItemId}`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  });
+  return parseResponse(res);
 }
 
 // ── Item CRUD ────────────────────────────────────────────────────────────────
