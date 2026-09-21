@@ -128,7 +128,6 @@ export default function InventoryRangeSummary({ restaurantId, startDate, endDate
                 setDropdownOpen(true);
                 if (selectedItemId) {
                   setSelectedItemId(null);
-                  setSummary(null);
                 }
               }}
               className="flex-1 outline-none text-sm bg-transparent"
