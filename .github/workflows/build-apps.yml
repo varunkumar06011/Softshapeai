@@ -529,20 +529,25 @@ jobs:
 
   # ── Build Admin iOS (Capacitor → signed .ipa for App Store) ─────────────────
   #
-  # Required repository secrets (must be added before this job can succeed):
-  #   IOS_DISTRIBUTION_CERT_P12   — base64-encoded .p12 export of the Apple
-  #                                 Distribution certificate (+ private key)
-  #   IOS_P12_PASSWORD            — password used when exporting the .p12
-  #   IOS_PROVISIONING_PROFILE    — base64-encoded App Store .mobileprovision
-  #                                 for bundle id ai.softshape.admin
+  # Signing credentials — set ONE of the two options as repository secrets:
   #
-  # Optional (enables App Store Connect validation + TestFlight upload):
-  #   APP_STORE_CONNECT_KEY_ID     — App Store Connect API key ID
-  #   APP_STORE_CONNECT_ISSUER_ID  — issuer UUID
-  #   APP_STORE_CONNECT_PRIVATE_KEY — contents of the AuthKey .p8 file
+  #   Option A (recommended — no Mac needed):
+  #     APP_STORE_CONNECT_KEY_ID      — App Store Connect API key ID
+  #     APP_STORE_CONNECT_ISSUER_ID   — issuer UUID
+  #     APP_STORE_CONNECT_PRIVATE_KEY — contents of the AuthKey .p8 file
+  #     Xcode signs automatically: it creates/fetches the distribution
+  #     certificate and App Store profile via the API key, then the job
+  #     validates and uploads the .ipa to App Store Connect.
+  #     Optional: IOS_TEAM_ID — needed only if the account has multiple teams.
   #
-  # Without the optional secrets the job still produces admin-ios.ipa as a
-  # workflow artifact / release asset — upload it manually via Transporter.
+  #   Option B (manual):
+  #     IOS_DISTRIBUTION_CERT_P12  — base64 .p12 of the Apple Distribution
+  #                                  certificate (+ private key)
+  #     IOS_P12_PASSWORD           — password used when exporting the .p12
+  #     IOS_PROVISIONING_PROFILE   — base64 App Store .mobileprovision for
+  #                                  bundle id ai.softshape.admin
+  #     Produces admin-ios.ipa as artifact/release asset (upload manually via
+  #     Transporter, or also set the Option A secrets for auto-upload).
   build-admin-ios:
     name: Admin iOS (.ipa)
     runs-on: macos-latest
@@ -551,26 +556,30 @@ jobs:
       ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      IOS_DISTRIBUTION_CERT_P12: ${{ secrets.IOS_DISTRIBUTION_CERT_P12 }}
+      IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+      IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+      IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify signing secrets
+      - name: Verify signing secrets & select signing mode
         run: |
-          missing=0
-          for s in IOS_DISTRIBUTION_CERT_P12 IOS_P12_PASSWORD IOS_PROVISIONING_PROFILE; do
-            if [ -z "${!s}" ]; then
-              echo "::error::Required secret $s is not set"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 1 ]; then
-            echo "::error::Add the secrets listed in the job header comments, then re-run."
+          set -euo pipefail
+          if [ -n "$IOS_DISTRIBUTION_CERT_P12" ] && [ -n "$IOS_P12_PASSWORD" ] && [ -n "$IOS_PROVISIONING_PROFILE" ]; then
+            echo "SIGNING_MODE=manual" >> "$GITHUB_ENV"
+            echo "Manual signing — certificate + provisioning profile secrets found."
+          elif [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_PRIVATE_KEY" ]; then
+            echo "SIGNING_MODE=auto" >> "$GITHUB_ENV"
+            echo "Automatic signing — Xcode will manage cert & profile via the App Store Connect API key."
+            mkdir -p "$HOME/.appstoreconnect/private_keys"
+            printf '%s' "$ASC_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          else
+            echo "::error::No signing credentials configured."
+            echo "::error::Option A: set APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_PRIVATE_KEY"
+            echo "::error::Option B: set IOS_DISTRIBUTION_CERT_P12, IOS_P12_PASSWORD, IOS_PROVISIONING_PROFILE"
             exit 1
           fi
-        env:
-          IOS_DISTRIBUTION_CERT_P12: ${{ secrets.IOS_DISTRIBUTION_CERT_P12 }}
-          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
-          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -598,9 +607,7 @@ jobs:
           npx cap sync ios
 
       - name: Import distribution certificate into keychain
-        env:
-          IOS_DISTRIBUTION_CERT_P12: ${{ secrets.IOS_DISTRIBUTION_CERT_P12 }}
-          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+        if: env.SIGNING_MODE == 'manual'
         run: |
           set -euo pipefail
           CERT_P12="$RUNNER_TEMP/dist-cert.p12"
@@ -628,8 +635,7 @@ jobs:
           echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 
       - name: Install provisioning profile
-        env:
-          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        if: env.SIGNING_MODE == 'manual'
         run: |
           set -euo pipefail
           PROFILE="$RUNNER_TEMP/admin-ios.mobileprovision"
@@ -667,42 +673,49 @@ jobs:
         run: |
           set -euo pipefail
           MARKETING_VERSION="$(node -p "require('../../package.json').version")"
-          echo "Archiving v$MARKETING_VERSION (build ${{ github.run_number }})"
-          xcodebuild -project ios/App/App.xcodeproj \
-            -scheme App \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            MARKETING_VERSION="$MARKETING_VERSION" \
-            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            archive
+          echo "Archiving v$MARKETING_VERSION (build ${{ github.run_number }}, signing: $SIGNING_MODE)"
+          ARGS=(
+            -project ios/App/App.xcodeproj
+            -scheme App
+            -configuration Release
+            -destination 'generic/platform=iOS'
+            -archivePath "$RUNNER_TEMP/App.xcarchive"
+            "MARKETING_VERSION=$MARKETING_VERSION"
+            "CURRENT_PROJECT_VERSION=${{ github.run_number }}"
+            COMPILER_INDEX_STORE_ENABLE=NO
+          )
+          if [ "$SIGNING_MODE" = "manual" ]; then
+            ARGS+=(
+              CODE_SIGN_STYLE=Manual
+              "DEVELOPMENT_TEAM=$TEAM_ID"
+              "CODE_SIGN_IDENTITY=$SIGNING_IDENTITY"
+              "PROVISIONING_PROFILE_SPECIFIER=$PROFILE_NAME"
+            )
+          else
+            ARGS+=(
+              CODE_SIGN_STYLE=Automatic
+              -allowProvisioningUpdates
+              -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+              -authenticationKeyID "$ASC_KEY_ID"
+              -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+            )
+            if [ -n "${IOS_TEAM_ID:-}" ]; then
+              ARGS+=("DEVELOPMENT_TEAM=$IOS_TEAM_ID")
+            fi
+          fi
+          xcodebuild "${ARGS[@]}" archive
 
       - name: Export .ipa
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          PLIST="$RUNNER_TEMP/ExportOptions.plist"
+          cat > "$PLIST" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>method</key>
             <string>app-store-connect</string>
-            <key>teamID</key>
-            <string>${TEAM_ID}</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>signingCertificate</key>
-            <string>${SIGNING_IDENTITY}</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>ai.softshape.admin</key>
-              <string>${PROFILE_NAME}</string>
-            </dict>
             <key>manageAppVersionAndBuildNumber</key>
             <false/>
             <key>uploadSymbols</key>
@@ -712,11 +725,28 @@ jobs:
           </dict>
           </plist>
           EOF
-          cat "$RUNNER_TEMP/ExportOptions.plist"
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          if [ "$SIGNING_MODE" = "manual" ]; then
+            /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :teamID string $TEAM_ID" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :signingCertificate string $SIGNING_IDENTITY" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:ai.softshape.admin string $PROFILE_NAME" "$PLIST"
+          else
+            /usr/libexec/PlistBuddy -c "Add :signingStyle string automatic" "$PLIST"
+            if [ -n "${IOS_TEAM_ID:-}" ]; then
+              /usr/libexec/PlistBuddy -c "Add :teamID string $IOS_TEAM_ID" "$PLIST"
+            fi
+          fi
+          cat "$PLIST"
+          EXPORT_ARGS=(
+            -archivePath "$RUNNER_TEMP/App.xcarchive"
+            -exportPath "$RUNNER_TEMP/export"
+            -exportOptionsPlist "$PLIST"
+          )
+          if [ "$SIGNING_MODE" = "auto" ]; then
+            EXPORT_ARGS+=( -allowProvisioningUpdates )
+          fi
+          xcodebuild -exportArchive "${EXPORT_ARGS[@]}"
           cp "$RUNNER_TEMP/export/App.ipa" admin-ios.ipa
 
       - name: Verify .ipa signature
