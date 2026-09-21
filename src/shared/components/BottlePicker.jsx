@@ -114,11 +114,6 @@ export default function BottlePicker({ isOpen, itemName, quantity, bottles, isLo
                       <span className={`text-sm font-black ${selectedKey === keyFor(bottle, idx) ? 'text-amber-700' : 'text-gray-700'}`}>
                         {bottle.label}{bottle.bottleSize ? ` · ${bottle.bottleSize}ml` : ''}
                       </span>
-                      {(bottle.stockDisplay || bottle.currentStockMl != null) && (
-                        <span className={`text-[10px] font-bold mt-0.5 ${Number(bottle.currentStockMl) > 0 ? 'text-gray-400' : 'text-red-500'}`}>
-                          {bottle.stockDisplay || `${Math.round(Number(bottle.currentStockMl) || 0)} ml left`}
-                        </span>
-                      )}
                     </div>
                     <span
                       className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${

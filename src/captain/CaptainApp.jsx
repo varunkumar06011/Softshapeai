@@ -1454,24 +1454,6 @@ export default function CaptainApp({ onLogout }) {
   const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
   const [bottlePickerLoading, setBottlePickerLoading] = useState(false);
 
-  // Sticky bottle selection per menu item — remembers which bottle the captain
-  // picked for each peg item so they don't have to pick again on every tap.
-  // Persists until the bottle is exhausted, table is switched, or user skips.
-  // NOT cleared on KOT send — captain continues pouring from same bottle.
-  const stickyBottleRef = useRef({});
-
-  const getStickyBottle = useCallback((itemId) => {
-    if (!itemId) return null;
-    const entry = stickyBottleRef.current[itemId];
-    if (!entry) return null;
-    if (typeof entry === 'string') return entry; // legacy format
-    return entry.bottleId || null;
-  }, []);
-
-  const setStickyBottle = useCallback((itemId, bottleId) => {
-    if (!itemId || !bottleId) return;
-    stickyBottleRef.current[itemId] = { bottleId, ts: Date.now() };
-  }, []);
 
 
 
@@ -3132,7 +3114,6 @@ export default function CaptainApp({ onLogout }) {
       if (Array.isArray(existing) && existing.some(i => i.s === 'Pending')) return prev;
       return { ...prev, [table.id]: [] };
     });
-    stickyBottleRef.current = {}; // clear sticky bottle selections on table switch
     lastConfirmedItemsRef.current = [];
     activeOrderIdRef.current = null;
     kotRequestIdRef.current = null;
@@ -3241,31 +3222,16 @@ export default function CaptainApp({ onLogout }) {
     const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PICKER_SIZES.includes(menuSize);
 
     if (isLiquorPeg) {
-      const itemId = liquorQtyItem.id || liquorQtyItem.menuItemId;
-      const remembered = getStickyBottle(itemId);
-      // Fetch bottles first, then decide: sticky hit → add directly (no picker),
-      // otherwise show picker with available bottles. This avoids the picker
-      // flashing open then closing when sticky memory is valid.
+      // Fetch bottles first, then show picker when bottles with real SKUs exist.
       setShowLiquorQtyPicker(false);
       setBottlePickerLoading(true);
-      getBottlesForMenuItem(itemId, activeMenuItems)
+      getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId, activeMenuItems)
         .then((res) => {
           setBottlePickerLoading(false);
           // Only open the picker when at least one option maps to a real
           // inventory SKU — menu-derived fallback rows (inventoryItemId null)
           // can't be honoured as pour targets, so showing them only confuses.
           if (res && res.isPeg && res.bottles && res.bottles.some((b) => b.inventoryItemId)) {
-            // Sticky bottle still in stock with enough ml? → add directly, skip picker
-            const neededMl = (res.deductionMl || 30) * qty;
-            if (remembered) {
-              const bottle = res.bottles.find(b => b.inventoryItemId === remembered);
-              if (bottle && bottle.currentStockMl >= neededMl) {
-                addItemToSession(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-                return;
-              }
-            }
-            // Remembered bottle exhausted/insufficient/not found — clear and show picker
-            if (remembered) stickyBottleRef.current[itemId] = undefined;
             setBottlePickerItem(liquorQtyItem);
             setBottlePickerQty(qty);
             setBottlePickerBottles(res.bottles);
@@ -3279,9 +3245,8 @@ export default function CaptainApp({ onLogout }) {
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem failed:', err?.message);
           setBottlePickerLoading(false);
-          // Offline — if we have sticky memory, use it (best effort);
-          // otherwise add without a pour override and let the backend resolve.
-          addItemToSession(liquorQtyItem, qty, remembered ? { pourFromInventoryItemId: remembered } : undefined);
+          // Offline — add without a pour override; backend resolves the deduction.
+          addItemToSession(liquorQtyItem, qty);
         });
       setLiquorQtyItem(null);
       return;
@@ -3295,10 +3260,6 @@ export default function CaptainApp({ onLogout }) {
   // ── Bottle picker handlers ──────────────────────────────────────────────
   const handleBottleSelect = (inventoryItemId) => {
     if (!bottlePickerItem) return;
-    // Remember the bottle selection for this peg item so subsequent taps
-    // skip the picker. Cleared on KOT send.
-    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
-    setStickyBottle(itemId, inventoryItemId);
     addItemToSession(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: inventoryItemId });
     setShowBottlePicker(false);
     setBottlePickerItem(null);
@@ -3307,22 +3268,17 @@ export default function CaptainApp({ onLogout }) {
 
   const handleBottleSkip = () => {
     if (!bottlePickerItem) return;
-    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
     // Skip = use the picker's default bottle: the mapped SKU (750ml for peg
-    // items, same-size for bottle items like a takeaway 180). Only when no
-    // default exists do we fall back to a 750 — then sticky it so the picker
-    // doesn't reopen on the next tap.
+    // items, same-size for bottle items like a takeaway 180).
     const defaultBottle = (bottlePickerBottles || []).find(
       (b) => b.isDefault && b.inventoryItemId,
     ) || (bottlePickerBottles || []).find(
       (b) => Number(b.bottleSize) === 750 && b.inventoryItemId,
     );
     if (defaultBottle) {
-      if (itemId) setStickyBottle(itemId, defaultBottle.inventoryItemId);
       addItemToSession(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: defaultBottle.inventoryItemId });
     } else {
       // No usable SKU — leave the pour unset; backend resolves the linked item.
-      if (itemId) stickyBottleRef.current[itemId] = undefined;
       addItemToSession(bottlePickerItem, bottlePickerQty);
     }
     setShowBottlePicker(false);
@@ -3331,9 +3287,6 @@ export default function CaptainApp({ onLogout }) {
   };
 
   const handleBottleClose = () => {
-    // Clear sticky — user closed without selecting
-    const itemId = bottlePickerItem?.id || bottlePickerItem?.menuItemId;
-    if (itemId) stickyBottleRef.current[itemId] = undefined;
     setShowBottlePicker(false);
     setBottlePickerItem(null);
     setBottlePickerBottles([]);
@@ -3343,7 +3296,6 @@ export default function CaptainApp({ onLogout }) {
 
     setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
 
-    stickyBottleRef.current = {}; // clear sticky bottle selections on cancel
     lastConfirmedItemsRef.current = [];
 
     activeOrderIdRef.current = null;
@@ -3438,27 +3390,19 @@ export default function CaptainApp({ onLogout }) {
     const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PICKER_SIZES.includes(menuSize);
 
     if (isLiquorPeg) {
-      const itemId = item.id || item.menuItemId;
-      const remembered = getStickyBottle(itemId);
-      // Fetch first, then show picker only if needed (no flash).
+      // Fetch first, then show picker when bottles with real SKUs exist.
       setBottlePickerLoading(true);
-      getBottlesForMenuItem(itemId, activeMenuItemsRef.current)
+      getBottlesForMenuItem(item.id || item.menuItemId, activeMenuItemsRef.current)
         .then((res) => {
           setBottlePickerLoading(false);
           // Only open the picker when at least one option maps to a real
           // inventory SKU — menu-derived fallback rows (inventoryItemId null)
           // can't be honoured as pour targets, so showing them only confuses.
           if (res && res.isPeg && res.bottles && res.bottles.some((b) => b.inventoryItemId)) {
-            // Sticky bottle still in stock? → add directly, skip picker
-            if (remembered && res.bottles.some(b => b.inventoryItemId === remembered)) {
-              addItemToSessionRef.current(item, 1, { pourFromInventoryItemId: remembered });
-            } else {
-              if (remembered) stickyBottleRef.current[itemId] = undefined;
-              setBottlePickerItem(item);
-              setBottlePickerQty(1);
-              setBottlePickerBottles(res.bottles);
-              setShowBottlePicker(true);
-            }
+            setBottlePickerItem(item);
+            setBottlePickerQty(1);
+            setBottlePickerBottles(res.bottles);
+            setShowBottlePicker(true);
           } else {
             // No bottles to pick — add directly; backend resolves the deduction.
             addItemToSessionRef.current(item, 1);
@@ -3467,9 +3411,8 @@ export default function CaptainApp({ onLogout }) {
         .catch((err) => {
           console.error('[CaptainApp] getBottlesForMenuItem (directAdd) failed:', err?.message);
           setBottlePickerLoading(false);
-          // Offline — use sticky memory as best-effort fallback; otherwise
-          // add without a pour override and let the backend resolve it.
-          addItemToSessionRef.current(item, 1, remembered ? { pourFromInventoryItemId: remembered } : undefined);
+          // Offline — add without a pour override; backend resolves the deduction.
+          addItemToSessionRef.current(item, 1);
         });
     } else {
       addItemToSessionRef.current(item, 1);
@@ -4281,7 +4224,6 @@ export default function CaptainApp({ onLogout }) {
       const committedSoFar = getTableItems(activeTable);
       lastConfirmedItemsRef.current = [...committedSoFar, ...currentSessionItems];
       setTableCarts(prev => ({ ...prev, [activeTableId]: [] }));
-      stickyBottleRef.current = {}; // clear sticky bottle selections after KOT
       lastAnyItemAddedRef.current = 0;
 
       // Fix 12C: Clear persisted KOT on success

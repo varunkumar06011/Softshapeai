@@ -1321,25 +1321,6 @@ const CashierDashboard = ({ onLogout }) => {
   const [bottlePickerBottles, setBottlePickerBottles] = useState([]);
   const [bottlePickerLoading, setBottlePickerLoading] = useState(false);
 
-  // Sticky bottle selection per menu item — remembers which bottle the cashier
-  // picked for each peg item so they don't have to pick again on every tap.
-  // Persists until the bottle is exhausted, table is switched, or user skips.
-  // NOT cleared on KOT send — bartender continues pouring from same bottle.
-  const stickyBottleRef = useRef({});
-
-  const getStickyBottle = useCallback((itemId) => {
-    if (!itemId) return null;
-    const entry = stickyBottleRef.current[itemId];
-    if (!entry) return null;
-    if (typeof entry === 'string') return entry; // legacy format
-    return entry.bottleId || null;
-  }, []);
-
-  const setStickyBottle = useCallback((itemId, bottleId) => {
-    if (!itemId || !bottleId) return;
-    stickyBottleRef.current[itemId] = { bottleId, ts: Date.now() };
-  }, []);
-
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH');
 
   const [showMethodPicker, setShowMethodPicker] = useState(false);
@@ -10440,8 +10421,6 @@ const CashierDashboard = ({ onLogout }) => {
 
     setSelectedOrder(null);
 
-    stickyBottleRef.current = {}; // clear sticky bottle selections on table switch
-
     lastConfirmedItemsRef.current = [];
 
     setExpandedNoteItemId(null);
@@ -10586,9 +10565,7 @@ const CashierDashboard = ({ onLogout }) => {
     const isLiquorPeg = (menuType === 'LIQUOR' || menuType === 'BAR') && PICKER_SIZES.includes(menuSize);
 
     if (isLiquorPeg) {
-      const itemId = liquorQtyItem.id || liquorQtyItem.menuItemId;
-      const remembered = getStickyBottle(itemId);
-      // Fetch first, then show picker only if needed (no flash).
+      // Fetch first, then show picker only if bottles with real SKUs exist.
       setShowLiquorQtyPicker(false);
       setBottlePickerLoading(true);
       getBottlesForMenuItem(liquorQtyItem.id || liquorQtyItem.menuItemId, activeMenuItems)
@@ -10598,20 +10575,6 @@ const CashierDashboard = ({ onLogout }) => {
           // inventory SKU — menu-derived fallback rows (inventoryItemId null)
           // can't be honoured as pour targets, so showing them only confuses.
           if (res && res.isPeg && res.bottles && res.bottles.some((b) => b.inventoryItemId)) {
-            // Sticky bottle still in stock with enough ml? → add directly, skip picker
-            const neededMl = (res.deductionMl || 30) * qty;
-            if (remembered) {
-              const bottle = res.bottles.find(b => b.inventoryItemId === remembered);
-              if (bottle && bottle.currentStockMl >= neededMl) {
-                addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-                setSearchQuery('');
-                setSelectedCategory('All');
-                setActiveDiet('All');
-                return;
-              }
-            }
-            // Remembered bottle exhausted/insufficient/not found — clear and show picker
-            if (remembered) stickyBottleRef.current[itemId] = undefined;
             setBottlePickerItem(liquorQtyItem);
             setBottlePickerQty(qty);
             setBottlePickerBottles(res.bottles);
@@ -10626,12 +10589,8 @@ const CashierDashboard = ({ onLogout }) => {
         })
         .catch(() => {
           setBottlePickerLoading(false);
-          // Offline or error — use sticky memory as best-effort fallback
-          if (remembered) {
-            addToCart(liquorQtyItem, qty, { pourFromInventoryItemId: remembered });
-          } else {
-            addToCart(liquorQtyItem, qty);
-          }
+          // Offline or error — add without a pour override; backend resolves.
+          addToCart(liquorQtyItem, qty);
           setSearchQuery('');
           setSelectedCategory('All');
           setActiveDiet('All');
@@ -10659,8 +10618,6 @@ const CashierDashboard = ({ onLogout }) => {
   // ── Bottle picker handlers ──────────────────────────────────────────────
   const handleBottleSelect = (inventoryItemId) => {
     if (!bottlePickerItem) return;
-    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
-    setStickyBottle(itemId, inventoryItemId);
     addToCart(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: inventoryItemId });
     setShowBottlePicker(false);
     setBottlePickerItem(null);
@@ -10672,21 +10629,17 @@ const CashierDashboard = ({ onLogout }) => {
 
   const handleBottleSkip = () => {
     if (!bottlePickerItem) return;
-    const itemId = bottlePickerItem.id || bottlePickerItem.menuItemId;
     // Skip = use the picker's default bottle: the mapped SKU (750ml for peg
-    // items, same-size for bottle items like a takeaway 180). Only when no
-    // default exists do we fall back to a 750 — then sticky it.
+    // items, same-size for bottle items like a takeaway 180).
     const defaultBottle = (bottlePickerBottles || []).find(
       (b) => b.isDefault && b.inventoryItemId,
     ) || (bottlePickerBottles || []).find(
       (b) => Number(b.bottleSize) === 750 && b.inventoryItemId,
     );
     if (defaultBottle) {
-      if (itemId) setStickyBottle(itemId, defaultBottle.inventoryItemId);
       addToCart(bottlePickerItem, bottlePickerQty, { pourFromInventoryItemId: defaultBottle.inventoryItemId });
     } else {
       // No usable SKU — leave the pour unset; backend resolves the linked item.
-      if (itemId) stickyBottleRef.current[itemId] = undefined;
       addToCart(bottlePickerItem, bottlePickerQty);
     }
     setShowBottlePicker(false);
@@ -10698,9 +10651,6 @@ const CashierDashboard = ({ onLogout }) => {
   };
 
   const handleBottleClose = () => {
-    // Clear sticky — user closed without selecting
-    const itemId = bottlePickerItem?.id || bottlePickerItem?.menuItemId;
-    if (itemId) stickyBottleRef.current[itemId] = undefined;
     setShowBottlePicker(false);
     setBottlePickerItem(null);
     setBottlePickerBottles([]);
