@@ -535,10 +535,11 @@ jobs:
   #     APP_STORE_CONNECT_KEY_ID      — App Store Connect API key ID
   #     APP_STORE_CONNECT_ISSUER_ID   — issuer UUID
   #     APP_STORE_CONNECT_PRIVATE_KEY — contents of the AuthKey .p8 file
+  #     IOS_TEAM_ID                   — 10-char Apple Team ID (developer.apple.com
+  #                                     → Membership details)
   #     Xcode signs automatically: it creates/fetches the distribution
   #     certificate and App Store profile via the API key, then the job
   #     validates and uploads the .ipa to App Store Connect.
-  #     Optional: IOS_TEAM_ID — needed only if the account has multiple teams.
   #
   #   Option B (manual):
   #     IOS_DISTRIBUTION_CERT_P12  — base64 .p12 of the Apple Distribution
@@ -570,6 +571,11 @@ jobs:
             echo "SIGNING_MODE=manual" >> "$GITHUB_ENV"
             echo "Manual signing — certificate + provisioning profile secrets found."
           elif [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_PRIVATE_KEY" ]; then
+            if [ -z "${IOS_TEAM_ID:-}" ]; then
+              echo "::error::Automatic signing needs IOS_TEAM_ID — your 10-char Apple Team ID"
+              echo "::error::Find it at developer.apple.com → Account → Membership details → Team ID"
+              exit 1
+            fi
             echo "SIGNING_MODE=auto" >> "$GITHUB_ENV"
             echo "Automatic signing — Xcode will manage cert & profile via the App Store Connect API key."
             mkdir -p "$HOME/.appstoreconnect/private_keys"
@@ -694,14 +700,12 @@ jobs:
           else
             ARGS+=(
               CODE_SIGN_STYLE=Automatic
+              "DEVELOPMENT_TEAM=$IOS_TEAM_ID"
               -allowProvisioningUpdates
               -authenticationKeyIssuerID "$ASC_ISSUER_ID"
               -authenticationKeyID "$ASC_KEY_ID"
               -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
             )
-            if [ -n "${IOS_TEAM_ID:-}" ]; then
-              ARGS+=("DEVELOPMENT_TEAM=$IOS_TEAM_ID")
-            fi
           fi
           xcodebuild "${ARGS[@]}" archive
 

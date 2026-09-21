@@ -94,28 +94,27 @@ The admin iOS app is built by the `build-admin-ios` job in
 `.github/workflows/build-apps.yml` (release + manual dispatch). It produces a
 signed `admin-ios.ipa` suitable for App Store Connect / TestFlight.
 
-Required repository secrets:
+Signing credentials — set ONE option:
+
+**Option A (recommended — no Mac needed):** Xcode signs automatically via the
+App Store Connect API key (it creates/fetches the distribution cert and App
+Store profile itself), then validates + uploads the `.ipa` to App Store Connect.
+
+| Secret | Contents |
+|--------|----------|
+| `APP_STORE_CONNECT_KEY_ID` | App Store Connect API key ID (role: Admin) |
+| `APP_STORE_CONNECT_ISSUER_ID` | issuer UUID |
+| `APP_STORE_CONNECT_PRIVATE_KEY` | contents of the `AuthKey_*.p8` file |
+| `IOS_TEAM_ID` | 10-char Apple Team ID (developer.apple.com → Membership details) |
+
+**Option B (manual signing):** produces `admin-ios.ipa` as an artifact — upload
+to App Store Connect yourself via Transporter (needs a Mac).
 
 | Secret | Contents |
 |--------|----------|
 | `IOS_DISTRIBUTION_CERT_P12` | base64 of the Apple Distribution `.p12` (cert + private key) |
 | `IOS_P12_PASSWORD` | password used when exporting the `.p12` |
 | `IOS_PROVISIONING_PROFILE` | base64 of the App Store `.mobileprovision` for `ai.softshape.admin` |
-
-Optional — enable App Store Connect validation + TestFlight upload:
-
-| Secret | Contents |
-|--------|----------|
-| `APP_STORE_CONNECT_KEY_ID` | App Store Connect API key ID |
-| `APP_STORE_CONNECT_ISSUER_ID` | issuer UUID |
-| `APP_STORE_CONNECT_PRIVATE_KEY` | contents of the `AuthKey_*.p8` file |
-
-Creating the signing assets (on a Mac, or via the Apple Developer portal):
-1. Create the App ID `ai.softshape.admin` at developer.apple.com → Identifiers
-2. Create an "Apple Distribution" certificate (CSR → download → export .p12
-   from Keychain Access), then `base64 -i cert.p12 | pbcopy`
-3. Create an App Store provisioning profile for the App ID, download it,
-   then `base64 -i profile.mobileprovision | pbcopy`
 
 Local development on a Mac:
 ```bash
