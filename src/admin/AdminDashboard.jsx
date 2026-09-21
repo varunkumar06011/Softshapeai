@@ -52,7 +52,6 @@ import { useTableSync } from '../services/tableSyncService';
 import { authService } from '../services/authService';
 import { reconnectSocket } from '../hooks/useSocket';
 import { sendSpireMessage } from '../services/spireAgent';
-import SyncStatusIndicator from '../shared/components/SyncStatusIndicator';
 
 import { adminRoutes, isRouteEnabled, isManagerTabEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
 import AdminRouteGuard from './AdminRouteGuard';
@@ -768,8 +767,6 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
           </Suspense>
         </main>
       </div>
-
-      <SyncStatusIndicator />
 
       {role !== 'manager' && (
         <>
