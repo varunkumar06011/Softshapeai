@@ -698,14 +698,11 @@ jobs:
               "PROVISIONING_PROFILE_SPECIFIER=$PROFILE_NAME"
             )
           else
-            ARGS+=(
-              CODE_SIGN_STYLE=Automatic
-              "DEVELOPMENT_TEAM=$IOS_TEAM_ID"
-              -allowProvisioningUpdates
-              -authenticationKeyIssuerID "$ASC_ISSUER_ID"
-              -authenticationKeyID "$ASC_KEY_ID"
-              -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-            )
+            # Automatic signing at archive time requires a registered device
+            # (Apple insists on a development profile for signed archives).
+            # Archive unsigned instead — the export step signs for App Store,
+            # and App Store profiles don't require devices.
+            ARGS+=( CODE_SIGNING_ALLOWED=NO )
           fi
           xcodebuild "${ARGS[@]}" archive
 
@@ -748,7 +745,14 @@ jobs:
             -exportOptionsPlist "$PLIST"
           )
           if [ "$SIGNING_MODE" = "auto" ]; then
-            EXPORT_ARGS+=( -allowProvisioningUpdates )
+            # Re-signs the unsigned archive with the App Store profile,
+            # creating cert/profile via the ASC API key if missing.
+            EXPORT_ARGS+=(
+              -allowProvisioningUpdates
+              -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+              -authenticationKeyID "$ASC_KEY_ID"
+              -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+            )
           fi
           xcodebuild -exportArchive "${EXPORT_ARGS[@]}"
           cp "$RUNNER_TEMP/export/App.ipa" admin-ios.ipa
