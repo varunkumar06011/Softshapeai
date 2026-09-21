@@ -6,6 +6,7 @@ import {
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
+import LottieLoader from '../shared/components/LottieLoader';
 
 function round2(n) {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
@@ -357,11 +358,7 @@ export default function OpeningBalanceSetup() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 size={24} className="animate-spin text-[#E53935]" />
-      </div>
-    );
+    return <LottieLoader />;
   }
 
   const canFinalize = cashInHand !== '' && bankBalance !== '' && openingEquity !== '' && obId;

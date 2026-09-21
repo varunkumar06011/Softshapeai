@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { fetchUnifiedOrders, getOrderAnalytics, PLATFORM_META, subscribeToIncomingOrders } from "../services/orderIntegrationService";
+import LottieLoader from "../shared/components/LottieLoader";
 
 // Play a notification beep when a new order arrives
 function beep() {
@@ -94,7 +95,7 @@ export default function UnifiedOrdersDashboard() {
         <MetricCard label="Platform Revenue" value={`Z:${analytics.revenueByPlatform.Zomato ?? 0} S:${analytics.revenueByPlatform.Swiggy ?? 0}`} />
       </div>
 
-      {loading && <div className="h-10 animate-pulse rounded bg-[#FFEBEE]" />}
+      {loading && <LottieLoader label={null} size={40} className="py-1" />}
       {error && <div className="rounded border border-[#E53935] bg-[#FFEBEE] p-2 text-sm text-[#B71C1C]">{error}</div>}
       {!loading && !visible.length && <div className="rounded border border-[#FFCDD2] p-2 text-sm text-[#6B6B6B]">No incoming orders for selected filters.</div>}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

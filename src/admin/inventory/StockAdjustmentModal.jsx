@@ -16,6 +16,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { adjustStock, getOrCreateRequestId, clearRequestId, getOpeningPreview, recordNonAcSale } from '../../services/barInventoryApi';
 import { createKitchenEntry } from '../../services/kitchenInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 export function StockAdjustmentModal({ open, item, items, tab, date, defaultType, onClose, onSaved }) {
   // `selectedItem` is the item chosen in the picker step (or the pre-selected
@@ -426,7 +427,7 @@ export function StockAdjustmentModal({ open, item, items, tab, date, defaultType
                 {adjustType === 'opening' && tab === 'bar' && (
                   <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-1.5">
                     {openingPreviewLoading ? (
-                      <p className="text-xs text-purple-500">Loading today's activity...</p>
+                      <LottieLoader label={null} size={40} className="py-1" />
                     ) : openingPreview ? (
                       <>
                         <div className="flex justify-between text-xs">

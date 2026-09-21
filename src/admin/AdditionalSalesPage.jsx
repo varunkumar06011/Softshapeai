@@ -17,6 +17,7 @@ import {
   updateAdditionalSale,
   deleteAdditionalSale,
 } from '../services/additionalSalesApi';
+import LottieLoader from '../shared/components/LottieLoader';
 
 const CATEGORIES = ['All', 'Food', 'Liquor', 'Beverages'];
 const CATEGORY_TABS = CATEGORIES; // 'All' + 3 categories
@@ -451,10 +452,7 @@ export default function AdditionalSalesPage() {
 
       {/* Sales Table — Desktop / Tablet */}
       {loading ? (
-        <div className="space-y-2">
-          <div className="h-12 bg-gray-100 rounded animate-pulse" />
-          <div className="h-12 bg-gray-100 rounded animate-pulse" />
-        </div>
+        <LottieLoader label={null} size={80} className="py-8" />
       ) : sales.length === 0 ? (
         <div className="bg-white border border-gray-100 rounded-xl p-8 text-center">
           <p className="text-sm text-gray-400">

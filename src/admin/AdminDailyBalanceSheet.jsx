@@ -12,6 +12,7 @@ import { apiFetch } from '../services/apiConfig';
 import { useAuth } from '../context/AuthContext';
 import { canvasToA4PdfBlob, canvasToA4PdfDoc } from '../shared/utils/canvasToPdf';
 import BalanceSheetReportTemplate from './components/BalanceSheetReportTemplate';
+import LottieLoader from '../shared/components/LottieLoader';
 
 // ── Pure client-side calculation (mirrors backend calculateRunningBalance) ────
 function round2(n) {
@@ -1347,11 +1348,7 @@ export default function AdminDailyBalanceSheet() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="animate-spin text-[#E53935]" size={32} />
-      </div>
-    );
+    return <LottieLoader />;
   }
 
   return (
@@ -1668,9 +1665,7 @@ export default function AdminDailyBalanceSheet() {
 
         {/* Auto-added expenditures */}
         {expendituresLoading ? (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Loader2 size={14} className="animate-spin" /> Loading expenditures...
-          </div>
+          <LottieLoader label="Loading expenditures…" size={48} className="py-2" />
         ) : (
           <div className="space-y-2">
             {Object.entries(expenditureGroups).map(([cat, vlist]) => (
@@ -2053,7 +2048,7 @@ export default function AdminDailyBalanceSheet() {
 
               {/* Empty state */}
               {ledgerActivityLoading && (
-                <div className="flex items-center justify-center py-2"><Loader2 size={14} className="animate-spin text-gray-400" /></div>
+                <LottieLoader label={null} size={40} className="py-2" />
               )}
               {!ledgerActivityLoading &&
                 !ledgerActivity.groceryByCategory?.length &&

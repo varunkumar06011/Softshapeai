@@ -25,7 +25,7 @@ import {
 } from 'recharts';
 import {
   Banknote, BarChart2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Layers,
-  RefreshCw, Search, Smartphone, TrendingUp, DollarSign, Package, AlertTriangle,
+  Search, Smartphone, TrendingUp, DollarSign, Package, AlertTriangle,
   ArrowUpDown, Wallet, WifiOff, Menu, ShoppingBag,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -39,6 +39,7 @@ import { downloadPDF, downloadExcel } from './reportDownloads.js';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE, apiFetch, getAuthHeaders } from '../services/apiConfig';
 import OperationsDashboard from './OperationsDashboard';
+import LottieLoader from '../shared/components/LottieLoader';
 import AdditionalSalesPage from './AdditionalSalesPage';
 import { safeGetJSON } from '../utils/safeParseJSON';
 
@@ -322,7 +323,7 @@ function ReportHeader({ title, subtitle, children }) {
 function LoadingCard() {
   return (
     <div className="flex h-96 items-center justify-center bg-white rounded-3xl border border-[#FFCDD2] shadow-sm">
-      <RefreshCw className="animate-spin text-[#B71C1C]" size={40} />
+      <LottieLoader label={null} size={140} className="h-full w-full" />
     </div>
   );
 }
@@ -394,7 +395,7 @@ function CaptainPerformanceReport({ dateFilter }) {
     return () => { cancelled = true; };
   }, [dateFilter]);
 
-  if (loading) return <div className="text-center py-8 text-gray-400">Loading captain performance...</div>;
+  if (loading) return <LottieLoader label="Loading captain performance…" size={100} className="py-8" />;
   if (error) return <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{error}</div>;
   if (!data?.captains?.length) return <div className="text-center py-8 text-gray-400">No captain performance data for the selected range.</div>;
 
@@ -1215,7 +1216,7 @@ function IngredientCostModal({ item, startDate, endDate, onClose }) {
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 text-gray-600 font-black">×</button>
         </div>
 
-        {loading && <div className="text-center py-8 text-gray-500">Loading...</div>}
+        {loading && <LottieLoader size={80} className="py-8" />}
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm">{error}</div>}
         {data && (
           <div className="space-y-5">
@@ -1887,7 +1888,7 @@ function XReportAdminView({ dateFilter, outletId, onDownloadRef }) {
 
   useEffect(() => { onDownloadRef.current = { pdf: doPDF, excel: doExcel }; }, [reports, dateFilter, outletId]);
 
-  if (loading) return <div className="text-center py-8 text-gray-400">Loading X Reports...</div>;
+  if (loading) return <LottieLoader label="Loading X Reports…" size={100} className="py-8" />;
   if (error) return <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{error}</div>;
   if (!reports.length) return <div className="text-center py-8 text-gray-400">No X Reports found for this date range.</div>;
 
@@ -2174,7 +2175,7 @@ function DeliveryPlatformsReport({ dateFilter, outletId }) {
       .finally(() => setLoading(false));
   }, [dateFilter]);
 
-  if (loading) return <p className="text-gray-500">Loading...</p>;
+  if (loading) return <LottieLoader size={80} className="py-4" />;
   if (!data.platforms.length) return <p className="text-gray-500">No delivery data for this period.</p>;
 
   return (

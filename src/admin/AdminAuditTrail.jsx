@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ClipboardList,
-  Loader2,
   ChevronDown,
   ChevronRight,
   AlertCircle,
@@ -9,6 +8,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import LottieLoader from '../shared/components/LottieLoader';
 
 const ENTITY_TYPES = [
   { value: '', label: 'All' },
@@ -251,8 +251,7 @@ export default function AdminAuditTrail() {
       {/* Loading State */}
       {!error && loading && (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <Loader2 size={28} className="mx-auto text-gray-300 animate-spin mb-3" />
-          <p className="text-sm text-gray-400">Loading audit logs...</p>
+          <LottieLoader label="Loading audit logs…" size={100} />
         </div>
       )}
 

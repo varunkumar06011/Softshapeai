@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Wine, Search, Check } from 'lucide-react';
 import { fetchLiquorMappings, saveLiquorMapping } from '../../services/barInventoryApi';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 const QUICK_ML = [30, 60, 90, 180, 375, 750];
 
@@ -178,7 +179,7 @@ export function LiquorMappingModal({ open, onClose, onSaved }) {
             <div className="bg-red-50 text-red-600 text-sm rounded-lg p-3 mb-3">{error}</div>
           )}
           {loading ? (
-            <div className="text-center py-12 text-gray-400 text-sm font-bold">Loading…</div>
+            <LottieLoader size={80} className="py-12" />
           ) : visible.length === 0 ? (
             <div className="text-center py-12 text-gray-400 text-sm font-bold">
               {items.length === 0 ? 'No liquor menu items found' : 'No items match the filter'}

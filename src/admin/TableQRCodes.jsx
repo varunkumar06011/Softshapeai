@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { apiFetch, API_BASE } from '../services/apiConfig';
 import { QrCode, Printer, ArrowLeft, Download, Plus, Trash2 } from 'lucide-react';
+import LottieLoader from '../shared/components/LottieLoader';
 
 export default function TableQRCodes() {
   const navigate = useNavigate();
@@ -161,7 +162,7 @@ export default function TableQRCodes() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
-        <div className="text-gray-400 font-semibold animate-pulse">Loading tables...</div>
+        <LottieLoader label="Loading tables…" />
       </div>
     );
   }
@@ -306,7 +307,7 @@ export default function TableQRCodes() {
                           includeMargin={false}
                         />
                       ) : (
-                        <div className="w-[140px] h-[140px] flex items-center justify-center text-[10px] text-gray-400 font-bold">Loading QR...</div>
+                        <div className="w-[140px] h-[140px] flex items-center justify-center"><LottieLoader label={null} size={96} className="h-full w-full" /></div>
                       )}
                     </div>
                     <div className="text-center">

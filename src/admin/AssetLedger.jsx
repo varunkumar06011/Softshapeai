@@ -6,6 +6,7 @@ import {
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
+import LottieLoader from '../shared/components/LottieLoader';
 
 function round2(n) {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
@@ -292,7 +293,7 @@ export default function AssetLedger() {
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-400" size={24} /></div>
+          <LottieLoader label={null} size={72} className="py-8" />
         ) : assets.length === 0 ? (
           <div className="text-center py-8 text-xs font-bold text-gray-400">
             <Building2 size={32} className="mx-auto mb-2 text-gray-300" />

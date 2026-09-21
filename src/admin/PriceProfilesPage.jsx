@@ -17,6 +17,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Save, Tag, Loader2, Link2, Unlink, AlertTriangle, Store } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
+import LottieLoader from '../shared/components/LottieLoader';
 
 export default function PriceProfilesPage() {
   const [profiles, setProfiles] = useState([]);
@@ -174,11 +175,7 @@ export default function PriceProfilesPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-[#E53935]" />
-      </div>
-    );
+    return <LottieLoader />;
   }
 
   return (

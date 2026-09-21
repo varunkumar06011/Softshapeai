@@ -15,6 +15,7 @@ import PurchaseReportTemplate from './components/PurchaseReportTemplate';
 import VendorLedgerReportTemplate from './components/VendorLedgerReportTemplate';
 import VendorStatementTemplate from './components/VendorStatementTemplate';
 import PurchaseHistory from './components/PurchaseHistory';
+import LottieLoader from '../shared/components/LottieLoader';
 import { getUnitOptions } from '../shared/utils/unitConversion';
 import { PAYMENT_METHODS, API_TIMEOUT_SHORT_MS, API_TIMEOUT_DEFAULT_MS, API_TIMEOUT_SAVE_DAILY_MS } from '../shared/utils/constants';
 
@@ -1428,11 +1429,7 @@ export default function AdminPurchases() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   if (loading && view !== 'po-form' && view !== 'daily-entry') {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 size={24} className="animate-spin text-[#E53935]" />
-      </div>
-    );
+    return <LottieLoader />;
   }
 
   return (
@@ -1515,8 +1512,7 @@ export default function AdminPurchases() {
 
           {(ledgerLoading && ledgerRows.length === 0) ? (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
-              <Loader2 size={24} className="mx-auto text-gray-300 animate-spin mb-2" />
-              <p className="text-xs text-gray-400 font-bold">Loading vendor ledger…</p>
+              <LottieLoader label="Loading vendor ledger…" size={80} />
             </div>
           ) : ledgerRows.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">

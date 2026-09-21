@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Plus, Pencil, Trash2, ChevronDown, ChevronRight, MapPin, Hash, Users, Loader2, X, Check, AlertTriangle
+  Plus, Pencil, Trash2, ChevronDown, ChevronRight, MapPin, Hash, Users, X, Check, AlertTriangle
 } from 'lucide-react';
 import {
   fetchVenues, createVenue, updateVenue, deleteVenue,
   createSection, updateSection, deleteSection,
   createTable, bulkCreateTables, updateTable, deleteTable,
 } from '../services/tableApi';
+import LottieLoader from '../shared/components/LottieLoader';
 
 const VENUE_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in' },
@@ -98,11 +99,7 @@ export default function FloorPlanEditor() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-[#E53935]" />
-      </div>
-    );
+    return <LottieLoader />;
   }
 
   const allSections = venues.flatMap(v => {

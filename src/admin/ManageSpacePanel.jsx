@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
-  MapPin, Hash, Users, Loader2, X, Check, AlertTriangle,
+  MapPin, Hash, Users, X, Check, AlertTriangle,
   LayoutGrid, Layers, Table2, TriangleAlert,
 } from 'lucide-react';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../services/tableApi';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import LottieLoader from '../shared/components/LottieLoader';
 
 const cls = {
   input: 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#E53935] focus:ring-1 focus:ring-red-100 bg-white transition',
@@ -298,9 +299,7 @@ function SpaceEditor({ onBack }) {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-6 h-6 animate-spin text-[#E53935]" />
-        </div>
+        <LottieLoader label={null} size={80} className="py-16" />
       ) : (
         <>
           <div className="flex items-center gap-4 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-500">

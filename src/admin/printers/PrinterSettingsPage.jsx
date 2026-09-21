@@ -21,6 +21,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { apiUrl, getAuthHeaders, API_BASE } from '../../services/apiConfig.js';
 import { useAuth } from '../../context/AuthContext.jsx';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 // Poll interval for checking print agent connection status (30 seconds)
 const POLL_INTERVAL_MS = 30_000;
@@ -256,9 +257,7 @@ export default function PrinterSettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
-        Loading printer status…
-      </div>
+      <LottieLoader label="Loading printer status…" />
     );
   }
 

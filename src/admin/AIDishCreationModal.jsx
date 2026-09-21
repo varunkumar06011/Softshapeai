@@ -19,6 +19,7 @@ import { Sparkles, Bot, X, RotateCcw, Check, Zap, Megaphone, UtensilsCrossed, Ar
 import { generateDishCreative, detectDish } from "../services/menuAiService";
 import { generateRandomConfig } from "../services/creativeEngine";
 import CreativeCanvas from "../shared/components/CreativeCanvas";
+import LottieLoader from "../shared/components/LottieLoader";
 
 export default function AIDishCreationModal({ open, onClose, onSave }) {
   const [step, setStep] = useState(1);
@@ -152,7 +153,7 @@ export default function AIDishCreationModal({ open, onClose, onSave }) {
                     <img src={image?.url} className="h-full w-full object-cover" alt="analyzing" />
                     {isAnalyzing && (
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                        <div className="h-20 w-20 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                        <LottieLoader label={null} size={72} />
                       </div>
                     )}
                   </div>

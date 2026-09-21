@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { fetchTransactions } from '../../services/barInventoryApi';
 import { fetchKitchenLedger } from '../../services/kitchenInventoryApi';
 import { MOVEMENT_TYPE_LABELS, MOVEMENT_TYPE_COLORS, MOVEMENT_TYPE_SIGN, isBeerItem, fmtBeerBottles } from './inventoryConstants';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, onStockAdjustment }) {
   const [transactions, setTransactions] = useState([]);
@@ -153,7 +154,7 @@ export function ItemDetailsDrawer({ open, item, tab, onClose, onRecordPurchase, 
           <div>
             <h3 className="text-sm font-bold text-gray-700 mb-2">Recent Activity</h3>
             {loading ? (
-              <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+              <LottieLoader size={64} className="py-8" />
             ) : transactions.length === 0 ? (
               <div className="text-center py-8 text-gray-400 text-sm">No recent activity</div>
             ) : (

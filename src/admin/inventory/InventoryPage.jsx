@@ -26,6 +26,7 @@ import LiquorMappingModal from './LiquorMappingModal';
 import { EditTotalStockModal } from './EditTotalStockModal';
 import { fetchBarInventory, deleteInventoryItem } from '../../services/barInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 export function InventoryPage() {
   const { restaurant } = useAuth();
@@ -382,8 +383,8 @@ function InventoryContent({ tab, inventory, onAddItem, onRecordPurchase, onStock
 
       {/* Loading state */}
       {loading || (tab === 'bar' && combinedLoading) ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center text-gray-400">
-          Loading inventory...
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12">
+          <LottieLoader label="Loading inventory…" size={100} />
         </div>
       ) : tab === 'bar' ? (
         /* Single-stock-pool bar table */

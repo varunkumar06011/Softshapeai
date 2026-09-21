@@ -44,6 +44,7 @@ import { adminRoutes } from '../adminRoutes';
 import { safeGetJSON } from '../../utils/safeParseJSON';
 import PhoneOtpVerifier from '../../shared/components/PhoneOtpVerifier';
 import EmailOtpVerifier from '../../shared/components/EmailOtpVerifier';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 const BAR_TYPES = ['BAR_LOUNGE', 'BAR_WITH_DINING'];
 
@@ -526,11 +527,7 @@ function SettingsPage({ onNavigate }) {
   }, [fetchVenues]);
 
   if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center min-h-[400px]">
-        <Loader2 size={32} className="animate-spin text-[#E53935]" />
-      </div>
-    );
+    return <LottieLoader className="min-h-[400px]" />;
   }
 
   if (showManageSpace) {
@@ -942,9 +939,7 @@ function SettingsPage({ onNavigate }) {
                     All Venues (Same Menu)
                   </button>
                   {venuesLoading ? (
-                    <span className="flex items-center gap-2 text-sm text-gray-400">
-                      <Loader2 size={14} className="animate-spin" /> Loading venues…
-                    </span>
+                    <LottieLoader label="Loading venues…" size={40} className="py-1" />
                   ) : (
                     venues.map(v => (
                       <button

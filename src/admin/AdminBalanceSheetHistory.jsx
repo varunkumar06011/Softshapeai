@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Calendar, ChevronLeft, ChevronRight, Store, Loader2, Lock,
+  Calendar, ChevronLeft, ChevronRight, Store, Lock,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { formatCurrency } from '../utils/formatCurrency';
+import LottieLoader from '../shared/components/LottieLoader';
 
 function getTodayIST() {
   const now = new Date();
@@ -107,9 +108,7 @@ export default function AdminBalanceSheetHistory({ onSelectDate }) {
 
       {/* ── Table ───────────────────────────────────────────────────────── */}
       {loading ? (
-        <div className="flex h-32 items-center justify-center">
-          <Loader2 className="animate-spin text-[#E53935]" size={24} />
-        </div>
+        <LottieLoader label={null} size={72} className="h-32" />
       ) : sheets.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
           No balance sheets found for this period

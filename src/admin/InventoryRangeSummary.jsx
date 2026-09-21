@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Search, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Search, AlertTriangle } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '../services/apiConfig';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import LottieLoader from '../shared/components/LottieLoader';
 
 const COLORS = ['#B71C1C', '#E53935', '#EF9A9A', '#FFCDD2'];
 
@@ -107,8 +108,7 @@ export default function InventoryRangeSummary({ restaurantId, startDate, endDate
   if (loadingItems) {
     return (
       <div className="bg-white rounded-3xl border border-[#FFCDD2] shadow-sm p-12 text-center">
-        <RefreshCw className="animate-spin mx-auto text-[#B71C1C] mb-3" size={28} />
-        <p className="text-sm text-gray-500">Loading items...</p>
+        <LottieLoader label="Loading items…" size={100} />
       </div>
     );
   }

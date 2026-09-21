@@ -19,6 +19,7 @@ import {
   updateAdditionalSale,
   deleteAdditionalSale,
 } from '../services/additionalSalesApi';
+import LottieLoader from '../shared/components/LottieLoader';
 
 const CATEGORY_MAP = {
   food: 'Food',
@@ -164,11 +165,7 @@ export function CategoryBreakdownModal({ open, categoryKey, date, onClose }) {
           )}
 
           {loading ? (
-            <div className="space-y-3">
-              <div className="h-8 bg-gray-100 rounded animate-pulse" />
-              <div className="h-8 bg-gray-100 rounded animate-pulse" />
-              <div className="h-8 bg-gray-100 rounded animate-pulse" />
-            </div>
+            <LottieLoader label={null} size={72} className="py-6" />
           ) : (
             <>
               {/* System Outlet Sales */}

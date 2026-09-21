@@ -35,6 +35,7 @@ import {
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
 import { isBeerItem, fmtBeerBottles } from './inventoryConstants';
 import { useAuth } from '../../context/AuthContext';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 function fmtInr(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
@@ -608,7 +609,7 @@ export default function LiquorDailyReportModal({ open, date, onClose, onSaved })
           )}
 
           {loading ? (
-            <div className="p-12 text-center text-gray-400">Loading report...</div>
+            <LottieLoader label="Loading report…" size={90} className="p-12" />
           ) : !data ? (
             <div className="p-12 text-center text-gray-400">Select a date to load the report.</div>
           ) : (

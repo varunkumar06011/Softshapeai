@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchBarStockSheet } from '../../services/barInventoryApi';
 import { fetchKitchenStockSheet } from '../../services/kitchenInventoryApi';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClose }) {
   const [date, setDate] = useState(defaultDate || getKolkataDateString());
@@ -182,7 +183,7 @@ export function StockSheetPrintModal({ open, tab, restaurant, defaultDate, onClo
         {/* Body */}
         <div className="p-5">
           {loading && (
-            <div className="text-center py-12 text-gray-400">Loading stock sheet…</div>
+            <LottieLoader label="Loading stock sheet…" size={90} className="py-12" />
           )}
           {error && (
             <div className="bg-red-50 text-red-600 text-sm rounded-lg p-4 mb-4">{error}</div>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Scale, Loader2, AlertCircle, RotateCcw, RefreshCw,
+  Scale, AlertCircle, RotateCcw, RefreshCw,
   ChevronDown, ChevronRight, CheckCircle, XCircle, Clock,
   TrendingDown, TrendingUp, Wallet, Building2, Info,
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { useAuth } from '../context/AuthContext';
+import LottieLoader from '../shared/components/LottieLoader';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatCurrency(n) {
@@ -122,8 +123,7 @@ function ErrorCard({ message, onRetry }) {
 function LoadingCard() {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-      <Loader2 size={28} className="mx-auto text-gray-300 animate-spin mb-3" />
-      <p className="text-sm text-gray-400">Loading...</p>
+      <LottieLoader size={100} />
     </div>
   );
 }

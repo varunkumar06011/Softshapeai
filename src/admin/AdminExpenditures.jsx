@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import CreateExpenditureModal from './CreateExpenditureModal';
+import LottieLoader from '../shared/components/LottieLoader';
 
 export default function AdminExpenditures() {
   const today = new Date().toISOString().split('T')[0];
@@ -223,9 +224,7 @@ export default function AdminExpenditures() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-tour="admin-expenditures-list">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 size={24} className="animate-spin text-gray-400" />
-          </div>
+          <LottieLoader size={90} className="py-12" />
         ) : expenditures.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-sm font-bold text-gray-400">No expenditures found</p>

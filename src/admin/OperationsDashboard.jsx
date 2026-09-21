@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import {
   AlertTriangle, Banknote, BarChart2, CreditCard, DollarSign, FileSpreadsheet, FileText, Layers,
-  Package, RefreshCw, Smartphone, TrendingUp, Users,
+  Package, Smartphone, TrendingUp, Users,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
@@ -16,6 +16,7 @@ import {
 } from '../services/reportsApi.js';
 import { fetchBarDashboard, fetchLowStockItems } from '../services/barInventoryApi.js';
 import { downloadPDF, downloadExcel } from './reportDownloads.js';
+import LottieLoader from '../shared/components/LottieLoader';
 
 function Money({ value }) {
   if (value == null) return '—';
@@ -78,7 +79,7 @@ function DownloadButtons({ onPDF, onExcel }) {
 function LoadingCard() {
   return (
     <div className="flex h-96 items-center justify-center bg-white rounded-3xl border border-[#FFCDD2] shadow-sm">
-      <RefreshCw className="animate-spin text-[#B71C1C]" size={40} />
+      <LottieLoader label={null} size={140} className="h-full w-full" />
     </div>
   );
 }

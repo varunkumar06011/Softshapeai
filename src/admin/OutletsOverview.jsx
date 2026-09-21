@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../services/apiConfig';
 import { authService } from '../services/authService';
 import { reconnectSocket } from '../hooks/useSocket';
+import LottieLoader from '../shared/components/LottieLoader';
 
 // Human-readable labels for restaurant types
 const RESTAURANT_TYPE_LABELS = {
@@ -110,11 +111,7 @@ const OutletsOverview = () => {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 size={32} className="animate-spin text-[#E53935]" />
-      </div>
-    );
+    return <LottieLoader />;
   }
 
   if (error) {

@@ -19,6 +19,7 @@ import { saveAs } from 'file-saver';
 import { apiFetch } from '../../services/apiConfig';
 import { getKolkataDateString } from '../../shared/utils/dateFormat';
 import { useAuth } from '../../context/AuthContext';
+import LottieLoader from '../../shared/components/LottieLoader';
 
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
@@ -366,9 +367,7 @@ export default function PurchaseHistory({ onBack, outletId }) {
             {searchedItemName} — Price Analytics
           </h4>
           {analyticsLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 size={20} className="animate-spin text-gray-400" />
-            </div>
+            <LottieLoader label={null} size={56} className="py-4" />
           ) : analytics.purchaseCount > 0 ? (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -482,9 +481,7 @@ export default function PurchaseHistory({ onBack, outletId }) {
       {hasSearched && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 size={24} className="animate-spin text-[#E53935]" />
-            </div>
+            <LottieLoader size={90} className="py-12" />
           ) : records.length === 0 ? (
             <div className="p-8 text-center">
               <Package size={32} className="mx-auto text-gray-300 mb-2" />

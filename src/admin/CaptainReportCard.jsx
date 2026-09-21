@@ -43,6 +43,7 @@ import {
   Bar,
 } from 'recharts';
 import html2canvas from 'html2canvas';
+import LottieLoader from '../shared/components/LottieLoader';
 
 function inr(value) {
   if (value == null) return '—';
@@ -294,8 +295,7 @@ export default function CaptainReportCard() {
 
         {loading && (
           <div className="bg-white rounded-2xl p-12 text-center">
-            <div className="w-10 h-10 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="mt-4 text-sm font-bold text-gray-500">Loading report...</p>
+            <LottieLoader label="Loading report…" size={110} />
           </div>
         )}
 

@@ -20,6 +20,7 @@ import { authService } from '../services/authService';
 import DateInputButton from '../shared/components/DateInputButton';
 import { getKolkataDateString, getKolkataMonthString, shiftKolkataDate, KOLKATA_TIME_ZONE, formatTxnDisplayId } from '../shared/utils/dateFormat';
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+import LottieLoader from '../shared/components/LottieLoader';
 
 function formatBillNumber(txnDate, txnNumber) {
   return formatTxnDisplayId(txnDate, txnNumber);
@@ -517,10 +518,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
                 {loading && filtered.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-12 text-center">
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="w-7 h-7 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading...</p>
-                      </div>
+                      <LottieLoader size={80} />
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (

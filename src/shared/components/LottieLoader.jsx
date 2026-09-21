@@ -1,20 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// LottieLoader.jsx — Full-area loading screen that plays a Lottie animation
+// LottieLoader.jsx — Loading state that plays a Lottie animation
 // ─────────────────────────────────────────────────────────────────────────────
 // Wraps LottieAnimation with the centered layout + label used by loading states.
 // The default animation (loading cat) is bundled via a static JSON import so it
 // renders even fully offline. Falls back to the standard spinner if a custom
 // `src` fetch fails or `animationData` is missing.
 //
-// Usage:  <LottieLoader label="Loading section…" />
+// Usage:  <LottieLoader label="Loading section…" />            — fills parent
+//         <LottieLoader label="…" size={80} className="py-8" /> — inline block
 // ─────────────────────────────────────────────────────────────────────────────
 
 import LottieAnimation from './LottieAnimation';
 import loadingAnimation from '../../assets/lottie/loading.json';
 
-export default function LottieLoader({ label = 'Loading…', size = 160, animationData, src }) {
+export default function LottieLoader({ label = 'Loading…', size = 160, animationData, src, className }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-3">
+    <div className={`flex flex-col items-center justify-center gap-3 ${className || 'h-full min-h-[300px]'}`}>
       <LottieAnimation
         animationData={animationData || loadingAnimation}
         src={src}

@@ -138,8 +138,6 @@ import {
 
   CreditCard,
 
-  Loader2,
-
   ShoppingBag,
 
   Smartphone
@@ -201,6 +199,8 @@ import { useVenueSections } from '../hooks/useVenueSections';
 import { fetchBarInventory, createInventoryItem, updateInventoryItem, adjustStock, recordPurchase, fetchTransactions as fetchBarTransactions, fetchBarTopSelling, fetchBarDeductionCheck } from '../services/barInventoryApi';
 
 import FloorPlanEditor from './FloorPlanEditor';
+
+import LottieLoader from '../shared/components/LottieLoader';
 
 import InventoryRangeSummary from './InventoryRangeSummary';
 import DateRangePicker from './components/DateRangePicker';
@@ -1019,7 +1019,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         {sparklineData && (
           <div className="mt-2 h-[50px]">
             {loading ? (
-              <div className="h-full w-full animate-pulse bg-gray-100 rounded-lg" />
+              <LottieLoader label={null} size={40} className="h-full w-full" />
             ) : (
               <MetricSparkline data={sparklineData} color={sparklineColor} dataKey={sparklineKey} />
             )}
@@ -1052,7 +1052,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
           <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B6B6B] truncate">{label}</p>
         </div>
         {loading ? (
-          <div className="mt-2 h-[72px] animate-pulse bg-gray-100 rounded-lg" />
+          <LottieLoader label={null} size={56} className="mt-2 h-[72px]" />
         ) : (
           <div className="mt-1.5 flex flex-col md:flex-row items-center gap-1.5 md:gap-3">
             <div className="relative h-[64px] w-[64px] md:h-[88px] md:w-[88px] shrink-0">
@@ -1098,7 +1098,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
         </h3>
       </div>
       {paymentLoading ? (
-        <div className="h-[180px] animate-pulse bg-gray-100 rounded-lg" />
+        <LottieLoader label={null} size={90} className="h-[180px]" />
       ) : paymentMixData.length === 0 ? (
         <div className="h-[180px] flex items-center justify-center text-sm font-bold text-gray-400">No payment data</div>
       ) : (
@@ -1252,7 +1252,7 @@ export const Dashboard = React.memo(function Dashboard({ revenue, totalSales, ne
           </h3>
         </div>
         {specialsByStaffLoading ? (
-          <div className="h-[160px] animate-pulse bg-gray-100 rounded-lg" />
+          <LottieLoader label={null} size={80} className="h-[160px]" />
         ) : topCaptains.length === 0 ? (
           <div className="h-[160px] flex items-center justify-center text-sm font-bold text-gray-400">No specials sold today</div>
         ) : (
@@ -4157,7 +4157,7 @@ export function MenuPage({ onAddDish }) {
 
           {categoriesLoading ? (
 
-            <p className="text-xs text-gray-400 py-2">Loading categories...</p>
+            <LottieLoader label={null} size={44} className="py-2" />
 
           ) : dbCategories.length === 0 ? (
 
@@ -5011,7 +5011,7 @@ export function MenuPage({ onAddDish }) {
 
                 {recipeLoading ? (
 
-                  <p className="text-xs text-gray-400">Loading recipe...</p>
+                  <LottieLoader label={null} size={44} className="py-2" />
 
                 ) : recipeRows.length === 0 ? (
 
@@ -5727,7 +5727,7 @@ export function Orders() {
 
 
 
-    {loading && <div className="text-sm text-[#6B6B6B]">Loading app-wise sales...</div>}
+    {loading && <LottieLoader label="Loading app-wise sales…" size={80} className="py-6" />}
 
 
 
@@ -6267,7 +6267,7 @@ export function Payroll() {
 
   if (loading) {
 
-    return <div className="flex items-center justify-center py-20 text-gray-400">Loading payroll...</div>;
+    return <LottieLoader label="Loading payroll…" />;
 
   }
 
@@ -8186,7 +8186,7 @@ export function KitchenInventory() {
 
   if (loading) {
 
-    return <div className="flex items-center justify-center py-20 text-gray-400">Loading kitchen inventory...</div>;
+    return <LottieLoader label="Loading kitchen inventory…" />;
 
   }
 
@@ -8471,7 +8471,7 @@ export function KitchenInventory() {
           </div>
 
           {ledgerLoading ? (
-            <div className="text-center py-10 text-gray-400">Loading ledger...</div>
+            <LottieLoader label="Loading ledger…" size={80} className="py-10" />
           ) : ledgerData.length === 0 ? (
             <div className="text-center py-10 text-gray-400">No ledger entries found. Stock movements will appear here after purchases or order settlements.</div>
           ) : (
@@ -9922,7 +9922,7 @@ function TransactionsTab() {
 
         {loading ? (
 
-          <div className="p-8 text-center text-gray-500">Loading transactions...</div>
+          <LottieLoader label="Loading transactions…" size={80} className="p-8" />
 
         ) : transactions.length === 0 ? (
 
@@ -11554,7 +11554,7 @@ function SalesReport({ inventory }) {
 
         {loading ? (
 
-          <div className="p-8 text-center text-gray-500">Loading sales data...</div>
+          <LottieLoader label="Loading sales data…" size={80} className="p-8" />
 
         ) : salesData.length === 0 ? (
 
@@ -14500,21 +14500,7 @@ export function Inventory() {
 
   if (loading) {
 
-    return (
-
-      <div className="flex items-center justify-center h-64">
-
-        <div className="text-center">
-
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E53935] mx-auto mb-4"></div>
-
-          <p className="text-gray-600">Loading inventory...</p>
-
-        </div>
-
-      </div>
-
-    );
+    return <LottieLoader label="Loading inventory…" />;
 
   }
 
@@ -16998,7 +16984,9 @@ export function Marketing({ upload, setUpload, uploadRef }) {
 
               </div>
 
-              <p className="mt-12 text-sm font-black text-gray-900 tracking-[0.3em] uppercase animate-pulse">Syncing Social Hooks</p>
+              <LottieLoader label={null} size={100} className="mt-12" />
+
+              <p className="mt-4 text-sm font-black text-gray-900 tracking-[0.3em] uppercase">Syncing Social Hooks</p>
 
            </div>
 
@@ -18328,15 +18316,7 @@ export function BarMenuPage() {
 
 
 
-  if (loading) return (
-
-    <div className="flex items-center justify-center py-20">
-
-      <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
-
-    </div>
-
-  );
+  if (loading) return <LottieLoader />;
 
 
 
@@ -19597,15 +19577,7 @@ export function StaffManagement({ role }) {
 
 
 
-  if (loading) return (
-
-    <div className="flex items-center justify-center py-20">
-
-      <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
-
-    </div>
-
-  );
+  if (loading) return <LottieLoader />;
 
 
 
@@ -20430,15 +20402,7 @@ export function Attendance() {
 
 
 
-  if (loading) return (
-
-    <div className="flex items-center justify-center py-20">
-
-      <div className="w-6 h-6 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
-
-    </div>
-
-  );
+  if (loading) return <LottieLoader />;
 
 
 

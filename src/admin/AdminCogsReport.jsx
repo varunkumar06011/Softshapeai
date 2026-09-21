@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { TrendingDown, Loader2, Calendar, Package } from 'lucide-react';
+import { TrendingDown, Calendar, Package } from 'lucide-react';
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
+import LottieLoader from '../shared/components/LottieLoader';
 
 function round2(n) {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
@@ -79,9 +80,7 @@ export default function AdminCogsReport() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="animate-spin text-gray-400" size={28} />
-        </div>
+        <LottieLoader label={null} size={80} className="py-12" />
       ) : error ? (
         <div className="text-center py-8 text-xs font-bold text-red-500">{error}</div>
       ) : (
