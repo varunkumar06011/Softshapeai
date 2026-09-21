@@ -183,6 +183,16 @@ async function _flushQueue() {
           }
           // Pause this entry — caller will decide to send or discard
           return;
+        } else if (!activeOrder && entry.existingOrderId) {
+          // No active order on the table, but the queue entry was for an
+          // existing order (updateOrderItems path). The order was settled
+          // (bill paid, table freed) while this KOT was queued for retry.
+          // The items were already sent — discarding prevents a duplicate
+          // KOT print on a settled table.
+          console.log('[KOT Queue] Table settled (no active order) — discarding queued KOT for existing order');
+          _notifyStatusChange(entry.tableId, 'discarded', 'Table was settled. KOT was already sent. Duplicate discarded.');
+          removeFromQueue(entry.requestId);
+          return;
         }
       } catch (err) {
         // Can't reach edge to check — continue with send attempt
