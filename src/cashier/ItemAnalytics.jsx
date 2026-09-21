@@ -206,8 +206,9 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
               existing.quantity += item.quantity || 0;
               existing.orderCount = (existing.orderCount || 0) + (item.orderCount || 0);
               existing.revenue += item.revenue || 0;
+              existing.netRevenue = (existing.netRevenue || 0) + (item.netRevenue || 0);
             } else {
-              mergedMap.set(key, { ...item });
+              mergedMap.set(key, { ...item, netRevenue: item.netRevenue || 0 });
             }
           }
         }
@@ -217,6 +218,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
           totalItems: mergedItems.length,
           totalQuantity: mergedItems.reduce((s, i) => s + (i.quantity || 0), 0),
           totalRevenue: mergedItems.reduce((s, i) => s + (i.revenue || 0), 0),
+          totalNetRevenue: mergedItems.reduce((s, i) => s + (i.netRevenue || 0), 0),
         };
 
         setItemsData(mergedItems);
@@ -273,7 +275,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
   const handleExport = () => {
     const { startDate } = getDateRange();
     const csv = [
-      ['Item Name', 'Type', 'Quantity Sold', 'Orders', 'ML Poured', 'Revenue (Rs)', 'Revenue + GST (Rs)'],
+      ['Item Name', 'Type', 'Quantity Sold', 'Orders', 'ML Poured', 'Revenue (Rs)', 'Net Revenue (Rs)', 'Revenue + GST (Rs)'],
       ...filteredAndSortedData.map(item => [
         item.name,
         item.type === 'liquor' ? 'Liquor' : item.type === 'beverages' ? 'Beverages' : 'Food',
@@ -281,6 +283,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
         item.orderCount ?? 0,
         getLiquorMlPoured(item.name, item.quantity) ?? '',
         item.revenue.toFixed(2),
+        (item.netRevenue ?? item.revenue).toFixed(2),
         item.type === 'food' ? (item.revenueWithGst ?? item.revenue).toFixed(2) : '',
       ]),
     ].map(row => row.join(',')).join('\n');
@@ -463,6 +466,12 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
                 >
                   <div className="flex items-center justify-end gap-1">Revenue <SortIcon field="revenue" /></div>
                 </th>
+                <th
+                  onClick={() => handleSort('netRevenue')}
+                  className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600 cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center justify-end gap-1">Net Revenue <SortIcon field="netRevenue" /></div>
+                </th>
                 <th className="px-4 py-3 text-right text-xs font-black uppercase text-gray-600">
                   <div className="flex items-center justify-end gap-1">Revenue + GST</div>
                 </th>
@@ -471,7 +480,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center">
+                  <td colSpan={7} className="px-4 py-12 text-center">
                     <div className="flex items-center justify-center gap-2 text-gray-400">
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#E53935]"></div>
                       <span className="text-xs font-bold uppercase">Loading...</span>
@@ -480,7 +489,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
                 </tr>
               ) : filteredAndSortedData.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-xs font-bold uppercase text-gray-400">
+                  <td colSpan={7} className="px-4 py-12 text-center text-xs font-bold uppercase text-gray-400">
                     {searchQuery.trim() ? 'No items match your search' : 'No items sold in this period'}
                   </td>
                 </tr>
@@ -512,6 +521,7 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
                       <div className="text-sm font-black text-gray-600">{item.orderCount ?? '—'}</div>
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">Rs{item.revenue.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-sm font-bold text-gray-700">Rs{(item.netRevenue ?? item.revenue).toFixed(2)}</td>
                     <td className="px-4 py-3 text-right text-sm font-bold text-gray-700">
                       {item.type === 'food' ? `Rs${(item.revenueWithGst ?? item.revenue).toFixed(2)}` : '—'}
                     </td>
@@ -533,6 +543,9 @@ export default function ItemAnalytics({ outlet = 'restaurant', sections = [], ve
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-black text-[#E53935]">
                     Rs{filteredAndSortedData.reduce((sum, item) => sum + item.revenue, 0).toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-black text-gray-700">
+                    Rs{filteredAndSortedData.reduce((sum, item) => sum + (item.netRevenue ?? item.revenue), 0).toFixed(2)}
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-black text-gray-700">
                     Rs{filteredAndSortedData.reduce((sum, item) => sum + (item.revenueWithGst ?? item.revenue), 0).toFixed(2)}
