@@ -50,9 +50,11 @@ function compareVersions(a, b) {
 
 /**
  * Detect if the app is running inside a Capacitor WebView.
+ * APK update prompts are Android-only — on iOS a "download update" banner
+ * pointing to a GitHub APK would be both broken and an App Store violation.
  */
 function isCapacitorApp() {
-  return !!(window?.Capacitor?.isNativePlatform?.() || window?.Capacitor?.getPlatform?.());
+  return window?.Capacitor?.getPlatform?.() === 'android';
 }
 
 /**

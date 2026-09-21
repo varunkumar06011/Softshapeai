@@ -37,7 +37,12 @@ import secureStorage from './secureStorage';
 
 function detectPlatform() {
   if (window.__TAURI__) return 'tauri';
-  if (window.Capacitor?.isNativePlatform?.()) return 'capacitor';
+  if (window.Capacitor?.isNativePlatform?.()) {
+    // The 'capacitor' path uses the Android-only EscposPrint native plugin.
+    // On iOS there is no ESC/POS bridge — fall back to the shareable-PDF
+    // path (AirPrint via the iOS share sheet), same as the iOS PWA.
+    return window.Capacitor.getPlatform?.() === 'ios' ? 'ios-pwa' : 'capacitor';
+  }
   // iOS Safari standalone (PWA added to home screen)
   const ua = navigator.userAgent || '';
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -685,6 +690,18 @@ async function shareAsPDF(job, text) {
 </head>
 <body>${text.replace(/</g, '&lt;')}</body>
 </html>`;
+
+  // Capacitor iOS: WKWebView has no window.open()/print() — hand the file to
+  // the native share sheet instead (AirPrint is one of its actions).
+  if (window.Capacitor?.isNativePlatform?.()) {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    const { Share } = await import('@capacitor/share');
+    const fileName = `${job.jobType || 'print'}-${Date.now()}.html`;
+    await Filesystem.writeFile({ path: fileName, data: html, directory: Directory.Cache, recursive: true });
+    const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
+    await Share.share({ title: job.jobType || 'Print', url: uri, dialogTitle: 'Print or share' });
+    return;
+  }
 
   const blob = new Blob([html], { type: 'text/html' });
   const url = URL.createObjectURL(blob);

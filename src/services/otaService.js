@@ -32,8 +32,10 @@ const OTA_META_KEY = 'ss_ota_meta';
 
 // ── Platform detection ───────────────────────────────────────────────────────
 
+// OTA bundle swapping is Android-only: it navigates the webview to a file://
+// URI, which WKWebView on iOS cannot load. iOS updates ship via the App Store.
 function isCapacitorApp() {
-  return !!(window?.Capacitor?.isNativePlatform?.() || window?.Capacitor?.getPlatform?.());
+  return window?.Capacitor?.getPlatform?.() === 'android';
 }
 
 function isTauriApp() {

@@ -38,7 +38,12 @@ const firebaseAuth = getAuth(firebaseApp);
 
 export { firebaseAuth, RecaptchaVerifier };
 
-const isNative = Capacitor.isNativePlatform();
+// Native plugin path is Android-only. On iOS the admin app does not bundle
+// @capacitor-firebase/authentication (it would need GoogleService-Info.plist
+// + APNs key + swizzling, and crashes on launch without them), so iOS uses
+// the web SDK path — reCAPTCHA works in WKWebView (hostname is localhost,
+// which is a Firebase authorized domain).
+const isNative = Capacitor.getPlatform() === 'android';
 
 /**
  * Send an OTP to the given phone number.

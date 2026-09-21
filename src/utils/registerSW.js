@@ -40,6 +40,13 @@ export async function registerSW() {
     return;
   }
 
+  // Capacitor iOS serves the app from the capacitor:// scheme — WKWebView
+  // does not support service workers there, so registration would just throw.
+  if (window.Capacitor?.getPlatform?.() === 'ios') {
+    console.log('[SW] Capacitor iOS detected — skipping SW registration');
+    return;
+  }
+
   // Don't register SW in localhost dev mode unless explicitly enabled
   if (import.meta.env.DEV && !import.meta.env.VITE_ENABLE_SW_DEV) {
     console.log('[SW] Skipping SW registration in dev mode');
