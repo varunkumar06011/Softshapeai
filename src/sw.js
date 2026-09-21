@@ -6,13 +6,25 @@
 //   - Non-GET API requests (POST/PATCH/DELETE): always pass through (no caching)
 //   - Offline fallback: serve cached index.html for navigation requests
 
-import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
-import { registerRoute } from 'workbox-routing';
+import { precacheAndRoute, matchPrecache } from 'workbox-precaching';
+import { registerRoute, setCatchHandler } from 'workbox-routing';
 import { NetworkFirst, StaleWhileRevalidate, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
 // Precache all assets injected by Vite
 precacheAndRoute(self.__WB_MANIFEST || []);
+
+// ── Offline fallback ─────────────────────────────────────────────────────────
+// When any route handler fails (e.g. page reload while offline and the URL was
+// never runtime-cached), serve the precached app shell for navigations so the
+// React app boots and shows the offline screen instead of the browser error.
+setCatchHandler(async ({ request }) => {
+  if (request.mode === 'navigate') {
+    const fallback = await matchPrecache('index.html');
+    if (fallback) return fallback;
+  }
+  return Response.error();
+});
 
 // ── Navigation fallback (SPA) ────────────────────────────────────────────────
 // Serve cached index.html for navigation requests when offline
