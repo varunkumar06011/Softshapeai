@@ -10,10 +10,14 @@
 // Wraps the entire app in App.jsx to prevent white-screen crashes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { Component } from 'react';
+import React, { Component, Suspense, lazy } from 'react';
 import * as Sentry from '@sentry/react';
 import { AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { authService } from '../../services/authService';
+
+// Lazy so cashier/captain bundles never ship the Lottie player — it's only
+// fetched when showAnimation is set (admin/manager error pages).
+const LottieAnimation = lazy(() => import('./LottieAnimation'));
 
 export class ErrorBoundary extends Component {
   constructor(props) {
@@ -65,6 +69,13 @@ export class ErrorBoundary extends Component {
       return (
         <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
           <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
+            {this.props.showAnimation && (
+              <div className="flex justify-center mb-2">
+                <Suspense fallback={null}>
+                  <LottieAnimation src="/lottie/dance-cat.json" size={140} />
+                </Suspense>
+              </div>
+            )}
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
                 <AlertCircle className="w-6 h-6 text-red-600" />

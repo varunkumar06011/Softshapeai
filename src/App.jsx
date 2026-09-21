@@ -51,6 +51,10 @@ import { fetchOrders, updateOrderStatus } from "./services/orderApi";
 import { isEdgeAvailable, edgeFetch } from "./services/edgeHealth";
 import { getSocket } from "./hooks/useSocket";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
+import LottieLoader from "./shared/components/LottieLoader";
+import NoInternetScreen from "./shared/components/NoInternetScreen";
+import NotFoundPage from "./pages/NotFoundPage";
+import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import { purgeLegacyCaches } from "./utils/cacheKeys";
 
 
@@ -306,26 +310,44 @@ function AnimatedRoutes() {
         <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
         <Route path="/reset-password" element={<AnimatedPage><ResetPasswordPage /></AnimatedPage>} />
         <Route path="/admin" element={<AnimatedPage><AdminLoginWrapper /></AnimatedPage>} />
-        <Route path="/admin/dashboard/*" element={<ErrorBoundary><AnimatedPage><AdminDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
-        <Route path="/admin/qr-codes" element={<AnimatedPage><TableQRCodesWrapper /></AnimatedPage>} />
-        <Route path="/admin/captain/:captainId/report" element={<ErrorBoundary><AnimatedPage><CaptainReportCardWrapper /></AnimatedPage></ErrorBoundary>} />
-        <Route path="/admin/captains/group-report" element={<ErrorBoundary><AnimatedPage><CaptainsGroupReportWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/admin/dashboard/*" element={<ErrorBoundary showAnimation><AnimatedPage><AdminOnlineGate><AdminDashboardWrapper /></AdminOnlineGate></AnimatedPage></ErrorBoundary>} />
+        <Route path="/admin/qr-codes" element={<AnimatedPage><AdminOnlineGate><TableQRCodesWrapper /></AdminOnlineGate></AnimatedPage>} />
+        <Route path="/admin/captain/:captainId/report" element={<ErrorBoundary showAnimation><AnimatedPage><AdminOnlineGate><CaptainReportCardWrapper /></AdminOnlineGate></AnimatedPage></ErrorBoundary>} />
+        <Route path="/admin/captains/group-report" element={<ErrorBoundary showAnimation><AnimatedPage><AdminOnlineGate><CaptainsGroupReportWrapper /></AdminOnlineGate></AnimatedPage></ErrorBoundary>} />
         <Route path="/cashier" element={<AnimatedPage><CashierLoginWrapper /></AnimatedPage>} />
         <Route path="/cashier/dashboard" element={<ErrorBoundary><AnimatedPage><CashierDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
         <Route path="/captain" element={<AnimatedPage><CaptainLoginWrapper /></AnimatedPage>} />
         <Route path="/captain/dashboard/*" element={<ErrorBoundary><AnimatedPage><CaptainAppWrapper /></AnimatedPage></ErrorBoundary>} />
         <Route path="/manager" element={<AnimatedPage><ManagerLoginWrapper /></AnimatedPage>} />
-        <Route path="/manager/dashboard/*" element={<ErrorBoundary><AnimatedPage><ManagerDashboardWrapper /></AnimatedPage></ErrorBoundary>} />
+        <Route path="/manager/dashboard/*" element={<ErrorBoundary showAnimation><AnimatedPage><AdminOnlineGate><ManagerDashboardWrapper /></AdminOnlineGate></AnimatedPage></ErrorBoundary>} />
         <Route path="/kitchen" element={<ErrorBoundary><AnimatedPage><KitchenView /></AnimatedPage></ErrorBoundary>} />
         <Route path="/print-station" element={<ErrorBoundary><AnimatedPage><PrintStation /></AnimatedPage></ErrorBoundary>} />
         <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
         <Route path="/user-menu/:slug" element={<UserMenuApp />} />
         <Route path="/user-menu/:slug/:tableId" element={<UserMenuApp />} />
         <Route path="/user-menu/rep/:slug/:entityId/:sig" element={<RepresentativeMenuLanding />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<AnimatedPage><CatchAllRoute /></AnimatedPage>} />
       </Routes>
     </AnimatePresence>
   );
+}
+
+// Renders the offline screen instead of admin content while the backend is
+// unreachable. Auto-restores the page when connectivity returns.
+function AdminOnlineGate({ children }) {
+  const isOnline = useOnlineStatus();
+  if (!isOnline) return <NoInternetScreen />;
+  return children;
+}
+
+// Catch-all: cashier/captain keep the legacy redirect to portal selection;
+// everything else gets the 404 page.
+function CatchAllRoute() {
+  const location = useLocation();
+  if (location.pathname.startsWith('/cashier') || location.pathname.startsWith('/captain')) {
+    return <Navigate to="/" replace />;
+  }
+  return <NotFoundPage />;
 }
 
 function PortalSelectionWrapper() {
@@ -387,19 +409,19 @@ function AdminDashboardWrapper() {
 function TableQRCodesWrapper() {
   const { user, token } = useAuth();
   if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
-  return <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span></div>}><TableQRCodes /></Suspense>;
+  return <Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><TableQRCodes /></Suspense>;
 }
 
 function CaptainReportCardWrapper() {
   const { user, token } = useAuth();
   if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
-  return <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span></div>}><CaptainReportCard /></Suspense>;
+  return <Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><CaptainReportCard /></Suspense>;
 }
 
 function CaptainsGroupReportWrapper() {
   const { user, token } = useAuth();
   if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) return <Navigate to="/admin" replace />;
-  return <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="text-sm font-bold text-gray-400 animate-pulse">Loading…</span></div>}><CaptainsGroupReport /></Suspense>;
+  return <Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><CaptainsGroupReport /></Suspense>;
 }
 
 function CashierLoginWrapper() {

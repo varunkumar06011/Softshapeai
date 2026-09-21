@@ -56,6 +56,7 @@ import { sendSpireMessage } from '../services/spireAgent';
 import { adminRoutes, isRouteEnabled, isManagerTabEnabled, getInventoryLabel, preloadAdminSections } from './adminRoutes.jsx';
 import AdminRouteGuard from './AdminRouteGuard';
 import SortableSidebar from './components/SortableSidebar';
+import LottieLoader from '../shared/components/LottieLoader';
 
 const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin/dashboard' }) => {
   const role = roleProp?.toLowerCase() || 'admin';
@@ -733,12 +734,7 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
         </header>
 
         <main className="flex-grow overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-[#FFF5F5]" data-tour="admin-content">
-          <Suspense fallback={
-            <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-3">
-              <div className="w-8 h-8 border-2 border-[#E53935] border-t-transparent rounded-full animate-spin" />
-              <span className="text-sm font-bold text-gray-400">Loading section…</span>
-            </div>
-          }>
+          <Suspense fallback={<LottieLoader label="Loading section…" />}>
             <Routes>
               <Route index element={<Navigate to="dashboard" replace search={location.search} />} />
               {adminRoutes.map((r) => {
