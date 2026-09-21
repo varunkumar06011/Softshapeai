@@ -17,7 +17,7 @@ import { authService } from '../../services/authService';
 
 // Lazy so cashier/captain bundles never ship the Lottie player — it's only
 // fetched when showAnimation is set (admin/manager error pages).
-const LottieAnimation = lazy(() => import('./LottieAnimation'));
+const DanceCat = lazy(() => import('./DanceCat'));
 
 export class ErrorBoundary extends Component {
   constructor(props) {
@@ -72,7 +72,7 @@ export class ErrorBoundary extends Component {
             {this.props.showAnimation && (
               <div className="flex justify-center mb-2">
                 <Suspense fallback={null}>
-                  <LottieAnimation src="/lottie/dance-cat.json" size={140} />
+                  <DanceCat size={140} />
                 </Suspense>
               </div>
             )}

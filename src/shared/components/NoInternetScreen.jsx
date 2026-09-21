@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import LottieAnimation from './LottieAnimation';
+import danceCat from '../../assets/lottie/dance-cat.json';
 import { checkBackendReachability } from '../../services/apiConfig';
 
 export default function NoInternetScreen() {
@@ -28,7 +29,7 @@ export default function NoInternetScreen() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#FFF5F5] p-6 text-center">
-      <LottieAnimation src="/lottie/dance-cat.json" size={260} />
+      <LottieAnimation animationData={danceCat} size={260} />
       <div className="mt-2 flex items-center gap-2 text-[#E53935]">
         <WifiOff size={18} />
         <span className="text-xs font-black uppercase tracking-widest">You're offline</span>

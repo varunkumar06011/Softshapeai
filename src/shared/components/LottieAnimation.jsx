@@ -1,11 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// LottieAnimation.jsx — Plays a Lottie JSON file from the public folder
+// LottieAnimation.jsx — Plays a Lottie animation
 // ─────────────────────────────────────────────────────────────────────────────
-// Fetches the animation JSON once per src and caches it in memory (the file is
-// also precached by the service worker, so it works offline). Renders nothing —
-// or `fallback` — while the JSON loads or if it fails.
+// Preferred usage is the `animationData` prop — import the JSON statically so it
+// ships inside the JS bundle and works with zero network (fully offline-safe):
 //
-// Usage:  <LottieAnimation src="/lottie/dance-cat.json" size={240} />
+//   import danceCat from '../../assets/lottie/dance-cat.json';
+//   <LottieAnimation animationData={danceCat} size={240} />
+//
+// A `src` URL (e.g. '/lottie/foo.json' from public/) is also supported — fetched
+// once and cached in memory — but requires network or a precached asset.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react';
@@ -15,18 +18,19 @@ import { httpFetch } from '../../utils/httpClient';
 const animationCache = new Map();
 
 export default function LottieAnimation({
-  src = '/lottie/loading.json',
+  animationData: dataProp,
+  src,
   size = 160,
   loop = true,
   className,
   style,
   fallback = null,
 }) {
-  const animationData = animationCache.get(src) || null;
+  const animationData = dataProp || (src ? animationCache.get(src) : null) || null;
   const [, forceRender] = useState(0);
 
   useEffect(() => {
-    if (animationData) return;
+    if (dataProp || !src || animationData) return;
     let cancelled = false;
     httpFetch(src, {}, { retries: 0 })
       .then((r) => {
@@ -39,7 +43,7 @@ export default function LottieAnimation({
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [src, animationData]);
+  }, [src, dataProp, animationData]);
 
   if (!animationData) return fallback;
 

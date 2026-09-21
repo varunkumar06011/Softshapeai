@@ -8,13 +8,14 @@
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import LottieAnimation from '../shared/components/LottieAnimation';
+import danceCat from '../assets/lottie/dance-cat.json';
 
 export default function NotFoundPage() {
   const navigate = useNavigate();
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#FFF5F5] p-6 text-center">
-      <LottieAnimation src="/lottie/dance-cat.json" size={260} />
+      <LottieAnimation animationData={danceCat} size={260} />
       <h2 className="mt-2 text-4xl font-black text-gray-900">404</h2>
       <p className="mt-2 max-w-sm text-sm font-bold text-gray-400">
         This page wandered off the menu. Let's get you back.
