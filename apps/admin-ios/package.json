@@ -1,0 +1,28 @@
+{
+  "name": "softshape-admin-ios",
+  "version": "24.0.13",
+  "description": "SoftShape Admin iOS App (Capacitor)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "cd ../.. && npx vite build",
+    "sync": "npx cap sync ios",
+    "build": "npm run build:web && npx cap sync ios",
+    "open": "npx cap open ios",
+    "assets": "node scripts/generate-assets.mjs"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/haptics": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "@capacitor/keyboard": "^8.0.0",
+    "@capacitor/share": "^8.0.0",
+    "@capacitor/status-bar": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0",
+    "sharp": "^0.35.4"
+  }
+}

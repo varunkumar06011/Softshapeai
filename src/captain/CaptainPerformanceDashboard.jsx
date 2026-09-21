@@ -19,6 +19,7 @@ import { Users, TrendingUp, Calendar, Award } from "lucide-react";
 import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
 import { apiFetch } from "../services/apiConfig";
 import { isEdgeLocalAuth, edgeFetch } from "../services/edgeHealth";
+import LottieLoader from "../shared/components/LottieLoader";
 
 // Convert Date to ISO date string (YYYY-MM-DD)
 function toISODate(d) {
@@ -141,8 +142,7 @@ export default function CaptainPerformanceDashboard() {
       {/* FIX #8: Show loading state and empty state */}
       {loading ? (
         <div className="bg-white p-12 rounded-2xl border border-[#FFCDD2] shadow-sm flex flex-col items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#B71C1C]"></div>
-          <p className="mt-4 text-sm font-bold text-gray-400">Loading analytics...</p>
+          <LottieLoader label="Loading analytics…" size={110} />
         </div>
       ) : !hasData ? (
         <div className="bg-white p-12 rounded-2xl border border-[#FFCDD2] shadow-sm flex flex-col items-center justify-center">

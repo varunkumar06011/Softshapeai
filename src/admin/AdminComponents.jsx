@@ -1614,7 +1614,7 @@ export function Pos({ onKOTSend = () => {}, onOrderComplete = () => {} }) {
 
         {loading ? (
 
-          <p className="text-sm text-[#6B6B6B] py-8 text-center">Syncing menu from server...</p>
+          <LottieLoader label="Syncing menu…" size={100} className="py-8" />
 
         ) : (
 
@@ -4431,9 +4431,9 @@ export function MenuPage({ onAddDish }) {
 
             <tr>
 
-              <td colSpan={10} className="px-4 py-12 text-center text-sm text-[#6B6B6B]">
+              <td colSpan={10} className="px-4 py-12 text-center">
 
-                Syncing menu from server…
+                <LottieLoader label="Syncing menu…" size={80} />
 
               </td>
 

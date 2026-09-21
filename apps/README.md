@@ -18,6 +18,10 @@ apps/
   admin-android/       — Admin Android app (Capacitor, .apk)
     android/           — Android project (manifest, plugin, resources)
     package.json       — Capacitor scripts
+  admin-ios/           — Admin iOS app (Capacitor, .ipa for App Store)
+    ios/               — Xcode project (SPM-based, no CocoaPods)
+    scripts/           — generate-assets.mjs (app icon + launch image)
+    package.json       — Capacitor scripts
 ```
 
 ## Platforms
@@ -29,7 +33,7 @@ apps/
 | Cashier Android | Android | `.apk` | Sideload (Settings → Install unknown apps) |
 | Admin Android | Android | `.apk` | Sideload (Settings → Install unknown apps) |
 | Cashier iPad | iOS | PWA | Safari → Share → Add to Home Screen |
-| Admin iPad | iOS | PWA | Safari → Share → Add to Home Screen |
+| Admin iOS | iOS | `.ipa` | App Store / TestFlight (built by CI) |
 | Print Agent | Windows | `.exe` | Download + run installer |
 
 ## Prerequisites
@@ -43,6 +47,12 @@ apps/
 - [Android Studio](https://developer.android.com/studio) with SDK 33+
 - [Node.js](https://nodejs.org/) 18+
 - Java 17 JDK
+
+### iOS (Capacitor)
+- macOS with [Xcode](https://developer.apple.com/xcode/) 15+
+- Apple Developer Program membership (for signing + App Store)
+- The CI workflow builds the `.ipa` — a local Mac is only needed for
+  development (`npm run open:admin-ios` opens the project in Xcode).
 
 ## Build
 
@@ -77,6 +87,41 @@ npm run apk:cashier-android
 ```
 
 Output: `android/app/build/outputs/apk/release/app-release.apk`
+
+### iOS (.ipa — built by GitHub Actions)
+
+The admin iOS app is built by the `build-admin-ios` job in
+`.github/workflows/build-apps.yml` (release + manual dispatch). It produces a
+signed `admin-ios.ipa` suitable for App Store Connect / TestFlight.
+
+Required repository secrets:
+
+| Secret | Contents |
+|--------|----------|
+| `IOS_DISTRIBUTION_CERT_P12` | base64 of the Apple Distribution `.p12` (cert + private key) |
+| `IOS_P12_PASSWORD` | password used when exporting the `.p12` |
+| `IOS_PROVISIONING_PROFILE` | base64 of the App Store `.mobileprovision` for `ai.softshape.admin` |
+
+Optional — enable App Store Connect validation + TestFlight upload:
+
+| Secret | Contents |
+|--------|----------|
+| `APP_STORE_CONNECT_KEY_ID` | App Store Connect API key ID |
+| `APP_STORE_CONNECT_ISSUER_ID` | issuer UUID |
+| `APP_STORE_CONNECT_PRIVATE_KEY` | contents of the `AuthKey_*.p8` file |
+
+Creating the signing assets (on a Mac, or via the Apple Developer portal):
+1. Create the App ID `ai.softshape.admin` at developer.apple.com → Identifiers
+2. Create an "Apple Distribution" certificate (CSR → download → export .p12
+   from Keychain Access), then `base64 -i cert.p12 | pbcopy`
+3. Create an App Store provisioning profile for the App ID, download it,
+   then `base64 -i profile.mobileprovision | pbcopy`
+
+Local development on a Mac:
+```bash
+npm run build:admin-ios     # build web app + sync into ios/
+npm run open:admin-ios      # open in Xcode — set your Team and Run
+```
 
 ### iPad (PWA — no build needed)
 
