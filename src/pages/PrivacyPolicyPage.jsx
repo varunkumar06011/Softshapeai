@@ -6,12 +6,10 @@
 // and reflects the actual data flows of the Softshape.ai platform.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Shield, Mail, Phone } from 'lucide-react';
 
-const SECTION = 'space-y-4';
-const H2 = 'text-xl sm:text-2xl font-bold text-gray-900 mt-8 mb-3 tracking-tight';
+const H2 ='text-xl sm:text-2xl font-bold text-gray-900 mt-8 mb-3 tracking-tight';
 const H3 = 'text-base sm:text-lg font-bold text-gray-900 mt-5 mb-2';
 const P = 'text-sm sm:text-base text-gray-700 leading-relaxed';
 const UL = 'list-disc pl-6 space-y-1.5 text-sm sm:text-base text-gray-700 leading-relaxed';
@@ -44,7 +42,7 @@ const PrivacyPolicyPage = () => {
         <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-gray-900">
           Privacy Policy
         </h1>
-        <p className="mt-2 text-sm text-gray-500">Last updated: 11 August 2026</p>
+        <p className="mt-2 text-sm text-gray-500">Last updated: 22 September 2026</p>
 
         <p className={P + ' mt-6'}>
           This Privacy Policy explains how <strong>Vtechnologies</strong> ("Softshape.ai",
@@ -52,7 +50,7 @@ const PrivacyPolicyPage = () => {
           when you use our restaurant operating software Softshape.ai (the "Service"),
           including the cashier desktop application, admin desktop application, cashier
           Android application, admin Android application, captain Android application,
-          print agent, the web application at https://softshape.ai, and any QR-code-based
+          print agent, the web application at https://softshape.in, and any QR-code-based
           customer ordering interface we operate for our restaurant clients (collectively,
           the "Apps").
         </p>
@@ -62,8 +60,44 @@ const PrivacyPolicyPage = () => {
           protection laws.
         </p>
 
+        {/* Quick summary */}
+        <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 p-5 sm:p-6">
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[#E53935]">
+            In short
+          </p>
+          <ul className="list-disc pl-5 space-y-1.5 text-sm text-gray-700 leading-relaxed">
+            <li>We collect only the data needed to run your restaurant — no advertising trackers, no selling of personal data.</li>
+            <li>Your business data stays yours; we process it only to provide the Service.</li>
+            <li>You can access, correct, or delete your personal data at any time under the DPDP Act.</li>
+            <li>Questions or requests? Email <a href="mailto:softshapeai@gmail.com" className="text-[#E53935] hover:underline">softshapeai@gmail.com</a>.</li>
+          </ul>
+        </div>
+
+        {/* Contents */}
+        <nav className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[#E53935]">
+            Contents
+          </p>
+          <ol className="grid list-decimal grid-cols-1 gap-x-8 gap-y-1.5 pl-5 text-sm font-semibold text-gray-700 sm:grid-cols-2">
+            <li><a href="#who-we-are" className="hover:text-[#E53935]">Who we are</a></li>
+            <li><a href="#data-we-collect" className="hover:text-[#E53935]">The data we collect</a></li>
+            <li><a href="#how-we-collect" className="hover:text-[#E53935]">How we collect data</a></li>
+            <li><a href="#purposes" className="hover:text-[#E53935]">Purposes and lawful basis</a></li>
+            <li><a href="#processors" className="hover:text-[#E53935]">Third-party processors</a></li>
+            <li><a href="#retention" className="hover:text-[#E53935]">Data retention</a></li>
+            <li><a href="#security" className="hover:text-[#E53935]">Data security</a></li>
+            <li><a href="#your-rights" className="hover:text-[#E53935]">Your rights</a></li>
+            <li><a href="#staff-customers" className="hover:text-[#E53935]">Rights of staff and customers</a></li>
+            <li><a href="#children" className="hover:text-[#E53935]">Children's data</a></li>
+            <li><a href="#cookies" className="hover:text-[#E53935]">Cookies and local storage</a></li>
+            <li><a href="#transfers" className="hover:text-[#E53935]">International transfers</a></li>
+            <li><a href="#changes" className="hover:text-[#E53935]">Changes to this Policy</a></li>
+            <li><a href="#contact" className="hover:text-[#E53935]">Contact</a></li>
+          </ol>
+        </nav>
+
         {/* 1. Who we are */}
-        <h2 className={H2}>1. Who we are</h2>
+        <h2 id="who-we-are" className={H2}>1. Who we are</h2>
         <p className={P}>
           Vtechnologies is the entity that owns and operates the Softshape.ai platform. We
           are the <strong>Data Fiduciary</strong> in relation to the personal data of
@@ -71,18 +105,18 @@ const PrivacyPolicyPage = () => {
           of our restaurant clients.
         </p>
         <ul className={UL}>
-          <li><strong>Brand / website:</strong> Softshape.ai — https://softshape.ai</li>
+          <li><strong>Brand / website:</strong> Softshape.ai — https://softshape.in</li>
           <li><strong>Email:</strong> softshapeai@gmail.com</li>
           <li><strong>Phone:</strong> +91-9391798370, +91-9381872579</li>
-          <li><strong>Registered address:</strong> [Insert full registered address of Vtechnologies]</li>
+          <li><strong>Registered address:</strong> Vtechnologies, Ongole, Prakasam District, Andhra Pradesh, India</li>
           <li>
-            <strong>Grievance Officer:</strong> [Name], reachable at [grievance@softshape.ai]
-            / [phone], in accordance with the DPDP Act and Rules.
+            <strong>Grievance Officer:</strong> V. Akhil (Co-founder), reachable at
+            softshapeai@gmail.com / +91-9391798370, in accordance with the DPDP Act and Rules.
           </li>
         </ul>
 
         {/* 2. Data we collect */}
-        <h2 className={H2}>2. The data we collect</h2>
+        <h2 id="data-we-collect" className={H2}>2. The data we collect</h2>
 
         <h3 className={H3}>2.1 Account &amp; business data (Restaurant Owners / Administrators)</h3>
         <p className={P}>
@@ -135,7 +169,7 @@ const PrivacyPolicyPage = () => {
         </ul>
 
         {/* 3. How we collect */}
-        <h2 className={H2}>3. How we collect data</h2>
+        <h2 id="how-we-collect" className={H2}>3. How we collect data</h2>
         <ul className={UL}>
           <li><strong>Directly from you</strong> — when you fill in onboarding forms, login screens, employee master records, payroll entries, or contact support.</li>
           <li><strong>From your staff</strong> — when they log in, mark attendance, place orders, or generate bills.</li>
@@ -145,7 +179,7 @@ const PrivacyPolicyPage = () => {
         </ul>
 
         {/* 4. Purposes */}
-        <h2 className={H2}>4. Purposes and lawful basis for processing</h2>
+        <h2 id="purposes" className={H2}>4. Purposes and lawful basis for processing</h2>
         <div className={TABLE_WRAP}>
           <table className={TABLE}>
             <thead>
@@ -177,7 +211,7 @@ const PrivacyPolicyPage = () => {
         </p>
 
         {/* 5. Third-party processors */}
-        <h2 className={H2}>5. Third-party processors</h2>
+        <h2 id="processors" className={H2}>5. Third-party processors</h2>
         <p className={P}>
           We engage the following categories of processors to operate the Service. Each
           processor is bound by appropriate data-processing terms.
@@ -208,9 +242,16 @@ const PrivacyPolicyPage = () => {
           rely on the lawful basis of consent and the legitimate use provisions of the
           DPDP Act, and we ensure appropriate safeguards are in place.
         </p>
+        <p className={P}>
+          We may also disclose personal data where required by law, court order, or a
+          lawful request from a government or regulatory authority; to enforce our Terms
+          of Service; or to protect the rights, property, or safety of our Customers,
+          their End-Customers, or the public. <strong>We do not sell, rent, or trade
+          personal data to anyone, for any purpose.</strong>
+        </p>
 
         {/* 6. Retention */}
-        <h2 className={H2}>6. Data retention</h2>
+        <h2 id="retention" className={H2}>6. Data retention</h2>
         <ul className={UL}>
           <li><strong>Active account data:</strong> Retained for as long as your Softshape.ai account is active.</li>
           <li><strong>Transaction, order, KOT, and audit data:</strong> Retained for the lifetime of the account plus <strong>7 years</strong> to support GST audit and Indian tax-record requirements, unless you request earlier deletion and no legal hold applies.</li>
@@ -223,7 +264,7 @@ const PrivacyPolicyPage = () => {
         </ul>
 
         {/* 7. Security */}
-        <h2 className={H2}>7. Data security</h2>
+        <h2 id="security" className={H2}>7. Data security</h2>
         <p className={P}>We implement industry-standard technical and organisational measures:</p>
         <ul className={UL}>
           <li><strong>Authentication:</strong> JWT access tokens with short expiry, refresh tokens, optional PIN login, role-based access control.</li>
@@ -243,7 +284,7 @@ const PrivacyPolicyPage = () => {
         </p>
 
         {/* 8. Rights */}
-        <h2 className={H2}>8. Your rights (Data Principal rights)</h2>
+        <h2 id="your-rights" className={H2}>8. Your rights (Data Principal rights)</h2>
         <p className={P}>Under the DPDP Act, you have the right to:</p>
         <ol className="list-decimal pl-6 space-y-1.5 text-sm sm:text-base text-gray-700 leading-relaxed">
           <li><strong>Access</strong> a summary of your personal data processed by us.</li>
@@ -254,13 +295,13 @@ const PrivacyPolicyPage = () => {
           <li><strong>Withdraw consent</strong> at any time — withdrawal does not affect the lawfulness of prior processing.</li>
         </ol>
         <p className={P}>
-          To exercise any right, email [grievance@softshape.ai] with the subject "DPDP
-          Rights Request" and your registered email / phone. We will respond within
-          <strong> 30 days</strong>.
+          To exercise any right, email <a href="mailto:softshapeai@gmail.com" className="text-[#E53935] hover:underline">softshapeai@gmail.com</a> with
+          the subject "DPDP Rights Request" and your registered email / phone. We will
+          respond within <strong>30 days</strong>.
         </p>
 
         {/* 9. Rights of staff and customers */}
-        <h2 className={H2}>9. Rights of your staff and customers</h2>
+        <h2 id="staff-customers" className={H2}>9. Rights of your staff and customers</h2>
         <p className={P}>If you are a restaurant owner, you acknowledge that:</p>
         <ul className={UL}>
           <li>You are the <strong>Data Fiduciary</strong> for your staff's employment data and your customers' order data.</li>
@@ -269,7 +310,7 @@ const PrivacyPolicyPage = () => {
         </ul>
 
         {/* 10. Children */}
-        <h2 className={H2}>10. Children's data</h2>
+        <h2 id="children" className={H2}>10. Children's data</h2>
         <p className={P}>
           The Service is a business-to-business product and is not directed at individuals
           under 18. We do not knowingly collect personal data from children. If you believe
@@ -277,7 +318,7 @@ const PrivacyPolicyPage = () => {
         </p>
 
         {/* 11. Cookies */}
-        <h2 className={H2}>11. Cookies and local storage</h2>
+        <h2 id="cookies" className={H2}>11. Cookies and local storage</h2>
         <ul className={UL}>
           <li>We use <strong>browser local storage</strong> (not cookies) to keep you logged in, cache your menu and table data for offline use, and remember your edge-server URL.</li>
           <li>We use a <strong>service worker</strong> to cache web assets so the app works offline.</li>
@@ -286,7 +327,7 @@ const PrivacyPolicyPage = () => {
         </ul>
 
         {/* 12. International transfers */}
-        <h2 className={H2}>12. International transfers</h2>
+        <h2 id="transfers" className={H2}>12. International transfers</h2>
         <p className={P}>
           Some processors (Cloudinary, Sentry, Google Fonts, Firebase) may process data
           outside India. By using the Service, you consent to such transfers subject to the
@@ -294,7 +335,7 @@ const PrivacyPolicyPage = () => {
         </p>
 
         {/* 13. Changes */}
-        <h2 className={H2}>13. Changes to this Policy</h2>
+        <h2 id="changes" className={H2}>13. Changes to this Policy</h2>
         <p className={P}>
           We may update this Policy from time to time. We will notify owners by email and
           via an in-app banner of any material change at least <strong>14 days</strong>
@@ -303,28 +344,33 @@ const PrivacyPolicyPage = () => {
         </p>
 
         {/* 14. Contact */}
-        <h2 className={H2}>14. Contact</h2>
+        <h2 id="contact" className={H2}>14. Contact</h2>
         <div className={CALLOUT}>
           <p className="font-bold text-gray-900 mb-2">For any privacy questions, requests, or complaints:</p>
           <p className="flex items-center gap-2 mb-1">
             <Mail size={14} className="text-[#E53935]" />
             <a href="mailto:softshapeai@gmail.com" className="text-[#E53935] hover:underline">softshapeai@gmail.com</a>
-            <span className="text-gray-400">/</span>
-            <a href="mailto:grievance@softshape.ai" className="text-[#E53935] hover:underline">grievance@softshape.ai</a>
           </p>
           <p className="flex items-center gap-2">
             <Phone size={14} className="text-[#E53935]" />
             +91-9391798370 / +91-9381872579
           </p>
           <p className="mt-2 text-xs text-gray-500">
-            Postal: [Registered address of Vtechnologies]
+            Postal: Vtechnologies, Ongole, Prakasam District, Andhra Pradesh, India
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            Grievance Officer: V. Akhil (Co-founder) — write to us with the subject
+            "Privacy Grievance" and we will acknowledge within 48 hours and resolve
+            within 30 days, as required under the DPDP Act.
           </p>
         </div>
 
         <p className="mt-10 text-center text-xs text-gray-400">
           <Link to="/terms" className="text-[#E53935] hover:underline">Terms &amp; Conditions</Link>
           {' · '}
-          <Link to="/" className="text-gray-500 hover:underline">Softshape.ai</Link>
+          <Link to="/support" className="text-[#E53935] hover:underline">Support</Link>
+          {' · '}
+          <Link to="/" className="text-gray-500 hover:underline">softshape.in</Link>
         </p>
       </article>
     </div>

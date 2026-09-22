@@ -90,6 +90,12 @@ const PortalSelection = ({ onSelect }) => {
               Manager
             </Link>
             <Link
+              to="/support"
+              className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/5"
+            >
+              Support
+            </Link>
+            <Link
               to="/archives"
               className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/5"
             >
@@ -398,6 +404,12 @@ const PortalSelection = ({ onSelect }) => {
               className="text-sm font-semibold text-gray-600 hover:text-[#E53935] transition-colors"
             >
               Link Existing Restaurant
+            </Link>
+            <Link
+              to="/support"
+              className="text-sm font-semibold text-gray-600 hover:text-[#E53935] transition-colors"
+            >
+              Support
             </Link>
             <Link
               to="/terms"

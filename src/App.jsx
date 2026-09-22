@@ -41,6 +41,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ArchivesPage from "./pages/ArchivesPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import TermsPage from "./pages/TermsPage";
+import SupportPage from "./pages/SupportPage";
 const TableQRCodes = lazy(() => import("./admin/TableQRCodes"));
 const CaptainReportCard = lazy(() => import("./admin/CaptainReportCard"));
 const CaptainsGroupReport = lazy(() => import("./admin/CaptainsGroupReport"));
@@ -307,6 +308,7 @@ function AnimatedRoutes() {
         <Route path="/archives" element={<AnimatedPage><ArchivesPage /></AnimatedPage>} />
         <Route path="/privacy" element={<AnimatedPage><PrivacyPolicyPage /></AnimatedPage>} />
         <Route path="/terms" element={<AnimatedPage><TermsPage /></AnimatedPage>} />
+        <Route path="/support" element={<AnimatedPage><SupportPage /></AnimatedPage>} />
         <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
         <Route path="/reset-password" element={<AnimatedPage><ResetPasswordPage /></AnimatedPage>} />
         <Route path="/admin" element={<AnimatedPage><AdminLoginWrapper /></AnimatedPage>} />
