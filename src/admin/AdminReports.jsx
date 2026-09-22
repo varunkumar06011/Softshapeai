@@ -2022,8 +2022,10 @@ export default function AdminReports() {
 
   return (
     <div className="min-h-screen bg-[#FFF5F5] font-sans" data-tour="admin-reports">
-      {/* Sticky Top Bar */}
-      <div className="sticky top-0 z-10 bg-white border-b border-[#FFCDD2] p-4">
+      {/* Sticky Top Bar — single sticky wrapper so the mobile toggle bar below
+          sticks together with it (prevents overlap while scrolling) */}
+      <div className="sticky top-0 z-10">
+      <div className="bg-white border-b border-[#FFCDD2] p-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-1">
             <div className="relative flex-1 max-w-md">
@@ -2074,7 +2076,7 @@ export default function AdminReports() {
       </div>
 
       {/* Mobile sidebar toggle */}
-      <div className="md:hidden bg-white border-b border-[#FFCDD2] px-4 py-2 sticky top-[73px] z-10">
+      <div className="md:hidden bg-white border-b border-[#FFCDD2] px-4 py-2">
         <button
           onClick={() => setMobileSidebarOpen((v) => !v)}
           className="flex items-center gap-2 text-xs font-bold text-gray-600 hover:text-[#B71C1C] transition-colors"
@@ -2082,6 +2084,7 @@ export default function AdminReports() {
           <Menu size={16} />
           {mobileSidebarOpen ? 'Hide Reports Menu' : 'Show Reports Menu'}
         </button>
+      </div>
       </div>
 
       <div className="flex flex-col md:flex-row">

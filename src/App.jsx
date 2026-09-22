@@ -394,15 +394,18 @@ function AdminLoginWrapper() {
 }
 
 function AdminDashboardWrapper() {
-  const navigate = useNavigate();
   const { user, token, logout } = useAuth();
   if (!(user && token && isTokenValid(token) && ['ADMIN','OWNER'].includes(user.role))) {
     logout();
     return <Navigate to="/admin" replace />;
   }
   const role = user?.role || 'admin';
+  // Hard navigation (not SPA navigate): the draggable "Ask Spire" motion.button
+  // inside AdminDashboard never completes its exit, which deadlocks the
+  // AnimatePresence mode="wait" route transition and leaves a white screen.
+  // Same pattern as captain-entry.jsx logout.
   return (
-    <AdminDashboard role={role} onLogout={() => { logout(); navigate('/admin'); }} />
+    <AdminDashboard role={role} onLogout={() => { logout(); window.location.href = '/admin'; }} />
   );
 }
 
@@ -566,13 +569,12 @@ function ManagerLoginWrapper() {
 }
 
 function ManagerDashboardWrapper() {
-  const navigate = useNavigate();
   const { user, token, logout } = useAuth();
   if (!(user && token && isTokenValid(token) && ['MANAGER'].includes(user.role))) {
     logout();
     return <Navigate to="/manager" replace />;
   }
-  return <AdminDashboard role="manager" basePath="/manager/dashboard" onLogout={() => { logout(); navigate('/manager'); }} />;
+  return <AdminDashboard role="manager" basePath="/manager/dashboard" onLogout={() => { logout(); window.location.href = '/manager'; }} />;
 }
 
 export default App;

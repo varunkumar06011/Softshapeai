@@ -36,6 +36,7 @@ import {
   ChevronDown,
   CheckCircle,
   ArrowRight,
+  ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen,
   ShoppingCart,
@@ -649,6 +650,18 @@ const AdminDashboard = ({ role: roleProp = 'admin', onLogout, basePath = '/admin
             <button onClick={() => setIsSidebarOpen(true)} className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden">
               <LayoutDashboard size={18} />
             </button>
+            {/* Mobile back — iOS has no system back; sections other than the
+                dashboard home get a one-tap return. navigate(-1) is unsafe here:
+                a fresh launch straight into a section would exit the app. */}
+            {page !== 'dashboard' && (
+              <button
+                onClick={() => navigate(`${basePath}/dashboard`)}
+                className="flex-shrink-0 rounded-md border border-[#FFCDD2] p-2 md:hidden"
+                title="Back to Dashboard"
+              >
+                <ArrowLeft size={18} />
+              </button>
+            )}
             {/* Desktop reopen button — visible only when sidebar is collapsed */}
             <button
               onClick={() => setIsSidebarCollapsed(false)}

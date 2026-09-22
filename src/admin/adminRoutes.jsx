@@ -1,7 +1,7 @@
 import { lazy } from 'react';
 import {
   LayoutDashboard, Table2, UtensilsCrossed, ClipboardList, Receipt,
-  ChartNoAxesCombined, DollarSign, Megaphone, Camera, Sparkles,
+  ChartNoAxesCombined, DollarSign, Megaphone, Camera,
   Settings, Printer, QrCode, Tag, Store, Users, Wallet, Scale, Landmark, Package, Building2, TrendingDown, ShoppingBag,
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -19,7 +19,6 @@ const Orders          = lazy(() => import('./AdminComponents').then(m => ({ defa
 const Reports         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Reports })));
 const Payroll         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Payroll })));
 const Marketing       = lazy(() => import('./AdminComponents').then(m => ({ default: m.Marketing })));
-const Pricing         = lazy(() => import('./AdminComponents').then(m => ({ default: m.Pricing })));
 // DEAD CODE: legacy Inventory/KitchenInventory are not referenced by any route
 // (kitchen-inventory renders InventorySection → InventoryPage). Remove in cleanup.
 const Inventory       = lazy(() => import('./AdminComponents').then(m => ({ default: m.Inventory })));
@@ -114,7 +113,6 @@ export const adminRoutes = [
   { key: 'kitchen-inventory', label: 'Kitchen/Bar Inventory',  icon: UtensilsCrossed,     roles: ['admin','owner','manager'], element: <InventorySection />, source: 'cloud' },
   { key: 'marketing',         label: 'Marketing AI',           icon: Megaphone,           roles: ['admin','owner','manager'], element: <Marketing />,                     source: 'cloud', props: (ctx) => ({ upload: ctx.mUpload, setUpload: ctx.setMUpload, uploadRef: ctx.mUploadRef, generated: ctx.mGenerated, setGenerated: ctx.setMGenerated, posted: ctx.mPosted, setPosted: ctx.setMPosted }) },
   { key: 'surveillance',      label: 'Surveillance',           icon: Camera,              roles: ['admin','owner','manager'], element: <SurveillanceDashboard />,         source: 'cloud', props: (ctx) => ({ onIncident: () => {} }) },
-  { key: 'pricing',           label: 'Pricing',                icon: Sparkles,            roles: ['admin','owner','manager'], element: <Pricing />,                       source: 'local' },
   { key: 'price-profiles',    label: 'Price Profiles',         icon: Tag,                 roles: ['admin','owner','manager'], element: <PriceProfilesPage />,             source: 'local' },
   { key: 'settings',          label: 'Settings',               icon: Settings,            roles: ['admin','owner'], element: <SettingsPage />,                  source: 'local', props: (ctx) => ({ onNavigate: ctx.goToSection }) },
   { key: 'printers',          label: 'Printers',               icon: Printer,             roles: ['admin','owner','manager'], element: <PrinterSettingsPage />, source: 'local' },
@@ -163,7 +161,6 @@ export function isManagerTabEnabled(key, enabledModules) {
 export function isRouteEnabled(key, enabledModules) {
   if (key === 'specials') return true;
   if (key === 'surveillance') return enabledModules.surveillance === true;
-  if (key === 'pricing') return enabledModules.pricing !== false;
   if (key === 'tables') return enabledModules.tables !== false || enabledModules.food !== false;
   if (key === 'menu') return enabledModules.food !== false || enabledModules.bar !== false;
   if (key === 'orders') return enabledModules.food !== false || enabledModules.bar !== false;

@@ -328,7 +328,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
   };
 
   return (
-    <div className="flex-grow p-4 overflow-y-auto custom-scrollbar bg-gray-50/50" data-tour="admin-transactions">
+    <div className="flex-grow p-4 pb-24 md:pb-4 overflow-y-auto custom-scrollbar bg-gray-50/50" data-tour="admin-transactions">
       <div className="max-w-6xl mx-auto space-y-3">
         <h2 className="text-sm font-black text-gray-900 uppercase tracking-tight">Transactions</h2>
 
@@ -343,7 +343,7 @@ export default function AdminTransactions({ onStatsRefresh }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 mx-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mx-3 mb-3">
             {[
               { label: 'Cash', method: 'CASH', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
               { label: 'UPI', method: 'UPI', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
@@ -362,19 +362,19 @@ export default function AdminTransactions({ onStatsRefresh }) {
             })}
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap">
+          <div className="flex items-center gap-1.5 px-3 pb-2 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-x-visible">
             {sourceFilterPills.map(f => (
               <button
                 key={f.key}
                 onClick={() => setTxnSourceFilter(f.key)}
-                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key ? 'bg-[#E53935] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap flex-shrink-0 transition-all hover:scale-[1.01] active:scale-[0.99] ${txnSourceFilter === f.key ? 'bg-[#E53935] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
               >
                 {f.label}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap border-b border-gray-100">
+          <div className="flex items-center gap-1.5 px-3 pb-2 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-x-visible border-b border-gray-100">
             {[
               { key: 'all', label: 'All Status' },
               { key: 'COMPLETED', label: 'Completed' },
@@ -386,98 +386,103 @@ export default function AdminTransactions({ onStatsRefresh }) {
               <button
                 key={f.key}
                 onClick={() => setTxnStatusFilter(f.key)}
-                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-[0.99] ${txnStatusFilter === f.key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap flex-shrink-0 transition-all hover:scale-[1.01] active:scale-[0.99] ${txnStatusFilter === f.key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
               >
                 {f.label}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5 p-3 border-b border-gray-100 bg-gray-50 flex-wrap">
-            {[
-              { key: 'today', label: 'Today' },
-              { key: 'yesterday', label: 'Yesterday' },
-              { key: 'month', label: 'This Month' },
-              { key: 'all', label: 'All Time' },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => { resetFilters(f.key); loadTransactions(f.key, ''); }}
-                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key && !txnCustomDate ? 'bg-[#E53935] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
-              >
-                {f.label}
-              </button>
-            ))}
-            <div className="flex items-center gap-1 ml-4">
-              <button
-                onClick={() => setTxnOutletFilter('current')}
-                className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${txnOutletFilter === 'current' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-              >
-                Current Outlet
-              </button>
-              {outlets.length > 1 && (
+          <div className="p-3 border-b border-gray-100 bg-gray-50 space-y-2">
+            <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-x-visible">
+              {[
+                { key: 'today', label: 'Today' },
+                { key: 'yesterday', label: 'Yesterday' },
+                { key: 'month', label: 'This Month' },
+                { key: 'all', label: 'All Time' },
+              ].map(f => (
                 <button
-                  onClick={() => setTxnOutletFilter('all')}
-                  className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${txnOutletFilter === 'all' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                  key={f.key}
+                  onClick={() => { resetFilters(f.key); loadTransactions(f.key, ''); }}
+                  className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap flex-shrink-0 transition-all hover:scale-[1.01] active:scale-[0.99] ${txnDateFilter === f.key && !txnCustomDate ? 'bg-[#E53935] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
                 >
-                  All Outlets
+                  {f.label}
                 </button>
-              )}
+              ))}
+              <div className="flex items-center gap-1 ml-2 md:ml-4 flex-shrink-0">
+                <button
+                  onClick={() => setTxnOutletFilter('current')}
+                  className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${txnOutletFilter === 'current' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  Current Outlet
+                </button>
+                {outlets.length > 1 && (
+                  <button
+                    onClick={() => setTxnOutletFilter('all')}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${txnOutletFilter === 'all' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                  >
+                    All Outlets
+                  </button>
+                )}
+              </div>
             </div>
-            <button
-              onClick={() => { loadTransactions(txnDateFilter, txnCustomDate); }}
-              className="ml-auto px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm flex items-center gap-1"
-            >
-              <RefreshCw size={12} /> Sync
-            </button>
-            <button
-              onClick={handleBackfill}
-              disabled={backfillLoading}
-              title="Trigger edge server to re-enqueue and sync any missing/dead-lettered transactions"
-              className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-1 ${
-                backfillLoading
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:scale-[1.01] active:scale-[0.99]'
-              }`}
-            >
-              {backfillLoading ? <RefreshCw size={12} className="animate-spin" /> : <DatabaseBackup size={12} />}
-              Recover Missing
-            </button>
-            <DateInputButton
-              value={txnCustomDate}
-              max={getKolkataDateString()}
-              onChange={(val) => {
-                setTxnCustomDate(val);
-                setTxnDateFilter('custom');
-                if (val) loadTransactions('custom', val);
-              }}
-              className="ml-2"
-            />
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => { loadTransactions(txnDateFilter, txnCustomDate); }}
+                className="px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm flex items-center gap-1"
+              >
+                <RefreshCw size={12} /> Sync
+              </button>
+              <button
+                onClick={handleBackfill}
+                disabled={backfillLoading}
+                title="Trigger edge server to re-enqueue and sync any missing/dead-lettered transactions"
+                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap transition-all shadow-sm flex items-center gap-1 ${
+                  backfillLoading
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 hover:scale-[1.01] active:scale-[0.99]'
+                }`}
+              >
+                {backfillLoading ? <RefreshCw size={12} className="animate-spin" /> : <DatabaseBackup size={12} />}
+                Recover Missing
+              </button>
+              <DateInputButton
+                value={txnCustomDate}
+                max={getKolkataDateString()}
+                onChange={(val) => {
+                  setTxnCustomDate(val);
+                  setTxnDateFilter('custom');
+                  if (val) loadTransactions('custom', val);
+                }}
+              />
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap px-3 py-3 border-b border-gray-50">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'CASH', label: 'Cash' },
-              { key: 'UPI', label: 'UPI' },
-              { key: 'CARD', label: 'Card' },
-              { key: 'OTHER', label: 'Other' },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => setTxnMethodFilter(f.key)}
-                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all hover:scale-[1.01] active:scale-[0.99] ${txnMethodFilter === f.key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
-              >
-                {f.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-1.5 flex-wrap px-3 py-3 border-b border-gray-50">
+            <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-x-visible w-full md:w-auto">
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'CASH', label: 'Cash' },
+                { key: 'UPI', label: 'UPI' },
+                { key: 'CARD', label: 'Card' },
+                { key: 'OTHER', label: 'Other' },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setTxnMethodFilter(f.key)}
+                  className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap flex-shrink-0 transition-all hover:scale-[1.01] active:scale-[0.99] ${txnMethodFilter === f.key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
             <input
               type="text"
               value={txnSearch}
               onChange={e => setTxnSearch(e.target.value)}
               placeholder="Search bill, captain, table, amount..."
               autoComplete="off"
-              className="ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-400 w-52 shadow-inner transition-colors"
+              className="w-full md:w-52 md:ml-auto text-xs font-bold px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 placeholder-gray-400 outline-none focus:border-gray-400 shadow-inner transition-colors"
             />
           </div>
 
@@ -504,14 +509,14 @@ export default function AdminTransactions({ onStatsRefresh }) {
             <table className="w-full text-left">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500">TXN ID</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500">Source</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500">Table</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500">Captain</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500">Status</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500">Method</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500 text-right">Amount</th>
-                  <th className="p-4 text-xs font-black uppercase text-gray-500 text-center">Action</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500 whitespace-nowrap">TXN ID</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500">Source</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500">Table</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500">Captain</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500">Status</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500">Method</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500 text-right">Amount</th>
+                  <th className="p-3 sm:p-4 text-xs font-black uppercase text-gray-500 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -535,21 +540,21 @@ export default function AdminTransactions({ onStatsRefresh }) {
                         onClick={() => setExpandedTxnId(expandedTxnId === txn.id ? null : txn.id)}
                         className="hover:bg-gray-50 transition-colors cursor-pointer select-none"
                       >
-                        <td className="p-4">
+                        <td className="p-3 sm:p-4">
                           <span className="text-xs font-black text-gray-900">{txn.displayId || txn.id}</span>
                         </td>
-                        <td className="p-4">
+                        <td className="p-3 sm:p-4">
                           <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-gray-100 text-gray-600">
                             {txn.source === 'bar' ? 'Bar' : txn.source === 'conference1' ? 'Conf 1' : txn.source === 'conference2' ? 'Conf 2' : txn.source === 'pdr' ? 'PDR' : txn.source === 'gobox' ? 'GoBox' : txn.source === 'r-parcel' ? 'GoBox' : txn.source}
                           </span>
                         </td>
-                        <td className="p-4">
+                        <td className="p-3 sm:p-4">
                           <span className="text-xs font-black text-gray-700">{txn.tableNumber || '—'}</span>
                         </td>
-                        <td className="p-4">
+                        <td className="p-3 sm:p-4">
                           <span className="text-xs font-bold text-gray-500 uppercase">{txn.captainName}</span>
                         </td>
-                        <td className="p-4">
+                        <td className="p-3 sm:p-4">
                           <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${
                             txn.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
                             txn.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
@@ -560,16 +565,16 @@ export default function AdminTransactions({ onStatsRefresh }) {
                             {txn.status === 'COMPLETED' ? 'Done' : txn.status === 'PENDING' ? 'Pending' : txn.status === 'CANCELLED' ? 'Cancelled' : txn.status === 'FAILED' ? 'Failed' : txn.status}
                           </span>
                         </td>
-                        <td className="p-4">
+                        <td className="p-3 sm:p-4">
                           <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase ${txn.method === 'CASH' ? 'bg-green-100 text-green-700' : txn.method === 'UPI' ? 'bg-blue-100 text-blue-700' : txn.method === 'CARD' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
                             {txn.method}
                           </span>
                         </td>
-                        <td className="p-4 text-right">
+                        <td className="p-3 sm:p-4 text-right">
                           <span className="text-sm font-black text-gray-900">₹{Number(txn.grandTotal ?? txn.amount ?? 0).toFixed(2)}</span>
                           <span className="block text-xs text-gray-400 font-bold">{txn.items} items</span>
                         </td>
-                        <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
+                        <td className="p-3 sm:p-4 text-center" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-1">
                             {txn.status !== 'COMPLETED' && (
                               <button

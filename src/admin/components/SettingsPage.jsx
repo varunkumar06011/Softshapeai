@@ -39,6 +39,8 @@ import {
   Eye,
   EyeOff,
   Briefcase,
+  Trash2,
+  Mail,
 } from 'lucide-react';
 import { adminRoutes } from '../adminRoutes';
 import { safeGetJSON } from '../../utils/safeParseJSON';
@@ -180,6 +182,7 @@ function SettingsPage({ onNavigate }) {
 
   // OTP verification state for phone/email changes
   const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [verificationSessionId, setVerificationSessionId] = useState(null);
   const [phoneProof, setPhoneProof] = useState(null);
   const [emailProof, setEmailProof] = useState(null);
@@ -1377,6 +1380,71 @@ function SettingsPage({ onNavigate }) {
               </div>
             )}
           </SectionCard>
+
+          <SectionCard title="Delete Account" icon={Trash2}>
+            <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 space-y-3">
+              <p className="text-xs text-gray-500">
+                Permanently delete your account, restaurant data, staff records, and all associated information. This action is processed manually by our team.
+              </p>
+              <button
+                onClick={() => setShowDeleteAccountModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-all"
+              >
+                <Trash2 size={14} />
+                Delete Account and all the Data
+              </button>
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {showDeleteAccountModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Delete Account & All Data</h3>
+                <p className="text-sm text-gray-500 mt-1">This request is handled manually by our team.</p>
+              </div>
+              <button onClick={() => setShowDeleteAccountModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-gray-50 border border-gray-100 p-4 space-y-3">
+              <p className="text-sm text-gray-700 leading-relaxed">
+                To delete your account and all associated data, send an email to{' '}
+                <span className="font-bold text-gray-900">softshapeai@gmail.com</span>{' '}
+                from your registered email address. We will process your request within 48 hours.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs font-mono bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-700 select-all">softshapeai@gmail.com</code>
+                <button
+                  onClick={() => { try { navigator.clipboard.writeText('softshapeai@gmail.com'); } catch { /* ignore */ } }}
+                  className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors"
+                  title="Copy email address"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <a
+                href="mailto:softshapeai@gmail.com?subject=Account%20Deletion%20Request&body=Please%20delete%20my%20Softshape%20account%20and%20all%20associated%20data.%0A%0ARegistered%20email%3A%20%0ARestaurant%20code%3A%20"
+                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2"
+              >
+                <Mail size={16} />
+                Send Email
+              </a>
+              <button
+                onClick={() => setShowDeleteAccountModal(false)}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl font-semibold transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
