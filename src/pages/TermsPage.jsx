@@ -6,13 +6,11 @@
 // Protection Act 2019, and the actual data / billing flows of Softshape.ai.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, FileText, Mail, Phone } from 'lucide-react';
 
 const H2 = 'text-xl sm:text-2xl font-bold text-gray-900 mt-8 mb-3 tracking-tight';
-const H3 = 'text-base sm:text-lg font-bold text-gray-900 mt-5 mb-2';
-const P = 'text-sm sm:text-base text-gray-700 leading-relaxed';
+const P ='text-sm sm:text-base text-gray-700 leading-relaxed';
 const UL = 'list-disc pl-6 space-y-1.5 text-sm sm:text-base text-gray-700 leading-relaxed';
 const OL = 'list-decimal pl-6 space-y-1.5 text-sm sm:text-base text-gray-700 leading-relaxed';
 const CALLOUT = 'rounded-xl bg-[#FFF5F5] border border-red-100 p-4 text-sm text-gray-700';
@@ -80,7 +78,7 @@ const TermsPage = () => {
         {/* 4. Subscription */}
         <h2 className={H2}>4. Subscription, billing, and payment</h2>
         <ol className={OL}>
-          <li>The Service is offered on a subscription basis with a free trial and paid plans as published at https://softshape.ai at the time of sign-up.</li>
+          <li>The Service is offered on a subscription basis with a free trial and paid plans as published at https://softshape.in at the time of sign-up.</li>
           <li>Subscription fees are billed in INR through <strong>Razorpay</strong>. By initiating a payment, you agree to Razorpay's terms and privacy policy.</li>
           <li><strong>Trial:</strong> Trial length and feature scope are as published. We may end or modify a trial at any time.</li>
           <li><strong>Auto-renewal:</strong> Unless cancelled before the end of the billing period, subscriptions auto-renew for the same period at the then-current price.</li>
@@ -138,7 +136,7 @@ const TermsPage = () => {
           <li><strong>Data ownership:</strong> All business data (menu, orders, transactions, payroll, inventory, customers, audit logs) you enter into the Service remains your property. We process it as your Data Processor.</li>
           <li><strong>Tenant isolation:</strong> We enforce per-restaurant data isolation at the ORM layer. We do not share your data with other Restaurants.</li>
           <li><strong>Aggregated and anonymised data:</strong> We may use aggregated, de-identified data for product improvement, benchmarking, and marketing (e.g. "average bill time across all Softshape venues"). Such data is not re-identifiable.</li>
-          <li><strong>Data processing addendum:</strong> Available on request from [grievance@softshape.ai].</li>
+          <li><strong>Data processing addendum:</strong> Available on request from softshapeai@gmail.com.</li>
         </ol>
 
         {/* 9. Availability */}
@@ -239,8 +237,8 @@ const TermsPage = () => {
         <h2 className={H2}>17. Governing law and dispute resolution</h2>
         <ol className={OL}>
           <li>These Terms are governed by the laws of <strong>India</strong>.</li>
-          <li>The courts at <strong>[Ongole / Prakasam District, Andhra Pradesh]</strong> (or such other place where Vtechnologies is registered) shall have exclusive jurisdiction, subject to the Consumer Protection Act, 2019.</li>
-          <li>The parties shall first attempt to resolve any dispute amicably within <strong>30 days</strong> through written notice. If unresolved, the dispute shall be referred to <strong>mediation</strong> under the Mediation Act, 2023, and failing settlement, to arbitration under the Arbitration and Conciliation Act, 1996, by a sole arbitrator appointed by Vtechnologies. The seat and venue of arbitration shall be <strong>[Ongole / Hyderabad]</strong>. The language of arbitration shall be English.</li>
+          <li>The courts at <strong>Ongole, Prakasam District, Andhra Pradesh</strong> (or such other place where Vtechnologies is registered) shall have exclusive jurisdiction, subject to the Consumer Protection Act, 2019.</li>
+          <li>The parties shall first attempt to resolve any dispute amicably within <strong>30 days</strong> through written notice. If unresolved, the dispute shall be referred to <strong>mediation</strong> under the Mediation Act, 2023, and failing settlement, to arbitration under the Arbitration and Conciliation Act, 1996, by a sole arbitrator appointed by Vtechnologies. The seat and venue of arbitration shall be <strong>Ongole, Andhra Pradesh</strong>. The language of arbitration shall be English.</li>
         </ol>
 
         {/* 18. Changes */}
@@ -279,14 +277,16 @@ const TermsPage = () => {
             +91-9391798370 / +91-9381872579
           </p>
           <p className="mt-2 text-xs text-gray-500">
-            Postal: [Registered address of Vtechnologies]
+            Postal: Vtechnologies, Ongole, Prakasam District, Andhra Pradesh, India
           </p>
         </div>
 
         <p className="mt-10 text-center text-xs text-gray-400">
           <Link to="/privacy" className="text-[#E53935] hover:underline">Privacy Policy</Link>
           {' · '}
-          <Link to="/" className="text-gray-500 hover:underline">Softshape.ai</Link>
+          <Link to="/support" className="text-[#E53935] hover:underline">Support</Link>
+          {' · '}
+          <Link to="/" className="text-gray-500 hover:underline">softshape.in</Link>
         </p>
       </article>
     </div>
