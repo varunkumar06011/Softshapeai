@@ -117,16 +117,25 @@ function computeSliceCuts(canvas, pageHeightPx, breakPoints) {
  * @returns {jsPDF}
  */
 export function canvasToA4PdfDoc(canvas, opts = {}) {
-  const { orientation = 'portrait', margin = 10, format = 'a4', breakPoints = [] } = opts;
+  const { orientation = 'portrait', margin = 10, format = 'a4', breakPoints = [], maxPages = 0 } = opts;
 
   const pdfWidth = orientation === 'landscape' ? 297 : 210;
   const pdfHeight = orientation === 'landscape' ? 210 : 297;
-  const usableWidth = pdfWidth - 2 * margin;
+  const fullWidth = pdfWidth - 2 * margin;
   const usableHeight = pdfHeight - 2 * margin;
 
-  const pxPerMm = canvas.width / usableWidth;
-  const pageHeightPx = usableHeight * pxPerMm;
-  const cuts = computeSliceCuts(canvas, pageHeightPx, breakPoints);
+  // With `maxPages`, shrink the rendered width (and so the scale) in small
+  // steps until the content paginates within that many pages. The canvas is
+  // high-resolution, so the slightly smaller placement stays sharp.
+  let usableWidth = fullWidth;
+  let pxPerMm = canvas.width / usableWidth;
+  let cuts = computeSliceCuts(canvas, usableHeight * pxPerMm, breakPoints);
+  while (maxPages > 0 && cuts.length - 1 > maxPages && usableWidth > fullWidth * 0.5) {
+    usableWidth -= fullWidth * 0.02;
+    pxPerMm = canvas.width / usableWidth;
+    cuts = computeSliceCuts(canvas, usableHeight * pxPerMm, breakPoints);
+  }
+  const xOffset = margin + (fullWidth - usableWidth) / 2;
 
   const doc = new jsPDF(orientation, 'mm', format);
 
@@ -144,7 +153,7 @@ export function canvasToA4PdfDoc(canvas, opts = {}) {
     ctx.drawImage(canvas, 0, start, canvas.width, height, 0, 0, canvas.width, height);
 
     if (i > 0) doc.addPage();
-    doc.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, usableWidth, height / pxPerMm);
+    doc.addImage(slice.toDataURL('image/png'), 'PNG', xOffset, margin, usableWidth, height / pxPerMm);
   }
 
   return doc;

@@ -1131,8 +1131,8 @@ export default function AdminDailyBalanceSheet() {
       root.unmount();
       document.body.removeChild(container);
 
-      // Convert to PDF — A4 LANDSCAPE for the wide 900px layout
-      return canvasToA4PdfDoc(canvas, { orientation: 'landscape', breakPoints });
+      // Convert to PDF — A4 portrait, guaranteed to fit within 2 pages
+      return canvasToA4PdfDoc(canvas, { orientation: 'portrait', breakPoints, maxPages: 2 });
     } catch (err) {
       if (container.parentNode) {
         document.body.removeChild(container);
@@ -1268,8 +1268,10 @@ export default function AdminDailyBalanceSheet() {
         await new Promise(resolve => setTimeout(resolve, 500));
 
         // Capture with html2canvas
+        // 4x for desktop; 3x on phones/native to limit memory use
+        const captureScale = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform()) ? 3 : 4;
         const canvas = await html2canvas(container, {
-          scale: 3,
+          scale: captureScale,
           width: 900,
           windowWidth: 900,
           useCORS: true,
@@ -1283,8 +1285,8 @@ export default function AdminDailyBalanceSheet() {
         root.unmount();
         document.body.removeChild(container);
 
-        // Convert canvas to multi-page A4 PDF (landscape for the wide 900px layout)
-        const blob = await canvasToA4PdfBlob(canvas, { orientation: 'landscape', breakPoints });
+        // Convert canvas to A4 portrait PDF, guaranteed to fit within 2 pages
+        const blob = await canvasToA4PdfBlob(canvas, { orientation: 'portrait', breakPoints, maxPages: 2 });
         const fileName = `Daily-Balance-Sheet-${selectedDate}.pdf`;
         const file = new File([blob], fileName, { type: 'application/pdf' });
         const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
