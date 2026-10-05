@@ -305,7 +305,7 @@ export async function waitForEdgeReady(timeoutMs = 15_000, intervalMs = 1_000) {
  * the edge server without relying on 127.0.0.1 (which only works on the
  * cashier PC itself).
  */
-export async function discoverEdgeUrlFromBackend() {
+export async function discoverEdgeUrlFromBackend({ forCaptain = false } = {}) {
   // On an HTTPS browser page, the discovered HTTP edge URL would be blocked
   // as mixed content on every subsequent health check. Skip discovery entirely.
   if (isHttpsBrowserContext()) return null;
@@ -343,6 +343,19 @@ export async function discoverEdgeUrlFromBackend() {
     const data = await res.json();
     if (data.lanIp) {
       const edgeUrl = `http://${data.lanIp}:3101`;
+      // Multi-PC restaurant: the cloud only knows ONE "primary" PC. If a captain
+      // phone is pointed at a counter PC that opted out of captains, ignore it so
+      // the filtered LAN scan can find the real dine-in PC instead.
+      if (forCaptain) {
+        try {
+          const probeController = new AbortController();
+          const probeTimer = setTimeout(() => probeController.abort(), LAN_DISCOVERY_TIMEOUT_MS);
+          const probe = await fetch(`${edgeUrl}/health`, { signal: probeController.signal });
+          clearTimeout(probeTimer);
+          const probeHealth = probe.ok ? await probe.json().catch(() => ({})) : {};
+          if (probeHealth.captainHub === false) return null;
+        } catch { /* unreachable from here — keep legacy behaviour and let health checks decide */ }
+      }
       // Persist to localStorage so the URL survives page reloads (e.g. after
       // logout triggers window.location.href = '/captain'). Without this,
       // getEdgeUrl() falls back to DEFAULT_EDGE_URL (127.0.0.1:3101) which is
@@ -399,9 +412,12 @@ export function isEdgeLocalAuth() {
  *     connecting to the wrong outlet's edge server when two outlets share
  *     the same WiFi LAN. An in-flight unfiltered scan is drained first so
  *     the filtered scan always runs fresh.
+ *   - forCaptain: true skips PCs that report captainHub=false in /health
+ *     (e.g. a counter/curry-point PC with no captains) so a captain phone on
+ *     the same WiFi never connects to the wrong billing PC.
  * Returns the discovered edge URL or null.
  */
-export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId } = {}) {
+export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId, forCaptain = false } = {}) {
   // On an HTTPS browser page, HTTP LAN probes are blocked as mixed content.
   if (isHttpsBrowserContext()) return null;
 
@@ -574,6 +590,9 @@ export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId } 
           // returns whichever answers first — potentially the wrong outlet,
           // causing PIN login 401s and KOT prints going to the wrong kitchen.
           if (expectedRestaurantId && health.restaurantId && health.restaurantId !== expectedRestaurantId) return null;
+          // Multi-PC restaurant: a counter PC that opted out of captains is skipped.
+          // Older runtimes don't report the field (undefined) and stay eligible.
+          if (forCaptain && health.captainHub === false) return null;
           return url;
         } catch {
           clearTimeout(timeoutId);

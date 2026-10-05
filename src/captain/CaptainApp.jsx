@@ -644,7 +644,7 @@ export default function CaptainApp({ onLogout }) {
     // Discover edge URL from backend first (if no manual URL configured) so
     // isEdgeAvailable uses the cashier's LAN IP, not localhost.
     if (!localStorage.getItem('softshape_edge_url')) {
-      await discoverEdgeUrlFromBackend().catch(() => {});
+      await discoverEdgeUrlFromBackend({ forCaptain: true }).catch(() => {});
     }
     const url = getEdgeUrl();
     let available = await isEdgeAvailable();
@@ -656,7 +656,7 @@ export default function CaptainApp({ onLogout }) {
     // captain app continuously tries to find and connect to the edge server.
     if (!edgeReachable) {
       setDiscoveryStatus('Searching for edge server on LAN…');
-      const discovered = await discoverEdgeOnLAN().catch(() => null);
+      const discovered = await discoverEdgeOnLAN({ forCaptain: true }).catch(() => null);
       if (discovered) {
         // Edge found on LAN — invalidate cache and re-check availability
         // so subsequent fetches use the newly discovered edge URL.
@@ -730,7 +730,7 @@ export default function CaptainApp({ onLogout }) {
     // edgeStatus.available won't be updated yet. discoverEdgeOnLAN internally
     // skips if a manual URL is configured or if already discovered.
     setDiscoveryStatus('Searching for edge server on LAN…');
-    discoverEdgeOnLAN().then((discovered) => {
+    discoverEdgeOnLAN({ forCaptain: true }).then((discovered) => {
       if (discovered) {
         setDiscoveryStatus(`Found edge server: ${discovered}`);
         checkEdgeStatus();
@@ -766,7 +766,7 @@ export default function CaptainApp({ onLogout }) {
   // different device (phone/tablet) can find the edge server on the cashier PC.
   useEffect(() => {
     // Discover edge server LAN URL from backend (non-blocking, 3s timeout)
-    discoverEdgeUrlFromBackend().catch(() => {});
+    discoverEdgeUrlFromBackend({ forCaptain: true }).catch(() => {});
     // Pre-warm edge health cache so first table fetch doesn't pay the health check latency
     prewarmEdgeHealth();
 
@@ -2981,7 +2981,7 @@ export default function CaptainApp({ onLogout }) {
 
     try {
 
-      const data = await authService.fetchCrew(captainSlug.trim());
+      const data = await authService.fetchCrew(captainSlug.trim(), { forCaptain: true });
 
       setAvailableCaptains(data.captains || []);
 
@@ -5391,7 +5391,7 @@ export default function CaptainApp({ onLogout }) {
                 onClick={async () => {
                   setDiscoveryStatus('Searching for edge server on LAN…');
                   setEdgeUrl(null);
-                  const discovered = await discoverEdgeOnLAN({ force: true });
+                  const discovered = await discoverEdgeOnLAN({ force: true, forCaptain: true });
                   if (discovered) {
                     setEdgeUrlInput(discovered);
                     setDiscoveryStatus(`Found: ${discovered}`);

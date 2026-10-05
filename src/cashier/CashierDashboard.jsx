@@ -84,6 +84,10 @@ import { saveTransaction, fetchTransactions, fetchTransactionsWithRetry, createO
 
 import { getBottlesForMenuItem } from '../services/barInventoryApi';
 
+import { billSequence } from '../shared/utils/billNumber';
+
+import PcSetupModal from './PcSetupModal';
+
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 
 import { printLocal, flushQueuedPrintJobs } from '../utils/printOffline';
@@ -2511,6 +2515,8 @@ const CashierDashboard = ({ onLogout }) => {
 
   const [activeVenueFilter, setActiveVenueFilter] = useState('all');
 
+  const [showPcSetup, setShowPcSetup] = useState(false);
+
   const [backfillLoading, setBackfillLoading] = useState(false);
 
   const [backfillResult, setBackfillResult] = useState(null);
@@ -2871,9 +2877,9 @@ const CashierDashboard = ({ onLogout }) => {
 
       const sorted = [...isolated].sort((a, b) => {
 
-        const aBill = a.billNumber != null ? parseInt(a.billNumber, 10) : null;
+        const aBill = billSequence(a.billNumber);
 
-        const bBill = b.billNumber != null ? parseInt(b.billNumber, 10) : null;
+        const bBill = billSequence(b.billNumber);
 
         if (aBill != null && bBill != null) return aBill - bBill;
 
@@ -2937,9 +2943,9 @@ const CashierDashboard = ({ onLogout }) => {
 
       const merged = [...offlineTxns, ...sorted].sort((a, b) => {
 
-        const aBill = a.billNumber != null ? parseInt(a.billNumber, 10) : null;
+        const aBill = billSequence(a.billNumber);
 
-        const bBill = b.billNumber != null ? parseInt(b.billNumber, 10) : null;
+        const bBill = billSequence(b.billNumber);
 
         if (aBill != null && bBill != null) return aBill - bBill;
 
@@ -12392,6 +12398,18 @@ const CashierDashboard = ({ onLogout }) => {
 
         <div className="hidden sm:block p-3 border-t border-white/15 mt-auto pb-6">
 
+          {(user?.role === 'OWNER' || user?.role === 'ADMIN') && (
+
+            <button onClick={() => setShowPcSetup(true)} className="flex items-center gap-3 w-full p-3 rounded-xl text-white/80 hover:text-white hover:bg-white/10 transition-all hover:scale-[1.02] active:scale-98">
+
+              <Settings size={22} className="text-white/80" />
+
+              <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-white/80">This PC</span>
+
+            </button>
+
+          )}
+
           <button onClick={onLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-white/80 hover:text-white hover:bg-white/10 transition-all hover:scale-[1.02] active:scale-98">
 
             <LogOut size={22} className="text-white/80 group-hover:text-white" />
@@ -12403,6 +12421,8 @@ const CashierDashboard = ({ onLogout }) => {
         </div>
 
       </aside>
+
+      {showPcSetup && <PcSetupModal onClose={() => setShowPcSetup(false)} />}
 
 
 

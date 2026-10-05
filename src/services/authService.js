@@ -85,7 +85,7 @@ export const authService = {
       // automatically if a manual edge URL is configured or discovery is
       // already done. Non-blocking on failure — cloud fallback still works.
       if (restaurantId) {
-        await discoverEdgeOnLAN({ expectedRestaurantId: restaurantId }).catch(() => {});
+        await discoverEdgeOnLAN({ expectedRestaurantId: restaurantId, forCaptain: true }).catch(() => {});
       }
       const connState = await getEdgeConnectivityState();
       if (connState === 'edge_reachable') {
@@ -367,14 +367,14 @@ export const authService = {
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
 
-  async fetchCrew(restaurantId) {
+  async fetchCrew(restaurantId, { forCaptain = false } = {}) {
     // ── Edge-first crew fetch with cloud fallback ──────────────────────────────
     // Mirrors captainLogin()'s edge-then-cloud pattern. When the edge server is
     // reachable, fetch crew locally (offline-capable, low latency). Falls through
     // to the cloud /api/auth/crew endpoint if edge is unavailable or errors.
     try {
       if (restaurantId) {
-        await discoverEdgeOnLAN({ expectedRestaurantId: restaurantId }).catch(() => {});
+        await discoverEdgeOnLAN({ expectedRestaurantId: restaurantId, forCaptain }).catch(() => {});
       }
       const connState = await getEdgeConnectivityState();
       if (connState === 'edge_reachable') {
