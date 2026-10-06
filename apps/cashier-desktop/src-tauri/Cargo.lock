@@ -3341,7 +3341,7 @@ dependencies = [
 
 [[package]]
 name = "softshape-cashier-desktop"
-version = "24.0.14"
+version = "24.0.15"
 dependencies = [
  "serde",
  "serde_json",
