@@ -154,23 +154,13 @@ export const getAllOrderItems = (table) => {
       menuItemId: item.menuItemId || undefined,
     }));
 
-    // DB activeOrder.items is the source of truth — server now filters removedFromBill
-    // and quantity <= 0 in tableInclude, so dbItems is clean and authoritative.
-    // kotItems is only used to recover items ENTIRELY absent from DB (edge case).
-    const dbItemNames = new Set(
-      dbItems.map(i => (i.n || '').trim().toLowerCase()).filter(Boolean)
-    );
-    const kotOnlyItems = [];
-    const seen = new Set();
-    kotItems.forEach(i => {
-      const name = (i.n || '').trim().toLowerCase();
-      if (!dbItemNames.has(name) && !seen.has(name) && !i.removedFromBill) {
-        seen.add(name);
-        kotOnlyItems.push(i);
-      }
-    });
-
-    return [...dbItems, ...kotOnlyItems];
+    // DB activeOrder.items is the source of truth — server filters removedFromBill
+    // and quantity <= 0 in tableInclude, so a cancelled item is simply ABSENT from
+    // dbItems. Do NOT recover "missing" items from kotHistory/kots: a cancelled item
+    // is indistinguishable from a missing one, and a stale kotHistory (cached table
+    // row, or one whose entries lack orderItemId so the optimistic cancel could not
+    // flag them) would resurrect the cancelled item when the table is reopened.
+    return dbItems;
   }
 
   // 2. Fall back to kots relation / kotHistory
