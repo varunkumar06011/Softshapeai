@@ -58,7 +58,7 @@ import { authService } from "./authService";
 
 import {
 
-  addPendingAction,
+  addPendingAction as queuePendingAction,
 
   addOfflineTransaction,
 
@@ -82,6 +82,15 @@ import { getStoredCashierHub } from "../android-local-pos/hubStorage";
 import { createCashierHubClient } from "../android-local-pos/captainClient";
 import { isAndroidLocalPosEnabled } from "../android-local-pos/config";
 import { getAndroidLocalPosRuntime, startAndroidLocalPosRuntime } from "../android-local-pos/runtimeManager";
+import { isCaptainEdgeOnly, edgeUnreachableError } from "./captainEdgeOnly";
+
+// Pending actions replay to the cloud later. The captain app is edge-only, so
+// an action the billing PC didn't take fails in front of the captain instead
+// of waiting in that queue (and the kitchen never hearing about it).
+async function addPendingAction(action) {
+  if (isCaptainEdgeOnly()) throw edgeUnreachableError();
+  return queuePendingAction(action);
+}
 
 
 

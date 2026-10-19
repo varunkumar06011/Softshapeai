@@ -27,10 +27,11 @@
 //   4. iOS PWA: generate shareable PDF receipt
 //   5. No printer: queue in offlinePrintJobs IndexedDB store for auto-print on reconnect
 
-import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl, setPrintAgentUrl } from './offlineDB';
+import { addOfflinePrintJob, getOfflinePrintJobs, updateOfflinePrintJob, getLocalPrinterMapping, setLocalPrinterMapping, getPrintAgentUrl } from './offlineDB';
+import { getCurrentRestaurantId } from './getCurrentRestaurantId';
 import { apiUrl, getAuthHeaders } from '../services/apiConfig';
 import { buildFoodKOT, buildLiquorKOT, buildFinalBill, buildCancelKOT, buildTableSwap, buildXReportEscpos, buildExpenditureEscpos } from './escposFrontend';
-import { getStoredEdgeApiKey, getEdgeUrl, isEdgeLocalAuth, getStoredEdgeRuntimeToken } from '../services/edgeHealth';
+import { getStoredEdgeApiKey, getEdgeUrl, isEdgeLocalAuth, getStoredEdgeRuntimeToken, isEdgeAtUrlForOutlet } from '../services/edgeHealth';
 import secureStorage from './secureStorage';
 
 // ── Platform detection ───────────────────────────────────────────────────────
@@ -294,10 +295,29 @@ async function discoverPrintAgentUrls() {
 }
 
 /**
- * Try all candidate Print Agent URLs in parallel and return the first that succeeds.
- * Each URL gets a 10s timeout — if the Print Agent is unreachable, all URLs fail
- * in parallel so the total wait is ~10s instead of 10s × N (sequential).
- * Returns { url, queued } if a Print Agent accepted the job, or null if all fail.
+ * Pick the ONE Print Agent to send this job to: the first candidate (in
+ * priority order) whose /health says it belongs to the current outlet.
+ *
+ * Jobs used to be POSTed to every candidate at once, first-success-wins. With
+ * two outlets on one WiFi (bar + restaurant), every reachable PC accepted the
+ * job, so a restaurant KOT also printed in the bar's kitchen. The eventId
+ * dedup only works within one PC, not across PCs.
+ */
+const LOCAL_PRINT_AGENT_URL = 'http://127.0.0.1:3101';
+
+async function pickPrintTarget(urls) {
+  const outletId = getCurrentRestaurantId();
+  // The runtime on this machine (billing PC) is always this machine's
+  // printer, so it is not outlet-filtered. On a phone it never answers.
+  const matches = await Promise.all(urls.map(u =>
+    isEdgeAtUrlForOutlet(u, u === LOCAL_PRINT_AGENT_URL ? null : outletId).catch(() => false)));
+  const idx = matches.findIndex(Boolean);
+  return idx >= 0 ? urls[idx] : null;
+}
+
+/**
+ * Send the job to the current outlet's Print Agent.
+ * Returns { url, queued } if the Print Agent accepted the job, or null.
  * The queued flag is true when the edge server persisted the job to SQLite but
  * could not print immediately (print service down) — it will retry every 5s.
  */
@@ -305,80 +325,57 @@ async function tryPrintAgentUrls(body, jobType) {
   const urls = await discoverPrintAgentUrls();
   if (urls.length === 0) return null;
 
-  const tryUrl = async (url) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    try {
-      const edgeKey = getStoredEdgeApiKey();
-      const runtimeToken = getStoredEdgeRuntimeToken();
-      const headers = { 'Content-Type': 'application/json' };
-      if (edgeKey) headers['X-Edge-Key'] = edgeKey;
-      if (runtimeToken) headers['Authorization'] = `Bearer ${runtimeToken}`;
-      const res = await fetch(`${url}/print`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        // Read the body to determine if the job was printed immediately
-        // or durably queued for retry by the edge server's dispatch loop.
-        // In both cases the edge server has taken ownership of the print,
-        // so the caller should treat this as "handled" (printed: true).
-        // The queued flag is propagated for observability/UI differentiation.
-        const data = await res.json().catch(() => ({}));
-        return { url, queued: !!data.queued };
-      }
-    } catch (err) {
-      clearTimeout(timeout);
-      if (err.name !== 'AbortError') {
-        console.log(`[printOffline] Print Agent not reachable at ${url}:`, err.message);
-      } else {
-        console.log(`[printOffline] Print Agent timeout at ${url}`);
-      }
-    }
-    return null;
-  };
-
-  // First-success-wins: resolve as soon as any URL succeeds, don't wait for others to timeout
-  const workingResult = await new Promise((resolve) => {
-    let settled = false;
-    let remaining = urls.length;
-    urls.forEach(async (url) => {
-      const result = await tryUrl(url);
-      if (!settled && result) {
-        settled = true;
-        resolve(result);
-      } else {
-        remaining--;
-        if (remaining === 0 && !settled) {
-          resolve(null);
-        }
-      }
-    });
-  });
-
-  if (workingResult) {
-    const { url: workingUrl, queued } = workingResult;
-    console.log(`[printOffline] ${queued ? 'Queued' : 'Printed'} [${jobType}] via Print Agent at ${workingUrl}`);
-    try {
-      localStorage.setItem('last_working_print_agent_url', workingUrl);
-      if (workingUrl !== 'http://127.0.0.1:3101') {
-        await setPrintAgentUrl(workingUrl);
-      }
-    } catch { /* ignore */ }
-    // printed: true in both cases because the edge server has taken ownership.
-    // queued is propagated so callers can distinguish immediate print from
-    // durable-queued (print service was down, will retry every 5s).
-    return { printed: true, queued };
-  } else {
-    // All URLs failed — invalidate cache so next call re-discovers fresh URLs
-    // (agent may have restarted with a new DHCP lease)
+  const target = await pickPrintTarget(urls);
+  if (!target) {
+    console.log(`[printOffline] No Print Agent for this outlet reachable [${jobType}] — tried:`, urls.join(', '));
+    // Invalidate cache so next call re-discovers fresh URLs (agent may have
+    // restarted with a new DHCP lease)
     _cachedAgentUrls = null;
     _lastDiscoveryTime = 0;
+    return null;
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    // Credentials for this PC specifically, not whatever getEdgeUrl() is.
+    const edgeKey = getStoredEdgeApiKey(target);
+    const runtimeToken = getStoredEdgeRuntimeToken(target);
+    const headers = { 'Content-Type': 'application/json' };
+    if (edgeKey) headers['X-Edge-Key'] = edgeKey;
+    if (runtimeToken) headers['Authorization'] = `Bearer ${runtimeToken}`;
+    const res = await fetch(`${target}/print`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      // Read the body to determine if the job was printed immediately
+      // or durably queued for retry by the edge server's dispatch loop.
+      // In both cases the edge server has taken ownership of the print,
+      // so the caller should treat this as "handled" (printed: true).
+      // The queued flag is propagated for observability/UI differentiation.
+      const data = await res.json().catch(() => ({}));
+      const queued = !!data.queued;
+      console.log(`[printOffline] ${queued ? 'Queued' : 'Printed'} [${jobType}] via Print Agent at ${target}`);
+      // Not persisted as the "configured" Print Agent URL any more: that
+      // made the first outlet's PC a permanent print target on this device.
+      try { localStorage.setItem('last_working_print_agent_url', target); } catch { /* ignore */ }
+      return { url: target, queued };
+    }
+    console.log(`[printOffline] Print Agent at ${target} rejected [${jobType}] (HTTP ${res.status})`);
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name !== 'AbortError') {
+      console.log(`[printOffline] Print Agent not reachable at ${target}:`, err.message);
+    } else {
+      console.log(`[printOffline] Print Agent timeout at ${target}`);
+    }
+  }
+  _cachedAgentUrls = null;
+  _lastDiscoveryTime = 0;
   return null;
 }
 

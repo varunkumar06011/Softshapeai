@@ -321,7 +321,11 @@ console.log("[API] Backend base:", API_BASE);
 
 // Keep backend warm — ping every 10 minutes (use lightweight /health)
 (function startKeepAlive() {
-  const ping = () => fetch(apiUrl('/health'), { method: 'GET', cache: 'no-store' }).catch(() => {});
+  const ping = () => {
+    // The captain app never uses the cloud (see captainEdgeOnly.js).
+    if (typeof window !== 'undefined' && /^\/captain(\/|$)/.test(window.location?.pathname || '')) return;
+    fetch(apiUrl('/health'), { method: 'GET', cache: 'no-store' }).catch(() => {});
+  };
   ping(); // immediate ping on load
   setInterval(ping, 10 * 60 * 1000);
 })();

@@ -16,18 +16,33 @@
 //   import { connectEdgeSocket, disconnectEdgeSocket } from '../services/edgeSocketService';
 //   connectEdgeSocket(); // on mount / when edge becomes available
 //   disconnectEdgeSocket(); // on unmount / when edge goes down
+//
+// The socket is shared: connect/disconnect are reference-counted, so the bar
+// and restaurant table views can both hold it and one unmounting doesn't cut
+// the other's live updates.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getEdgeUrl, isEdgeAvailableFast } from './edgeHealth';
 
 let ws = null;
+let wsEdgeUrl = null; // edge URL the current socket was opened against
 let reconnectTimer = null;
 let pingTimer = null;
+let pongTimer = null;
+let lastMessageAt = 0;
 let connected = false;
+// True while a reconnect attempt is opening the socket, so onopen dispatches
+// edge:reconnect and listeners catch up on events missed while down.
+let reconnecting = false;
+let refCount = 0;
 let listeners = new Set();
 
 const RECONNECT_INTERVAL_MS = 5000;
-const PING_INTERVAL_MS = 30000;
+const PING_INTERVAL_MS = 20000;
+// No message (pong or event) this long after a ping → the connection is dead.
+// When a phone walks out of WiFi range the socket often stays "open" with no
+// close event for minutes; without this, live updates silently stopped.
+const PONG_TIMEOUT_MS = 10000;
 
 // R5: Tauri/Capacitor print helpers removed — edge server print service is sole transport.
 
@@ -35,7 +50,38 @@ export function isEdgeSocketConnected() {
   return connected;
 }
 
+/** Take a reference to the shared socket and make sure it is connected. */
 export function connectEdgeSocket() {
+  refCount++;
+  openSocket();
+}
+
+function clearTimers() {
+  if (pingTimer) {
+    clearInterval(pingTimer);
+    pingTimer = null;
+  }
+  if (pongTimer) {
+    clearTimeout(pongTimer);
+    pongTimer = null;
+  }
+}
+
+/** Drop the current socket without triggering onclose, then reconnect. */
+function restartSocket(reason) {
+  console.warn(`[EdgeSocket] ${reason} — reconnecting`);
+  clearTimers();
+  if (ws) {
+    ws.onclose = null;
+    try { ws.close(); } catch { /* ignore */ }
+    ws = null;
+  }
+  connected = false;
+  scheduleReconnect();
+}
+
+function openSocket() {
+  if (refCount <= 0) return;
   // Don't connect if already connected or connecting
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
     return;
@@ -49,6 +95,7 @@ export function connectEdgeSocket() {
 
   try {
     ws = new WebSocket(wsUrl);
+    wsEdgeUrl = edgeUrl;
   } catch (err) {
     console.warn('[EdgeSocket] Failed to create WebSocket:', err.message);
     scheduleReconnect();
@@ -56,8 +103,10 @@ export function connectEdgeSocket() {
   }
 
   ws.onopen = () => {
-    const wasReconnect = connected === false && reconnectTimer !== null;
+    const wasReconnect = reconnecting;
+    reconnecting = false;
     connected = true;
+    lastMessageAt = Date.now();
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -79,20 +128,32 @@ export function connectEdgeSocket() {
       } catch { /* ignore if window not available */ }
     }
 
-    // Start keepalive ping
-    if (pingTimer) clearInterval(pingTimer);
+    // Keepalive ping + dead-connection detection
+    clearTimers();
     pingTimer = setInterval(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify({ type: 'ping' }));
-        } catch {
-          // ignore
-        }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      // Edge URL changed (rediscovered after a DHCP change, or the captain
+      // switched outlets) — move to the new PC instead of staying on the old one.
+      if (getEdgeUrl() !== wsEdgeUrl) {
+        restartSocket('Edge server URL changed');
+        return;
       }
+      const pingSentAt = Date.now();
+      try {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      } catch {
+        // ignore — the pong timeout below handles a dead socket
+      }
+      if (pongTimer) clearTimeout(pongTimer);
+      pongTimer = setTimeout(() => {
+        pongTimer = null;
+        if (lastMessageAt < pingSentAt) restartSocket('No response to ping');
+      }, PONG_TIMEOUT_MS);
     }, PING_INTERVAL_MS);
   };
 
   ws.onmessage = (event) => {
+    lastMessageAt = Date.now();
     try {
       const msg = JSON.parse(event.data);
       if (msg.type === 'pong') return; // keepalive response
@@ -112,56 +173,56 @@ export function connectEdgeSocket() {
           console.error('[EdgeSocket] Listener error:', err);
         }
       }
-    } catch (err) {
+    } catch {
       // Non-JSON message — ignore
     }
   };
 
-  ws.onerror = (err) => {
+  ws.onerror = () => {
     console.warn('[EdgeSocket] WebSocket error');
   };
 
   ws.onclose = (event) => {
     connected = false;
     console.log('[EdgeSocket] Disconnected (code:', event.code, ')');
-    if (pingTimer) {
-      clearInterval(pingTimer);
-      pingTimer = null;
-    }
+    clearTimers();
     // Only reconnect if edge is still available
     scheduleReconnect();
   };
 }
 
+/** Release a reference; the socket closes when the last holder releases. */
 export function disconnectEdgeSocket() {
+  refCount = Math.max(0, refCount - 1);
+  if (refCount > 0) return;
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  if (pingTimer) {
-    clearInterval(pingTimer);
-    pingTimer = null;
-  }
+  clearTimers();
   if (ws) {
     ws.onclose = null; // prevent reconnect on intentional close
     ws.close();
     ws = null;
   }
+  wsEdgeUrl = null;
   connected = false;
+  reconnecting = false;
 }
 
 function scheduleReconnect() {
-  if (reconnectTimer) return;
+  if (reconnectTimer || refCount <= 0) return;
   reconnectTimer = setTimeout(async () => {
-    reconnectTimer = null;
     // Use isEdgeAvailableFast() — direct health check with no 30s cache.
     // isEdgeAvailable() can return stale false for up to 30s after
     // resetEdgeCache() is called during normal cashier operations (bill
     // print, KOT reprint), causing the socket to loop "checking but not
     // connecting" even though the edge server is perfectly fine.
+    reconnectTimer = null;
     const edgeUp = await isEdgeAvailableFast().catch(() => false);
-    if (edgeUp) {
-      connectEdgeSocket();
+    if (edgeUp && refCount > 0) {
+      reconnecting = true;
+      openSocket();
     } else {
       // Edge is down — try again later
       scheduleReconnect();

@@ -32,7 +32,7 @@ import {
 
   Target, TrendingUp, ArrowRightLeft, Wine, GlassWater, Mic, MicOff, Heart, ChevronUp,
 
-  Wifi, WifiOff, AlertTriangle, Cloud
+  Wifi, WifiOff, AlertTriangle
 
 } from 'lucide-react';
 import { StarIcon } from '../shared/icons/StarIcon';
@@ -66,8 +66,7 @@ import { printLocal } from '../utils/printOffline';
 import { buildFoodKOT, buildLiquorKOT } from '../utils/escposFrontend';
 import { getLocalPrinterMapping, setLocalPrinterMapping } from '../utils/offlineDB';
 import { getNextOfflineKotNumber } from '../utils/offlineDB';
-import { useSyncStatus } from '../context/SyncStatusContext';
-import { getEdgeUrl, setEdgeUrl, isEdgeAvailable, isEdgeAvailableFast, isEdgeLocalAuth, edgeFetch, nativeEdgePost, prewarmEdgeHealth, discoverEdgeUrlFromBackend, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, edgeAwareJsonFetch, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
+import { getEdgeUrl, isEdgeAvailable, isEdgeAvailableFast, isEdgeLocalAuth, edgeFetch, nativeEdgePost, prewarmEdgeHealth, discoverEdgeOnLAN, getEdgeConnectivityState, getEdgeDiscoveryFailReason, getStoredEdgeRuntimeToken, invalidateEdgeHealthCache, isCurrentEdgeForOutlet, getEdgeRestaurantId, setEdgeDiscoveryContext, startEdgeNetworkWatcher, stopUsingManualEdgeUrl, edgeAwareJsonFetch, EDGE_READ_TIMEOUT_MS } from '../services/edgeHealth';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { enqueueKot, removeFromQueue, getQueuedKots, hasQueuedKots, setQueueCallbacks } from '../services/kotQueue';
 import secureStorage from '../utils/secureStorage';
@@ -615,7 +614,6 @@ const MemoMenuCard = React.memo(function MemoMenuCard({ item, totalQty, activeOu
 export default function CaptainApp({ onLogout }) {
 
   const { restaurant, user, setAuth } = useAuth();
-  const { isOffline, isOnline, syncStatus, pendingCount, lastError, triggerSync } = useSyncStatus();
 
   const enabledModules = restaurant?.enabledModules || {};
   const activeOutlet = enabledModules.bar && enabledModules.food ? 'both'
@@ -624,7 +622,6 @@ export default function CaptainApp({ onLogout }) {
 
   // ── Edge server settings state ──────────────────────────────────────────────
   const [showEdgeSettings, setShowEdgeSettings] = useState(false);
-  const [edgeUrlInput, setEdgeUrlInput] = useState('');
   const [edgeStatus, setEdgeStatus] = useState({ checking: false, available: false, url: '' });
   const [discoveryStatus, setDiscoveryStatus] = useState('');
   const [printServiceDown, setPrintServiceDown] = useState(false);
@@ -639,24 +636,23 @@ export default function CaptainApp({ onLogout }) {
   // Track previous edge availability to detect transitions.
   const wasEdgeReachableRef = useRef(false);
 
-  const checkEdgeStatus = useCallback(async () => {
+  // Single-flight: a full check can outlast the 15s poll interval, and
+  // overlapping runs stacked LAN scans on top of each other.
+  const edgeCheckInFlightRef = useRef(null);
+
+  const runEdgeStatusCheck = useCallback(async () => {
     setEdgeStatus(prev => ({ ...prev, checking: true }));
-    // Discover edge URL from backend first (if no manual URL configured) so
-    // isEdgeAvailable uses the cashier's LAN IP, not localhost.
-    if (!localStorage.getItem('softshape_edge_url')) {
-      await discoverEdgeUrlFromBackend({ forCaptain: true }).catch(() => {});
-    }
-    const url = getEdgeUrl();
     let available = await isEdgeAvailable();
     let connState = await getEdgeConnectivityState();
     let edgeReachable = connState === 'edge_reachable' || (available && connState !== 'edge_not_ready');
 
-    // Edge is top priority: if edge is not reachable, actively search for it
-    // on the LAN instead of passively staying on cloud. This ensures the
-    // captain app continuously tries to find and connect to the edge server.
+    // The captain app works through the billing PC only: while it is not
+    // reachable, keep searching the WiFi for it.
     if (!edgeReachable) {
-      setDiscoveryStatus('Searching for edge server on LAN…');
-      const discovered = await discoverEdgeOnLAN({ forCaptain: true }).catch(() => null);
+      setDiscoveryStatus('Searching this WiFi for the billing PC…');
+      // Filter to the logged-in outlet so a captain in the bar never latches
+      // onto the restaurant's PC on the shared WiFi.
+      const discovered = await discoverEdgeOnLAN({ expectedRestaurantId: getCurrentRestaurantId() || undefined, forCaptain: true, wide: true }).catch(() => null);
       if (discovered) {
         // Edge found on LAN — invalidate cache and re-check availability
         // so subsequent fetches use the newly discovered edge URL.
@@ -664,10 +660,10 @@ export default function CaptainApp({ onLogout }) {
         available = await isEdgeAvailable();
         connState = await getEdgeConnectivityState();
         edgeReachable = connState === 'edge_reachable' || (available && connState !== 'edge_not_ready');
-        setDiscoveryStatus(`Found edge server: ${discovered}`);
+        setDiscoveryStatus('Billing PC found.');
       } else {
         const reason = getEdgeDiscoveryFailReason();
-        setDiscoveryStatus(reason || 'Edge server not found on LAN — retrying…');
+        setDiscoveryStatus(reason || 'Billing PC not found on this WiFi — retrying…');
       }
     }
 
@@ -692,6 +688,13 @@ export default function CaptainApp({ onLogout }) {
       setPrintServiceDown(false);
     }
   }, []);
+
+  const checkEdgeStatus = useCallback(() => {
+    if (edgeCheckInFlightRef.current) return edgeCheckInFlightRef.current;
+    const run = runEdgeStatusCheck().finally(() => { edgeCheckInFlightRef.current = null; });
+    edgeCheckInFlightRef.current = run;
+    return run;
+  }, [runEdgeStatusCheck]);
 
   // Fallback: refresh restaurantType/enabledModules for existing sessions
   useEffect(() => {
@@ -723,23 +726,23 @@ export default function CaptainApp({ onLogout }) {
     return () => clearInterval(pollInterval);
   }, [checkEdgeStatus, edgeStatus.available]);
 
-  // ── Trigger LAN discovery on mount for captain devices ──────────────────────
+  // ── Edge discovery on mount + on every network change ──────────────────────
+  // checkEdgeStatus probes the outlet's remembered PC first, then scans. The
+  // network watcher re-runs it (cooldowns cleared) when WiFi comes back, the
+  // network changes or the app resumes — so walking out of WiFi range and
+  // back reconnects without tapping Auto-Discover.
   useEffect(() => {
+    setEdgeDiscoveryContext({ forCaptain: true });
+    // PCs are found automatically; an address typed in on an older version
+    // must not pin the phone to it.
+    stopUsingManualEdgeUrl();
     checkEdgeStatus();
-    // Always attempt LAN discovery on mount — checkEdgeStatus is async so
-    // edgeStatus.available won't be updated yet. discoverEdgeOnLAN internally
-    // skips if a manual URL is configured or if already discovered.
-    setDiscoveryStatus('Searching for edge server on LAN…');
-    discoverEdgeOnLAN({ forCaptain: true }).then((discovered) => {
-      if (discovered) {
-        setDiscoveryStatus(`Found edge server: ${discovered}`);
-        checkEdgeStatus();
-      } else {
-        const reason = getEdgeDiscoveryFailReason();
-        setDiscoveryStatus(reason || 'Edge server not found on LAN');
-      }
-    }).catch(() => setDiscoveryStatus(''));
-  }, []);
+    const stopWatcher = startEdgeNetworkWatcher(() => { checkEdgeStatus(); });
+    return () => {
+      stopWatcher();
+      setEdgeDiscoveryContext({ forCaptain: false });
+    };
+  }, [checkEdgeStatus]);
 
   useEffect(() => {
     if (!restaurant?.enabledModules) {
@@ -765,8 +768,6 @@ export default function CaptainApp({ onLogout }) {
   // Also discover the edge server URL from the backend so the captain app on a
   // different device (phone/tablet) can find the edge server on the cashier PC.
   useEffect(() => {
-    // Discover edge server LAN URL from backend (non-blocking, 3s timeout)
-    discoverEdgeUrlFromBackend({ forCaptain: true }).catch(() => {});
     // Pre-warm edge health cache so first table fetch doesn't pay the health check latency
     prewarmEdgeHealth();
 
@@ -1354,6 +1355,39 @@ export default function CaptainApp({ onLogout }) {
   // Set up KOT queue callbacks — status updates + duplicate detection
   useEffect(() => {
     setQueueCallbacks({
+      // Default handlers: queue entries restored from localStorage after a
+      // reload have no closures, so the queue falls back to these.
+      sendFn: async (entry) => {
+        if (entry.existingOrderId) {
+          return await updateOrderItems(
+            entry.existingOrderId, entry.apiItems, entry.requestId,
+            entry.captainName, false, null, null, 30000,
+            entry.preReservedKotNumber, entry.tableId,
+            false, null, entry.captainId, false, null
+          );
+        }
+        return await createOrder({
+          tableId: entry.activeTable?.backendId,
+          tableNumber: entry.activeTable?.number ?? entry.activeTable?.id,
+          restaurantId: entry.restaurantId,
+          items: entry.apiItems,
+          requestId: entry.requestId,
+          captainName: entry.captainName,
+          captainId: entry.captainId,
+          sectionTag: entry.sectionTag,
+          preReservedKotNumber: entry.preReservedKotNumber,
+          localPrinted: false,
+          kotEventIds: null,
+          failFastOnEdgeDown: false,
+          signal: null,
+        });
+      },
+      fetchActiveOrder: async (tableId) => {
+        try {
+          const data = await edgeFetch(`/api/edge/tables/${tableId}/active-order`, { method: 'GET', timeoutMs: 5000 });
+          return data?.order || null;
+        } catch { return null; }
+      },
       onStatusChange: ({ tableId, status, message }) => {
         setKotQueueStatus({ tableId, status, message });
         if (status === 'sent') {
@@ -2981,15 +3015,23 @@ export default function CaptainApp({ onLogout }) {
 
     try {
 
-      const data = await authService.fetchCrew(captainSlug.trim(), { forCaptain: true });
+      // Edge-only: the captain list comes from this outlet's billing PC.
+      const outletId = getCurrentRestaurantId() || captainSlug.trim();
+      await discoverEdgeOnLAN({ expectedRestaurantId: outletId, forCaptain: true }).catch(() => null);
+      if (!(await isCurrentEdgeForOutlet(outletId))) {
+        throw new Error('This outlet\'s billing PC was not found on this WiFi.');
+      }
+      const data = { captains: await authService.fetchCaptainsFromEdge(getEdgeUrl()) };
 
       setAvailableCaptains(data.captains || []);
 
       // Cache the resolved DB restaurantId for socket/order routing
 
-      if (data.restaurantId) {
+      const resolvedOutletId = await getEdgeRestaurantId({ force: true }).catch(() => null);
 
-        localStorage.setItem(getTenantScopedKey('pending_restaurant_id'), data.restaurantId);
+      if (resolvedOutletId) {
+
+        localStorage.setItem(getTenantScopedKey('pending_restaurant_id'), resolvedOutletId);
 
       }
 
@@ -3039,7 +3081,7 @@ export default function CaptainApp({ onLogout }) {
               setIsAuthenticating(false);
               return;
             }
-            const { token, user, restaurant } = await authService.captainLogin(restaurantId, selectedProfile.id, newPin);
+            const { token, user, restaurant } = await authService.captainEdgeLogin(restaurantId, selectedProfile.id, newPin);
 
             if (token && user) {
               setAuth({ token, user, restaurant });
@@ -3061,11 +3103,12 @@ export default function CaptainApp({ onLogout }) {
 
             unlockAudioContext();
 
-          } catch {
+          } catch (err) {
 
             setPin('');
 
-            setPinError('Invalid PIN. Please try again.');
+            // "Billing PC not found" must not read as a wrong PIN.
+            setPinError(err?.code === 'EDGE_UNREACHABLE' ? err.message : 'Invalid PIN. Please try again.');
 
           } finally {
 
@@ -5282,6 +5325,9 @@ export default function CaptainApp({ onLogout }) {
         captainName={currentCaptain?.name}
         notificationCount={pendingCalls.length}
         onLogout={() => {
+          // Queued KOTs only go to this outlet's billing PC, so warn before the
+          // captain leaves (e.g. to log in at the other outlet).
+          if (hasQueuedKots() && !window.confirm('A KOT has not reached this outlet\'s billing PC yet. It will only be sent after you log in to this outlet again. Log out anyway?')) return;
           localStorage.removeItem(getTenantScopedKey('captain_auth_v2'));
           localStorage.removeItem(getTenantScopedKey('active_captain'));
           setSelectedProfile(null);
@@ -5291,14 +5337,11 @@ export default function CaptainApp({ onLogout }) {
           if (onLogout) onLogout();
         }}
         onEdgeSettingsClick={() => {
-          setEdgeUrlInput(getEdgeUrl());
+          setDiscoveryStatus('');
           setShowEdgeSettings(true);
           checkEdgeStatus();
         }}
         edgeStatus={edgeStatus}
-        isOffline={isOffline}
-        syncStatus={syncStatus}
-        pendingCount={pendingCount}
       />
 
       {/* MAIN ROW: sidebar + content */}
@@ -5323,7 +5366,7 @@ export default function CaptainApp({ onLogout }) {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowEdgeSettings(false)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Edge Server Settings</h2>
+              <h2 className="text-lg font-bold text-gray-900">Billing PC Connection</h2>
               <button onClick={() => setShowEdgeSettings(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
@@ -5338,8 +5381,6 @@ export default function CaptainApp({ onLogout }) {
                   <Wifi size={16} className="text-green-600" />
                 ) : edgeStatus.connState === 'edge_not_ready' ? (
                   <AlertTriangle size={16} className="text-amber-600" />
-                ) : edgeStatus.connState === 'cloud_reachable' ? (
-                  <Cloud size={16} className="text-blue-600" />
                 ) : (
                   <WifiOff size={16} className="text-red-600" />
                 )}
@@ -5347,15 +5388,13 @@ export default function CaptainApp({ onLogout }) {
                   {edgeStatus.checking
                     ? 'Checking…'
                     : edgeStatus.available
-                    ? 'Edge Connected'
-                    : edgeStatus.connState === 'cloud_reachable'
-                    ? 'Cloud Only (Edge Offline)'
+                    ? `Connected to ${restaurant?.name || 'billing PC'}`
                     : edgeStatus.connState === 'edge_not_ready'
-                    ? 'Edge Not Ready (Session Invalid)'
-                    : 'Fully Offline'}
+                    ? 'Billing PC is not ready'
+                    : 'Billing PC not found'}
                 </span>
               </div>
-              {edgeStatus.url && (
+              {edgeStatus.url && edgeStatus.available && (
                 <div className="text-xs text-gray-500 font-mono">{edgeStatus.url}</div>
               )}
               {discoveryStatus && (
@@ -5363,61 +5402,25 @@ export default function CaptainApp({ onLogout }) {
               )}
             </div>
 
-            {/* Manual URL configuration */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-700 mb-1">Edge Server URL</label>
-              <input
-                type="text"
-                value={edgeUrlInput}
-                onChange={e => setEdgeUrlInput(e.target.value)}
-                placeholder="http://192.168.1.100:3101"
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-400 mt-1">Enter the hub machine's LAN IP and port (default: 3101)</p>
-            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              The phone finds this outlet's billing PC on the WiFi by itself. If it is not found, check the phone is on the restaurant WiFi and the billing PC is on.
+            </p>
 
-            {/* Action buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={async () => {
-                  setEdgeUrl(edgeUrlInput.trim() || null);
-                  await checkEdgeStatus();
-                }}
-                className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
-              >
-                Save & Test
-              </button>
-              <button
-                onClick={async () => {
-                  setDiscoveryStatus('Searching for edge server on LAN…');
-                  setEdgeUrl(null);
-                  const discovered = await discoverEdgeOnLAN({ force: true, forCaptain: true });
-                  if (discovered) {
-                    setEdgeUrlInput(discovered);
-                    setDiscoveryStatus(`Found: ${discovered}`);
-                    await checkEdgeStatus();
-                  } else {
-                    const reason = getEdgeDiscoveryFailReason();
-                    setDiscoveryStatus(reason || 'No edge server found on LAN');
-                  }
-                }}
-                className="flex-1 px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200 transition-colors"
-              >
-                Auto-Discover
-              </button>
-            </div>
-
-            {/* Clear button */}
             <button
               onClick={async () => {
-                setEdgeUrl(null);
-                setEdgeUrlInput('');
-                setDiscoveryStatus('');
-                await checkEdgeStatus();
+                setDiscoveryStatus('Searching this WiFi for the billing PC…');
+                const discovered = await discoverEdgeOnLAN({ force: true, forCaptain: true, wide: true, expectedRestaurantId: getCurrentRestaurantId() || undefined });
+                if (discovered) {
+                  setDiscoveryStatus('Billing PC found.');
+                  invalidateEdgeHealthCache();
+                  await checkEdgeStatus();
+                } else {
+                  setDiscoveryStatus(getEdgeDiscoveryFailReason() || 'Billing PC not found on this WiFi.');
+                }
               }}
-              className="w-full mt-2 px-4 py-2 rounded-lg text-red-600 text-xs font-bold hover:bg-red-50 transition-colors"
+              className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
             >
-              Reset to default
+              Find Billing PC
             </button>
           </div>
         </div>
@@ -5425,43 +5428,29 @@ export default function CaptainApp({ onLogout }) {
 
 
 
-      {/* OFFLINE STATUS BAR — colored strip showing sync state */}
-      {(() => {
-        const isSyncingNow = syncStatus === 'syncing';
-        const hasError = syncStatus === 'error' || syncStatus === 'paused';
-        const showBar = isOffline || isSyncingNow || hasError || pendingCount > 0;
-        if (!showBar) return null;
-        const barColor = isOffline ? 'bg-amber-500' : hasError ? 'bg-red-500' : 'bg-blue-500';
-        const Icon = isOffline ? WifiOff : hasError ? AlertTriangle : RefreshCw;
-        const label = isOffline
-          ? `Offline${pendingCount > 0 ? ` — ${pendingCount} action${pendingCount !== 1 ? 's' : ''} queued` : ''}`
-          : hasError
-          ? (lastError || 'Sync error')
-          : `Syncing${pendingCount > 0 ? ` ${pendingCount} pending` : '…'}`;
-        return (
-          <div className={`flex items-center justify-between px-4 py-1.5 text-white text-xs font-bold shrink-0 z-40 ${barColor}`}>
-            <div className="flex items-center gap-2">
-              <Icon size={14} className={isSyncingNow ? 'animate-spin' : ''} />
-              <span>{label}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {isOffline && pendingCount > 0 && (
-                <span className="bg-white/20 rounded-full px-2 py-0.5 text-[10px]">Will sync automatically</span>
-              )}
-              {isOnline && (hasError || pendingCount > 0) && (
-                <button
-                  onClick={() => triggerSync()}
-                  disabled={isSyncingNow}
-                  className="flex items-center gap-1 bg-white/20 rounded px-2 py-0.5 hover:bg-white/30 transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw size={10} className={isSyncingNow ? 'animate-spin' : ''} />
-                  Retry sync
-                </button>
-              )}
-            </div>
+      {/* BILLING PC STATUS BAR — the captain app works through the outlet's
+          billing PC only, so this is the connection that matters. Hidden
+          until the first check has finished and while connected. */}
+      {edgeStatus.connState && !edgeStatus.available && (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-red-500 text-white text-xs font-bold shrink-0 z-40">
+          <div className="flex items-center gap-2">
+            {edgeStatus.checking ? <RefreshCw size={14} className="animate-spin" /> : <WifiOff size={14} />}
+            <span>
+              {edgeStatus.checking
+                ? 'Searching for the billing PC…'
+                : edgeStatus.connState === 'edge_not_ready'
+                ? 'Billing PC is not ready — KOTs cannot be sent'
+                : 'Billing PC not found on this WiFi — KOTs cannot be sent'}
+            </span>
           </div>
-        );
-      })()}
+          <button
+            onClick={() => { setDiscoveryStatus(''); setShowEdgeSettings(true); checkEdgeStatus(); }}
+            className="bg-white/20 rounded px-2 py-0.5 hover:bg-white/30 transition-colors"
+          >
+            Find PC
+          </button>
+        </div>
+      )}
 
       {/* CONTENT AREA — switches based on activeSection */}
       <div className="flex-grow overflow-hidden flex flex-col relative">
@@ -7652,10 +7641,8 @@ export default function CaptainApp({ onLogout }) {
 
               <p className="text-[11px] font-black text-gray-900 uppercase tracking-tight leading-none">{n.title}</p>
 
-              {n.description ? (
+              {n.description && (
                 <p className="text-[9px] font-bold text-gray-500 mt-1 leading-tight">{n.description}</p>
-              ) : (
-                <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase">Cloud Synchronized</p>
               )}
 
             </div>

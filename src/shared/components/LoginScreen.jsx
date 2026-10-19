@@ -133,7 +133,9 @@ const LoginScreen = ({ role, onLogin, onBack, onEdgeSetup, edgeAvailable, edgeRe
     setLoading(true);
     setError('');
     try {
-      const data = await authService.fetchCrew(slug.trim());
+      // forCaptain must match captainLogin's so the warm-up discovery started
+      // here is the same scan the PIN login joins.
+      const data = await authService.fetchCrew(slug.trim(), { forCaptain: role === 'captain' });
       const staff = isCashier ? data.cashiers : role === 'manager' ? data.managers : data.captains;
       if (!staff || staff.length === 0) {
         const roleLabel = isCashier ? 'cashiers' : role === 'manager' ? 'managers' : 'captains';

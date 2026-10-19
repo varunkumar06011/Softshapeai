@@ -10,16 +10,26 @@ import { API_BASE, apiUrl, getAuthHeaders, apiFetch } from "./apiConfig";
 import secureStorage from "../utils/secureStorage";
 import { isAndroidLocalCaptainEnabled } from "../android-local-pos/config";
 import { getStoredCashierHub } from "../android-local-pos/hubStorage";
+import { getCurrentRestaurantId } from "../utils/getCurrentRestaurantId";
+import { isCaptainEdgeOnly } from "./captainEdgeOnly";
 
 const EDGE_API_KEY_STORAGE_KEY = "softshape_edge_api_key";
 const EDGE_RUNTIME_TOKEN_STORAGE_KEY = "softshape_edge_runtime_token";
 const EDGE_URL_STORAGE_KEY = "softshape_edge_url";
 const EDGE_DISCOVERED_URL_STORAGE_KEY = "softshape_edge_url_discovered";
+// Per-outlet memory so captains moving between outlets (bar ↔ restaurant)
+// reconnect to each outlet's PC with one fast health probe instead of a scan.
+const EDGE_URL_BY_OUTLET_STORAGE_KEY = "softshape_edge_url_by_outlet";   // { outletId: url }
+const EDGE_HINTS_BY_OUTLET_STORAGE_KEY = "softshape_edge_hints_by_outlet"; // { outletId: [url] } from cloud
+const EDGE_OUTLET_ALIAS_STORAGE_KEY = "softshape_edge_outlet_alias";     // { code|slug (lowercase): outletId }
 
 const DEFAULT_EDGE_URL = 'http://127.0.0.1:3101';
 const EDGE_CHECK_TIMEOUT_MS = 3000;
 const EDGE_CHECK_INTERVAL_MS = 30_000;
-const LAN_DISCOVERY_TIMEOUT_MS = 1500;
+const LAN_DISCOVERY_TIMEOUT_MS = 1200;
+// Known-URL probe (remembered / cloud hint). A LAN /health answers in <100ms.
+const FAST_PROBE_TIMEOUT_MS = 1200;
+const LAN_SCAN_BATCH_SIZE = 48;
 
 /**
  * Returns true when the page is served over HTTPS in a browser (not Tauri
@@ -41,8 +51,14 @@ let _edgeAvailable = false;
 let _edgeLastCheck = 0;
 let _discoveredEdgeUrl = null;
 let _discoveryInProgress = null;
+let _discoveryInProgressKey = null;
 let _discoveryLastFailed = 0;
+// Per-filter cooldown: a failed scan for outlet A must not block a scan for B.
+let _discoveryFailedAt = new Map();
 const DISCOVERY_FAILURE_COOLDOWN_MS = 15_000;
+// Set by the captain app so background recovery (isEdgeAvailable) applies the
+// same captainHub filter as the Auto-Discover button.
+let _discoveryContext = { forCaptain: false };
 
 // Diagnostic reason for the last failed LAN discovery. Survives cache
 // invalidation (invalidateEdgeHealthCache does NOT clear this) because it's
@@ -85,41 +101,112 @@ export function setEdgeUrl(url) {
   } catch { /* ignore */ }
 }
 
-export function getStoredEdgeApiKey() {
+/**
+ * Captain app: PCs are found automatically. A URL typed in on an older
+ * version would pin the phone to that address forever (discovery skips when a
+ * manual URL is set), so it becomes an ordinary discovered URL — still tried
+ * first, but replaced when it is dead or belongs to another outlet.
+ */
+export function stopUsingManualEdgeUrl() {
   try {
+    const manual = localStorage.getItem(EDGE_URL_STORAGE_KEY);
+    if (!manual) return;
+    localStorage.removeItem(EDGE_URL_STORAGE_KEY);
+    _discoveredEdgeUrl = manual;
+    localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, manual);
+    resetEdgeCache();
+  } catch { /* ignore */ }
+}
+
+// ── Edge credentials ─────────────────────────────────────────────────────────
+// The edge API key is per outlet and the runtime token per edge server, but
+// both used to be stored once per device. After a captain moved from the bar
+// to the restaurant, every LAN call to the restaurant PC carried the bar's
+// credentials, was rejected, and "recovery" re-read the same cached key — so
+// the app stayed on cloud. They are now stored per edge URL (credentials the
+// PC itself handed out) and per outlet (key fetched from the cloud), with the
+// old single value kept only as a last-resort fallback.
+const EDGE_CREDS_BY_URL_STORAGE_KEY = "softshape_edge_creds_by_url";       // { url: { apiKey, runtimeToken } }
+const EDGE_KEY_BY_OUTLET_STORAGE_KEY = "softshape_edge_key_by_outlet";     // { outletId: apiKey }
+
+function updateCredsForUrl(url, patch) {
+  if (!url) return;
+  const map = readJsonStore(EDGE_CREDS_BY_URL_STORAGE_KEY);
+  const next = { ...(map[url] || {}), ...patch };
+  for (const k of Object.keys(next)) if (next[k] == null) delete next[k];
+  if (Object.keys(next).length) map[url] = next; else delete map[url];
+  writeJsonStore(EDGE_CREDS_BY_URL_STORAGE_KEY, map);
+}
+
+export function getStoredEdgeApiKey(url = getEdgeUrl()) {
+  try {
+    const byUrl = readJsonStore(EDGE_CREDS_BY_URL_STORAGE_KEY)[url]?.apiKey;
+    if (byUrl) return byUrl;
+    const outletId = getCurrentOutletId();
+    const byOutlet = outletId ? readJsonStore(EDGE_KEY_BY_OUTLET_STORAGE_KEY)[outletId] : null;
+    if (byOutlet) return byOutlet;
     return localStorage.getItem(EDGE_API_KEY_STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-export function setStoredEdgeApiKey(key) {
+/**
+ * @param {string} key
+ * @param {{ url?: string, outletId?: string }} [scope] — url: the edge that
+ *   issued / accepted the key; outletId: the outlet the cloud issued it for.
+ *   Defaults to the current edge URL.
+ */
+export function setStoredEdgeApiKey(key, { url, outletId } = {}) {
+  if (!key) return;
   try {
+    if (outletId) {
+      const map = readJsonStore(EDGE_KEY_BY_OUTLET_STORAGE_KEY);
+      map[outletId] = key;
+      writeJsonStore(EDGE_KEY_BY_OUTLET_STORAGE_KEY, map);
+    } else {
+      updateCredsForUrl(url || getEdgeUrl(), { apiKey: key });
+    }
     localStorage.setItem(EDGE_API_KEY_STORAGE_KEY, key);
   } catch {
     // Ignore storage errors (e.g., private mode)
   }
 }
 
-export function getStoredEdgeRuntimeToken() {
+export function getStoredEdgeRuntimeToken(url = getEdgeUrl()) {
   try {
-    return localStorage.getItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY);
+    return readJsonStore(EDGE_CREDS_BY_URL_STORAGE_KEY)[url]?.runtimeToken
+      || localStorage.getItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-export function setStoredEdgeRuntimeToken(token) {
+export function setStoredEdgeRuntimeToken(token, { url } = {}) {
+  if (!token) return;
   try {
+    updateCredsForUrl(url || getEdgeUrl(), { runtimeToken: token });
     localStorage.setItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY, token);
   } catch {
     // Ignore storage errors (e.g., private mode)
   }
 }
 
-export async function ensureEdgeApiKey() {
-  const cached = getStoredEdgeApiKey();
-  if (cached) return cached;
+function clearStoredEdgeRuntimeToken(url = getEdgeUrl()) {
+  updateCredsForUrl(url, { runtimeToken: null });
+  try { localStorage.removeItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+/**
+ * @param {{ force?: boolean }} [opts] — force: skip the cached key and ask the
+ *   cloud for the current outlet's key (after login / outlet switch, or when
+ *   the edge rejected the cached one).
+ */
+export async function ensureEdgeApiKey({ force = false } = {}) {
+  if (!force) {
+    const cached = getStoredEdgeApiKey();
+    if (cached) return cached;
+  }
 
   // Edge-local tokens (offline PIN login) are not cloud JWTs — the backend
   // rejects them with 401. Skip the cloud fetch entirely; the edge server
@@ -129,16 +216,19 @@ export async function ensureEdgeApiKey() {
   const token = secureStorage.getItem('ss_token');
   if (token && token.startsWith('edge-local-')) {
     console.warn("[Edge] Skipping edge API key fetch — edge-local token cannot authenticate with cloud");
-    return null;
+    return force ? getStoredEdgeApiKey() : null;
   }
 
   try {
     const res = await fetch(`${API_BASE}/api/edge/key`, {
       headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const { edgeApiKey } = await res.json();
-    setStoredEdgeApiKey(edgeApiKey);
+    // The key belongs to the outlet in the JWT, not to whatever PC
+    // getEdgeUrl() currently points at.
+    setStoredEdgeApiKey(edgeApiKey, { outletId: getCurrentOutletId() || undefined });
     return edgeApiKey;
   } catch (err) {
     console.warn("[Edge] Failed to fetch edge API key:", err.message);
@@ -154,21 +244,22 @@ export async function ensureEdgeApiKey() {
  * the runtime token — no Bearer token required (the endpoint is in PUBLIC_PATHS).
  */
 export async function ensureEdgeRuntimeToken() {
-  const cached = getStoredEdgeRuntimeToken();
+  const url = getEdgeUrl();
+  const cached = getStoredEdgeRuntimeToken(url);
   if (cached) return cached;
 
-  const edgeApiKey = getStoredEdgeApiKey();
+  const edgeApiKey = getStoredEdgeApiKey(url);
   if (!edgeApiKey) return null;
 
   try {
-    const res = await fetch(`${getEdgeUrl()}/api/edge/runtime-token`, {
+    const res = await fetch(`${url}/api/edge/runtime-token`, {
       headers: { 'X-Edge-Key': edgeApiKey },
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
     const data = await res.json();
     if (data?.runtimeToken) {
-      setStoredEdgeRuntimeToken(data.runtimeToken);
+      setStoredEdgeRuntimeToken(data.runtimeToken, { url });
       return data.runtimeToken;
     }
     return null;
@@ -203,6 +294,7 @@ export function resetEdgeCache() {
 export function invalidateEdgeHealthCache() {
   _edgeLastCheck = 0;
   _discoveryLastFailed = 0;
+  _discoveryFailedAt.clear();
   _connectivityLastCheck = 0;
   // Intentionally does NOT clear _discoveryFailReason — it's a diagnostic,
   // not a health cache. See comment at the variable declaration.
@@ -297,18 +389,434 @@ export async function waitForEdgeReady(timeoutMs = 15_000, intervalMs = 1_000) {
   return false;
 }
 
+// ── Outlet-aware edge memory ─────────────────────────────────────────────────
+// Captains rotate between outlets (bar ↔ restaurant) that share one WiFi. Each
+// outlet has its own billing PC, so we remember which PC served which outlet
+// and probe that address first. A full LAN scan only runs when every known
+// address has failed.
+
+function readJsonStore(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    const value = raw ? JSON.parse(raw) : {};
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeJsonStore(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
+function aliasKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+/**
+ * Resolve the outlet code / slug a captain typed to the outlet id, once we
+ * have seen it (cloud crew lookup or an edge /health). Ids pass through.
+ */
+export function resolveOutletId(idOrCode) {
+  if (!idOrCode) return null;
+  const aliases = readJsonStore(EDGE_OUTLET_ALIAS_STORAGE_KEY);
+  return aliases[aliasKey(idOrCode)] || String(idOrCode).trim();
+}
+
+export function rememberOutletAlias(codeOrSlug, outletId) {
+  const key = aliasKey(codeOrSlug);
+  if (!key || !outletId || key === aliasKey(outletId)) return;
+  const aliases = readJsonStore(EDGE_OUTLET_ALIAS_STORAGE_KEY);
+  if (aliases[key] === outletId) return;
+  aliases[key] = outletId;
+  writeJsonStore(EDGE_OUTLET_ALIAS_STORAGE_KEY, aliases);
+}
+
+function rememberEdgeUrlForOutlet(outletId, url) {
+  if (!outletId || !url) return;
+  const map = readJsonStore(EDGE_URL_BY_OUTLET_STORAGE_KEY);
+  if (map[outletId] === url) return;
+  map[outletId] = url;
+  writeJsonStore(EDGE_URL_BY_OUTLET_STORAGE_KEY, map);
+}
+
+/**
+ * Store the LAN addresses the cloud reports for an outlet's PCs (crew lookup /
+ * agent-endpoint). They are only candidates — every one is health-checked and
+ * outlet-filtered before use — but they let a phone on a different subnet
+ * (routed buildings) reach the PC without scanning.
+ */
+export function setOutletEdgeHints(outletId, urls) {
+  if (!outletId || !Array.isArray(urls)) return;
+  const clean = [...new Set(urls.filter(u => typeof u === 'string' && /^https?:\/\/[^/]+$/.test(u)))].slice(0, 8);
+  const map = readJsonStore(EDGE_HINTS_BY_OUTLET_STORAGE_KEY);
+  map[outletId] = clean;
+  writeJsonStore(EDGE_HINTS_BY_OUTLET_STORAGE_KEY, map);
+}
+
+function getKnownEdgeUrlsForOutlet(outletId) {
+  if (!outletId) return [];
+  const remembered = readJsonStore(EDGE_URL_BY_OUTLET_STORAGE_KEY)[outletId];
+  const hints = readJsonStore(EDGE_HINTS_BY_OUTLET_STORAGE_KEY)[outletId];
+  return [remembered, ...(Array.isArray(hints) ? hints : [])].filter(Boolean);
+}
+
+function getCurrentOutletId() {
+  // Same source as tenant scoping / CaptainApp, so the poll and background
+  // recovery share one filtered scan instead of running two.
+  const fromUser = getCurrentRestaurantId();
+  if (fromUser) return fromUser;
+  try {
+    const raw = localStorage.getItem('ss_restaurant');
+    return raw ? (JSON.parse(raw)?.id || null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Captain app calls this once so background recovery in isEdgeAvailable()
+ * skips counter PCs (captainHub=false), same as the Auto-Discover button.
+ */
+export function setEdgeDiscoveryContext({ forCaptain = false } = {}) {
+  _discoveryContext = { forCaptain: !!forCaptain };
+}
+
+function isPrivateIPv4(ip) {
+  const p = String(ip).split('.').map(Number);
+  if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  return p[0] === 10 || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168);
+}
+
+function subnetPrefixOfUrl(url) {
+  const m = /^https?:\/\/(\d+\.\d+\.\d+)\.\d+(?::\d+)?$/.exec(url || '');
+  return m && isPrivateIPv4(`${m[1]}.1`) ? m[1] : null;
+}
+
+async function probeEdgeHealth(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${url}/health`, { signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json().catch(() => ({}));
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * `expected` is an outlet id, or — before the first cloud lookup — the code /
+ * slug the captain typed, so compare against every identifier the runtime
+ * reports. Comparing a slug against the id alone rejected every PC and made
+ * each login sit through a full failed scan.
+ */
+function healthMatchesOutlet(health, expected) {
+  // Older runtimes that don't report an id stay eligible.
+  if (!expected || !health.restaurantId) return true;
+  const want = aliasKey(expected);
+  return [health.restaurantId, health.restaurantCode, health.restaurantSlug]
+    .some(v => v && aliasKey(v) === want);
+}
+
+/**
+ * Is `health` (read from `url`) another outlet's PC? Two outlets on one WiFi
+ * both answer /health, so a phone that once latched onto the sibling outlet's
+ * PC (stale discovered URL, cloud primary shared between outlets, or a URL
+ * typed in Settings) kept showing "Edge" and sent every KOT there. Localhost
+ * is this machine's own runtime and is never filtered.
+ */
+function isOtherOutletsEdge(url, health) {
+  if (!health || url.includes('127.0.0.1') || url.includes('localhost')) return false;
+  const outletId = getCurrentOutletId();
+  return !!outletId && !healthMatchesOutlet(health, outletId);
+}
+
+/** Stop using `url` (another outlet's PC) so recovery finds this outlet's PC. */
+function dropOtherOutletsEdge(url) {
+  console.warn(`[Edge] ${url} belongs to another outlet — not using it`);
+  try {
+    if (localStorage.getItem(EDGE_URL_STORAGE_KEY) === url) localStorage.removeItem(EDGE_URL_STORAGE_KEY);
+    if (localStorage.getItem(EDGE_DISCOVERED_URL_STORAGE_KEY) === url) localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY);
+  } catch { /* ignore */ }
+  if (_discoveredEdgeUrl === url) _discoveredEdgeUrl = null;
+  _edgeAvailable = false;
+  _connectivityLastCheck = 0;
+}
+
+/**
+ * Is the edge at getEdgeUrl() bound to this outlet (id, code or slug)?
+ * Unreachable → false. Used by login so a stale URL pointing at the previous
+ * outlet's PC is never sent a PIN.
+ */
+export async function isCurrentEdgeForOutlet(outletIdOrCode) {
+  if (!outletIdOrCode) return true;
+  const health = await probeEdgeHealth(getEdgeUrl(), EDGE_CHECK_TIMEOUT_MS);
+  return !!health && healthMatchesOutlet(health, resolveOutletId(outletIdOrCode));
+}
+
+/**
+ * Does the edge at `url` belong to this outlet (id, code or slug)? Used to
+ * pick a print target: with two outlets on one WiFi, a KOT must only go to
+ * its own outlet's PC. Unreachable or not onboarded → false.
+ */
+export async function isEdgeAtUrlForOutlet(url, outletIdOrCode, timeoutMs = FAST_PROBE_TIMEOUT_MS) {
+  const health = await probeEdgeHealth(url, timeoutMs);
+  if (!health || health.onboarded === false) return false;
+  return healthMatchesOutlet(health, outletIdOrCode ? resolveOutletId(outletIdOrCode) : null);
+}
+
+function isUsableEdgeHealth(health, { expected, forCaptain }) {
+  if (!health) return false;
+  // Reject non-onboarded edge servers — a print agent installed but never
+  // linked to a restaurant responds on /health with onboarded=false.
+  // Returning it poisons PIN login with 401 "Restaurant is not linked locally".
+  if (health.onboarded === false) return false;
+  // Reject edge servers belonging to a different outlet. When two outlets
+  // (e.g. bar + restaurant) share the same WiFi, both edge servers respond on
+  // /health — without this, KOTs could go to the wrong kitchen.
+  if (!healthMatchesOutlet(health, expected)) return false;
+  // Multi-PC restaurant: a counter PC that opted out of captains is skipped.
+  // Older runtimes don't report the field (undefined) and stay eligible.
+  if (forCaptain && health.captainHub === false) return false;
+  return true;
+}
+
+/** Make `url` the active edge server and remember it for its outlet. */
+async function adoptEdgeUrl(url, health) {
+  _discoveredEdgeUrl = url;
+  // Persist so the URL survives page reloads (e.g. after logout).
+  try { localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, url); } catch { /* ignore */ }
+  _discoveryFailReason = null;
+  if (health?.restaurantId) {
+    rememberEdgeUrlForOutlet(health.restaurantId, url);
+    rememberOutletAlias(health.restaurantCode, health.restaurantId);
+    rememberOutletAlias(health.restaurantSlug, health.restaurantId);
+  }
+  // Sync availability caches from the health we just read so the UI and the
+  // login gate agree immediately instead of waiting for the next poll.
+  if (health?.isOperational === true) {
+    _edgeAvailable = true;
+    _edgeLastCheck = Date.now();
+    _connectivityState = (health.sessionValid && health.onboarded !== false) ? 'edge_reachable' : 'edge_not_ready';
+    _connectivityLastCheck = Date.now();
+  } else {
+    _edgeLastCheck = 0; // force health re-check on new URL
+    _connectivityLastCheck = 0;
+  }
+  // Invalidate the Print Agent URL cache so the next print attempt rebuilds
+  // the candidate list with the new edge URL. Without this, the captain uses
+  // a stale 30s-cached list that only contains 127.0.0.1:3101 (the phone
+  // itself) and KOT prints fail during that window.
+  try {
+    const { invalidatePrintAgentUrlCache } = await import('../utils/printOffline');
+    invalidatePrintAgentUrlCache();
+  } catch { /* printOffline not loaded yet — cache will rebuild on first call */ }
+}
+
+/**
+ * Probe the addresses we already know for the outlet (remembered PC, cloud
+ * hints, current URL) in parallel. ~100ms when the PC is there.
+ */
+async function probeKnownEdgeUrls({ expected, forCaptain }) {
+  const urls = [];
+  const push = (u) => { if (u && !urls.includes(u)) urls.push(u); };
+  getKnownEdgeUrlsForOutlet(expected || getCurrentOutletId()).forEach(push);
+  push(_discoveredEdgeUrl);
+  try { push(localStorage.getItem(EDGE_DISCOVERED_URL_STORAGE_KEY)); } catch { /* ignore */ }
+  // Cashier PC: the runtime is local. On a phone this is refused instantly.
+  push(DEFAULT_EDGE_URL);
+
+  const healths = await Promise.all(urls.map(u => probeEdgeHealth(u, FAST_PROBE_TIMEOUT_MS)));
+  for (let i = 0; i < urls.length; i++) {
+    if (isUsableEdgeHealth(healths[i], { expected, forCaptain })) {
+      if (urls[i] === DEFAULT_EDGE_URL) {
+        // The runtime is on this machine. Every LAN URL before it failed, so
+        // drop the persisted one — otherwise getEdgeUrl() keeps returning it
+        // instead of localhost.
+        _discoveredEdgeUrl = null;
+        try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
+        const h = healths[i];
+        if (h.restaurantId) {
+          rememberOutletAlias(h.restaurantCode, h.restaurantId);
+          rememberOutletAlias(h.restaurantSlug, h.restaurantId);
+        }
+        if (h.isOperational === true) {
+          _edgeAvailable = true;
+          _edgeLastCheck = Date.now();
+          _connectivityState = (h.sessionValid && h.onboarded !== false) ? 'edge_reachable' : 'edge_not_ready';
+          _connectivityLastCheck = Date.now();
+        }
+        return urls[i];
+      }
+      await adoptEdgeUrl(urls[i], healths[i]);
+      return urls[i];
+    }
+  }
+  return null;
+}
+
+/**
+ * Private /24 prefixes of this device. Non-private addresses (mobile data,
+ * CGNAT) are ignored — scanning the carrier's subnet is pointless and was what
+ * happened when a captain stepped out of WiFi range.
+ */
+async function getLocalSubnetPrefixes() {
+  const prefixes = [];
+  const add = (ip) => {
+    if (!ip || !isPrivateIPv4(ip)) return;
+    const prefix = ip.split('.').slice(0, 3).join('.');
+    if (!prefixes.includes(prefix)) prefixes.push(prefix);
+  };
+
+  // Capacitor native plugin: read local IP via ConnectivityManager. On
+  // Android, WebRTC is often disabled in the WebView (or only yields mDNS
+  // candidates), so ask the native side first. Needs only
+  // ACCESS_NETWORK_STATE — no location permission.
+  if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
+    try {
+      const { registerPlugin } = await import('@capacitor/core');
+      const LocalNetwork = registerPlugin('LocalNetwork');
+      const result = await LocalNetwork.getLocalIp();
+      add(result?.ip);
+    } catch { /* plugin not available or failed */ }
+  }
+
+  if (!prefixes.length && typeof window !== 'undefined' && window.RTCPeerConnection) {
+    try {
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      pc.createDataChannel('');
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      // Wait briefly for ICE gathering
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const lines = pc.localDescription?.sdp?.split('\n') || [];
+      for (const line of lines) {
+        const match = line.match(/a=candidate.*\b(\d+\.\d+\.\d+\.\d+)\b/);
+        if (match) add(match[1]);
+      }
+      pc.close();
+    } catch { /* WebRTC not available */ }
+  }
+  return prefixes;
+}
+
+// Fallback guess-list across RFC 1918 ranges, used after the subnet sweep.
+// Covers SOHO defaults and common POS-vendor/mesh router IPs.
+const COMMON_EDGE_HOSTS = [
+  '192.168.0.1', '192.168.0.2', '192.168.0.100',
+  '192.168.1.1', '192.168.1.2', '192.168.1.100',
+  '192.168.2.1', '192.168.2.100',
+  '192.168.10.1', '192.168.10.100',
+  '192.168.100.1', '192.168.100.100',
+  '192.168.254.1',
+  '10.0.0.1', '10.0.0.2', '10.0.0.100', '10.0.1.1', '10.0.10.1', '10.0.90.1',
+  '10.1.1.1', '10.10.10.10', '10.90.0.1', '10.255.255.1',
+  '172.16.0.1', '172.16.0.2', '172.16.0.100', '172.17.0.1', '172.20.0.1',
+  '172.30.0.1', '172.31.0.1',
+];
+
+function buildScanCandidates(prefixes) {
+  const candidates = [];
+  const seen = new Set();
+  const add = (host) => {
+    if (seen.has(host)) return;
+    seen.add(host);
+    candidates.push(`http://${host}:3101`);
+  };
+  for (const p of prefixes) {
+    // Likely static addresses first, then the full DHCP range.
+    add(`${p}.1`);
+    add(`${p}.100`);
+    for (let i = 2; i <= 254; i++) add(`${p}.${i}`);
+  }
+  COMMON_EDGE_HOSTS.forEach(add);
+  return candidates;
+}
+
+/**
+ * Every outlet's billing PC on this WiFi, one entry per outlet:
+ * [{ outletId, name, url }]. Used by the captain login so the captain picks
+ * their outlet by name (the PCs report their outlet on /health) — no code to
+ * type and no cloud lookup. Remembered PCs are probed first; `onFound` gets
+ * the list each time a new outlet turns up so the screen fills in while the
+ * scan runs. Each PC found is remembered for its outlet, so connecting to the
+ * chosen one afterwards is a single probe.
+ */
+export async function findBillingPcsOnLan({ forCaptain = true, onFound } = {}) {
+  if (isHttpsBrowserContext()) return [];
+  const outlets = new Map(); // outletId -> { outletId, name, url }
+  const consider = (url, health) => {
+    if (!isUsableEdgeHealth(health, { expected: null, forCaptain }) || !health.restaurantId) return;
+    if (outlets.has(health.restaurantId)) return;
+    outlets.set(health.restaurantId, { outletId: health.restaurantId, name: health.restaurantName || 'Billing PC', url });
+    rememberEdgeUrlForOutlet(health.restaurantId, url);
+    rememberOutletAlias(health.restaurantCode, health.restaurantId);
+    rememberOutletAlias(health.restaurantSlug, health.restaurantId);
+    try { onFound?.([...outlets.values()]); } catch { /* ignore */ }
+  };
+  const probeAll = async (urls) => {
+    const healths = await Promise.all(urls.map(u => probeEdgeHealth(u, LAN_DISCOVERY_TIMEOUT_MS)));
+    urls.forEach((u, i) => consider(u, healths[i]));
+  };
+
+  const known = [...new Set([
+    ...Object.values(readJsonStore(EDGE_URL_BY_OUTLET_STORAGE_KEY)),
+    _discoveredEdgeUrl,
+  ].filter(u => typeof u === 'string' && u))];
+  await probeAll(known);
+
+  const candidates = buildScanCandidates(await getLocalSubnetPrefixes()).filter(u => !known.includes(u));
+  for (let i = 0; i < candidates.length; i += LAN_SCAN_BATCH_SIZE) {
+    await probeAll(candidates.slice(i, i + LAN_SCAN_BATCH_SIZE));
+  }
+  return [...outlets.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function scanLanForEdge({ expected, forCaptain, wide }) {
+  const prefixes = await getLocalSubnetPrefixes();
+  if (wide) {
+    // Routed buildings: the outlet's PC may sit on another /24 (the other
+    // building's WiFi). Sweep the subnets we have seen it on / the cloud
+    // reported, so a DHCP change there is still found. Capped to bound the scan.
+    const extra = getKnownEdgeUrlsForOutlet(expected || getCurrentOutletId())
+      .map(subnetPrefixOfUrl)
+      .filter(p => p && !prefixes.includes(p));
+    for (const p of [...new Set(extra)].slice(0, 2)) prefixes.push(p);
+  }
+
+  const candidates = buildScanCandidates(prefixes);
+  for (let i = 0; i < candidates.length; i += LAN_SCAN_BATCH_SIZE) {
+    const batch = candidates.slice(i, i + LAN_SCAN_BATCH_SIZE);
+    const results = await Promise.all(batch.map(async (url) => {
+      const health = await probeEdgeHealth(url, LAN_DISCOVERY_TIMEOUT_MS);
+      return isUsableEdgeHealth(health, { expected, forCaptain }) ? { url, health } : null;
+    }));
+    const hit = results.find(Boolean);
+    if (hit) {
+      await adoptEdgeUrl(hit.url, hit.health);
+      console.log('[Edge] Discovered edge server on LAN:', hit.url);
+      return hit.url;
+    }
+  }
+  return null;
+}
+
 /**
  * Discover the edge server URL from the cloud backend.
- * The backend stores the print agent's LAN IP when it registers.
- * The edge server runs on port 3101 on the same machine as the print agent.
- * Call this after login so the captain app on a different device can find
- * the edge server without relying on 127.0.0.1 (which only works on the
- * cashier PC itself).
+ * The backend stores each print agent's LAN IP when it registers; the edge
+ * server runs on port 3101 on the same machine. Call this after login so the
+ * captain app on a different device can find the edge server without relying
+ * on 127.0.0.1 (which only works on the cashier PC itself).
  */
 export async function discoverEdgeUrlFromBackend({ forCaptain = false } = {}) {
   // On an HTTPS browser page, the discovered HTTP edge URL would be blocked
   // as mixed content on every subsequent health check. Skip discovery entirely.
   if (isHttpsBrowserContext()) return null;
+  // The captain app finds its PC on the WiFi only.
+  if (isCaptainEdgeOnly()) return null;
   try {
     // Don't overwrite a user-configured URL
     const stored = localStorage.getItem(EDGE_URL_STORAGE_KEY);
@@ -341,41 +849,42 @@ export async function discoverEdgeUrlFromBackend({ forCaptain = false } = {}) {
     clearTimeout(timeoutId);
     if (!res.ok) return null;
     const data = await res.json();
-    if (data.lanIp) {
-      const edgeUrl = `http://${data.lanIp}:3101`;
-      // Multi-PC restaurant: the cloud only knows ONE "primary" PC. If a captain
-      // phone is pointed at a counter PC that opted out of captains, ignore it so
-      // the filtered LAN scan can find the real dine-in PC instead.
-      if (forCaptain) {
-        try {
-          const probeController = new AbortController();
-          const probeTimer = setTimeout(() => probeController.abort(), LAN_DISCOVERY_TIMEOUT_MS);
-          const probe = await fetch(`${edgeUrl}/health`, { signal: probeController.signal });
-          clearTimeout(probeTimer);
-          const probeHealth = probe.ok ? await probe.json().catch(() => ({})) : {};
-          if (probeHealth.captainHub === false) return null;
-        } catch { /* unreachable from here — keep legacy behaviour and let health checks decide */ }
-      }
-      // Persist to localStorage so the URL survives page reloads (e.g. after
-      // logout triggers window.location.href = '/captain'). Without this,
-      // getEdgeUrl() falls back to DEFAULT_EDGE_URL (127.0.0.1:3101) which is
-      // the phone itself, not the cashier PC — causing "edge unreachable".
-      // The health check still verifies reachability on next use.
-      _discoveredEdgeUrl = edgeUrl;
-      try { localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, edgeUrl); } catch { /* ignore */ }
-      _edgeLastCheck = 0; // force re-check
-      // Invalidate the Print Agent URL cache in printOffline.js so the next
-      // print attempt rebuilds the candidate list with the new edge URL.
-      // Without this, the captain uses a stale 30s-cached list that only
-      // contains 127.0.0.1:3101 (the phone itself) for up to 30s after
-      // discovery completes — KOT prints fail during this window.
-      try {
-        const { invalidatePrintAgentUrlCache } = await import('../utils/printOffline');
-        invalidatePrintAgentUrlCache();
-      } catch { /* printOffline not loaded yet — cache will rebuild on first call */ }
-      console.log('[edgeHealth] Discovered edge server at', edgeUrl, 'from backend');
-      return edgeUrl;
+
+    const urls = [];
+    if (data.lanIp) urls.push(`http://${data.lanIp}:3101`);
+    for (const agent of Array.isArray(data.agents) ? data.agents : []) {
+      const u = agent?.lanIp ? `http://${agent.lanIp}:3101` : null;
+      if (u && agent.online !== false && !urls.includes(u)) urls.push(u);
     }
+    if (!urls.length) return null;
+    const outletId = getCurrentOutletId();
+    if (outletId) setOutletEdgeHints(outletId, urls);
+
+    const primaryUrl = data.lanIp ? urls[0] : null;
+    if (forCaptain) {
+      // Multi-PC restaurant: the cloud's primary PC may be a counter PC that
+      // opted out of captains. Probe every PC the outlet has and take the
+      // first one that serves captains.
+      const healths = await Promise.all(urls.map(u => probeEdgeHealth(u, LAN_DISCOVERY_TIMEOUT_MS)));
+      const idx = healths.findIndex(h => isUsableEdgeHealth(h, { expected: outletId, forCaptain: true }));
+      if (idx >= 0) {
+        await adoptEdgeUrl(urls[idx], healths[idx]);
+        console.log('[edgeHealth] Discovered edge server at', urls[idx], 'from backend');
+        return urls[idx];
+      }
+      // None reachable from here. Don't adopt the primary blind: from the
+      // other building's WiFi (or with no routing) it would replace a working
+      // URL on every poll. The addresses are stored as hints above, so known-
+      // URL probes keep trying them.
+      return null;
+    }
+    if (!primaryUrl) return null;
+    // Persist so the URL survives page reloads (e.g. after logout triggers
+    // window.location.href = '/captain'). Without this, getEdgeUrl() falls
+    // back to 127.0.0.1:3101 — the phone itself, not the cashier PC.
+    await adoptEdgeUrl(primaryUrl, null);
+    console.log('[edgeHealth] Discovered edge server at', primaryUrl, 'from backend');
+    return primaryUrl;
   } catch (err) {
     console.debug('[edgeHealth] Backend edge URL discovery failed:', err.message);
   }
@@ -398,244 +907,160 @@ export function isEdgeLocalAuth() {
   }
 }
 
+function clearDiscoveredEdgeUrl() {
+  let persisted = null;
+  try { persisted = localStorage.getItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
+  if (!_discoveredEdgeUrl && !persisted) return;
+  _discoveredEdgeUrl = null;
+  try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
+  resetEdgeCache();
+}
+
 /**
- * LAN discovery: probe common LAN IPs to find the edge server.
- * Tries the local network gateway + likely host IPs across all RFC 1918
- * ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x).
+ * Find the edge server: known addresses first (remembered PC for the outlet,
+ * cloud hints, current URL — one parallel probe), then a LAN scan.
  *
- * @param {{ force?: boolean, expectedRestaurantId?: string }} [opts]
- *   - force: true bypasses the failure cooldown (used by the Auto-Discover
- *     button so a manual retry always runs a fresh scan instead of being
- *     throttled).
- *   - expectedRestaurantId: when provided, only edge servers whose
- *     /health.restaurantId matches this outlet are accepted. This prevents
- *     connecting to the wrong outlet's edge server when two outlets share
- *     the same WiFi LAN. An in-flight unfiltered scan is drained first so
- *     the filtered scan always runs fresh.
- *   - forCaptain: true skips PCs that report captainHub=false in /health
- *     (e.g. a counter/curry-point PC with no captains) so a captain phone on
- *     the same WiFi never connects to the wrong billing PC.
+ * @param {{ force?: boolean, expectedRestaurantId?: string, forCaptain?: boolean, fastOnly?: boolean, wide?: boolean }} [opts]
+ *   - force: bypasses the failure cooldown (Auto-Discover button).
+ *   - expectedRestaurantId: outlet id, code or slug. Only edge servers whose
+ *     /health identifies this outlet are accepted, so two outlets sharing
+ *     WiFi never cross-connect.
+ *   - forCaptain: skips PCs that report captainHub=false (counter PCs).
+ *   - fastOnly: probe known addresses only, never scan.
+ *   - wide: also sweep subnets the outlet's PC was previously seen on (for
+ *     routed multi-building networks). Off for login so it stays quick.
  * Returns the discovered edge URL or null.
  */
-export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId, forCaptain = false } = {}) {
+export async function discoverEdgeOnLAN({ force = false, expectedRestaurantId, forCaptain = false, fastOnly = false, wide = false } = {}) {
   // On an HTTPS browser page, HTTP LAN probes are blocked as mixed content.
   if (isHttpsBrowserContext()) return null;
+  try {
+    // Skip discovery if user has manually configured a URL
+    if (localStorage.getItem(EDGE_URL_STORAGE_KEY)) return null;
+  } catch { /* ignore */ }
 
+  const expected = expectedRestaurantId ? resolveOutletId(expectedRestaurantId) : null;
+  // Fast path is read-mostly and quick — never queue it behind a running scan.
+  if (fastOnly) return probeKnownEdgeUrls({ expected, forCaptain });
+
+  const key = `${expected || ''}|${forCaptain ? 'captain' : ''}`;
   if (_discoveryInProgress) {
-    // A filtered scan must always run fresh — an in-flight unfiltered scan
-    // could return the wrong outlet's edge server. Wait for it to drain,
-    // then proceed to our own filtered scan.
-    if (force || expectedRestaurantId) {
-      await _discoveryInProgress.catch(() => {});
-    } else {
-      return _discoveryInProgress;
-    }
+    // Same filter (login + poll overlap) or an unfiltered caller → share the
+    // running scan. A different filter waits for it to drain, then runs its
+    // own, so it can never be handed another outlet's PC.
+    if (_discoveryInProgressKey === key || (!force && !expected)) return _discoveryInProgress;
+    await _discoveryInProgress.catch(() => {});
   }
 
-  _discoveryInProgress = (async () => {
-    // Skip discovery if user has manually configured a URL
-    try {
-      if (localStorage.getItem(EDGE_URL_STORAGE_KEY)) {
-        return null;
-      }
-    } catch { /* ignore */ }
+  const run = (async () => {
+    const known = await probeKnownEdgeUrls({ expected, forCaptain });
+    if (known) return known;
 
-    // Cooldown: recent discovery failed. Fast-fail without re-scanning.
-    // _discoveryFailReason persists so the UI can still show why.
-    // Bypassed by force: true (Auto-Discover button) or when a specific
-    // outlet is requested (expectedRestaurantId) — a filtered scan for a
-    // different outlet must always run, even if an unfiltered scan failed.
-    if (!force && !expectedRestaurantId && Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
+    // A specific outlet was asked for and the current URL isn't it (other
+    // outlet's PC, or dead). Drop it even during the cooldown, otherwise PIN
+    // login would be sent to the previous outlet's PC.
+    if (expected) clearDiscoveredEdgeUrl();
+
+    // Cooldown: a scan with this filter failed recently. Fast-fail without
+    // re-scanning; _discoveryFailReason persists so the UI can still show why.
+    // Known addresses were still probed above, so returning to WiFi reconnects
+    // even while cooling down.
+    if (!force && Date.now() - (_discoveryFailedAt.get(key) || 0) < DISCOVERY_FAILURE_COOLDOWN_MS) {
       return null;
     }
-
-    // Clear fail reason at the start of a fresh attempt
     _discoveryFailReason = null;
 
-    // If we already have a working edge URL, don't rediscover — UNLESS a
-    // specific outlet is requested. The persisted discovered URL may belong
-    // to a different outlet (e.g. captain logged out of bar, now logging
-    // into restaurant on the same WiFi). In that case, clear the stale URL
-    // so getEdgeUrl() doesn't return it during the fresh filtered scan.
-    const currentUrl = getEdgeUrl();
-    if (expectedRestaurantId) {
-      if (currentUrl !== DEFAULT_EDGE_URL) {
-        _discoveredEdgeUrl = null;
-        try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
-        resetEdgeCache();
-      }
-    } else if (currentUrl !== DEFAULT_EDGE_URL && _edgeAvailable) {
-      return currentUrl;
-    }
+    // The persisted URL is dead or belongs to another outlet. Clear it so
+    // getEdgeUrl() doesn't keep returning it during and after the scan.
+    clearDiscoveredEdgeUrl();
 
-    // Build candidate IPs to probe
-    const candidates = [];
-
-    // Try to infer local subnet from this device's network info
-    if (typeof window !== 'undefined' && window.RTCPeerConnection) {
-      try {
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        pc.createDataChannel('');
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        // Wait briefly for ICE gathering
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const lines = pc.localDescription?.sdp?.split('\n') || [];
-        for (const line of lines) {
-          const match = line.match(/a=candidate.*\b(\d+\.\d+\.\d+\.\d+)\b/);
-          if (match) {
-            const ip = match[1];
-            if (!ip.startsWith('0.') && !ip.startsWith('127.')) {
-              const parts = ip.split('.');
-              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.1:3101`);
-              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.100:3101`);
-              // Probe the full subnet range — routers assign IPs across 2-254
-              for (let i = 2; i <= 254; i++) {
-                candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.${i}:3101`);
-              }
-            }
-          }
-        }
-        pc.close();
-      } catch { /* WebRTC not available */ }
-    }
-
-    // ── Capacitor native plugin: read local IP via ConnectivityManager ──
-    // On Android, WebRTC is often disabled in the WebView. This native
-    // plugin reads the actual local IP via ConnectivityManager/LinkProperties
-    // (API 21+, only ACCESS_NETWORK_STATE — no location permission needed).
-    // Falls back to NetworkInterface enumeration (preferring wlan interfaces)
-    // if ConnectivityManager returns null.
-    if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
-      try {
-        const { registerPlugin } = await import('@capacitor/core');
-        const LocalNetwork = registerPlugin('LocalNetwork');
-        const result = await LocalNetwork.getLocalIp();
-        if (result?.ip) {
-          const parts = result.ip.split('.');
-          if (parts.length === 4 && !parts[0].startsWith('0') && !parts[0].startsWith('127')) {
-            candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.1:3101`);
-            candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.100:3101`);
-            for (let i = 2; i <= 254; i++) {
-              candidates.push(`http://${parts[0]}.${parts[1]}.${parts[2]}.${i}:3101`);
-            }
-          }
-        }
-      } catch { /* plugin not available or failed */ }
-    }
-
-    // Fallback: try common router/host IPs across all RFC 1918 ranges.
-    // This is a guess-list, not real discovery — it covers SOHO defaults
-    // and common POS-vendor/mesh router IPs. For arbitrary 10.x/172.x
-    // subnets, the user must enter the Edge URL manually in Settings.
-    const commonGateways = [
-      // 192.168.x.x — home/SOHO routers
-      'http://192.168.0.1:3101',
-      'http://192.168.0.2:3101',
-      'http://192.168.0.100:3101',
-      'http://192.168.1.1:3101',
-      'http://192.168.1.2:3101',
-      'http://192.168.1.100:3101',
-      'http://192.168.2.1:3101',
-      'http://192.168.2.100:3101',
-      'http://192.168.10.1:3101',
-      'http://192.168.10.100:3101',
-      'http://192.168.100.1:3101',
-      'http://192.168.100.100:3101',
-      'http://192.168.254.1:3101',
-      // 10.x.x.x — enterprise/POS-vendor/mesh defaults
-      'http://10.0.0.1:3101',
-      'http://10.0.0.2:3101',
-      'http://10.0.0.100:3101',
-      'http://10.0.1.1:3101',
-      'http://10.0.10.1:3101',
-      'http://10.0.90.1:3101',
-      'http://10.1.1.1:3101',
-      'http://10.10.10.10:3101',
-      'http://10.90.0.1:3101',
-      'http://10.255.255.1:3101',
-      // 172.16-31.x.x — Docker/corporate/POS defaults
-      'http://172.16.0.1:3101',
-      'http://172.16.0.2:3101',
-      'http://172.16.0.100:3101',
-      'http://172.17.0.1:3101',
-      'http://172.20.0.1:3101',
-      'http://172.30.0.1:3101',
-      'http://172.31.0.1:3101',
-    ];
-    for (const c of commonGateways) {
-      if (!candidates.includes(c)) candidates.push(c);
-    }
-
-    // Probe candidates in parallel (batch of 20 for full-subnet scan)
-    const BATCH_SIZE = 20;
-    for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
-      const batch = candidates.slice(i, i + BATCH_SIZE);
-      const results = await Promise.allSettled(batch.map(async (url) => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), LAN_DISCOVERY_TIMEOUT_MS);
-        try {
-          const res = await fetch(`${url}/health`, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          if (!res.ok) return null;
-          const health = await res.json().catch(() => ({}));
-          // Reject non-onboarded edge servers — a print agent installed but
-          // never linked to a restaurant responds on /health with
-          // onboarded=false. Returning it poisons PIN login with 401
-          // "Restaurant is not linked locally" (Bug 2).
-          if (health.onboarded === false) return null;
-          // Reject edge servers belonging to a different outlet. When two
-          // outlets (e.g. bar + restaurant) share the same WiFi, both edge
-          // servers respond on /health. Without this filter, discovery
-          // returns whichever answers first — potentially the wrong outlet,
-          // causing PIN login 401s and KOT prints going to the wrong kitchen.
-          if (expectedRestaurantId && health.restaurantId && health.restaurantId !== expectedRestaurantId) return null;
-          // Multi-PC restaurant: a counter PC that opted out of captains is skipped.
-          // Older runtimes don't report the field (undefined) and stay eligible.
-          if (forCaptain && health.captainHub === false) return null;
-          return url;
-        } catch {
-          clearTimeout(timeoutId);
-        }
-        return null;
-      }));
-
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value) {
-          _discoveredEdgeUrl = r.value;
-          // Persist so the URL survives page reloads (e.g. after logout).
-          try { localStorage.setItem(EDGE_DISCOVERED_URL_STORAGE_KEY, r.value); } catch { /* ignore */ }
-          _discoveryFailReason = null;
-          _edgeLastCheck = 0; // force health re-check on new URL
-          // Invalidate the Print Agent URL cache so the next print attempt
-          // rebuilds the candidate list with the newly discovered edge URL.
-          try {
-            const { invalidatePrintAgentUrlCache } = await import('../utils/printOffline');
-            invalidatePrintAgentUrlCache();
-          } catch { /* printOffline not loaded yet */ }
-          console.log('[Edge] Discovered edge server on LAN:', r.value);
-          return r.value;
-        }
-      }
+    const found = await scanLanForEdge({ expected, forCaptain, wide });
+    if (found) {
+      _discoveryFailedAt.delete(key);
+      return found;
     }
 
     // All candidates exhausted — arm cooldown and set diagnostic reason.
-    // This covers every failure exit: WebRTC unavailable + fallback list
-    // exhausted, or WebRTC succeeded but no edge server on the probed /24.
     _discoveryLastFailed = Date.now();
-    _discoveryFailReason = expectedRestaurantId
-      ? 'Could not find this outlet\'s edge server on the LAN. Another outlet\'s ' +
-        'edge server may be present but was skipped. Enter the correct Edge URL manually in Settings.'
+    _discoveryFailedAt.set(key, _discoveryLastFailed);
+    _discoveryFailReason = expected
+      ? 'Could not find this outlet\'s edge server on this WiFi. Connect to the same WiFi ' +
+        'as the outlet\'s billing PC, or enter its Edge URL manually in Settings.'
       : 'Could not find the cashier PC on this LAN. If your network uses ' +
         '10.x.x.x or 172.16-31.x.x, enter the Edge URL manually in Settings.';
     return null;
   })();
 
+  _discoveryInProgress = run;
+  _discoveryInProgressKey = key;
   try {
-    return await _discoveryInProgress;
+    return await run;
   } finally {
-    _discoveryInProgress = null;
+    if (_discoveryInProgress === run) {
+      _discoveryInProgress = null;
+      _discoveryInProgressKey = null;
+    }
   }
+}
+
+/**
+ * Re-run edge discovery when the device's network changes (WiFi rejoined or
+ * switched, app resumed). Without this, a captain walking out of WiFi range
+ * and back stayed disconnected until a poll happened to get past the
+ * discovery cooldown — or until they tapped Auto-Discover.
+ * Returns a cleanup function.
+ */
+export function startEdgeNetworkWatcher(onNetworkChange) {
+  if (typeof window === 'undefined') return () => {};
+  let disposed = false;
+  let lastScheduled = 0;
+  let appListener = null;
+  const timers = new Set();
+
+  const fire = (networkChanged) => {
+    if (disposed) return;
+    // A real network change clears the scan cooldown too. Plain resume /
+    // unlock only forces fresh health checks — the remembered PCs are still
+    // probed, without re-scanning the LAN every time a captain unlocks.
+    if (networkChanged) invalidateEdgeHealthCache();
+    else resetEdgeCache();
+    try { onNetworkChange?.(); } catch { /* ignore */ }
+  };
+  const schedule = (networkChanged) => {
+    const now = Date.now();
+    if (now - lastScheduled < 3000) return;
+    lastScheduled = now;
+    // The DHCP lease / route can take a few seconds after the change event:
+    // check shortly after, then once more.
+    for (const ms of networkChanged ? [1500, 6000] : [500]) {
+      const t = setTimeout(() => { timers.delete(t); fire(networkChanged); }, ms);
+      timers.add(t);
+    }
+  };
+  const onNetwork = () => schedule(true);
+  const onResume = () => schedule(false);
+  const onVisible = () => { if (document.visibilityState === 'visible') onResume(); };
+
+  window.addEventListener('online', onNetwork);
+  document.addEventListener('visibilitychange', onVisible);
+  const conn = typeof navigator !== 'undefined' ? navigator.connection : null;
+  conn?.addEventListener?.('change', onNetwork);
+  if (window.Capacitor?.isNativePlatform?.()) {
+    import('@capacitor/app')
+      .then(({ App }) => App.addListener('resume', onResume))
+      .then((handle) => { if (disposed) handle?.remove?.(); else appListener = handle; })
+      .catch(() => {});
+  }
+
+  return () => {
+    disposed = true;
+    window.removeEventListener('online', onNetwork);
+    document.removeEventListener('visibilitychange', onVisible);
+    conn?.removeEventListener?.('change', onNetwork);
+    appListener?.remove?.();
+    timers.forEach(clearTimeout);
+    timers.clear();
+  };
 }
 
 export async function isEdgeAvailable() {
@@ -664,14 +1089,18 @@ export async function isEdgeAvailable() {
       // form (chicken-and-egg). Callers that need onboarding (orders, PIN
       // login) check isLocalReady() or getEdgeConnectivityState() separately.
       const health = await res.json().catch(() => ({}));
-      _edgeAvailable = health.isOperational === true;
-      // Sync connectivity state so the UI and login gate agree. Without this,
-      // isEdgeAvailable() can say "connected" while getEdgeConnectivityState()
-      // says "unreachable" (cache desync — Bug 3).
-      _connectivityState = (_edgeAvailable && health.sessionValid && health.onboarded !== false)
-        ? 'edge_reachable'
-        : 'edge_not_ready';
-      _connectivityLastCheck = now;
+      if (isOtherOutletsEdge(edgeUrl, health)) {
+        dropOtherOutletsEdge(edgeUrl);
+      } else {
+        _edgeAvailable = health.isOperational === true;
+        // Sync connectivity state so the UI and login gate agree. Without this,
+        // isEdgeAvailable() can say "connected" while getEdgeConnectivityState()
+        // says "unreachable" (cache desync — Bug 3).
+        _connectivityState = (_edgeAvailable && health.sessionValid && health.onboarded !== false)
+          ? 'edge_reachable'
+          : 'edge_not_ready';
+        _connectivityLastCheck = now;
+      }
     } else {
       _edgeAvailable = false;
     }
@@ -688,78 +1117,50 @@ export async function isEdgeAvailable() {
   // runs on the same machine (cashier desktop). Scanning 253 LAN IPs when the
   // server is on 127.0.0.1 is wasteful and causes a 19s UI freeze cascade when
   // the edge server is briefly busy (e.g. during a sync cycle).
-  if (!_edgeAvailable && !edgeUrl.includes('127.0.0.1') && !edgeUrl.includes('localhost')) {
-    // Skip discovery if it recently failed — avoids re-probing on every poll cycle.
+  // A phone (Capacitor) whose discovered URL was cleared falls back to
+  // 127.0.0.1 — that must still recover, otherwise the captain stays
+  // disconnected until someone taps Auto-Discover. Only skip on the PC that
+  // hosts the runtime itself.
+  // Limited to the captain app: admin/cashier phone apps with no edge would
+  // otherwise scan the LAN in the background every cooldown period.
+  const isRuntimeHost = (edgeUrl.includes('127.0.0.1') || edgeUrl.includes('localhost'))
+    && !(_discoveryContext.forCaptain && typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.());
+  if (!_edgeAvailable && !isRuntimeHost) {
+    // Recover to the logged-in outlet's PC only, never a sibling outlet's.
+    const opts = {
+      expectedRestaurantId: getCurrentOutletId() || undefined,
+      forCaptain: _discoveryContext.forCaptain,
+    };
+
+    // 1. Known addresses for this outlet (one fast probe each) — runs even
+    //    during the cooldown so rejoining WiFi reconnects on the next poll.
+    try {
+      if (await discoverEdgeOnLAN({ ...opts, fastOnly: true })) return _edgeAvailable;
+    } catch { /* fall through */ }
+
+    // Skip the expensive steps if discovery recently failed.
     if (Date.now() - _discoveryLastFailed < DISCOVERY_FAILURE_COOLDOWN_MS) {
       return _edgeAvailable;
     }
 
-    // If using a stale discovered URL, reset it so discovery can find the new one.
-    // Clear both in-memory and localStorage so getEdgeUrl() doesn't return it.
-    if (edgeUrl !== DEFAULT_EDGE_URL) {
-      _discoveredEdgeUrl = null;
-      try { localStorage.removeItem(EDGE_DISCOVERED_URL_STORAGE_KEY); } catch { /* ignore */ }
-    }
-
-    // Try backend discovery first (cashier's LAN IP from print agent heartbeat)
+    // 2. Cloud: the outlet's registered PC addresses (print agent heartbeat).
     try {
-      const backendDiscovered = await discoverEdgeUrlFromBackend();
-      if (backendDiscovered) {
-        // Re-check health with the discovered URL
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
-          const res = await fetch(`${backendDiscovered}/health`, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          if (res.ok) {
-            const health = await res.json().catch(() => ({}));
-            if (health.isOperational === true) {
-              _edgeAvailable = true;
-              // Sync connectivity state so the UI immediately reflects the
-              // discovered edge server, instead of waiting for the next
-              // getEdgeConnectivityState() poll cycle.
-              if (health.sessionValid && health.onboarded !== false) {
-                _connectivityState = 'edge_reachable';
-              } else {
-                _connectivityState = 'edge_not_ready';
-              }
-              _connectivityLastCheck = Date.now();
-              return true;
-            }
-          }
-        } catch { /* fall through to LAN scan */ }
+      if (await discoverEdgeUrlFromBackend({ forCaptain: opts.forCaptain })) {
+        const health = await probeEdgeHealth(getEdgeUrl(), EDGE_CHECK_TIMEOUT_MS);
+        if (health?.isOperational === true) {
+          _edgeAvailable = true;
+          _edgeLastCheck = Date.now();
+          _connectivityState = (health.sessionValid && health.onboarded !== false) ? 'edge_reachable' : 'edge_not_ready';
+          _connectivityLastCheck = Date.now();
+          return true;
+        }
       }
     } catch { /* fall through to LAN scan */ }
 
-    // Fall back to LAN scanning if backend discovery didn't work
+    // 3. LAN scan (adoptEdgeUrl syncs _edgeAvailable from the found PC).
     try {
-      const discovered = await discoverEdgeOnLAN();
-      if (discovered) {
-        // Verify the discovered server is actually ready (not just initializing)
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), EDGE_CHECK_TIMEOUT_MS);
-          const res = await fetch(`${discovered}/health`, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          if (res.ok) {
-            const health = await res.json().catch(() => ({}));
-            _edgeAvailable = health.isOperational === true;
-            if (_edgeAvailable) {
-              // Sync connectivity state for the UI
-              if (health.sessionValid) {
-                _connectivityState = 'edge_reachable';
-              } else {
-                _connectivityState = 'edge_not_ready';
-              }
-              _connectivityLastCheck = Date.now();
-              return true;
-            }
-          }
-        } catch { /* discovered server not reachable */ }
-        _discoveryLastFailed = Date.now();
-      } else {
-        _discoveryLastFailed = Date.now();
-      }
+      const discovered = await discoverEdgeOnLAN({ ...opts, wide: true });
+      if (!discovered || !_edgeAvailable) _discoveryLastFailed = Date.now();
     } catch {
       _discoveryLastFailed = Date.now();
     }
@@ -788,6 +1189,11 @@ export async function isEdgeAvailableFast() {
     clearTimeout(timeoutId);
     if (res.ok) {
       const health = await res.json().catch(() => ({}));
+      if (isOtherOutletsEdge(edgeUrl, health)) {
+        dropOtherOutletsEdge(edgeUrl);
+        _edgeLastCheck = Date.now();
+        return false;
+      }
       const available = health.isOperational === true;
       // Update the shared cache so subsequent isEdgeAvailable() calls benefit
       _edgeAvailable = available;
@@ -832,8 +1238,12 @@ export async function getEdgeConnectivityState() {
     const timeoutId = setTimeout(() => controller.abort(), isLocal ? 1500 : EDGE_CHECK_TIMEOUT_MS);
     const res = await fetch(`${edgeUrl}/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
-    if (res.ok) {
-      const health = await res.json().catch(() => ({}));
+    const health = res.ok ? await res.json().catch(() => ({})) : null;
+    if (isOtherOutletsEdge(edgeUrl, health)) {
+      // Treated as unreachable below: cloud check, then discovery for our PC.
+      dropOtherOutletsEdge(edgeUrl);
+      _connectivityLastCheck = now;
+    } else if (res.ok) {
       if (health.isOperational === true && health.sessionValid && health.onboarded !== false) {
         _connectivityState = 'edge_reachable';
         // Sync isEdgeAvailable cache so print routing (orderApi.js) sees the
@@ -1012,9 +1422,9 @@ export async function edgeFetch(path, options = {}) {
           // Don't remove the existing key until we have a fresh one.
           // If ensureEdgeApiKey() fails (cloud unreachable, no auth token),
           // wiping the key would permanently break all edge access.
-          const freshKey = await ensureEdgeApiKey().catch(() => null);
+          const freshKey = await ensureEdgeApiKey({ force: true }).catch(() => null);
           if (freshKey && freshKey !== edgeApiKey) {
-            setStoredEdgeApiKey(freshKey);
+            setStoredEdgeApiKey(freshKey, { url: getEdgeUrl() });
             const retryHeaders = { ...headers, 'X-Edge-Key': freshKey };
             res = await _edgeFetchWithKey(path, fetchOptions, retryHeaders, timeoutMs, externalSignal);
             // Key was fixed — check if retry also failed with a token error
@@ -1041,9 +1451,7 @@ export async function edgeFetch(path, options = {}) {
           // If we already have a token but the server rejected it, the token
           // is stale (rotated). Clear it so ensureEdgeRuntimeToken() fetches
           // a fresh one instead of returning the cached invalid token.
-          if (runtimeToken) {
-            try { localStorage.removeItem(EDGE_RUNTIME_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
-          }
+          if (runtimeToken) clearStoredEdgeRuntimeToken();
           const freshToken = await ensureEdgeRuntimeToken().catch(() => null);
           if (freshToken) {
             const retryHeaders = { ...headers, 'Authorization': `Bearer ${freshToken}` };

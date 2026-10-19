@@ -22,9 +22,12 @@ import { io } from "socket.io-client";
 import { API_BASE } from "../services/apiConfig";
 import { safeGetJSON } from "../utils/safeParseJSON";
 import secureStorage from "../utils/secureStorage";
+import { isCaptainEdgeOnly } from "../services/captainEdgeOnly";
 
 // Singleton socket instance — shared across the entire app
 let socketInstance = null;
+// True when the socket was created on the captain screens and never connected.
+let socketCreatedIdle = false;
 // Buffer for events emitted while socket is disconnected
 let eventQueue = [];
 // Ensures events are processed in order (FIFO)
@@ -47,6 +50,8 @@ function notifySocketDisconnect() {
 export function reconnectSocket(token) {
   if (!socketInstance) return;
   socketInstance.auth = { token };
+  // Captain app gets live updates from the billing PC, never the cloud.
+  if (isCaptainEdgeOnly()) return;
   socketInstance.disconnect().connect();
 }
 
@@ -58,13 +63,21 @@ export function disconnectSocket() {
     console.debug('[Socket] disconnectSocket error:', e);
   }
   socketInstance = null;
+  socketCreatedIdle = false;
   eventQueue = [];
   isProcessingQueue = false;
   notifySocketDisconnect();
 }
 
 export function getSocket() {
+  // Created idle on the captain screens; the cashier screens (same app on
+  // Android) connect it the first time they ask for it.
+  if (socketCreatedIdle && !isCaptainEdgeOnly()) {
+    socketCreatedIdle = false;
+    socketInstance.connect();
+  }
   if (!socketInstance) {
+    socketCreatedIdle = isCaptainEdgeOnly();
     socketInstance = io(API_BASE, {
       path: "/socket.io",
       transports: ["websocket", "polling"],
@@ -74,7 +87,7 @@ export function getSocket() {
       reconnectionDelayMax: 15000,
       randomizationFactor: 0.7,  // 0.7 — more jitter to prevent thundering herd reconnects
       timeout: 45000,           // 45s — covers Railway cold starts (can take 30s)
-      autoConnect: true,
+      autoConnect: !socketCreatedIdle,
       forceNew: false,
       addTrailingSlash: false,
       // Prevent server-side timeout killing idle connections
@@ -119,7 +132,7 @@ export function getSocket() {
         lastVisibilityHidden = true;
       } else if (document.visibilityState === "visible" && lastVisibilityHidden) {
         lastVisibilityHidden = false;
-        if (socketInstance) {
+        if (socketInstance && !isCaptainEdgeOnly()) {
           console.log("[Socket] OS resume/wake detected — forcing reconnect");
           if (socketInstance.connected) socketInstance.disconnect();
           socketInstance.connect();
@@ -127,7 +140,7 @@ export function getSocket() {
       }
     };
     const onOnline = () => {
-      if (socketInstance) {
+      if (socketInstance && !isCaptainEdgeOnly()) {
         console.log("[Socket] Network online — forcing reconnect");
         if (socketInstance.connected) socketInstance.disconnect();
         socketInstance.connect();

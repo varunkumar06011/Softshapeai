@@ -29,6 +29,8 @@ import LoginScreen from "./shared/components/LoginScreen";
 import AdminDashboard from "./admin/AdminDashboard";
 import CashierDashboard from "./cashier/CashierDashboard";
 import CaptainApp from "./captain/CaptainApp";
+import CaptainEdgeLogin from "./captain/CaptainEdgeLogin";
+import { installCaptainCloudGuard } from "./services/captainEdgeOnly";
 import UserMenuApp from "./user-menu/UserMenuApp";
 import RepresentativeMenuLanding from "./user-menu/RepresentativeMenuLanding";
 import PrintStation from "./print-station/PrintStation";
@@ -58,6 +60,8 @@ import NotFoundPage from "./pages/NotFoundPage";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import { purgeLegacyCaches } from "./utils/cacheKeys";
 
+// Captain screens never call the cloud (inactive on every other route).
+installCaptainCloudGuard();
 
 function isTokenValid(token) {
   if (!token) return false;
@@ -493,45 +497,20 @@ function CashierDashboardWrapper() {
   );
 }
 
+// Captains are edge-only: a session counts only when it came from the outlet's
+// billing PC (edge PIN login). An older cloud session is sent back to login.
+function isCaptainSession(user, token) {
+  return !!(user && isTokenValid(token) && token.startsWith('edge-local-') && ['CAPTAIN', 'OWNER', 'ADMIN'].includes(user.role));
+}
+
 function CaptainLoginWrapper() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
-  const [edgeCheck, setEdgeCheck] = useState(null);
-  const [edgeRestaurantId, setEdgeRestaurantId] = useState(null);
-  const isLoggedIn = user && token && isTokenValid(token) && ['CAPTAIN', 'OWNER', 'ADMIN'].includes(user.role);
 
-  useEffect(() => {
-    if (isLoggedIn) return; // logged-in users go straight to dashboard; skip edge check
-    let cancelled = false;
-    (async () => {
-      try {
-        const available = await isEdgeAvailable();
-        if (cancelled || !available) { setEdgeCheck(false); return; }
-        const status = await edgeFetch('/api/edge/status');
-        if (cancelled) return;
-        if (status.registered && status.sessionValid && status.localStats?.menuItems > 0) {
-          setEdgeCheck(true);
-          if (status.restaurantId) setEdgeRestaurantId(status.restaurantId);
-        } else {
-          setEdgeCheck('setup');
-        }
-      } catch {
-        if (!cancelled) setEdgeCheck(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [isLoggedIn]);
-
-  if (isLoggedIn) return <Navigate to="/captain/dashboard" replace />;
-
-  if (edgeCheck === 'setup') {
-    return <Navigate to="/edge-setup" replace />;
-  }
+  if (isCaptainSession(user, token)) return <Navigate to="/captain/dashboard" replace />;
 
   return (
-    <LoginScreen
-      role="captain"
-      onLogin={() => {}}
+    <CaptainEdgeLogin
       onBack={() => {
         if (window.Capacitor?.isNativePlatform?.()) {
           import('@capacitor/app').then(({ App }) => App.exitApp());
@@ -539,9 +518,6 @@ function CaptainLoginWrapper() {
           navigate('/');
         }
       }}
-      onEdgeSetup={() => navigate('/edge-setup')}
-      edgeAvailable={edgeCheck === true}
-      edgeRestaurantId={edgeRestaurantId}
     />
   );
 }
@@ -549,7 +525,7 @@ function CaptainLoginWrapper() {
 function CaptainAppWrapper() {
   const navigate = useNavigate();
   const { user, token, logout } = useAuth();
-  if (!(user && token && isTokenValid(token) && ['CAPTAIN', 'OWNER', 'ADMIN'].includes(user.role))) {
+  if (!isCaptainSession(user, token)) {
     logout();
     return <Navigate to="/captain" replace />;
   }

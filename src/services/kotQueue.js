@@ -11,6 +11,8 @@
 // the source of truth, not the phone's local queue.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
+
 const QUEUE_KEY = 'captain_kot_queue';
 const RETRY_INTERVAL_MS = 5000;
 const MAX_QUEUE_AGE_MS = 5 * 60 * 1000; // 5 min — after this, surface as error
@@ -19,6 +21,14 @@ let _retryTimer = null;
 let _onStatusChange = null; // callback: ({ tableId, status, message }) => void
 let _onDuplicateDetected = null; // callback: ({ tableId, queuedItems, serverItems }) => void
 let _isFlushing = false;
+
+// Functions cannot survive JSON.stringify, so they are never persisted. Handlers
+// live in memory only: per-request ones (from enqueueKot) and app-level defaults
+// (from setQueueCallbacks) which also cover entries restored after a reload.
+const _handlers = new Map(); // requestId -> { sendFn, fetchActiveOrder, onSuccess }
+let _defaultSendFn = null;
+let _defaultFetchActiveOrder = null;
+const _awaitingDecision = new Set(); // requestIds paused on the duplicate dialog
 
 // ── Queue persistence ────────────────────────────────────────────────────────
 
@@ -43,7 +53,9 @@ function _saveQueue(queue) {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export function enqueueKot(entry) {
+export function enqueueKot(rawEntry) {
+  const { sendFn, fetchActiveOrder, onSuccess, ...entry } = rawEntry;
+  _handlers.set(entry.requestId, { sendFn, fetchActiveOrder, onSuccess });
   const queue = _loadQueue();
   // Avoid duplicate entries for the same requestId
   const existing = queue.findIndex(q => q.requestId === entry.requestId);
@@ -59,6 +71,8 @@ export function enqueueKot(entry) {
 }
 
 export function removeFromQueue(requestId) {
+  _handlers.delete(requestId);
+  _awaitingDecision.delete(requestId);
   const queue = _loadQueue();
   const filtered = queue.filter(q => q.requestId !== requestId);
   _saveQueue(filtered);
@@ -73,9 +87,13 @@ export function hasQueuedKots() {
   return _loadQueue().length > 0;
 }
 
-export function setQueueCallbacks({ onStatusChange, onDuplicateDetected }) {
+export function setQueueCallbacks({ onStatusChange, onDuplicateDetected, sendFn, fetchActiveOrder }) {
   _onStatusChange = onStatusChange;
   _onDuplicateDetected = onDuplicateDetected;
+  if (sendFn) _defaultSendFn = sendFn;
+  if (fetchActiveOrder) _defaultFetchActiveOrder = fetchActiveOrder;
+  // Entries restored from a previous session can now be delivered.
+  if (_defaultSendFn && hasQueuedKots()) _ensureRetryLoop();
 }
 
 // ── Duplicate detection ──────────────────────────────────────────────────────
@@ -137,8 +155,19 @@ async function _flushQueue() {
   }
   _isFlushing = true;
   try {
-    // Process one at a time to avoid parallel sends
-    const entry = queue[0];
+    // Process one at a time to avoid parallel sends. Captains move between
+    // outlets: a KOT queued for another outlet waits until the phone is logged
+    // in there again, so it never reaches this outlet's billing PC.
+    const outletId = getCurrentRestaurantId();
+    const entry = queue.find(q => !_awaitingDecision.has(q.requestId)
+      && (!q.restaurantId || !outletId || q.restaurantId === outletId));
+    if (!entry) return;
+    const handlers = _handlers.get(entry.requestId) || {};
+    const sendFn = handlers.sendFn || _defaultSendFn;
+    const fetchActiveOrder = handlers.fetchActiveOrder || _defaultFetchActiveOrder;
+    const onSuccess = handlers.onSuccess;
+    // App hasn't registered handlers yet (fresh load) — wait, don't burn the retry budget.
+    if (!sendFn) return;
     const age = Date.now() - (entry.queuedAt || Date.now());
 
     // If queued for >5 min, surface as error — captain should check with kitchen
@@ -151,9 +180,9 @@ async function _flushQueue() {
     _notifyStatusChange(entry.tableId, 'sending', 'Sending...');
 
     // Duplicate detection: check if table already has an active order
-    if (entry.checkDuplicate && entry.fetchActiveOrder) {
+    if (entry.checkDuplicate && fetchActiveOrder) {
       try {
-        const activeOrder = await entry.fetchActiveOrder(entry.tableId);
+        const activeOrder = await fetchActiveOrder(entry.tableId);
         if (activeOrder && activeOrder.items && activeOrder.items.length > 0) {
           if (_itemsMatch(entry.items, activeOrder.items)) {
             // Cashier already sent the same items — discard queued KOT
@@ -182,6 +211,7 @@ async function _flushQueue() {
             });
           }
           // Pause this entry — caller will decide to send or discard
+          _awaitingDecision.add(entry.requestId);
           return;
         } else if (!activeOrder && entry.existingOrderId) {
           // No active order on the table, but the queue entry was for an
@@ -202,11 +232,11 @@ async function _flushQueue() {
 
     // Attempt to send
     try {
-      const result = await entry.sendFn(entry);
+      const result = await sendFn(entry);
       // Success — remove from queue and notify
       _notifyStatusChange(entry.tableId, 'sent', 'KOT Sent ✓');
       removeFromQueue(entry.requestId);
-      if (entry.onSuccess) entry.onSuccess(result);
+      if (onSuccess) onSuccess(result);
     } catch (err) {
       // If the order was already created by someone else (e.g., the cashier
       // sent the same items while this KOT was queued for retry), the API
@@ -217,7 +247,7 @@ async function _flushQueue() {
         console.log('[KOT Queue] Order already exists (409) — discarding duplicate');
         _notifyStatusChange(entry.tableId, 'discarded', 'KOT was already sent from cashier. Duplicate discarded.');
         removeFromQueue(entry.requestId);
-        if (entry.onSuccess) entry.onSuccess({ id: err.existingOrderId, duplicate: true });
+        if (onSuccess) onSuccess({ id: err.existingOrderId, duplicate: true });
         return;
       }
       // Still failing — increment retry count, keep in queue

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, LogOut, Cloud, Wifi, AlertTriangle, WifiOff, Loader2 } from 'lucide-react';
+import { Bell, LogOut, Wifi, AlertTriangle, WifiOff, Loader2 } from 'lucide-react';
 
 export default function TopNavbar({
   restaurant,
@@ -13,36 +13,33 @@ export default function TopNavbar({
   const available = edgeStatus?.available;
   const connState = edgeStatus?.connState;
 
-  let edgeLabel = 'Cloud';
-  let Icon = Cloud;
-  let bg = '#EFF6FF';
-  let color = '#2563EB';
-  let border = '#BFDBFE';
+  // The captain app works through the billing PC only — there is no cloud
+  // state. A background re-check while connected keeps showing "Edge" so the
+  // badge doesn't flicker every poll.
+  let edgeLabel = 'No PC';
+  let Icon = WifiOff;
+  let bg = '#FEF2F2';
+  let color = '#DC2626';
+  let border = '#FECACA';
 
-  if (checking) {
-    edgeLabel = 'Checking';
-    Icon = Loader2;
-  } else if (available) {
+  if (available) {
     edgeLabel = 'Edge';
     Icon = Wifi;
     bg = '#ECFDF5';
     color = '#059669';
     border = '#A7F3D0';
+  } else if (checking) {
+    edgeLabel = 'Checking';
+    Icon = Loader2;
+    bg = '#EFF6FF';
+    color = '#2563EB';
+    border = '#BFDBFE';
   } else if (connState === 'edge_not_ready') {
     edgeLabel = 'Setup';
     Icon = AlertTriangle;
     bg = '#FFFBEB';
     color = '#D97706';
     border = '#FDE68A';
-  } else if (connState === 'cloud_reachable') {
-    edgeLabel = 'Cloud';
-    Icon = Cloud;
-  } else {
-    edgeLabel = 'Offline';
-    Icon = WifiOff;
-    bg = '#FEF2F2';
-    color = '#DC2626';
-    border = '#FECACA';
   }
 
   return (
