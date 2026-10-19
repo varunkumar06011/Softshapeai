@@ -775,6 +775,40 @@ export async function findBillingPcsOnLan({ forCaptain = true, onFound } = {}) {
   return [...outlets.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * "192.168.1.50", "192.168.1.50:3101" or "http://192.168.1.50:3101" → the
+ * billing PC's base URL (port 3101 unless given), or null if not an address.
+ */
+export function normalizeBillingPcAddress(address) {
+  let value = String(address || '').trim();
+  if (!value) return null;
+  if (!/^https?:\/\//i.test(value)) value = `http://${value}`;
+  try {
+    const u = new URL(value);
+    if (!u.hostname) return null;
+    return `${u.protocol}//${u.hostname}:${u.port || new URL(DEFAULT_EDGE_URL).port}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A billing PC address typed in by hand at captain login, for when the WiFi
+ * search does not find the PC. Returns its outlet entry (same shape as
+ * findBillingPcsOnLan) and remembers the address for that outlet, so the next
+ * search tries it first — or null if no usable billing PC answers there.
+ */
+export async function probeBillingPcAt(address, { forCaptain = true } = {}) {
+  const url = normalizeBillingPcAddress(address);
+  if (!url || isHttpsBrowserContext()) return null;
+  const health = await probeEdgeHealth(url, EDGE_CHECK_TIMEOUT_MS);
+  if (!isUsableEdgeHealth(health, { expected: null, forCaptain }) || !health.restaurantId) return null;
+  rememberEdgeUrlForOutlet(health.restaurantId, url);
+  rememberOutletAlias(health.restaurantCode, health.restaurantId);
+  rememberOutletAlias(health.restaurantSlug, health.restaurantId);
+  return { outletId: health.restaurantId, name: health.restaurantName || 'Billing PC', url };
+}
+
 async function scanLanForEdge({ expected, forCaptain, wide }) {
   const prefixes = await getLocalSubnetPrefixes();
   if (wide) {
@@ -1476,6 +1510,10 @@ export async function edgeFetch(path, options = {}) {
         err.statusCode = res.status;
         if (body?.orderId) err.existingOrderId = body.orderId;
         if (body?.missing) err.missing = body.missing;
+        // A retried KOT the billing PC refused because the same food was
+        // already added to the table (code POSSIBLE_DUPLICATE + conflicts).
+        if (body?.code) err.code = body.code;
+        if (body?.conflicts) err.conflicts = body.conflicts;
         throw err;
       }
       if (res.status === 204) return null;

@@ -4,7 +4,8 @@
 // The captain app is edge-only (see services/captainEdgeOnly.js):
 //   1. Outlet — the billing PCs on this WiFi are found automatically and
 //      listed by outlet name. Captains move between outlets, so the outlet is
-//      picked at every login. No code to type, no IP to enter, no cloud.
+//      picked at every login. No code to type, no cloud. If the search does
+//      not find a PC, its address (shown on the cashier screen) can be typed.
 //   2. Staff — the captain list comes from that outlet's PC.
 //   3. PIN  — checked by that PC, which also hands out the LAN credentials.
 // Two outlets sharing one WiFi each appear once; a captain can only ever log
@@ -16,7 +17,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, ShieldCheck, Store, RefreshCw, Wifi } from 'lucide-react';
 import { authService } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
-import { discoverEdgeOnLAN, findBillingPcsOnLan, isCurrentEdgeForOutlet, stopUsingManualEdgeUrl } from '../services/edgeHealth';
+import { discoverEdgeOnLAN, findBillingPcsOnLan, isCurrentEdgeForOutlet, stopUsingManualEdgeUrl, probeBillingPcAt } from '../services/edgeHealth';
+
+const LAST_PC_ADDRESS_KEY = 'captain_last_pc_address';
 
 const CaptainEdgeLogin = ({ onBack }) => {
   const { setAuth } = useAuth();
@@ -29,6 +32,10 @@ const CaptainEdgeLogin = ({ onBack }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showAddress, setShowAddress] = useState(false);
+  const [pcAddress, setPcAddress] = useState(() => {
+    try { return localStorage.getItem(LAST_PC_ADDRESS_KEY) || ''; } catch { return ''; }
+  });
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -76,6 +83,25 @@ const CaptainEdgeLogin = ({ onBack }) => {
       if (mountedRef.current) setLoading(false);
     }
   }, []);
+
+  // The search did not find the PC (or it is on another part of the network):
+  // check the address the captain typed and open that outlet.
+  const connectByAddress = async () => {
+    if (!pcAddress.trim()) { setError('Enter the billing PC address, e.g. 192.168.1.50'); return; }
+    setLoading(true);
+    setError('');
+    const found = await probeBillingPcAt(pcAddress).catch(() => null);
+    setLoading(false);
+    if (!mountedRef.current) return;
+    if (!found) {
+      setError(`No billing PC answered at ${pcAddress.trim()}. Check the address shown on the billing PC screen, and that this phone is on the same WiFi.`);
+      return;
+    }
+    try { localStorage.setItem(LAST_PC_ADDRESS_KEY, pcAddress.trim()); } catch { /* ignore */ }
+    setOutlets(prev => (prev.some(o => o.outletId === found.outletId) ? prev : [...prev, found]));
+    setShowAddress(false);
+    await openOutlet(found);
+  };
 
   // PCs found before are checked first, so both outlets usually show within
   // a second; the rest of the WiFi is searched while the list is on screen.
@@ -163,6 +189,30 @@ const CaptainEdgeLogin = ({ onBack }) => {
               {!scanning && (
                 <button onClick={scan} disabled={loading} className={primaryButton}>
                   <RefreshCw size={20} /> Search Again
+                </button>
+              )}
+              {showAddress ? (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Billing PC Address</label>
+                  <input
+                    className="w-full h-14 rounded-[20px] border-2 border-gray-50 bg-gray-50 px-5 text-center text-lg font-black outline-none focus:border-[#E53935] focus:bg-white transition-all"
+                    type="text"
+                    inputMode="decimal"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    placeholder="e.g. 192.168.1.50"
+                    value={pcAddress}
+                    onChange={(e) => { setPcAddress(e.target.value); setError(''); }}
+                    onKeyDown={(e) => e.key === 'Enter' && connectByAddress()}
+                  />
+                  <p className="text-[11px] font-bold text-gray-400 px-1">Shown at the bottom of the billing PC screen.</p>
+                  <button onClick={connectByAddress} disabled={loading} className={primaryButton}>
+                    <Store size={20} /> {loading ? 'Checking…' : 'Connect'}
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => { setShowAddress(true); setError(''); }} className={`${linkButton} w-full`}>
+                  Enter billing PC address
                 </button>
               )}
             </>

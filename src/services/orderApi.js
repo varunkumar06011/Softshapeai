@@ -257,7 +257,18 @@ export async function reserveKotNumber(requestId = null) {
 
 
 
-export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null, failFastOnEdgeDown = false, signal = null }) {
+/**
+ * Body fields for a retried captain KOT. The billing PC uses them to refuse a
+ * retry whose food was already added to the table since the first attempt
+ * (e.g. the captain walked to the cashier), unless the captain chose
+ * "Send anyway". sentAt lets the PC correct for the phone's clock.
+ */
+function retryGuardFields(retryGuard) {
+  if (!retryGuard?.firstAttemptAt) return {};
+  return { firstAttemptAt: retryGuard.firstAttemptAt, sentAt: Date.now(), allowDuplicate: !!retryGuard.allowDuplicate };
+}
+
+export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null, failFastOnEdgeDown = false, signal = null, retryGuard = null }) {
 
   const orderData = { tableId, tableNumber, restaurantId, items: toOrderItems(items) };
 
@@ -365,6 +376,8 @@ export async function createOrder({ tableId, tableNumber, items, restaurantId = 
         isExtraTable: !!isExtraTable,
 
         tableNumber: tableNumber || undefined,
+
+        ...retryGuardFields(retryGuard),
 
       };
 
@@ -834,7 +847,7 @@ export async function fetchTableOrder(tableId) {
 
 
 
-export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null, captainId = null, failFastOnEdgeDown = false, signal = null) {
+export async function updateOrderItems(orderId, items, requestId = null, captainName = null, isExtraTable = false, tableNumber = null, lastUpdatedAt = null, timeoutMs = 12000, preReservedKotNumber = null, tableId = null, localPrinted = false, kotEventIds = null, captainId = null, failFastOnEdgeDown = false, signal = null, retryGuard = null) {
 
   const body = { items: toOrderItems(items) };
 
@@ -918,6 +931,8 @@ export async function updateOrderItems(orderId, items, requestId = null, captain
         isExtraTable: !!isExtraTable,
 
         tableNumber: tableNumber || undefined,
+
+        ...retryGuardFields(retryGuard),
 
       };
 

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // kotQueue persists entries to localStorage as JSON, so closures are lost on
-// every _loadQueue(). These tests pin down that retries still reach sendFn.
+// every _loadQueue(). These tests pin down that retries still reach sendFn,
+// that duplicates are left to the billing PC, and that an old KOT is never
+// sent behind the captain's back.
 
 function installLocalStorage() {
   const store = new Map();
@@ -86,17 +88,63 @@ describe('kotQueue', () => {
     expect(kotQueue.getQueuedKots()[0].retryCount).toBeGreaterThanOrEqual(2);
   });
 
-  it('pauses on a differing active order and asks once, not every tick', async () => {
+  it('pauses on POSSIBLE_DUPLICATE from the billing PC and asks once, not every tick', async () => {
     const onDuplicateDetected = vi.fn();
     kotQueue.setQueueCallbacks({ onStatusChange: () => {}, onDuplicateDetected });
-    kotQueue.enqueueKot(baseEntry({
-      checkDuplicate: true,
-      sendFn: vi.fn(),
-      fetchActiveOrder: async () => ({ id: 'o9', items: [{ menuItemId: 'other', quantity: 1 }] }),
-    }));
+    const dup = Object.assign(new Error('dup'), { statusCode: 409, code: 'POSSIBLE_DUPLICATE', conflicts: [{ menuItemId: 'm1', name: 'Biryani' }] });
+    const sendFn = vi.fn().mockRejectedValue(dup);
+    kotQueue.enqueueKot(baseEntry({ sendFn }));
     await vi.advanceTimersByTimeAsync(200);
     await vi.advanceTimersByTimeAsync(11000);
+    expect(sendFn).toHaveBeenCalledTimes(1);
     expect(onDuplicateDetected).toHaveBeenCalledTimes(1);
+    expect(onDuplicateDetected.mock.calls[0][0]).toMatchObject({ requestId: 'req-1', conflicts: [{ name: 'Biryani' }] });
+    expect(kotQueue.hasQueuedKots()).toBe(true);
+  });
+
+  it('"Send anyway" resends the same KOT with allowDuplicate, optionally only the new items', async () => {
+    const dup = Object.assign(new Error('dup'), { statusCode: 409, code: 'POSSIBLE_DUPLICATE', conflicts: [] });
+    const sendFn = vi.fn().mockRejectedValueOnce(dup).mockResolvedValue({ id: 'o5' });
+    kotQueue.setQueueCallbacks({ onStatusChange: () => {}, onDuplicateDetected: () => {} });
+    kotQueue.enqueueKot(baseEntry({
+      sendFn,
+      apiItems: [{ menuItemId: 'm1', quantity: 1 }, { menuItemId: 'm2', quantity: 2 }],
+      items: [{ id: 'm1', q: 1 }, { id: 'm2', q: 2 }],
+    }));
+    await vi.advanceTimersByTimeAsync(200);
+
+    kotQueue.sendQueuedKotAnyway('req-1', { onlyMenuItemIds: ['m2'] });
+    await vi.advanceTimersByTimeAsync(5000);
+
+    const sent = sendFn.mock.calls[1][0];
+    expect(sent).toMatchObject({ requestId: 'req-1', allowDuplicate: true, apiItems: [{ menuItemId: 'm2', quantity: 2 }] });
+    expect(kotQueue.hasQueuedKots()).toBe(false);
+  });
+
+  it('stops sending after the 2-minute window and tells the captain it was NOT sent', async () => {
+    const onStatusChange = vi.fn();
+    const sendFn = vi.fn().mockRejectedValue(new Error('offline'));
+    kotQueue.setQueueCallbacks({ onStatusChange, onDuplicateDetected: () => {} });
+    kotQueue.enqueueKot(baseEntry({ sendFn, tableLabel: '5' }));
+    await vi.advanceTimersByTimeAsync(kotQueue.AUTO_SEND_WINDOW_MS + 10_000);
+    const callsSoFar = sendFn.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(sendFn.mock.calls.length).toBe(callsSoFar);
+    expect(kotQueue.hasQueuedKots()).toBe(false);
+    expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', message: 'KOT NOT SENT — Table 5', requestId: 'req-1' }));
+  });
+
+  it('does not keep resending a KOT the billing PC refused (e.g. 400)', async () => {
+    const onStatusChange = vi.fn();
+    const sendFn = vi.fn().mockRejectedValue(Object.assign(new Error('Item unavailable'), { statusCode: 400 }));
+    kotQueue.setQueueCallbacks({ onStatusChange, onDuplicateDetected: () => {} });
+    kotQueue.enqueueKot(baseEntry({ sendFn }));
+    await vi.advanceTimersByTimeAsync(11000);
+
+    expect(sendFn).toHaveBeenCalledTimes(1);
+    expect(kotQueue.hasQueuedKots()).toBe(false);
+    expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', message: 'Item unavailable' }));
   });
 
   it('holds a KOT queued at another outlet until the captain is back there', async () => {

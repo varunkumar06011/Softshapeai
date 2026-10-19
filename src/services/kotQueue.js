@@ -1,33 +1,35 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// kotQueue.js — Captain KOT local queue with retry + duplicate detection
+// kotQueue.js — Captain KOT resend after a WiFi drop
 // ─────────────────────────────────────────────────────────────────────────────
-// When a KOT send fails (WiFi dead/weak), the KOT is saved to localStorage.
-// A background loop retries every 5 seconds. Before sending, it checks if the
-// table already has an active order on the edge server (cashier may have sent
-// it manually). If items match, the queued KOT is discarded (no double food).
-// If items differ, the caller is notified to show a confirmation dialog.
+// When a KOT send fails (WiFi dead/weak), it is saved to localStorage and
+// resent every 5 seconds — but only for AUTO_SEND_WINDOW_MS. After that it is
+// never sent behind the captain's back: the captain sees "KOT NOT SENT" and
+// sends it again or discards it.
 //
-// This mirrors Petpooja's "syncs with the POS" behavior — the edge server is
-// the source of truth, not the phone's local queue.
+// Duplicates are decided by the billing PC, not guessed here. Every resend
+// carries the KOT's first-attempt time; if the cashier (or anyone) added the
+// same food to the table since, the PC refuses it with POSSIBLE_DUPLICATE and
+// the captain chooses: discard, send only the new items, or send anyway.
+// A resend of a KOT that already reached the PC (reply lost) returns the
+// earlier result — the requestId is the same, so nothing prints twice.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getCurrentRestaurantId } from '../utils/getCurrentRestaurantId';
 
 const QUEUE_KEY = 'captain_kot_queue';
 const RETRY_INTERVAL_MS = 5000;
-const MAX_QUEUE_AGE_MS = 5 * 60 * 1000; // 5 min — after this, surface as error
+export const AUTO_SEND_WINDOW_MS = 2 * 60 * 1000;
 
 let _retryTimer = null;
-let _onStatusChange = null; // callback: ({ tableId, status, message }) => void
-let _onDuplicateDetected = null; // callback: ({ tableId, queuedItems, serverItems }) => void
+let _onStatusChange = null; // ({ tableId, captainId, status, message, requestId, result, items }) => void
+let _onDuplicateDetected = null; // ({ tableId, tableLabel, captainId, requestId, conflicts, queuedItems }) => void
 let _isFlushing = false;
 
 // Functions cannot survive JSON.stringify, so they are never persisted. Handlers
-// live in memory only: per-request ones (from enqueueKot) and app-level defaults
-// (from setQueueCallbacks) which also cover entries restored after a reload.
-const _handlers = new Map(); // requestId -> { sendFn, fetchActiveOrder, onSuccess }
+// live in memory only: per-request ones (from enqueueKot) and the app-level
+// default (from setQueueCallbacks) which also covers entries restored after a reload.
+const _handlers = new Map(); // requestId -> { sendFn, onSuccess }
 let _defaultSendFn = null;
-let _defaultFetchActiveOrder = null;
 const _awaitingDecision = new Set(); // requestIds paused on the duplicate dialog
 
 // ── Queue persistence ────────────────────────────────────────────────────────
@@ -53,9 +55,14 @@ function _saveQueue(queue) {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+/**
+ * Entry: { requestId, tableId, tableLabel, items, apiItems, existingOrderId,
+ * activeTable, restaurantId, captainName, captainId, sectionTag,
+ * firstAttemptAt } plus in-memory sendFn / onSuccess.
+ */
 export function enqueueKot(rawEntry) {
-  const { sendFn, fetchActiveOrder, onSuccess, ...entry } = rawEntry;
-  _handlers.set(entry.requestId, { sendFn, fetchActiveOrder, onSuccess });
+  const { sendFn, onSuccess, ...entry } = rawEntry;
+  _handlers.set(entry.requestId, { sendFn, onSuccess });
   const queue = _loadQueue();
   // Avoid duplicate entries for the same requestId
   const existing = queue.findIndex(q => q.requestId === entry.requestId);
@@ -65,7 +72,7 @@ export function enqueueKot(rawEntry) {
     queue.push({ ...entry, retryCount: 0, queuedAt: Date.now() });
   }
   _saveQueue(queue);
-  _notifyStatusChange(entry.tableId, 'queued', 'Sending... will deliver when connection returns');
+  _notifyStatusChange(entry, 'queued', 'Sending... will deliver when WiFi returns');
   _ensureRetryLoop();
   return entry.requestId;
 }
@@ -79,6 +86,24 @@ export function removeFromQueue(requestId) {
   if (filtered.length === 0) _stopRetryLoop();
 }
 
+/** Captain answered the duplicate dialog with "Send anyway" / "Send only new items". */
+export function sendQueuedKotAnyway(requestId, { onlyMenuItemIds = null } = {}) {
+  const queue = _loadQueue();
+  const entry = queue.find(q => q.requestId === requestId);
+  if (!entry) return false;
+  if (onlyMenuItemIds) {
+    const keep = new Set(onlyMenuItemIds.map(String));
+    entry.apiItems = (entry.apiItems || []).filter(i => keep.has(String(i.menuItemId)));
+    entry.items = (entry.items || []).filter(i => keep.has(String(i.id || i.menuItemId)));
+  }
+  entry.allowDuplicate = true;
+  entry.queuedAt = Date.now(); // a fresh decision gets a fresh send window
+  _saveQueue(queue);
+  _awaitingDecision.delete(requestId);
+  _ensureRetryLoop();
+  return true;
+}
+
 export function getQueuedKots() {
   return _loadQueue();
 }
@@ -87,47 +112,19 @@ export function hasQueuedKots() {
   return _loadQueue().length > 0;
 }
 
-export function setQueueCallbacks({ onStatusChange, onDuplicateDetected, sendFn, fetchActiveOrder }) {
+export function clearQueue() {
+  _handlers.clear();
+  _awaitingDecision.clear();
+  _saveQueue([]);
+  _stopRetryLoop();
+}
+
+export function setQueueCallbacks({ onStatusChange, onDuplicateDetected, sendFn }) {
   _onStatusChange = onStatusChange;
   _onDuplicateDetected = onDuplicateDetected;
   if (sendFn) _defaultSendFn = sendFn;
-  if (fetchActiveOrder) _defaultFetchActiveOrder = fetchActiveOrder;
-  // Entries restored from a previous session can now be delivered.
+  // Entries restored from a previous session can now be delivered (or expired).
   if (_defaultSendFn && hasQueuedKots()) _ensureRetryLoop();
-}
-
-// ── Duplicate detection ──────────────────────────────────────────────────────
-// Before sending a queued KOT, check if the table already has an active order
-// on the edge server. If items match, discard (cashier already sent it).
-// If items differ, notify the caller to show a confirmation dialog.
-
-function _itemsMatch(queuedItems, serverItems) {
-  if (!serverItems || serverItems.length === 0) return false;
-  // Compare by menuItemId + quantity — notes can differ slightly
-  const normalize = (items) => items.map(i => ({
-    id: String(i.menuItemId || i.id || ''),
-    q: Number(i.quantity || i.q || 1),
-  })).sort((a, b) => a.id.localeCompare(b.id));
-
-  const q = normalize(queuedItems);
-  const s = normalize(serverItems);
-  if (q.length !== s.length) return false;
-  return q.every((qi, i) => qi.id === s[i].id && qi.q === s[i].q);
-}
-
-function _diffItems(queuedItems, serverItems) {
-  // Return items in queue that are NOT in the server order
-  const serverIds = new Map();
-  for (const s of (serverItems || [])) {
-    const sid = String(s.menuItemId || s.id || '');
-    serverIds.set(sid, (serverIds.get(sid) || 0) + Number(s.quantity || s.q || 1));
-  }
-  return queuedItems.filter(qi => {
-    const qid = String(qi.menuItemId || qi.id || '');
-    const serverQty = serverIds.get(qid) || 0;
-    const queueQty = Number(qi.quantity || qi.q || 1);
-    return queueQty > serverQty; // item missing or qty is higher on server
-  });
 }
 
 // ── Retry loop ───────────────────────────────────────────────────────────────
@@ -146,6 +143,12 @@ function _stopRetryLoop() {
   }
 }
 
+/** A real answer from the billing PC (not a network failure) — resending won't change it. */
+function _isFinalError(err) {
+  const status = err?.statusCode || err?.status;
+  return !!status && status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
 async function _flushQueue() {
   if (_isFlushing) return;
   const queue = _loadQueue();
@@ -155,120 +158,74 @@ async function _flushQueue() {
   }
   _isFlushing = true;
   try {
-    // Process one at a time to avoid parallel sends. Captains move between
-    // outlets: a KOT queued for another outlet waits until the phone is logged
-    // in there again, so it never reaches this outlet's billing PC.
+    // Process one at a time to avoid parallel sends. Only this outlet's KOTs:
+    // a KOT must never reach another outlet's billing PC.
     const outletId = getCurrentRestaurantId();
     const entry = queue.find(q => !_awaitingDecision.has(q.requestId)
       && (!q.restaurantId || !outletId || q.restaurantId === outletId));
     if (!entry) return;
     const handlers = _handlers.get(entry.requestId) || {};
     const sendFn = handlers.sendFn || _defaultSendFn;
-    const fetchActiveOrder = handlers.fetchActiveOrder || _defaultFetchActiveOrder;
-    const onSuccess = handlers.onSuccess;
-    // App hasn't registered handlers yet (fresh load) — wait, don't burn the retry budget.
+    // App hasn't registered handlers yet (fresh load) — wait.
     if (!sendFn) return;
-    const age = Date.now() - (entry.queuedAt || Date.now());
 
-    // If queued for >5 min, surface as error — captain should check with kitchen
-    if (age > MAX_QUEUE_AGE_MS) {
-      _notifyStatusChange(entry.tableId, 'failed', 'KOT could not be delivered — check with kitchen');
+    // Past the auto-send window: never print an old KOT silently.
+    if (Date.now() - (entry.queuedAt || Date.now()) > AUTO_SEND_WINDOW_MS) {
       removeFromQueue(entry.requestId);
+      _notifyStatusChange(entry, 'failed', `KOT NOT SENT${entry.tableLabel ? ` — Table ${entry.tableLabel}` : ''}`);
       return;
     }
 
-    _notifyStatusChange(entry.tableId, 'sending', 'Sending...');
+    _notifyStatusChange(entry, 'sending', 'Sending...');
 
-    // Duplicate detection: check if table already has an active order
-    if (entry.checkDuplicate && fetchActiveOrder) {
-      try {
-        const activeOrder = await fetchActiveOrder(entry.tableId);
-        if (activeOrder && activeOrder.items && activeOrder.items.length > 0) {
-          if (_itemsMatch(entry.items, activeOrder.items)) {
-            // Cashier already sent the same items — discard queued KOT
-            console.log('[KOT Queue] Table already has matching order — discarding duplicate');
-            _notifyStatusChange(entry.tableId, 'discarded', 'KOT was already sent from cashier. Duplicate discarded.');
-            removeFromQueue(entry.requestId);
-            return;
-          }
-          // Items differ — check if there are genuinely new items to send
-          const newItems = _diffItems(entry.items, activeOrder.items);
-          if (newItems.length === 0) {
-            // All items already on server — discard
-            _notifyStatusChange(entry.tableId, 'discarded', 'All items already on the order. Duplicate discarded.');
-            removeFromQueue(entry.requestId);
-            return;
-          }
-          // There are additional items — notify caller to show confirmation
-          if (_onDuplicateDetected) {
-            _onDuplicateDetected({
-              tableId: entry.tableId,
-              requestId: entry.requestId,
-              queuedItems: entry.items,
-              serverItems: activeOrder.items,
-              newItems,
-              existingOrderId: activeOrder.id,
-            });
-          }
-          // Pause this entry — caller will decide to send or discard
-          _awaitingDecision.add(entry.requestId);
-          return;
-        } else if (!activeOrder && entry.existingOrderId) {
-          // No active order on the table, but the queue entry was for an
-          // existing order (updateOrderItems path). The order was settled
-          // (bill paid, table freed) while this KOT was queued for retry.
-          // The items were already sent — discarding prevents a duplicate
-          // KOT print on a settled table.
-          console.log('[KOT Queue] Table settled (no active order) — discarding queued KOT for existing order');
-          _notifyStatusChange(entry.tableId, 'discarded', 'Table was settled. KOT was already sent. Duplicate discarded.');
-          removeFromQueue(entry.requestId);
-          return;
-        }
-      } catch (err) {
-        // Can't reach edge to check — continue with send attempt
-        console.warn('[KOT Queue] Duplicate check failed, proceeding with send:', err.message);
-      }
-    }
-
-    // Attempt to send
     try {
       const result = await sendFn(entry);
-      // Success — remove from queue and notify
-      _notifyStatusChange(entry.tableId, 'sent', 'KOT Sent ✓');
       removeFromQueue(entry.requestId);
-      if (onSuccess) onSuccess(result);
+      _notifyStatusChange(entry, 'sent', 'KOT Sent ✓', { result, items: entry.items || [] });
+      if (handlers.onSuccess) handlers.onSuccess(result);
     } catch (err) {
-      // If the order was already created by someone else (e.g., the cashier
-      // sent the same items while this KOT was queued for retry), the API
-      // returns 409 with existingOrderId. Discard the queued KOT — the
-      // kitchen already received the order. Re-sending would create a
-      // duplicate KOT print (the kitchen prepares the same food twice).
-      if ((err?.statusCode === 409 || err?.status === 409) && err?.existingOrderId) {
-        console.log('[KOT Queue] Order already exists (409) — discarding duplicate');
-        _notifyStatusChange(entry.tableId, 'discarded', 'KOT was already sent from cashier. Duplicate discarded.');
-        removeFromQueue(entry.requestId);
-        if (onSuccess) onSuccess({ id: err.existingOrderId, duplicate: true });
+      if (err?.code === 'POSSIBLE_DUPLICATE') {
+        // The billing PC found the same food added to this table since the
+        // first attempt. Pause until the captain decides.
+        _awaitingDecision.add(entry.requestId);
+        _notifyStatusChange(entry, 'awaiting', 'Same items already on this table — choose what to do');
+        _onDuplicateDetected?.({
+          tableId: entry.tableId,
+          tableLabel: entry.tableLabel,
+          captainId: entry.captainId,
+          requestId: entry.requestId,
+          conflicts: err.conflicts || [],
+          queuedItems: entry.items || [],
+          source: 'queue',
+        });
         return;
       }
-      // Still failing — increment retry count, keep in queue
-      entry.retryCount = (entry.retryCount || 0) + 1;
-      _saveQueue(queue);
-      _notifyStatusChange(entry.tableId, 'queued', `Sending... (retry ${entry.retryCount})`);
+      if (_isFinalError(err)) {
+        removeFromQueue(entry.requestId);
+        _notifyStatusChange(entry, 'failed', err.message || 'KOT NOT SENT');
+        return;
+      }
+      // Network failure — keep trying until the window closes.
+      const fresh = _loadQueue();
+      const stored = fresh.find(q => q.requestId === entry.requestId);
+      if (stored) {
+        stored.retryCount = (stored.retryCount || 0) + 1;
+        _saveQueue(fresh);
+        _notifyStatusChange(entry, 'queued', `Sending... (retry ${stored.retryCount})`);
+      }
     }
   } finally {
     _isFlushing = false;
   }
 }
 
-function _notifyStatusChange(tableId, status, message) {
-  if (_onStatusChange) {
-    _onStatusChange({ tableId, status, message });
-  }
+function _notifyStatusChange(entry, status, message, extra = {}) {
+  _onStatusChange?.({ tableId: entry.tableId, captainId: entry.captainId, requestId: entry.requestId, status, message, ...extra });
 }
 
 // ── Cleanup on module load (remove stale entries from previous session) ──────
-
-// Remove entries older than 30 minutes on startup — they're stale
+// Entries older than the send window are left for the first flush, which tells
+// the captain they were not sent. Very old ones (app closed for long) are dropped.
 (function _cleanupStaleEntries() {
   const queue = _loadQueue();
   const fresh = queue.filter(q => Date.now() - (q.queuedAt || 0) < 30 * 60 * 1000);

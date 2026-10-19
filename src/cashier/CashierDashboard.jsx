@@ -87,6 +87,7 @@ import { getBottlesForMenuItem } from '../services/barInventoryApi';
 import { billSequence } from '../shared/utils/billNumber';
 
 import PcSetupModal from './PcSetupModal';
+import PcAddress from './PcAddress';
 
 import { buildFoodKOT, buildLiquorKOT, buildBillEscpos } from '../utils/escposFrontend';
 
@@ -12417,6 +12418,8 @@ const CashierDashboard = ({ onLogout }) => {
             <span className="hidden lg:block text-xs md:text-sm font-black uppercase tracking-wider text-white/80 group-hover:text-white">Logout</span>
 
           </button>
+
+          <PcAddress />
 
         </div>
 

@@ -63,26 +63,39 @@ public class LocalNetworkPlugin extends Plugin {
             ConnectivityManager cm = (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
             if (cm == null) return null;
 
-            Network activeNetwork = cm.getActiveNetwork();
-            if (activeNetwork == null) return null;
-
-            // Only use WiFi transport to avoid picking up cellular/VPN
-            NetworkCapabilities caps = cm.getNetworkCapabilities(activeNetwork);
-            if (caps == null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                return null;
-            }
-
-            LinkProperties lp = cm.getLinkProperties(activeNetwork);
-            if (lp == null) return null;
-
-            for (LinkAddress la : lp.getLinkAddresses()) {
-                InetAddress addr = la.getAddress();
-                if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                    return addr.getHostAddress();
+            // The WiFi network this app is bound to (MainActivity keeps the app
+            // on WiFi), else the active network, else any WiFi network. When the
+            // WiFi has no internet, Android makes mobile data the active network
+            // although the phone is still on the restaurant WiFi.
+            String ip = wifiIpv4(cm, cm.getBoundNetworkForProcess());
+            if (ip == null) ip = wifiIpv4(cm, cm.getActiveNetwork());
+            if (ip == null) {
+                for (Network network : cm.getAllNetworks()) {
+                    ip = wifiIpv4(cm, network);
+                    if (ip != null) break;
                 }
             }
+            return ip;
         } catch (Exception e) {
             // Fall through to NetworkInterface enumeration
+        }
+        return null;
+    }
+
+    /** IPv4 address of `network` if it is a WiFi network (never cellular/VPN). */
+    private String wifiIpv4(ConnectivityManager cm, Network network) {
+        if (network == null) return null;
+        NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+        if (caps == null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+            return null;
+        }
+        LinkProperties lp = cm.getLinkProperties(network);
+        if (lp == null) return null;
+        for (LinkAddress la : lp.getLinkAddresses()) {
+            InetAddress addr = la.getAddress();
+            if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
+                return addr.getHostAddress();
+            }
         }
         return null;
     }
