@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { edgeFetch, isEdgeAvailable, getEdgeUrl, isEdgeLocalAuth, waitForEdgeReady, EDGE_READ_TIMEOUT_MS } from './edgeHealth';
+import { isEdgeReady } from './edgeReadiness';
 
 // ── Bridge status ────────────────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ export async function isBridgeReady() {
   if (!available) return false;
   try {
     const status = await getBridgeStatus();
-    return !!(status?.registered && status?.sessionValid && status?.localStats?.menuItems > 0);
+    return isEdgeReady(status);
   } catch {
     return false;
   }

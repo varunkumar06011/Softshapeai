@@ -3899,6 +3899,22 @@ export default function CaptainApp({ onLogout }) {
         return;
       }
 
+      if (err?.code === 'ORDER_CLOSED') {
+        // The table was billed (or its order cancelled) while this phone was
+        // offline. The billing PC saved and printed nothing. The old order is
+        // forgotten, so Retry starts a fresh order for guests who are still there.
+        clearPendingKot(currentCaptain.id, activeTableId);
+        activeOrderIdRef.current = null;
+        addNotification('KOT NOT sent', err.message, 'error');
+        setKotError({
+          message: `${err.message}. Nothing was sent to the kitchen. If the guests are still there, tap Retry to start a new order for them.`,
+          retryItems: retrySnapshot,
+          tableId: activeTableId,
+          notSent: true,
+        });
+        return;
+      }
+
       const status = err?.statusCode || err?.status;
       if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
         // The billing PC answered and refused this KOT — resending won't help.

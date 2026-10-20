@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { isEdgeAvailable, edgeFetch, resetEdgeCache, setStoredEdgeApiKey, setStoredEdgeRuntimeToken } from '../services/edgeHealth.js';
 import { API_BASE } from '../services/apiConfig.js';
 import { getDeviceId } from '../utils/deviceId.js';
+import { edgeNotReadyReason } from '../services/edgeReadiness';
 import {
   CheckCircle2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   Cloud, Database, Link2, Server, Utensils, LayoutGrid, Users,
@@ -74,6 +75,7 @@ const STEPS = [
 
 export default function EdgeSetupScreen() {
   const navigate = useNavigate();
+  const [continueError, setContinueError] = useState(null);
 
   // ── Phase state ──────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState('edge-start'); // edge-start | collect-info | register | config-sync | ready
@@ -464,7 +466,22 @@ export default function EdgeSetupScreen() {
   }, []);
 
   // ── Navigate to cashier login ───────────────────────────────────────────────
-  const handleGoToCashier = () => navigate('/cashier');
+  // Check what the cashier login will check. If it would send the user straight
+  // back here, say why instead of looping between the two screens.
+  const handleGoToCashier = async () => {
+    setContinueError(null);
+    try {
+      const status = await edgeFetch('/api/edge/status');
+      const reason = edgeNotReadyReason(status);
+      if (reason) {
+        setContinueError(reason);
+        return;
+      }
+    } catch {
+      // Can't read the status — let the cashier login decide.
+    }
+    navigate('/cashier');
+  };
 
   // ── Skip to offline onboarding (Path B) — DEPRECATED ─────────────────────
   // Offline onboarding (QuickOnboarding) is deprecated. Users must register via
@@ -948,6 +965,9 @@ export default function EdgeSetupScreen() {
                 </div>
               </div>
 
+              {continueError && (
+                <p className="text-center text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-4">{continueError}</p>
+              )}
               <div className="flex flex-col items-center gap-3">
                 <button
                   onClick={handleGoToCashier}

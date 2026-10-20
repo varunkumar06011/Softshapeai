@@ -36,6 +36,7 @@ import RepresentativeMenuLanding from "./user-menu/RepresentativeMenuLanding";
 import PrintStation from "./print-station/PrintStation";
 import OnboardingWizard from "./onboarding/OnboardingWizard";
 import EdgeSetupScreen from "./onboarding/EdgeSetupScreen";
+import { isEdgeReady } from "./services/edgeReadiness";
 import SyncStatusIndicator from "./shared/components/SyncStatusIndicator";
 import AppUpdateBanner from "./shared/components/AppUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -450,7 +451,7 @@ function CashierLoginWrapper() {
         if (cancelled || !available) { setEdgeCheck(false); return; }
         const status = await edgeFetch('/api/edge/status');
         if (cancelled) return;
-        if (status.registered && status.sessionValid && status.localStats?.menuItems > 0) {
+        if (isEdgeReady(status)) {
           setEdgeCheck(true);
           if (status.restaurantId) setEdgeRestaurantId(status.restaurantId);
         } else {

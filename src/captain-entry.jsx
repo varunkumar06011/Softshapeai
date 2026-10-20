@@ -38,6 +38,7 @@ import AndroidLocalCashierRuntime from './android-local-pos/AndroidLocalCashierR
 import AndroidLocalCaptainSetup from './android-local-pos/AndroidLocalCaptainSetup'
 import { isAndroidLocalPosEnabled } from './android-local-pos/config'
 import * as Sentry from '@sentry/react'
+import { isEdgeReady } from './services/edgeReadiness'
 
 // Captain screens never call the cloud (inactive on the cashier routes).
 installCaptainCloudGuard()
@@ -117,7 +118,7 @@ function CashierLoginWrapper() {
         if (cancelled || !available) { setEdgeCheck(false); return }
         const status = await edgeFetch('/api/edge/status')
         if (cancelled) return
-        if (status.registered && status.sessionValid && status.localStats?.menuItems > 0) {
+        if (isEdgeReady(status)) {
           setEdgeCheck(true)
           if (status.restaurantId) setEdgeRestaurantId(status.restaurantId)
         } else {
