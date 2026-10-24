@@ -16,9 +16,10 @@ import { withRetry } from '../utils/resilience';
 import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
+import { getApproverOptions } from '../utils/approvers';
 
 export default function VoucherModule() {
-  const CROSS_OUTLET_APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
+  const CROSS_OUTLET_APPROVERS = getApproverOptions();
 
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);

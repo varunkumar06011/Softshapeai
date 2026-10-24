@@ -3,10 +3,10 @@ import { X, Search, ChevronDown, Loader2, Save, Wallet, AlertTriangle } from 'lu
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
-
-const CROSS_OUTLET_APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
+import { getApproverOptions } from '../utils/approvers';
 
 export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editExpenditure }) {
+  const CROSS_OUTLET_APPROVERS = getApproverOptions();
   const isEditMode = !!editExpenditure;
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [approverOptions, setApproverOptions] = useState(CROSS_OUTLET_APPROVERS);
