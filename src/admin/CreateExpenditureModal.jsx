@@ -3,7 +3,7 @@ import { X, Search, ChevronDown, Loader2, Save, Wallet, AlertTriangle } from 'lu
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
-import { getApproverOptions } from '../utils/approvers';
+import { getApproverOptions, fetchApproverOptions } from '../utils/approvers';
 
 export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editExpenditure }) {
   const CROSS_OUTLET_APPROVERS = getApproverOptions();
@@ -42,6 +42,7 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editE
       ]);
       if (optsRes.status === 'fulfilled') setPaidToOptions(optsRes.value || { staff: [] });
       if (narrationsRes.status === 'fulfilled') setNarrationSuggestions(narrationsRes.value || []);
+      setApproverOptions(await fetchApproverOptions());
     } catch (err) {
       console.error('[CreateExpenditureModal] Load options failed:', err);
     }

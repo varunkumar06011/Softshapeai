@@ -17,7 +17,7 @@ import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
-import { getApproverOptions } from '../utils/approvers';
+import { getApproverOptions, fetchApproverOptions } from '../utils/approvers';
 
 export default function ExpenditureModule() {
   const CROSS_OUTLET_APPROVERS = getApproverOptions();
@@ -85,7 +85,7 @@ export default function ExpenditureModule() {
       ]);
     }
 
-    setApproverOptions(CROSS_OUTLET_APPROVERS);
+    setApproverOptions(await fetchApproverOptions());
 
     if (errors.length > 0) {
       const isTimeout = errors.some((e) => e.toLowerCase().includes('timed out'));

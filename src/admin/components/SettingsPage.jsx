@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { adminRoutes } from '../adminRoutes';
 import { safeGetJSON } from '../../utils/safeParseJSON';
+import { LEGACY_DEFAULT_APPROVERS } from '../../utils/approvers';
 import PhoneOtpVerifier from '../../shared/components/PhoneOtpVerifier';
 import EmailOtpVerifier from '../../shared/components/EmailOtpVerifier';
 import LottieLoader from '../../shared/components/LottieLoader';
@@ -175,6 +176,10 @@ function SettingsPage({ onNavigate }) {
   // Manager tab visibility config — stored in enabledModules.managerTabs
   const [managerTabs, setManagerTabs] = useState({});
 
+  // "Approved by" names for expenditures / vouchers — stored in enabledModules.expenditureApprovers
+  const [approvers, setApprovers] = useState([]);
+  const [newApprover, setNewApprover] = useState('');
+
   // Venue list for menu import targeting
   const [venues, setVenues] = useState([]);
   const [venuesLoading, setVenuesLoading] = useState(false);
@@ -256,6 +261,11 @@ function SettingsPage({ onNavigate }) {
           halfBottleMl: r.halfBottleMl ?? 375,
         });
         setManagerTabs(r.enabledModules?.managerTabs || {});
+        setApprovers(
+          Array.isArray(r.enabledModules?.expenditureApprovers)
+            ? r.enabledModules.expenditureApprovers
+            : LEGACY_DEFAULT_APPROVERS
+        );
 
         // Check if delete password is set
         try {
@@ -324,6 +334,23 @@ function SettingsPage({ onNavigate }) {
           }
         } catch (e) {
           console.warn('[SettingsPage] Failed to update localStorage tax config:', e);
+        }
+      }
+      // Keep the locally cached outlet config in step so approver pickers update
+      // without a re-login.
+      if (sectionName === 'approvers') {
+        try {
+          const existing = safeGetJSON('ss_restaurant', null);
+          if (existing) {
+            const updatedConfig = {
+              ...existing,
+              enabledModules: { ...(existing.enabledModules || {}), expenditureApprovers: payload.expenditureApprovers },
+            };
+            localStorage.setItem('ss_restaurant', JSON.stringify(updatedConfig));
+            window.dispatchEvent(new CustomEvent('ss_restaurant_config_changed', { detail: updatedConfig }));
+          }
+        } catch (e) {
+          console.warn('[SettingsPage] Failed to update localStorage approvers:', e);
         }
       }
       setSavedSection(sectionName);
@@ -867,6 +894,57 @@ function SettingsPage({ onNavigate }) {
               />
             </SectionCard>
           )}
+
+          {/* Approvers for expenditures / vouchers */}
+          <SectionCard title="Expenditure Approvers" icon={UserCog}>
+            <p className="text-xs text-gray-500">
+              Names offered in the "Approved by" field on expenditures and vouchers for this outlet.
+              Changes reach cashier devices and the local server automatically.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {approvers.length === 0 && (
+                <p className="text-sm text-gray-400">No approvers added.</p>
+              )}
+              {approvers.map((name) => (
+                <span key={name} className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-800">
+                  {name}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${name}`}
+                    onClick={() => setApprovers((prev) => prev.filter((n) => n !== name))}
+                    className="text-gray-400 hover:text-red-600"
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = newApprover.trim();
+                if (!name) return;
+                setApprovers((prev) => (prev.some((n) => n.toLowerCase() === name.toLowerCase()) ? prev : [...prev, name]));
+                setNewApprover('');
+              }}
+            >
+              <input
+                className={inputClass}
+                value={newApprover}
+                onChange={(e) => setNewApprover(e.target.value)}
+                placeholder="Add approver name (e.g. Kalyan)"
+                maxLength={60}
+              />
+              <button type="submit" className={saveBtnClass}>Add</button>
+            </form>
+            <SaveButton
+              saving={savingSection === 'approvers'}
+              saved={savedSection === 'approvers'}
+              error={sectionErrorName === 'approvers' ? sectionError : null}
+              onSave={() => handleSave('approvers', approvers, { expenditureApprovers: approvers })}
+            />
+          </SectionCard>
 
           {/* Section 5: Tables & Space */}
           <SectionCard title="Tables & Space" icon={Store}>

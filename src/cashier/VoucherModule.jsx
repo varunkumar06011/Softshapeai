@@ -16,7 +16,7 @@ import { withRetry } from '../utils/resilience';
 import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
-import { getApproverOptions } from '../utils/approvers';
+import { getApproverOptions, fetchApproverOptions } from '../utils/approvers';
 
 export default function VoucherModule() {
   const CROSS_OUTLET_APPROVERS = getApproverOptions();
@@ -66,7 +66,7 @@ export default function VoucherModule() {
       fetchWithRetry(`/api/vouchers?date=${date}&limit=10`),
     ]);
 
-    setApproverOptions(CROSS_OUTLET_APPROVERS);
+    setApproverOptions(await fetchApproverOptions());
 
     if (optsRes.status === 'fulfilled') setPaidToOptions(optsRes.value || { staff: [] });
     if (narrationsRes.status === 'fulfilled') setNarrationSuggestions(narrationsRes.value || []);

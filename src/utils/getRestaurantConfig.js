@@ -72,6 +72,7 @@ export async function refreshOutletConfigFromEdge() {
       address: edgeOutlet.address ?? existing.address,
       phone: edgeOutlet.phone ?? existing.phone,
       email: edgeOutlet.email ?? existing.email,
+      enabledModules: edgeOutlet.enabled_modules ?? edgeOutlet.enabledModules ?? existing.enabledModules,
     };
 
     localStorage.setItem('ss_restaurant', JSON.stringify(merged));
