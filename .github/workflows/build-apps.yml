@@ -127,9 +127,25 @@ jobs:
         shell: bash
         run: npx tauri icon "../../public/logo softshape.ai.png"
 
+      # Tauri v2 only emits the updater .sig when createUpdaterArtifacts is on and
+      # a private key is present. Enable it only when the key secret exists so a
+      # missing secret degrades to "no auto-update" instead of failing the build.
+      - name: Enable updater signing
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then
+            echo 'TAURI_CONFIG={"bundle":{"createUpdaterArtifacts":true}}' >> "$GITHUB_ENV"
+          else
+            echo "::warning::TAURI_PRIVATE_KEY secret is not set — installer will NOT be signed and desktop auto-update will not work"
+          fi
+
       - name: Build Cashier Desktop
         run: npm run build:cashier-desktop
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 

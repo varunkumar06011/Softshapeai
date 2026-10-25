@@ -404,6 +404,19 @@ fn main() {
             // Runtime Host, which supervises edge-server + print service.
             spawn_runtime_host_if_needed(&app.handle());
 
+            // Auto-update: check shortly after launch (the app has just started, so
+            // installing now doesn't interrupt billing). Failures are only logged —
+            // the cashier keeps working on the current version.
+            let update_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(20));
+                match tauri::async_runtime::block_on(check_for_updates(update_handle)) {
+                    Ok(true) => eprintln!("[Updater] Update installed"),
+                    Ok(false) => eprintln!("[Updater] Already up to date"),
+                    Err(e) => eprintln!("[Updater] {}", e),
+                }
+            });
+
             // Build system tray with Show / Restart Runtime / Shutdown Runtime
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::TrayIconBuilder;
