@@ -17,6 +17,8 @@
 //   venues          — [{ id, label }] (active venue first)
 //   activeVenueId   — string
 //   printerOptions  — [{ name, type, source }]
+//   categoryPrinters — { [categoryName]: printerTarget } category-level KOT printers.
+//                     An item with no own printer follows its category's printer.
 //   showBarType     — bool: show FOOD/LIQUOR toggle (bar outlets)
 //   onClose         — () => void
 //   onSave          — async (updatedFields) => { success, error?, id? }
@@ -37,6 +39,7 @@ export default function EditMenuItemModal({
   venues = [],
   activeVenueId,
   printerOptions = [],
+  categoryPrinters = {},
   showBarType = false,
   sections = [],
   onClose,
@@ -59,8 +62,11 @@ export default function EditMenuItemModal({
       ...item,
       basePrice: item.p ?? item.basePrice ?? 0,
       venuePrice: item.venuePrices?.[activeVenueId] ?? item.p ?? 0,
-      categoryPrinterTarget: item.categoryPrinterTarget,
+      // Item list may carry the category printer merged into printerTarget
+      // (cloud path). Treat "same as category printer" as "no own override".
+      printerTarget: item.printerTarget && item.printerTarget === categoryPrinters[item.c] ? null : (item.printerTarget || null),
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item, activeVenueId]);
 
   if (!form) return null;
@@ -81,7 +87,8 @@ export default function EditMenuItemModal({
         price: Number(form.basePrice ?? form.venuePrice ?? 0),
         menuType: form.menuType || 'FOOD',
         imageUrl: form.img,
-        printerTarget: form.printerTarget || null,
+        // Only a real per-item override is stored; equal-to-category means follow category.
+        printerTarget: form.printerTarget && form.printerTarget !== categoryPrinters[form.c] ? form.printerTarget : null,
         printerName: form.printerName || null,
         gstEnabled: isLiquor ? false : form.gstEnabled !== false,
         isAvailable: form.isAvailable !== false,
@@ -266,14 +273,11 @@ export default function EditMenuItemModal({
               <div>
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Print To</label>
                 <select
-                  value={form.printerTarget || form.categoryPrinterTarget || ''}
-                  onChange={(e) => update({
-                    printerTarget: e.target.value || null,
-                    categoryPrinterTarget: e.target.value || null,
-                  })}
+                  value={form.printerTarget || categoryPrinters[form.c] || ''}
+                  onChange={(e) => update({ printerTarget: e.target.value || null })}
                   className={inputClass + ' w-full bg-gray-50'}
                 >
-                  <option value="">Default (auto-resolve)</option>
+                  <option value="">{categoryPrinters[form.c] ? `Follow category (${categoryPrinters[form.c]})` : 'Default (auto-resolve)'}</option>
                   {printerOptions.map(opt => (
                     <option key={opt.name} value={opt.name}>
                       {opt.name}

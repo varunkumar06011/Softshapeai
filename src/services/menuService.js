@@ -484,6 +484,55 @@ export async function createMenuItemEdge(data) {
   return createMenuItem(data);
 }
 
+/** Categories with their KOT printer: [{ id, name, printerTarget }] (edge first, cloud fallback). */
+export async function fetchCategoryPrintersEdge() {
+  if (await isEdgeAvailable()) {
+    try {
+      const res = await edgeFetch('/api/edge/menu/categories', { method: 'GET', timeoutMs: 10_000 });
+      if (res && res.success && Array.isArray(res.categories)) return res.categories;
+    } catch (err) {
+      console.warn('[menuService] Edge categories fetch error, falling back to cloud:', err.message);
+    }
+  }
+  const res = await fetch(apiUrl(`/api/menu/categories?restaurantId=${getCurrentRestaurantId()}`), { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to load categories');
+  const data = await res.json();
+  return (Array.isArray(data) ? data : [])
+    .filter((c) => c.isActive !== false)
+    .map((c) => ({ id: c.id, name: c.name, printerTarget: c.printerTarget || null }));
+}
+
+/**
+ * Set a category's KOT printer. Overrides every per-item printer in that
+ * category (edge + cloud both clear item-level overrides).
+ */
+export async function setCategoryPrinterEdge(categoryId, printerTarget) {
+  const target = printerTarget || null;
+  if (await isEdgeAvailable()) {
+    try {
+      const res = await edgeFetch(`/api/edge/menu/categories/${categoryId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ printerTarget: target, ...getEdgeAuthPayload() }),
+        timeoutMs: 10_000,
+      });
+      if (res && res.success) return res;
+      console.warn('[menuService] Edge category printer update failed, falling back to cloud:', res?.error);
+    } catch (err) {
+      console.warn('[menuService] Edge category printer update error, falling back to cloud:', err.message);
+    }
+  }
+  const res = await fetch(apiUrl(`/api/menu/admin/categories/${categoryId}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ printerTarget: target }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { success: false, error: err.error || 'Failed to update category printer' };
+  }
+  return { success: true, id: categoryId };
+}
+
 export async function deleteMenuItemEdge(id) {
   if (await isEdgeAvailable()) {
     try {
