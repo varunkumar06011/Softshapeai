@@ -45,6 +45,7 @@ import ArchivesPage from "./pages/ArchivesPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import TermsPage from "./pages/TermsPage";
 import SupportPage from "./pages/SupportPage";
+const StoreStockPortal = lazy(() => import("./store-stock/StoreStockPortal")); // standalone /store portal
 const TableQRCodes = lazy(() => import("./admin/TableQRCodes"));
 const CaptainReportCard = lazy(() => import("./admin/CaptainReportCard"));
 const CaptainsGroupReport = lazy(() => import("./admin/CaptainsGroupReport"));
@@ -328,6 +329,9 @@ function AnimatedRoutes() {
         <Route path="/manager" element={<AnimatedPage><ManagerLoginWrapper /></AnimatedPage>} />
         <Route path="/manager/dashboard/*" element={<ErrorBoundary showAnimation><AnimatedPage><AdminOnlineGate><ManagerDashboardWrapper /></AdminOnlineGate></AnimatedPage></ErrorBoundary>} />
         <Route path="/kitchen" element={<ErrorBoundary><AnimatedPage><KitchenView /></AnimatedPage></ErrorBoundary>} />
+        {/* Standalone Store Stock portal: Outlet ID only, not linked to any other portal */}
+        <Route path="/store" element={<ErrorBoundary><Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><StoreStockPortal /></Suspense></ErrorBoundary>} />
+        <Route path="/store/:code" element={<ErrorBoundary><Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><StoreStockPortal /></Suspense></ErrorBoundary>} />
         <Route path="/print-station" element={<ErrorBoundary><AnimatedPage><PrintStation /></AnimatedPage></ErrorBoundary>} />
         <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
         <Route path="/user-menu/:slug" element={<UserMenuApp />} />
