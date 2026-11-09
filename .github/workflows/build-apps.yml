@@ -127,18 +127,17 @@ jobs:
         shell: bash
         run: npx tauri icon "../../public/logo softshape.ai.png"
 
-      # Tauri v2 only emits the updater .sig when createUpdaterArtifacts is on and
-      # a private key is present. Enable it only when the key secret exists so a
-      # missing secret degrades to "no auto-update" instead of failing the build.
-      - name: Enable updater signing
+      # createUpdaterArtifacts is set in tauri.conf.json, so Tauri must sign the installer
+      # with this key. Fail early and clearly if the key secret is missing — a build that
+      # silently ships unsigned installers breaks desktop auto-update for every cashier PC.
+      - name: Require updater signing key
         shell: bash
         env:
           HAS_KEY: ${{ secrets.TAURI_PRIVATE_KEY != '' }}
         run: |
-          if [ "$HAS_KEY" = "true" ]; then
-            echo 'TAURI_CONFIG={"bundle":{"createUpdaterArtifacts":true}}' >> "$GITHUB_ENV"
-          else
-            echo "::warning::TAURI_PRIVATE_KEY secret is not set — installer will NOT be signed and desktop auto-update will not work"
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::TAURI_PRIVATE_KEY secret is not set — cannot sign the installer, desktop auto-update would not work"
+            exit 1
           fi
 
       - name: Build Cashier Desktop
@@ -207,6 +206,18 @@ jobs:
           if [ -n "$sig" ] && [ -f "$sig" ]; then
             mv "$sig" "$dir/${fixed}.sig"
           fi
+
+      # Without the .sig the backend offers no update, so cashier PCs would never auto-update.
+      - name: Verify updater signature was produced
+        shell: bash
+        run: |
+          sigfile="apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe.sig"
+          if [ ! -s "$sigfile" ]; then
+            echo "::error::No updater signature (.sig) was produced — check TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD secrets and createUpdaterArtifacts in tauri.conf.json"
+            ls -la "apps/cashier-desktop/src-tauri/target/release/bundle/nsis" || true
+            exit 1
+          fi
+          echo "Updater signature present: $(wc -c < "$sigfile") bytes"
 
       - name: Smoke-test installed edge-server health
         shell: powershell
