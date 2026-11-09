@@ -8,6 +8,10 @@
   Pop $R0
   nsis_tauri_utils::KillProcess "softshape-host.exe"
   Pop $R0
+  ; The print service is spawned by the host and can outlive it; it is also
+  ; bundled, so a running copy would block replacing it during an update.
+  nsis_tauri_utils::KillProcess "print-service.exe"
+  Pop $R0
 
   ; Give the OS and any AV real-time scanner a moment to release handles.
   Sleep 2000

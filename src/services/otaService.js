@@ -111,7 +111,12 @@ export async function checkForOtaUpdate() {
     if (!data.version || !data.downloadUrl || !data.sha256) return null;
 
     const meta = getOtaMeta();
-    const currentVersion = meta?.version || __APP_VERSION__ || '0.0.0';
+    // After an APK update the bundled web code can be newer than an old OTA bundle
+    // left in storage — never "update" to something older than what is installed.
+    const bundledVersion = __APP_VERSION__ || '0.0.0';
+    const currentVersion = meta?.version && compareVersions(meta.version, bundledVersion) < 0
+      ? meta.version
+      : bundledVersion;
 
     if (compareVersions(currentVersion, data.version) > 0) {
       return data;

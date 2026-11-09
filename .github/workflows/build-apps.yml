@@ -371,9 +371,23 @@ jobs:
         shell: bash
         run: npx tauri icon "../../public/logo-square.png"
 
+      # createUpdaterArtifacts is set in tauri.conf.json, so Tauri must sign the installer
+      # with this key. Fail early and clearly if it is missing.
+      - name: Require updater signing key
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::TAURI_PRIVATE_KEY secret is not set — cannot sign the installer, desktop auto-update would not work"
+            exit 1
+          fi
+
       - name: Build Admin Desktop
         run: npm run build:admin-desktop
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
@@ -392,6 +406,18 @@ jobs:
           if [ -n "$sig" ] && [ -f "$sig" ]; then
             mv "$sig" "$dir/${fixed}.sig"
           fi
+
+      # Without the .sig the backend offers no update, so admin PCs would never auto-update.
+      - name: Verify updater signature was produced
+        shell: bash
+        run: |
+          sigfile="apps/admin-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Admin_x64-setup.exe.sig"
+          if [ ! -s "$sigfile" ]; then
+            echo "::error::No updater signature (.sig) was produced — check TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD secrets and createUpdaterArtifacts in tauri.conf.json"
+            ls -la "apps/admin-desktop/src-tauri/target/release/bundle/nsis" || true
+            exit 1
+          fi
+          echo "Updater signature present: $(wc -c < "$sigfile") bytes"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
