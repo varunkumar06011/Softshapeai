@@ -17,13 +17,12 @@ import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import { getRestaurantConfig } from '../utils/getRestaurantConfig';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
+import { loadApproverNames } from '../shared/utils/expenditureApprovers';
 
 export default function ExpenditureModule() {
-  const CROSS_OUTLET_APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
-
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
-  const [approverOptions, setApproverOptions] = useState(CROSS_OUTLET_APPROVERS);
+  const [approverOptions, setApproverOptions] = useState([]);
 
   const [paidToType, setPaidToType] = useState('STAFF');
   const [paidToSearch, setPaidToSearch] = useState('');
@@ -57,6 +56,7 @@ export default function ExpenditureModule() {
     setError('');
     const errors = [];
     const edgeLocal = isEdgeLocalAuth();
+    const approversPromise = loadApproverNames({ edge: edgeLocal });
 
     const load = async (label, url, setter) => {
       try {
@@ -84,7 +84,7 @@ export default function ExpenditureModule() {
       ]);
     }
 
-    setApproverOptions(CROSS_OUTLET_APPROVERS);
+    setApproverOptions(await approversPromise);
 
     if (errors.length > 0) {
       const isTimeout = errors.some((e) => e.toLowerCase().includes('timed out'));

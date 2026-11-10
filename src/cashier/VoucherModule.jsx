@@ -16,13 +16,12 @@ import { withRetry } from '../utils/resilience';
 import { printLocal } from '../utils/printOffline';
 import { sendOutputIntent, generateIntentId } from '../services/outputClient';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
+import { loadApproverNames } from '../shared/utils/expenditureApprovers';
 
 export default function VoucherModule() {
-  const CROSS_OUTLET_APPROVERS = ['Vinod sir', 'Chandra sir', 'BVL Srinu sir'];
-
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
-  const [approverOptions, setApproverOptions] = useState(CROSS_OUTLET_APPROVERS);
+  const [approverOptions, setApproverOptions] = useState([]);
 
   const [paidToType, setPaidToType] = useState('STAFF');
   const [paidToSearch, setPaidToSearch] = useState('');
@@ -58,6 +57,7 @@ export default function VoucherModule() {
     const fetchWithRetry = (path) =>
       withRetry(() => apiFetch(path, { timeout: 25000 }), { maxRetries: 2, baseDelayMs: 1000, maxDelayMs: 4000 });
 
+    const approversPromise = loadApproverNames();
     const [optsRes, narrationsRes, summaryRes, recentRes] = await Promise.allSettled([
       fetchWithRetry('/api/vouchers/paid-to-options'),
       fetchWithRetry('/api/vouchers/narration-suggestions'),
@@ -65,7 +65,7 @@ export default function VoucherModule() {
       fetchWithRetry(`/api/vouchers?date=${date}&limit=10`),
     ]);
 
-    setApproverOptions(CROSS_OUTLET_APPROVERS);
+    setApproverOptions(await approversPromise);
 
     if (optsRes.status === 'fulfilled') setPaidToOptions(optsRes.value || { staff: [] });
     if (narrationsRes.status === 'fulfilled') setNarrationSuggestions(narrationsRes.value || []);

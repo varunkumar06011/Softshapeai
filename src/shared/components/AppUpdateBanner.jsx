@@ -5,8 +5,12 @@
 // is available on GitHub Releases. Shows:
 //   - Current version vs latest version
 //   - App name (Admin, Cashier, Captain)
-//   - Download button (opens GitHub release asset URL)
-//   - Dismiss button (hides banner for current session)
+//   - Update now button (downloads the new APK; the phone asks the user to install it)
+//   - Later button (hides banner for current session)
+//
+// Nothing is installed by this banner. Android installs the APK only after the
+// user confirms it. Installing restarts the app, so the banner warns to finish
+// syncing first.
 //
 // Only shown on native Android (Capacitor) platforms. Uses useAppUpdate hook.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,9 +18,11 @@
 import React, { useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
+import { useSyncStatus } from '../../context/SyncStatusContext';
 
 export default function AppUpdateBanner() {
   const { hasUpdate, currentVersion, latestVersion, downloadUrl, appName, checking } = useAppUpdate();
+  const { hasPending } = useSyncStatus();
   const [dismissed, setDismissed] = useState(false);
 
   if (checking || !hasUpdate || dismissed) return null;
@@ -29,7 +35,9 @@ export default function AppUpdateBanner() {
             {appName} update available: v{currentVersion} → {latestVersion}
           </p>
           <p className="text-xs text-white/80">
-            Download the latest version to get new features and fixes.
+            {hasPending
+              ? 'Wait for pending changes to sync, then install.'
+              : 'Downloads the new version. Open it to install.'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -40,7 +48,7 @@ export default function AppUpdateBanner() {
             className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-[#B71C1C] hover:bg-white/90 transition-colors"
           >
             <Download size={14} />
-            Update
+            Update now
           </a>
           <button
             onClick={() => setDismissed(true)}

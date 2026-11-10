@@ -2,7 +2,6 @@
 // PrinterSettingsPage — Printer configuration and Windows Print Agent management
 // ─────────────────────────────────────────────────────────────────────────────
 // Manages printer setup for the restaurant:
-//   - QZ Tray connection status and certificate display
 //   - Windows Print Agent setup via QR code (agent downloads, pairs with backend)
 //   - Printer agent polling (30s interval) for connection status
 //   - Multiple printer support (kitchen, bar, cashier)
@@ -269,7 +268,7 @@ export default function PrinterSettingsPage() {
         <div>
           <h2 className="text-xl font-black tracking-tight">Print Agent Setup</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Replace QZ Tray with a lightweight Windows app — no Java, no certificates, no browser setup.
+            A lightweight Windows app prints for you — no Java, no certificates, no browser setup.
           </p>
         </div>
       </div>
@@ -341,9 +340,9 @@ export default function PrinterSettingsPage() {
         </div>
       </div>
 
-      {/* Legacy QZ notice */}
+      {/* Legacy Print Station notice */}
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-        <div className="font-bold text-amber-800 text-sm mb-1">QZ Tray / Print Station is deprecated</div>
+        <div className="font-bold text-amber-800 text-sm mb-1">The old Print Station is deprecated</div>
         <div className="text-xs text-amber-700">
           The Windows Print Agent below is the supported print path. The old{' '}
           <strong>Print Station</strong> at{' '}
@@ -584,7 +583,7 @@ export default function PrinterSettingsPage() {
               <li><strong>Printer not in the list</strong> — check power, USB cable, or WiFi connection.</li>
               <li><strong>Agent shows Offline</strong> — check internet on the PC and open the app.</li>
               <li><strong>Jobs not printing</strong> — re-check the printer mapping in the app.</li>
-              <li><strong>Want the old system back</strong> — open <code className="bg-gray-100 px-1 rounded">/print-station</code> in browser; QZ Tray still works.</li>
+              <li><strong>Want the old system back</strong> — open <code className="bg-gray-100 px-1 rounded">/print-station</code> in a browser.</li>
             </ul>
           </div>
         )}

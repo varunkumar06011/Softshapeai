@@ -31,7 +31,6 @@
         "lucide-react": "^0.460.0",
         "papaparse": "^5.4.1",
         "qrcode.react": "^4.2.0",
-        "qz-tray": "^2.2.6",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "react-router-dom": "^7.15.0",
@@ -1356,7 +1355,6 @@
 
     "querystringify": ["querystringify@2.2.0", "", {}, "sha512-FIqgj2EUvTa7R50u0rGsyTftzjYmv/a3hO345bZNrqabNqjtgiDMgmo4mkUjd+nzU5oF3dClKqFIPUKybUyqoQ=="],
 
-    "qz-tray": ["qz-tray@2.2.6", "", {}, "sha512-b9w0vcjHSdKiOq1jL/KXfb3IvgaIc/BeQv9JuJ3nTEoqSUZfIGKLAyKTS+akHSXrR64R0UwEDmw20GvD2di/Pg=="],
 
     "raf": ["raf@3.4.1", "", { "dependencies": { "performance-now": "^2.1.0" } }, "sha512-Sq4CW4QhwOHE8ucn6J34MqtZCeWFP2aQSmrlroYgqAV1PjStIhJXxYuTgUIfkEk7zTLjmIjLmU5q+fbD1NnOJA=="],
 

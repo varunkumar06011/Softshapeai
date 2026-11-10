@@ -18,6 +18,7 @@ import { ArrowLeft, ShieldCheck, Store, RefreshCw, Wifi } from 'lucide-react';
 import { authService } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
 import { discoverEdgeOnLAN, findBillingPcsOnLan, isCurrentEdgeForOutlet, stopUsingManualEdgeUrl, probeBillingPcAt } from '../services/edgeHealth';
+import { markCaptainSessionVerified } from '../services/captainSession';
 
 const LAST_PC_ADDRESS_KEY = 'captain_last_pc_address';
 
@@ -70,7 +71,7 @@ const CaptainEdgeLogin = ({ onBack }) => {
         throw new Error(`${target.name}'s billing PC was not found on this WiFi.`);
       }
       const staff = await authService.fetchCaptainsFromEdge(url);
-      if (staff.length === 0) throw new Error(`No captains are set up for ${target.name}.`);
+      if (staff.length === 0) throw new Error(`${target.name} has no captains yet. Please add captains in the admin panel, then search again.`);
       if (!mountedRef.current) return false;
       setOutlet(target);
       setStaffList(staff);
@@ -120,6 +121,7 @@ const CaptainEdgeLogin = ({ onBack }) => {
     try {
       const { token, user, restaurant } = await authService.captainEdgeLogin(outlet.outletId, selectedUser.id, pin);
       setAuth({ token, user, restaurant });
+      markCaptainSessionVerified();
     } catch (err) {
       setError(err.message || 'Invalid PIN');
       setPin('');

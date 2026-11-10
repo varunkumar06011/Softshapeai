@@ -128,6 +128,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../context/SyncStatusContext';
 
 import OfflineStatusBar from '../shared/components/OfflineStatusBar';
+import DesktopUpdateBanner from '../shared/components/DesktopUpdateBanner';
 
 import PendingActionsModal from '../shared/components/PendingActionsModal';
 
@@ -1613,6 +1614,12 @@ const CashierDashboard = ({ onLogout }) => {
 
 
   const { tables: barTables, setTables: setBarTables, refetch: refetchBarTables } = useBarTableSync({ shouldSkipTableUpdate: shouldSkipSyncUpdate });
+
+  // A bill is open when any table holds an active order or an unsettled amount. Used to block "Update now".
+  const hasOpenBills = useMemo(
+    () => [...(tables || []), ...(barTables || [])].some(t => t.activeOrder || Number(t.currentBill) > 0),
+    [tables, barTables],
+  );
 
   const { menuItems: barMenuItems, loading: barMenuLoading, setGlobalMenu: setGlobalBarMenu } = useBarMenuSync();
 
@@ -12300,6 +12307,8 @@ const CashierDashboard = ({ onLogout }) => {
     <div className="flex flex-col-reverse sm:flex-row h-[100dvh] bg-[#F8FAFC] font-sans overflow-hidden text-[#1E293B]">
 
       <OfflineStatusBar />
+
+      <DesktopUpdateBanner hasOpenBills={hasOpenBills} />
 
       <PendingActionsModal open={showPendingModal} onClose={() => setShowPendingModal(false)} />
 

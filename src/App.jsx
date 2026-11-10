@@ -39,6 +39,7 @@ import EdgeSetupScreen from "./onboarding/EdgeSetupScreen";
 import { isEdgeReady } from "./services/edgeReadiness";
 import SyncStatusIndicator from "./shared/components/SyncStatusIndicator";
 import AppUpdateBanner from "./shared/components/AppUpdateBanner";
+import OtaUpdateBanner from "./shared/components/OtaUpdateBanner";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ArchivesPage from "./pages/ArchivesPage";
@@ -291,6 +292,7 @@ function App() {
         <SyncStatusProvider>
         <BrowserRouter>
           <AppUpdateBanner />
+          <OtaUpdateBanner />
           <ThemeInjector />
           <AnimatedRoutes />
         </BrowserRouter>

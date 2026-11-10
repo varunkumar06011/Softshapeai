@@ -41,6 +41,7 @@ import {
   Briefcase,
   Trash2,
   Mail,
+  UserCheck,
 } from 'lucide-react';
 import { adminRoutes } from '../adminRoutes';
 import { safeGetJSON } from '../../utils/safeParseJSON';
@@ -175,6 +176,10 @@ function SettingsPage({ onNavigate }) {
   // Manager tab visibility config — stored in enabledModules.managerTabs
   const [managerTabs, setManagerTabs] = useState({});
 
+  // Names offered in the expenditure/voucher "Approved by" dropdown
+  const [approvers, setApprovers] = useState([]);
+  const [newApprover, setNewApprover] = useState('');
+
   // Venue list for menu import targeting
   const [venues, setVenues] = useState([]);
   const [venuesLoading, setVenuesLoading] = useState(false);
@@ -256,6 +261,7 @@ function SettingsPage({ onNavigate }) {
           halfBottleMl: r.halfBottleMl ?? 375,
         });
         setManagerTabs(r.enabledModules?.managerTabs || {});
+        setApprovers(Array.isArray(r.expenditureApprovers) ? r.expenditureApprovers : []);
 
         // Check if delete password is set
         try {
@@ -903,6 +909,76 @@ function SettingsPage({ onNavigate }) {
                 Manage Staff
               </button>
             </div>
+          </SectionCard>
+
+          {/* Section 7: Expenditure Approvers */}
+          <SectionCard title="Expenditure Approvers" icon={UserCheck}>
+            <p className="text-sm text-gray-500">
+              Names shown in the &quot;Approved by&quot; list when cashiers record an expenditure or voucher.
+              If you leave this empty, your owner and admin logins are shown instead.
+            </p>
+            {approvers.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {approvers.map((name) => (
+                  <span
+                    key={name}
+                    className="flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 bg-gray-100 rounded-xl text-sm font-medium text-gray-900"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      onClick={() => setApprovers((prev) => prev.filter((n) => n !== name))}
+                      className="p-0.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-gray-200 transition-colors"
+                      aria-label={`Remove ${name}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = newApprover.trim();
+                if (!name) return;
+                if (!approvers.some((n) => n.toLowerCase() === name.toLowerCase())) {
+                  setApprovers((prev) => [...prev, name]);
+                }
+                setNewApprover('');
+              }}
+            >
+              <input
+                type="text"
+                className={inputClass}
+                placeholder="e.g. Ramesh sir"
+                value={newApprover}
+                onChange={(e) => setNewApprover(e.target.value)}
+              />
+              <button
+                type="submit"
+                disabled={!newApprover.trim()}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex-shrink-0"
+              >
+                Add
+              </button>
+            </form>
+            <SaveButton
+              saving={savingSection === 'approvers'}
+              saved={savedSection === 'approvers'}
+              error={sectionErrorName === 'approvers' ? sectionError : null}
+              onSave={() => {
+                // Include a typed-but-not-added name so it isn't silently lost
+                const pending = newApprover.trim();
+                const list = pending && !approvers.some((n) => n.toLowerCase() === pending.toLowerCase())
+                  ? [...approvers, pending]
+                  : approvers;
+                setApprovers(list);
+                setNewApprover('');
+                handleSave('approvers', list, { expenditureApprovers: list });
+              }}
+            />
           </SectionCard>
         </div>
       )}

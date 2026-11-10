@@ -159,6 +159,14 @@ export const authService = {
     return Array.isArray(data.staff) ? data.staff : [];
   },
 
+  /** Every active staff member of the outlet whose billing PC is at `edgeUrl`. */
+  async fetchStaffFromEdge(edgeUrl) {
+    const res = await fetch(`${edgeUrl}/api/edge/staff`, { signal: AbortSignal.timeout(5000) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'The billing PC did not return the staff list.');
+    return Array.isArray(data.staff) ? data.staff : [];
+  },
+
   async _tryEdgePinLoginIfReachable(userId, pin, restaurantId) {
     try {
       if (!(await isEdgeReadyForOutlet(restaurantId))) return null;

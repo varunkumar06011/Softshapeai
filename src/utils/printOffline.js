@@ -4,7 +4,7 @@
 // Handles local printing when the backend socket is unavailable (offline mode).
 // Dispatch strategy by platform:
 //   1. Tauri desktop: window.__TAURI__.invoke('print_raw', { printerName, bytes })
-//   2. Web/PWA with QZ Tray: sendToPrinter() from qzTray.js
+//   2. Web/PWA: queue the job for the print agent
 //   3. Capacitor Android: Bluetooth/USB ESC/POS plugin (future)
 //   4. iOS PWA: generate shareable PDF receipt
 //   5. No printer: queue in offlinePrintJobs IndexedDB store for auto-print on reconnect
@@ -22,7 +22,7 @@
 // Handles local printing when the backend socket is unavailable (offline mode).
 // Dispatch strategy by platform:
 //   1. Tauri desktop: window.__TAURI__.invoke('print_raw', { printerName, bytes })
-//   2. Web/PWA with QZ Tray: sendToPrinter() from qzTray.js
+//   2. Web/PWA: queue the job for the print agent
 //   3. Capacitor Android: Bluetooth/USB ESC/POS plugin (future)
 //   4. iOS PWA: generate shareable PDF receipt
 //   5. No printer: queue in offlinePrintJobs IndexedDB store for auto-print on reconnect
@@ -518,21 +518,9 @@ export async function printLocal(job) {
 
   logOfflinePrint({ status: 'error', message: 'Print Agent unreachable', detail: 'queued' });
 
-  // ── Web with QZ Tray: try direct print ──
+  // ── Web browser: no direct printing — keep the job for the print agent ──
   if (platform === 'web') {
-    if (!printerName) {
-      return await queuePrintJob(job, text, 'No printer mapped');
-    }
-    try {
-      const { sendToPrinter } = await import('./qzTray');
-      const printData = job.escposData || [{ type: 'raw', format: 'plain', data: text }];
-      await sendToPrinter(printerName, printData);
-      logOfflinePrint({ status: 'success', message: 'QZ Tray succeeded', detail: printerName });
-      return { printed: true, queued: false };
-    } catch (err) {
-      logOfflinePrint({ status: 'error', message: 'QZ Tray failed', detail: err?.message || String(err) });
-      return await queuePrintJob(job, text, err?.message || String(err));
-    }
+    return await queuePrintJob(job, text, printerName ? 'Print Agent unreachable' : 'No printer mapped');
   }
 
   // ── iOS PWA: generate shareable PDF ──

@@ -39,6 +39,8 @@ import AndroidLocalCaptainSetup from './android-local-pos/AndroidLocalCaptainSet
 import { isAndroidLocalPosEnabled } from './android-local-pos/config'
 import * as Sentry from '@sentry/react'
 import { isEdgeReady } from './services/edgeReadiness'
+import { verifyCaptainSession, markCaptainSessionVerified, forgetCaptainSessionVerified, isCaptainSessionRecentlyVerified } from './services/captainSession'
+import { getTenantScopedKey } from './utils/cacheKeys'
 
 // Captain screens never call the cloud (inactive on the cashier routes).
 installCaptainCloudGuard()
@@ -87,10 +89,46 @@ function CaptainLoginWrapper() {
 }
 
 function CaptainAppWrapper() {
-  const { user, token, logout } = useAuth()
-  if (!isCaptainSession(user, token)) {
-    logout()
+  const { user, token, restaurant, logout } = useAuth()
+  const sessionOk = isCaptainSession(user, token)
+  // A saved login is only trusted once the outlet's billing PC confirms this captain
+  // still works there (skipped for 30 minutes after a confirmation or a fresh login).
+  const [check, setCheck] = useState(() => (sessionOk && !isCaptainSessionRecentlyVerified() ? 'checking' : 'ok'))
+
+  useEffect(() => {
+    if (check !== 'checking') return
+    let cancelled = false
+    ;(async () => {
+      const result = await verifyCaptainSession({ user, restaurant })
+      if (cancelled) return
+      if (result === 'valid') {
+        markCaptainSessionVerified()
+        setCheck('ok')
+        return
+      }
+      // Wrong WiFi, PC off, or this person is not a captain there: back to the login
+      // screen. Clear the captain left on the phone before the outlet key is gone.
+      try {
+        localStorage.removeItem(getTenantScopedKey('active_captain'))
+        localStorage.removeItem(getTenantScopedKey('captain_auth_v2'))
+      } catch { /* ignore */ }
+      forgetCaptainSessionVerified()
+      logout()
+      setCheck('rejected')
+    })()
+    return () => { cancelled = true }
+  }, [check, user, restaurant, logout])
+
+  if (!sessionOk || check === 'rejected') {
+    if (!sessionOk) logout()
     return <Navigate to="/captain" replace />
+  }
+  if (check === 'checking') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA] font-sans">
+        <p className="text-xs font-black uppercase tracking-widest text-gray-400">Checking your login…</p>
+      </div>
+    )
   }
   return (
     <ErrorBoundary>

@@ -245,7 +245,7 @@ function buildPrintHtml({ date, items, manualItems, businessPosition, outletName
   </div>
   <div class="header">
     <h1>Liquor Stock &amp; Sales Report</h1>
-    <div class="sub">${escapeHtml(outletName || 'Vgrand Lounge')}</div>
+    <div class="sub">${escapeHtml(outletName || '')}</div>
     <div class="date-line">Report Date: ${escapeHtml(date)}</div>
   </div>
 

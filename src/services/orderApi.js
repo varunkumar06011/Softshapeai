@@ -264,8 +264,16 @@ export async function reserveKotNumber(requestId = null) {
  * "Send anyway". sentAt lets the PC correct for the phone's clock.
  */
 function retryGuardFields(retryGuard) {
-  if (!retryGuard?.firstAttemptAt) return {};
-  return { firstAttemptAt: retryGuard.firstAttemptAt, sentAt: Date.now(), allowDuplicate: !!retryGuard.allowDuplicate };
+  const fields = {};
+  if (retryGuard?.firstAttemptAt) {
+    fields.firstAttemptAt = retryGuard.firstAttemptAt;
+    fields.allowDuplicate = !!retryGuard.allowDuplicate;
+  }
+  // When this phone last saw the table: the PC refuses a new order on a table
+  // that was billed after that moment (stale screen).
+  if (retryGuard?.tableSeenAt) fields.tableSeenAt = retryGuard.tableSeenAt;
+  if (Object.keys(fields).length > 0) fields.sentAt = Date.now();
+  return fields;
 }
 
 export async function createOrder({ tableId, tableNumber, items, restaurantId = getCurrentRestaurantId(), requestId = null, captainName = null, captainId = null, isExtraTable = false, sectionTag = null, platform = null, timeoutMs = 12000, preReservedKotNumber = null, localPrinted = false, kotEventIds = null, failFastOnEdgeDown = false, signal = null, retryGuard = null }) {

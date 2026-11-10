@@ -63,11 +63,11 @@ export default function TopNavbar({
             aria-label="Venue switcher"
           >
             <span className="text-[8px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-wider sm:tracking-widest leading-tight whitespace-nowrap w-full block">
-              {restaurant?.name || 'VGRAND LOUNGE'}
+              {restaurant?.name || ''}
             </span>
             <span className="flex items-center min-w-0 w-full">
               <span className="text-xs sm:text-sm font-bold text-gray-900 leading-none truncate flex-1 min-w-0">
-                {captainName || 'Ajay kumar'}
+                {captainName || 'Not signed in'}
               </span>
             </span>
           </button>

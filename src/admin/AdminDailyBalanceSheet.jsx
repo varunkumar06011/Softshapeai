@@ -399,13 +399,9 @@ export default function AdminDailyBalanceSheet() {
   const isAdmin = user?.role === 'admin' || user?.role === 'owner';
   const isAllOutlets = outletId === 'all' && accessibleOutlets.length > 1;
 
-  // VGrand admin: replace Submit with "Send to WhatsApp" (PDF share)
-  const isVGrand = useMemo(() => {
-    const name = (restaurant?.name || '').toLowerCase();
-    return name.includes('vgrand') || name.includes('v-grand') || name.includes('vgrand lounge');
-  }, [restaurant?.name]);
-
-  const ADMIN_WHATSAPP_NUMBER = '919550237788';
+  // Custom for outlets that turn on enabledModules.balanceSheetWhatsappOnly:
+  // "Send to WhatsApp" replaces Submit. Every other outlet keeps the default.
+  const whatsappOnly = restaurant?.enabledModules?.balanceSheetWhatsappOnly === true;
 
   const EXPENDITURE_PRESETS = [
     { label: 'Daily Expenses', sign: 'MINUS' },
@@ -2088,7 +2084,7 @@ export default function AdminDailyBalanceSheet() {
               {statusLoading ? <Loader2 size={16} className="animate-spin" /> : <WhatsAppIcon size={16} />}
               Send to WhatsApp
             </button>
-            {isAdmin && !isVGrand && (
+            {isAdmin && !whatsappOnly && (
               <button
                 onClick={handleSubmit}
                 disabled={statusLoading || sheet?.status === 'SUBMITTED'}

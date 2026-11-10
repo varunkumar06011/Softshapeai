@@ -957,7 +957,12 @@ export default function CaptainApp({ onLogout }) {
     const saved = localStorage.getItem(getTenantScopedKey('active_captain'));
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const savedCaptain = JSON.parse(saved);
+        // A captain left on this phone by someone else must never be reused
+        // for the person who just logged in.
+        if (!user?.id || String(savedCaptain?.id) === String(user.id)) return savedCaptain;
+        localStorage.removeItem(getTenantScopedKey('active_captain'));
+        localStorage.removeItem(getTenantScopedKey('captain_auth_v2'));
       } catch {
         localStorage.removeItem(getTenantScopedKey('active_captain'));
       }
@@ -1015,6 +1020,10 @@ export default function CaptainApp({ onLogout }) {
   const [view, setView] = useState(() => localStorage.getItem(getTenantScopedKey('captain_view')) || 'tables'); // tables, session
 
   const [activeTableId, setActiveTableId] = useState(() => localStorage.getItem(getTenantScopedKey('captain_activeTableId')) || null);
+  // When this phone last looked at the open table. Sent with every KOT so the
+  // billing PC can refuse food for a table that was billed after this moment.
+  const tableSeenAtRef = useRef(0);
+  useEffect(() => { tableSeenAtRef.current = Date.now(); }, [activeTableId]);
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -3537,7 +3546,7 @@ export default function CaptainApp({ onLogout }) {
   // also restored from localStorage after a reload, so this default sender
   // works from the stored entry alone.
   const sendQueuedKot = useCallback(async (entry) => {
-    const retryGuard = { firstAttemptAt: entry.firstAttemptAt, allowDuplicate: !!entry.allowDuplicate };
+    const retryGuard = { firstAttemptAt: entry.firstAttemptAt, allowDuplicate: !!entry.allowDuplicate, tableSeenAt: entry.tableSeenAt };
     const tableBackendId = entry.activeTable?.backendId || entry.tableId;
     const addToOrder = (orderId) => updateOrderItems(
       orderId, entry.apiItems, entry.requestId, entry.captainName, false, null, null, 30000,
@@ -3687,7 +3696,7 @@ export default function CaptainApp({ onLogout }) {
         ? crypto.randomUUID()
         : Math.random().toString(36).slice(2) + Date.now().toString(36));
     const firstAttemptAt = pending?.firstAttemptAt ?? Date.now();
-    const retryGuard = pending ? { firstAttemptAt, allowDuplicate } : null;
+    const retryGuard = { firstAttemptAt: pending ? firstAttemptAt : null, allowDuplicate, tableSeenAt: tableSeenAtRef.current };
     const tableLabel = String(activeTable?.number ?? activeTable?.id ?? '');
     const orderRestaurantId = activeRestaurantId;
 
@@ -3905,6 +3914,8 @@ export default function CaptainApp({ onLogout }) {
         // forgotten, so Retry starts a fresh order for guests who are still there.
         clearPendingKot(currentCaptain.id, activeTableId);
         activeOrderIdRef.current = null;
+        // The captain now knows the table was billed; Retry is their choice to start fresh.
+        tableSeenAtRef.current = Date.now();
         addNotification('KOT NOT sent', err.message, 'error');
         setKotError({
           message: `${err.message}. Nothing was sent to the kitchen. If the guests are still there, tap Retry to start a new order for them.`,
@@ -3946,6 +3957,7 @@ export default function CaptainApp({ onLogout }) {
         sectionTag: activeTable?.sectionTag || undefined,
         firstAttemptAt,
         allowDuplicate,
+        tableSeenAt: retryGuard.tableSeenAt,
       });
 
     } finally {

@@ -51,11 +51,9 @@
  * await printReceipt(orderId); // fires combined bill to cashier printer
  */
 
-// DEPRECATED: All direct QZ Tray printing has been removed.
-// PrintStation is the ONLY component that talks to QZ Tray.
+// DEPRECATED: All direct browser printing has been removed.
 // Cashier / Captain apps emit print jobs via backend socket events.
 // This file is kept as a placeholder to avoid breaking import references.
-// If you need printing utilities, use src/utils/qzTray.js (PrintStation only).
 
 export function usePrinter() {
   return {
