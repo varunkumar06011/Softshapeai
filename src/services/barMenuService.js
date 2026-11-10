@@ -301,6 +301,7 @@ export function mapBarMenuItems(items, restaurantItems = []) {
       fullBottlePrice: item.fullBottlePrice,
       isBottleItem: item.isBottleItem,
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
+      categoryPrinterTarget: item.categoryPrinterTarget || null,
       venuePrices: item.venuePrices || {},
       venueAvailabilities: item.venueAvailabilities || {},
       sectionAvailabilities: item.sectionAvailabilities || {},
@@ -559,6 +560,7 @@ export function readBarMenuCache(barId) {
         unit: item.unit ?? (isLiquor ? "ml" : null),
         mlPerUnit: item.mlPerUnit ?? (isLiquor ? 30 : null),
         printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
+        categoryPrinterTarget: item.categoryPrinterTarget || null,
       };
     });
   } catch {

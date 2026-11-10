@@ -135,6 +135,7 @@ export function mapFlatMenuItems(items) {
       unit: item.unit ?? (isLiquor ? "ml" : null),
       mlPerUnit: isLiquor ? 30 : null,
       printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
+      categoryPrinterTarget: item.categoryPrinterTarget || null,
       printerName: item.printerName || null,
       venuePrices: item.venuePrices || {},
       venueAvailabilities: item.venueAvailabilities || {},
@@ -175,6 +176,7 @@ export function mapPosViewToMenuItems(categories) {
         unit: item.unit ?? (isLiquor ? "ml" : null),
         mlPerUnit: isLiquor ? 30 : null,
         printerTarget: item.printerTarget || item.categoryPrinterTarget || null,
+        categoryPrinterTarget: item.categoryPrinterTarget || null,
       });
     }
   }

@@ -9728,10 +9728,15 @@ const CashierDashboard = ({ onLogout }) => {
         return;
       }
       setCategoryPrinterList(prev => prev.map(c => c.id === category.id ? { ...c, printerTarget: printerTarget || null } : c));
-      // Category printer overrides per-item printers: clear them locally too.
-      const clear = i => (i.c === category.name ? { ...i, printerTarget: null } : i);
-      setGlobalMenu(prev => prev.map(clear));
-      setGlobalBarMenu(prev => prev.map(clear));
+      // The category printer now overrides every item in it (the server cleared their
+      // own printers). The KOT is printed from this in-memory menu, so the items must
+      // carry the new printer here too — leaving them empty sent KOTs to the default printer.
+      const target = printerTarget || null;
+      const apply = i => (i.c === category.name
+        ? { ...i, printerTarget: target, printerName: null, categoryPrinterTarget: target }
+        : i);
+      setGlobalMenu(prev => prev.map(apply));
+      setGlobalBarMenu(prev => prev.map(apply));
       addNotification('Category Printer Updated', `${category.name} → ${printerTarget || 'Default (auto)'}`, 'success');
     } catch (err) {
       addNotification('Update Failed', err.message || 'Could not set category printer', 'error');
@@ -9794,7 +9799,9 @@ const CashierDashboard = ({ onLogout }) => {
 
         gstEnabled: payload.gstEnabled,
 
-        printerTarget: payload.printerTarget,
+        // "Follow category" saves no own printer; the KOT still needs the category's one.
+        printerTarget: payload.printerTarget || categoryPrintersByName[payload.category] || null,
+        categoryPrinterTarget: categoryPrintersByName[payload.category] || null,
 
         printerName: payload.printerName,
 
@@ -9832,7 +9839,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     }
 
-  }, [addNotification, setGlobalMenu, setGlobalBarMenu]);
+  }, [addNotification, setGlobalMenu, setGlobalBarMenu, categoryPrintersByName]);
 
 
 
@@ -15932,9 +15939,9 @@ const CashierDashboard = ({ onLogout }) => {
 
                       <div className="flex flex-col h-full p-4 gap-4 overflow-hidden">
 
-                        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col flex-1 min-h-0">
 
-                          <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center justify-between mb-4 shrink-0">
 
                             <div>
 
@@ -16023,11 +16030,11 @@ const CashierDashboard = ({ onLogout }) => {
 
 
                           {categoryPrinterList.length > 0 && (
-                            <details className="mb-4 rounded-lg border border-gray-200 bg-gray-50/60">
+                            <details className="mb-4 rounded-lg border border-gray-200 bg-gray-50/60 shrink-0">
                               <summary className="px-3 py-2 text-xs font-black uppercase tracking-wider text-gray-600 cursor-pointer">
                                 Category Printers (KOT)
                               </summary>
-                              <div className="px-3 pb-3">
+                              <div className="px-3 pb-3 max-h-[40vh] overflow-y-auto">
                                 <p className="text-[11px] text-gray-500 mb-2">Setting a category printer applies to every item in it and replaces any per-item printer. Set an item's printer afterwards to override the category for that item.</p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                                   {categoryPrinterList.map(cat => (
@@ -16054,7 +16061,7 @@ const CashierDashboard = ({ onLogout }) => {
                             </details>
                           )}
 
-                          <div className="overflow-y-auto max-h-[calc(100vh-280px)] -mx-1 px-1">
+                          <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
 
                             {editMenuItems.length === 0 ? (
 
