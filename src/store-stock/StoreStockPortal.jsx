@@ -3,8 +3,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Not linked to the admin, cashier, captain or any other portal. The supervisor
 // types the Outlet ID (no password) and gets that outlet's store stock book:
-//   - add an item once (unit, opening stock, rate)
-//   - record purchases (qty + rate, price history is kept)
+//   - add an item once (unit, opening stock, rate); edit it (name, unit, opening) any time
+//   - record purchases (qty + rate, price history is kept); edit any entry from Activity
 //   - issue stock to Indian / Chinese / Tandoori / Other kitchens
 //   - closing stock carries forward automatically (opening = previous closing)
 //   - daily / weekly / monthly reports, downloadable as Excel and PDF
@@ -16,14 +16,14 @@ import { Package, ClipboardList, BarChart3, Settings as Cog, ArrowRight, Loader2
 import { storeApi } from './storeApi';
 import { createBook, fd, istToday } from './storeEngine';
 import { StoreCtx } from './storeContext';
-import { NameSheet, AddItemSheet, PurchaseSheet, IssueSheet, AdjustSheet, ReverseSheet, RenameSheet, ItemSheet } from './StoreSheets';
+import { NameSheet, AddItemSheet, EditItemSheet, EditEntrySheet, PurchaseSheet, IssueSheet, AdjustSheet, ReverseSheet, ItemSheet } from './StoreSheets';
 import { StockView, ActivityView, ReportsView, SettingsView } from './StoreViews';
 import { Btn, ErrorText, inputCls, Label } from './ui';
 
 const LS_CODE = 'softshape.store.code', LS_USER = 'softshape.store.user';
 const read = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
 const write = (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* private mode */ } };
-const WRITE_SHEETS = new Set(['addItem', 'purchase', 'issue', 'adjust', 'reverse', 'rename']);
+const WRITE_SHEETS = new Set(['addItem', 'editItem', 'editEntry', 'purchase', 'issue', 'adjust', 'reverse']);
 
 // ── Outlet ID entry (Softshape login look, no password) ─────────────────────
 function CodeScreen({ initial, onOpen, error, busy }) {
@@ -139,14 +139,26 @@ export default function StoreStockPortal() {
       const r = await storeApi.addItem(codeRef.current, body);
       setData((d) => ({ ...d, items: [...d.items, r.item], entries: r.entry ? [...d.entries, r.entry] : d.entries }));
     },
-    renameItem: async (id, body) => {
-      const r = await storeApi.renameItem(codeRef.current, id, body);
-      setData((d) => ({ ...d, items: d.items.map((i) => (i.id === id ? r.item : i)) }));
+    // name / unit / opening stock: the server answers with the item and all of its entries (a unit change rewrites them)
+    editItem: async (id, body) => {
+      const r = await storeApi.editItem(codeRef.current, id, body);
+      setData((d) => ({
+        ...d,
+        items: d.items.map((i) => (i.id === id ? r.item : i)),
+        // same order the server uses (time, then id), so Activity does not reshuffle
+        entries: [...d.entries.filter((e) => e.itemId !== id), ...r.entries].sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+      }));
+      load(codeRef.current, { silent: true }); // pick up the audit line
     },
     addEntry: async (body) => {
       const r = await storeApi.addEntry(codeRef.current, body);
       setData((d) => ({ ...d, entries: [...d.entries, r.entry] }));
       load(codeRef.current, { silent: true }); // pick up the audit line and any other phone's entries
+    },
+    editEntry: async (id, body) => {
+      const r = await storeApi.editEntry(codeRef.current, id, body);
+      setData((d) => ({ ...d, entries: d.entries.map((e) => (e.id === id ? r.entry : e)) }));
+      load(codeRef.current, { silent: true });
     },
     countMatch: async (body) => { await storeApi.countMatch(codeRef.current, body); load(codeRef.current, { silent: true }); },
     setDepartments: async (list) => {
@@ -171,11 +183,12 @@ export default function StoreStockPortal() {
   const S = sheet && {
     name: <NameSheet {...sheet.props} />,
     addItem: <AddItemSheet />,
+    editItem: <EditItemSheet {...sheet.props} />,
+    editEntry: <EditEntrySheet {...sheet.props} />,
     purchase: <PurchaseSheet {...sheet.props} />,
     issue: <IssueSheet {...sheet.props} />,
     adjust: <AdjustSheet {...sheet.props} />,
     reverse: <ReverseSheet {...sheet.props} />,
-    rename: <RenameSheet {...sheet.props} />,
     item: <ItemSheet {...sheet.props} />,
   }[sheet.type];
 

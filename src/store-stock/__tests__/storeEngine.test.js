@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createBook, unitRatio, rangeFor, addDays } from '../storeEngine';
+import { createBook, unitRatio, rangeFor, addDays, UNITS, UNIT_ORDER, compatUnits, sameFamily, isEditable, unitSym } from '../storeEngine';
 
 let seq = 0;
 const e = (itemId, type, qty, date, extra = {}) => ({ id: 'e' + ++seq, itemId, type, qty, date, ts: Date.parse(date + 'T10:00:00+05:30') + seq, by: 't', ...extra });
@@ -77,6 +77,33 @@ describe('store engine', () => {
     expect(unitRatio('dozen', 'piece')).toBe(12);
     expect(500 * unitRatio('g', 'kg')).toBeCloseTo(0.5, 9); // 500 g into a KG item
     expect(0.05 / unitRatio('g', 'kg')).toBeCloseTo(50, 6); // Rs 0.05/g = Rs 50/kg
+  });
+
+  it('offers tin, bottle and the other packaging units, each as its own group of one', () => {
+    const keys = Object.keys(UNITS);
+    expect(UNIT_ORDER.slice().sort()).toEqual(keys.slice().sort()); // every unit is in the picker, none twice
+    for (const u of ['tin', 'bottle', 'jar', 'bag', 'carton']) {
+      expect(UNIT_ORDER).toContain(u);
+      expect(compatUnits(u)).toEqual([u]); // never convertible into kg / litre / another packaging unit
+      expect(sameFamily(u, 'kg')).toBe(false);
+    }
+    expect(compatUnits('kg')).toEqual(['kg', 'g', 'ton']);
+    expect(compatUnits('litre')).toEqual(['litre', 'ml']);
+    expect(compatUnits('piece')).toEqual(['piece', 'dozen']);
+    expect(sameFamily('g', 'kg')).toBe(true);
+    expect(sameFamily('tin', 'bottle')).toBe(false);
+    expect(unitSym({ unit: 'bottle' })).toBe('btl');
+    expect(unitSym({ unit: 'tin' })).toBe('tin');
+  });
+
+  it('lets an entry be edited unless it is a correction or was already corrected', () => {
+    const buy = e('i1', 'PURCHASE', 10, '2026-11-01', { rate: 40 });
+    const fixed = e('i1', 'PURCHASE', 5, '2026-11-01', { rate: 40 });
+    const rev = e('i1', 'REVERSAL', -5, '2026-11-02', { reverses: fixed.id });
+    const b = createBook({ items: [ITEM], entries: [buy, fixed, rev], depts: DEPTS });
+    expect(isEditable(b, buy)).toBe(true);
+    expect(isEditable(b, fixed)).toBe(false);
+    expect(isEditable(b, rev)).toBe(false);
   });
 
   it('builds day, week and month ranges', () => {

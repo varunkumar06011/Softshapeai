@@ -1,10 +1,10 @@
 // StoreViews.jsx — the four screens: Stock, Activity, Reports, Settings.
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Plus } from 'lucide-react';
 import { useStore } from './storeContext';
 import { Btn, Pill, Seg, TableWrap, thCls, tdCls, inputCls, Field } from './ui';
 import {
-  UNITS, unitSym, TYPE_LABEL, fq, fm, fr, fp, fd, ft, pd, ymd, rangeFor, pctChange,
+  UNITS, unitSym, isEditable, TYPE_LABEL, fq, fm, fr, fp, fd, ft, pd, ymd, rangeFor, pctChange,
 } from './storeEngine';
 import { exportExcel, exportPdf } from './storeExport';
 
@@ -20,7 +20,12 @@ export function StockView() {
     book.items.forEach((it) => { const P = book.period(it.id, today, today); v += P.closeV; p += P.pVal; i += P.issV; });
     return { v, p, i };
   }, [book, today]);
-  const list = book.items.filter((i) => !q.trim() || i.name.toLowerCase().includes(q.trim().toLowerCase()));
+  // every word typed must appear in the item's name or unit ("rice kg", "oil tin")
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const list = book.items.filter((i) => {
+    const hay = `${i.name} ${UNITS[i.unit]?.l || i.unit} ${unitSym(i)}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
@@ -34,7 +39,8 @@ export function StockView() {
             <b className="text-gray-900">{book.items.length}</b> items · stock value <b className="font-mono text-gray-900">{fm(totals.v)}</b><br />
             Today: bought <b className="font-mono text-gray-900">{fm(totals.p)}</b> · issued <b className="font-mono text-gray-900">{fm(totals.i)}</b>
           </p>
-          <input value={q} onChange={(e) => setQ(e.target.value)} type="search" placeholder="Search items" className={inputCls} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} type="search" placeholder="Search items by name or unit" aria-label="Search items" className={inputCls} autoComplete="off" />
+          {words.length > 0 && <p className="px-1 text-[12px] font-bold text-gray-400">{list.length} of {book.items.length} items</p>}
         </>
       )}
       {list.length ? (
@@ -42,25 +48,31 @@ export function StockView() {
           {list.map((it) => {
             const P = book.period(it.id, today, today), pi = book.priceInfo(it.id);
             return (
-              <button key={it.id} onClick={() => openSheet('item', { itemId: it.id })} className={`${card} p-4 text-left transition-all hover:border-[#E53935] active:scale-[0.99]`}>
-                <p className="text-[15px] font-black text-gray-900">{it.name} <span className="ml-1 text-[11px] font-bold text-gray-400">{unitSym(it)}</span></p>
-                <p className="mt-1 font-mono text-[28px] leading-tight text-gray-900">{fq(P.closeQ)} <span className="font-sans text-[13px] font-bold text-gray-400">{unitSym(it)}</span></p>
-                <p className="mt-0.5 flex flex-wrap gap-x-4 text-[12px] font-bold text-gray-400">
-                  <span>{fm(P.closeV)}</span>
-                  {pi.cur && <span>last rate {fr(pi.cur.rate)} {pi.pct != null && <b className={pi.pct > 0 ? 'text-red-600' : pi.pct < 0 ? 'text-green-600' : ''}>{fp(pi.pct)}</b>}</span>}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {P.closeQ <= 0 && <Pill tone="amber">Out of stock</Pill>}
-                  {P.pQty > 0 && <Pill tone="green">+{fq(P.pQty)} bought today</Pill>}
-                  {P.issQ > 0 && <Pill tone="red">−{fq(P.issQ)} issued today</Pill>}
-                </div>
-              </button>
+              <div key={it.id} className={`${card} relative transition-all hover:border-[#E53935]`}>
+                <button onClick={() => openSheet('item', { itemId: it.id })} className="block w-full p-4 text-left active:scale-[0.99]">
+                  <p className="pr-10 text-[15px] font-black text-gray-900">{it.name} <span className="ml-1 text-[11px] font-bold text-gray-400">{unitSym(it)}</span></p>
+                  <p className="mt-1 font-mono text-[28px] leading-tight text-gray-900">{fq(P.closeQ)} <span className="font-sans text-[13px] font-bold text-gray-400">{unitSym(it)}</span></p>
+                  <p className="mt-0.5 flex flex-wrap gap-x-4 text-[12px] font-bold text-gray-400">
+                    <span>{fm(P.closeV)}</span>
+                    {pi.cur && <span>last rate {fr(pi.cur.rate)} {pi.pct != null && <b className={pi.pct > 0 ? 'text-red-600' : pi.pct < 0 ? 'text-green-600' : ''}>{fp(pi.pct)}</b>}</span>}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {P.closeQ <= 0 && <Pill tone="amber">Out of stock</Pill>}
+                    {P.pQty > 0 && <Pill tone="green">+{fq(P.pQty)} bought today</Pill>}
+                    {P.issQ > 0 && <Pill tone="red">−{fq(P.issQ)} issued today</Pill>}
+                  </div>
+                </button>
+                <button onClick={() => openSheet('editItem', { itemId: it.id })} aria-label={`Edit ${it.name}`}
+                  className="absolute right-2.5 top-2.5 flex h-9 w-9 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-400 transition-all hover:border-[#E53935] hover:text-[#B71C1C] active:scale-90">
+                  <Pencil size={15} />
+                </button>
+              </div>
             );
           })}
         </div>
       ) : (
         <div className="rounded-[28px] border-2 border-dashed border-gray-200 p-8 text-center text-sm font-bold text-gray-400">
-          {book.items.length ? `No item matches “${q}”.` : 'No items yet. Tap “Add new item”, enter the name once with its opening stock and rate. Closing stock then carries forward by itself each day.'}
+          {book.items.length ? `No item matches “${q.trim()}”.` : 'No items yet. Tap “Add new item”, enter the name once with its opening stock and rate. Closing stock then carries forward by itself each day.'}
         </div>
       )}
     </div>
@@ -71,16 +83,24 @@ export function StockView() {
 export function ActivityView({ filter, setFilter }) {
   const { book, today, openSheet } = useStore();
   const [shown, setShown] = useState(60);
-  const all = useMemo(() => book.entries.slice().reverse().filter((e) =>
-    (filter.type === 'ALL' || e.type === filter.type || (filter.type === 'ADJUST' && e.type === 'REVERSAL')) && (!filter.item || e.itemId === filter.item)), [book, filter]);
+  const [q, setQ] = useState('');
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // search covers the item name plus supplier, department, who received it, notes and reasons
+  const all = useMemo(() => book.entries.slice().reverse().filter((e) => {
+    if (!((filter.type === 'ALL' || e.type === filter.type || (filter.type === 'ADJUST' && e.type === 'REVERSAL')) && (!filter.item || e.itemId === filter.item))) return false;
+    if (!words.length) return true;
+    const hay = [book.itemById[e.itemId]?.name, e.supplier, e.dept, e.to, e.note, e.reason, e.by].filter(Boolean).join(' ').toLowerCase();
+    return words.every((w) => hay.includes(w));
+  }), [book, filter, q]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div>
       <Seg value={filter.type} onChange={(t) => { setFilter({ ...filter, type: t }); setShown(60); }} options={[['ALL', 'All'], ['PURCHASE', 'Purchases'], ['ISSUE', 'Issues'], ['ADJUST', 'Adjustments']]} />
+      <input value={q} onChange={(e) => { setQ(e.target.value); setShown(60); }} type="search" placeholder="Search item, supplier, person…" aria-label="Search activity" className={`${inputCls} mt-3`} autoComplete="off" />
       <select value={filter.item} onChange={(e) => { setFilter({ ...filter, item: e.target.value }); setShown(60); }} className={`${inputCls} mt-3`}>
         <option value="">All items</option>
         {book.items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
       </select>
-      {all.length === 0 && <div className="mt-4 rounded-[28px] border-2 border-dashed border-gray-200 p-8 text-center text-sm font-bold text-gray-400">No entries yet.</div>}
+      {all.length === 0 && <div className="mt-4 rounded-[28px] border-2 border-dashed border-gray-200 p-8 text-center text-sm font-bold text-gray-400">{words.length ? `No entry matches “${q.trim()}”.` : 'No entries yet.'}</div>}
       {all.slice(0, shown).map((e, idx, arr) => {
         const it = book.itemById[e.itemId]; if (!it) return null;
         const header = idx === 0 || arr[idx - 1].date !== e.date ? <p key={'d' + e.date} className="mb-2 mt-5 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{e.date === today ? 'Today · ' : ''}{fd(e.date)}</p> : null;
@@ -102,14 +122,19 @@ export function ActivityView({ filter, setFilter }) {
               <p className="mt-0.5 text-[12px] font-bold text-gray-500">{d}</p>
               <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-gray-400">
                 <span><Pill>{TYPE_LABEL[e.type]}</Pill> <span className="ml-1">{ft(e.ts)} · {e.by || '—'}{voided ? ' · Corrected' : ''}</span></span>
-                {e.type !== 'REVERSAL' && !voided && <button onClick={() => openSheet('reverse', { entryId: e.id }, true)} className="py-1 text-[11px] font-black uppercase tracking-wider text-[#B71C1C]">Correct</button>}
+                {isEditable(book, e) && (
+                  <span className="flex gap-4">
+                    <button onClick={() => openSheet('editEntry', { entryId: e.id })} className="py-1 text-[11px] font-black uppercase tracking-wider text-gray-900">Edit</button>
+                    <button onClick={() => openSheet('reverse', { entryId: e.id }, true)} className="py-1 text-[11px] font-black uppercase tracking-wider text-[#B71C1C]">Correct</button>
+                  </span>
+                )}
               </div>
             </div>
           </div>
         );
       })}
       {all.length > shown && <Btn variant="soft" className="mt-3 w-full" onClick={() => setShown(shown + 60)}>Show more</Btn>}
-      <p className="mt-4 px-1 text-[12px] font-bold text-gray-400">Entries are never edited or deleted. A mistake is fixed with a correction entry that stays in the history.</p>
+      <p className="mt-4 px-1 text-[12px] font-bold text-gray-400">Edit changes an entry in place (it keeps its date) and the old → new values go to the audit log in Settings. Correct cancels an entry with an opposite entry that stays in the history. Entries are never deleted.</p>
     </div>
   );
 }
@@ -284,7 +309,7 @@ export function SettingsView() {
             <tbody>{audit.map((a, i) => <tr key={i}><td className={tdCls}>{fd(ymd(new Date(a.ts)))} {ft(a.ts)}</td><td className={tdCls}>{a.by}</td><td className={`${tdCls} !whitespace-normal !text-left`}>{a.action}: {a.detail}</td></tr>)}</tbody></table></TableWrap>
         ) : <p className="px-1 text-[12px] font-bold text-gray-400">Nothing logged yet.</p>}
       </div>
-      <p className="px-1 text-[12px] font-bold text-gray-400">Stock is valued at weighted-average cost. Past days cannot be edited; use Correct in Activity.</p>
+      <p className="px-1 text-[12px] font-bold text-gray-400">Stock is valued at weighted-average cost. Items are edited from the Stock tab; any entry can be edited or corrected from Activity.</p>
     </div>
   );
 }

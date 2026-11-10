@@ -37,8 +37,9 @@ async function call(code, path, method = 'GET', body) {
 export const storeApi = {
   state: (code) => call(code, '/state'),
   addItem: (code, body) => call(code, '/items', 'POST', body),
-  renameItem: (code, id, body) => call(code, `/items/${encodeURIComponent(id)}`, 'PATCH', body),
+  editItem: (code, id, body) => call(code, `/items/${encodeURIComponent(id)}`, 'PATCH', body),
   addEntry: (code, body) => call(code, '/entries', 'POST', body),
+  editEntry: (code, id, body) => call(code, `/entries/${encodeURIComponent(id)}`, 'PATCH', body),
   countMatch: (code, body) => call(code, '/count-match', 'POST', body),
   setDepartments: (code, body) => call(code, '/departments', 'PUT', body),
 };

@@ -23,9 +23,26 @@ export const UNITS = {
   dozen: { fam: 'p', f: 12, s: 'doz', l: 'Dozen' },
   packet: { fam: 'k', f: 1, s: 'pkt', l: 'Packet' },
   box: { fam: 'b', f: 1, s: 'box', l: 'Box' },
+  // packaging units: each is its own family, so they never convert into kg / litre / each other
+  tin: { fam: 'tin', f: 1, s: 'tin', l: 'Tin' },
+  bottle: { fam: 'bottle', f: 1, s: 'btl', l: 'Bottle' },
+  jar: { fam: 'jar', f: 1, s: 'jar', l: 'Jar' },
+  bag: { fam: 'bag', f: 1, s: 'bag', l: 'Bag' },
+  carton: { fam: 'carton', f: 1, s: 'ctn', l: 'Carton' },
 };
-export const UNIT_ORDER = ['kg', 'g', 'ton', 'litre', 'ml', 'piece', 'packet', 'box', 'dozen'];
+/** the unit list as shown in the pickers, grouped */
+export const UNIT_GROUPS = [
+  ['Weight', ['kg', 'g', 'ton']],
+  ['Volume', ['litre', 'ml']],
+  ['Count', ['piece', 'dozen']],
+  ['Packaging', ['packet', 'box', 'tin', 'bottle', 'jar', 'bag', 'carton']],
+];
+export const UNIT_ORDER = UNIT_GROUPS.flatMap(([, keys]) => keys);
 export const compatUnits = (u) => UNIT_ORDER.filter((k) => UNITS[k].fam === UNITS[u].fam);
+/** true when a quantity can be converted between the two units (kg ↔ g, litre ↔ ml, piece ↔ dozen) */
+export const sameFamily = (a, b) => !!UNITS[a] && !!UNITS[b] && UNITS[a].fam === UNITS[b].fam;
+/** an entry can be edited unless it is a correction, or was itself already corrected */
+export const isEditable = (book, e) => e.type !== 'REVERSAL' && !book.reversed[e.id];
 export const unitSym = (item) => UNITS[item.unit]?.s || item.unit;
 /** ratio to multiply a quantity typed in `entered` unit to get the item's own unit */
 export const unitRatio = (entered, itemUnit) => UNITS[entered].f / UNITS[itemUnit].f;
