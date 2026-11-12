@@ -1,108 +1,117 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// DesktopUpdateBanner — Cashier desktop (Tauri) update prompt
+// DesktopUpdateBanner — "Update now" card for the Windows desktop apps
 // ─────────────────────────────────────────────────────────────────────────────
-// Checks for a new release quietly in the background. Nothing is downloaded or
-// installed until the cashier clicks "Update now".
+// Appears only inside the Tauri desktop app, only when a newer version is
+// available. Nothing is downloaded or installed until the user clicks
+// "Update now". "Later" hides it until the next launch.
 //
-// Install is blocked while a bill is open or changes are waiting to sync, so a
-// restart can never lose an order. Installing restarts the app.
-//
-// Desktop only (Tauri). Does nothing in the browser or on Android.
+// Shown as a compact card centred at the top: on the cashier screen that is the
+// empty middle of the blue header (clock on the left, cashier name on the
+// right), so it covers nothing the cashier uses. It sits above every other
+// top bar (the offline / print-queue bar is z-[9999]) so it can never be hidden.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react';
-import { useSyncStatus } from '../../context/SyncStatusContext';
+import React, { useState } from 'react';
+import { ArrowUpCircle, Loader2, AlertTriangle } from 'lucide-react';
+import { useDesktopUpdate } from '../../hooks/useDesktopUpdate';
 
-const FIRST_CHECK_DELAY_MS = 15_000;
-const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
-function getInvoke() {
-  return window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke || null;
+// Plain wording for the cashier; the raw message stays in the tooltip for support.
+function friendlyError(error) {
+  const msg = String(error || '').toLowerCase();
+  if (msg.includes('signature')) return 'Failed its security check. Contact support.';
+  if (msg.includes('no update available')) return 'This update is no longer available.';
+  return 'Could not download it. Check the internet.';
 }
 
-export default function DesktopUpdateBanner({ hasOpenBills = false }) {
-  const { hasPending } = useSyncStatus();
-  const [update, setUpdate] = useState(null);
+function percent(downloaded, total) {
+  if (!total || total <= 0) return null;
+  return Math.min(100, Math.round((downloaded / total) * 100));
+}
+
+export default function DesktopUpdateBanner() {
+  const { status, currentVersion, version, downloaded, total, error, install } = useDesktopUpdate();
   const [dismissed, setDismissed] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const invoke = getInvoke();
-    if (!invoke) return undefined;
+  const busy = status === 'downloading' || status === 'installing';
+  // Once the user started an update, keep the card up until the app restarts.
+  if (status === 'idle' || (dismissed && !busy)) return null;
 
-    let cancelled = false;
-    const check = async () => {
-      try {
-        const info = await invoke('check_for_update');
-        if (!cancelled && info) setUpdate(info);
-      } catch {
-        // Silent: the next scheduled check will try again.
-      }
-    };
+  const pct = percent(downloaded, total);
 
-    const firstTimer = setTimeout(check, FIRST_CHECK_DELAY_MS);
-    const interval = setInterval(check, RECHECK_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(firstTimer);
-      clearInterval(interval);
-    };
-  }, []);
+  let icon;
+  let title;
+  let subtitle;
+  if (status === 'downloading') {
+    icon = <Loader2 size={18} className="animate-spin" />;
+    title = `Downloading update${pct != null ? ` · ${pct}%` : '…'}`;
+    subtitle = 'Keep the app open. It restarts when ready.';
+  } else if (status === 'installing') {
+    icon = <Loader2 size={18} className="animate-spin" />;
+    title = 'Installing update…';
+    subtitle = 'The app is restarting.';
+  } else if (status === 'error') {
+    icon = <AlertTriangle size={18} />;
+    title = 'Update failed';
+    subtitle = friendlyError(error);
+  } else {
+    icon = <ArrowUpCircle size={18} />;
+    title = `Update available · v${version}`;
+    subtitle = currentVersion
+      ? `You have v${currentVersion} · restarts to update`
+      : 'The app restarts to update';
+  }
 
-  if (!update || dismissed) return null;
-
-  const blocked = hasOpenBills || hasPending;
-  const blockReason = hasOpenBills
-    ? 'Close open bills first, then update.'
-    : 'Wait for pending changes to sync, then update.';
-
-  const handleUpdateNow = async () => {
-    const invoke = getInvoke();
-    if (!invoke || blocked || installing) return;
-    setInstalling(true);
-    setError(null);
-    try {
-      // On success the app restarts, so this promise does not resolve in practice.
-      await invoke('install_update');
-    } catch (err) {
-      setInstalling(false);
-      setError(String(err));
-    }
-  };
+  const isError = status === 'error';
 
   return (
     <div
       role="status"
-      className="fixed bottom-4 right-4 z-[9998] max-w-sm rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-lg"
+      aria-live="polite"
+      className="fixed top-3 left-1/2 -translate-x-1/2 z-[10000] w-[min(460px,calc(100vw-32px))]"
     >
-      <p className="text-sm font-semibold text-[#1E293B]">
-        SoftShape Cashier {update.version} is available
-      </p>
-      {blocked && <p className="mt-1 text-xs text-[#64748B]">{blockReason}</p>}
-      {!blocked && !installing && (
-        <p className="mt-1 text-xs text-[#64748B]">
-          The billing service restarts during the update. Captains are disconnected for about a minute.
-        </p>
-      )}
-      {error && <p className="mt-1 text-xs text-red-600">Update failed: {error}</p>}
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => setDismissed(true)}
-          disabled={installing}
-          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9] disabled:opacity-50"
-        >
-          Later
-        </button>
-        <button
-          type="button"
-          onClick={handleUpdateNow}
-          disabled={blocked || installing}
-          className="rounded-lg bg-[#1E293B] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#334155] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {installing ? 'Installing…' : 'Update now'}
-        </button>
+      <div className="overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
+        <div className="flex items-center gap-3 px-3 py-2">
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+              isError ? 'bg-red-50 text-red-600' : 'bg-[#1E3A8A]/10 text-[#1E3A8A]'
+            }`}
+          >
+            {icon}
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-gray-900">{title}</p>
+            <p className="truncate text-[11px] font-medium text-gray-500" title={isError && error ? error : subtitle}>{subtitle}</p>
+          </div>
+
+          {!busy && (
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={install}
+                className="rounded-full bg-[#1E3A8A] px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#152C6B]"
+              >
+                {isError ? 'Try again' : 'Update now'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissed(true)}
+                className="rounded-full px-2.5 py-1.5 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+              >
+                Later
+              </button>
+            </div>
+          )}
+        </div>
+
+        {busy && (
+          <div className="h-1 w-full bg-gray-100">
+            <div
+              className={`h-full bg-[#1E3A8A] transition-[width] duration-300 ${pct == null ? 'w-1/3 animate-pulse' : ''}`}
+              style={pct != null ? { width: `${status === 'installing' ? 100 : pct}%` } : undefined}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

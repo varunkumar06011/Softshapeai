@@ -3,12 +3,13 @@ import { X, Search, ChevronDown, Loader2, Save, Wallet, AlertTriangle } from 'lu
 import { apiFetch } from '../services/apiConfig';
 import { getKolkataDateString } from '../shared/utils/dateFormat';
 import LedgerCategoryPicker from '../shared/components/LedgerCategoryPicker';
-import { loadApproverNames } from '../shared/utils/expenditureApprovers';
+import { getApproverOptions, fetchApproverOptions } from '../utils/approvers';
 
 export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editExpenditure }) {
+  const CROSS_OUTLET_APPROVERS = getApproverOptions();
   const isEditMode = !!editExpenditure;
   const [paidToOptions, setPaidToOptions] = useState({ staff: [] });
-  const [approverOptions, setApproverOptions] = useState([]);
+  const [approverOptions, setApproverOptions] = useState(CROSS_OUTLET_APPROVERS);
   const [narrationSuggestions, setNarrationSuggestions] = useState([]);
 
   const [paidToType, setPaidToType] = useState('STAFF');
@@ -35,14 +36,13 @@ export default function CreateExpenditureModal({ isOpen, onClose, onSaved, editE
 
   const loadData = useCallback(async () => {
     try {
-      const [optsRes, narrationsRes, approversRes] = await Promise.allSettled([
+      const [optsRes, narrationsRes] = await Promise.allSettled([
         apiFetch('/api/expenditures/paid-to-options'),
         apiFetch('/api/expenditures/narration-suggestions'),
-        loadApproverNames({ edge: false }),
       ]);
       if (optsRes.status === 'fulfilled') setPaidToOptions(optsRes.value || { staff: [] });
       if (narrationsRes.status === 'fulfilled') setNarrationSuggestions(narrationsRes.value || []);
-      if (approversRes.status === 'fulfilled') setApproverOptions(approversRes.value || []);
+      setApproverOptions(await fetchApproverOptions());
     } catch (err) {
       console.error('[CreateExpenditureModal] Load options failed:', err);
     }

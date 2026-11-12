@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoftShape Admin",
-  "version": "24.0.20",
+  "version": "24.0.23",
   "identifier": "ai.softshape.admin",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -31,16 +31,15 @@
   },
   "plugins": {
     "updater": {
-      "active": true,
       "endpoints": [
-        "https://softshape-backend-production.up.railway.app/api/updates/admin/{{target}}/{{current_version}}"
+        "https://softshape-backend-production.up.railway.app/api/updates/admin/{{target}}-{{arch}}/{{current_version}}"
       ],
-      "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQwRDQwOUM5NEExNzc2MDcKUldRSGRoZEt5UW5VUUI3R1hEUUNLNE5sZitnZVRaaXJURjhReWN3Qld6WFVzSTNDREcrcWRka0UK"
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "nsis",
       "msi"

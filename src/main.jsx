@@ -91,12 +91,9 @@ import * as Sentry from '@sentry/react'
   // Register service worker for offline support
   registerSW();
 
-  // Background OTA check — downloads a new bundle into staging if available.
-  // Nothing is applied here; staff apply it with "Update now" (OtaUpdateBanner).
+  // Background OTA check — non-blocking, downloads new bundle if available.
+  // Applied on next app launch via checkAndApplyOtaOnStartup().
   setTimeout(() => {
     checkAndDownloadOta().catch(() => { /* ignore — non-critical */ });
   }, 10_000);
-  setInterval(() => {
-    checkAndDownloadOta().catch(() => { /* ignore — non-critical */ });
-  }, 6 * 60 * 60 * 1000);
 })();

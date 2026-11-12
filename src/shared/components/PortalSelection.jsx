@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode, ArrowRight, Phone, Mail, Users } from 'lucide-react';
+import { LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode, ArrowRight, Phone, Mail, Users, Package } from 'lucide-react';
 
 const PortalSelection = ({ onSelect }) => {
   const isDesktopApp = typeof window !== 'undefined' && !!window.__TAURI__;
@@ -58,6 +58,13 @@ const PortalSelection = ({ onSelect }) => {
       title: 'Manager Portal',
       description: 'Shift, staff, and operations oversight for floor managers.',
       icon: LayoutDashboard,
+      color: '#B71C1C',
+    },
+    {
+      id: 'store',
+      title: 'Store Stock',
+      description: 'Store supervisor book: purchases, issues to kitchens, closing stock and reports.',
+      icon: Package,
       color: '#B71C1C',
     },
   ];

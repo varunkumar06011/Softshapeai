@@ -89,7 +89,10 @@ export async function checkForNativeUpdate(apkAssetName) {
     const asset = release.assets?.find(a => a.name === apkAssetName);
     const downloadUrl = asset?.browser_download_url || null;
 
-    const updateAvailable = compareVersions(currentVersion, latestVersion) > 0;
+    // Only offer the update once this app's APK is attached to the release. A release
+    // is published before CI has finished building (APKs appear a few minutes later);
+    // offering it earlier would send the user to a dead link.
+    const updateAvailable = !!downloadUrl && compareVersions(currentVersion, latestVersion) > 0;
 
     return {
       updateAvailable,

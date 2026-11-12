@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
@@ -231,216 +231,45 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-#[derive(Debug, Serialize)]
+/// What the frontend shows in the "Update now" banner.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct UpdateInfo {
-    version: String,
+    available: bool,
+    current_version: String,
+    version: Option<String>,
     notes: Option<String>,
 }
 
-/// Check whether a newer release exists. Only checks; never downloads or installs.
+/// Download progress sent to the frontend as the `update-progress` event.
+#[derive(Serialize, Clone)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// Check whether a newer version exists. This NEVER downloads or installs anything:
+/// the user must click "Update now", which calls `install_update`.
 #[tauri::command]
-async fn check_for_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
+async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
+    let current_version = app.package_info().version.to_string();
     let update = app.updater()
         .map_err(|e| format!("Updater init failed: {}", e))?
         .check().await
         .map_err(|e| format!("Update check failed: {}", e))?;
-    Ok(update.map(|u| UpdateInfo { version: u.version.clone(), notes: u.body.clone() }))
+    Ok(match update {
+        Some(u) => UpdateInfo {
+            available: true,
+            current_version,
+            version: Some(u.version.clone()),
+            notes: u.body.clone(),
+        },
+        None => UpdateInfo { available: false, current_version, version: None, notes: None },
+    })
 }
 
-// ── Safe update: the billing PC's database must never be left half-written ─────
-// The Runtime (edge-server) owns the local database. Before the installer runs, the
-// update: waits for pending work to finish, downloads while the Runtime is still up,
-// stops the Runtime cleanly, copies the database, and only then installs.
-// If anything fails before the installer starts, the Runtime is started again.
-
-/// Marker the Runtime Host reads: while it is fresh, the Host does not start the Runtime.
-/// Matches UPDATE_MARKER_MAX_AGE_SECS in runtime-host/src/main.rs.
-const UPDATE_MARKER_NAME: &str = "update-in-progress.flag";
-const BACKUPS_TO_KEEP: usize = 10;
-
-#[derive(Deserialize)]
-struct UpdateReadiness {
-    ready: bool,
-    reasons: Vec<String>,
-}
-
-fn local_app_data_dir() -> std::path::PathBuf {
-    std::env::var("LOCALAPPDATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-}
-
-fn update_marker_file() -> std::path::PathBuf {
-    local_app_data_dir().join("Softshape").join(UPDATE_MARKER_NAME)
-}
-
-fn write_update_marker() -> Result<(), String> {
-    let path = update_marker_file();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("Could not create {}: {}", dir.display(), e))?;
-    }
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    std::fs::write(&path, format!("{}\n", ts)).map_err(|e| format!("Could not write update marker: {}", e))
-}
-
-fn clear_update_marker() {
-    let _ = std::fs::remove_file(update_marker_file());
-}
-
-fn runtime_address() -> Result<std::net::SocketAddr, String> {
-    format!("127.0.0.1:{}", get_edge_port())
-        .parse()
-        .map_err(|e| format!("Invalid Runtime address: {}", e))
-}
-
-fn runtime_is_up() -> bool {
-    match runtime_address() {
-        Ok(addr) => TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok(),
-        Err(_) => false,
-    }
-}
-
-/// Send one request to the Runtime on localhost. Returns the body for HTTP 200, otherwise an error.
-fn runtime_request(method: &str, path: &str) -> Result<String, String> {
-    let addr = runtime_address()?;
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2))
-        .map_err(|e| format!("Billing service is not reachable: {}", e))?;
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-    let request = format!(
-        "{} {} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-        method, path
-    );
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|e| format!("Request to the billing service failed: {}", e))?;
-    let mut response = String::new();
-    let _ = stream.read_to_string(&mut response);
-    let ok = response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200");
-    let body = response.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
-    if ok {
-        Ok(body)
-    } else {
-        Err(format!("Billing service answered {} with: {}", path, body.trim()))
-    }
-}
-
-/// Wait until the Runtime stops listening. Returns false if it is still up after the timeout.
-fn wait_for_runtime_stopped(timeout: Duration) -> bool {
-    let deadline = std::time::Instant::now() + timeout;
-    while std::time::Instant::now() < deadline {
-        if !runtime_is_up() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(500));
-    }
-    !runtime_is_up()
-}
-
-/// Fails unless the Runtime reports nothing waiting to sync and no unfinished print jobs.
-fn check_update_readiness() -> Result<(), String> {
-    let body = runtime_request("GET", "/api/edge/update-readiness")?;
-    let readiness: UpdateReadiness = serde_json::from_str(&body)
-        .map_err(|e| format!("Unexpected readiness answer from the billing service: {}", e))?;
-    if readiness.ready {
-        Ok(())
-    } else {
-        Err(format!(
-            "Update not started. Finish these first, then try again: {}.",
-            readiness.reasons.join("; ")
-        ))
-    }
-}
-
-fn database_file() -> std::path::PathBuf {
-    match std::env::var("EDGE_DB_PATH") {
-        Ok(path) if !path.is_empty() => std::path::PathBuf::from(path),
-        _ => std::path::PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string()))
-            .join(".softshape")
-            .join("edge.db"),
-    }
-}
-
-/// Copy the database (and its WAL file if present) into backups/. Keeps the newest BACKUPS_TO_KEEP.
-/// Must run only after the Runtime has stopped, so the copy is consistent.
-fn backup_database() -> Result<Option<std::path::PathBuf>, String> {
-    let db = database_file();
-    if !db.exists() {
-        return Ok(None); // nothing to protect yet
-    }
-    let dir = db.parent().unwrap_or_else(|| std::path::Path::new(".")).join("backups");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create backups folder: {}", e))?;
-
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let target = dir.join(format!("edge-pre-update-{}.db", ts));
-    std::fs::copy(&db, &target).map_err(|e| format!("Could not copy the database: {}", e))?;
-
-    let source_len = std::fs::metadata(&db).map(|m| m.len()).unwrap_or(0);
-    let copied_len = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-    if source_len != copied_len {
-        return Err(format!("Backup size mismatch ({} vs {} bytes)", source_len, copied_len));
-    }
-
-    let wal = std::path::PathBuf::from(format!("{}-wal", db.display()));
-    if wal.exists() {
-        std::fs::copy(&wal, dir.join(format!("edge-pre-update-{}.db-wal", ts)))
-            .map_err(|e| format!("Could not copy the database WAL file: {}", e))?;
-    }
-
-    // Keep only the newest backups
-    let mut backups: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
-        .map(|entries| {
-            entries
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| {
-                    p.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|n| n.starts_with("edge-pre-update-") && n.ends_with(".db"))
-                        .unwrap_or(false)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    // The backup just made always stays; the other slots go to the newest older backups
-    backups.retain(|p| p != &target);
-    backups.sort_by_key(|p| std::cmp::Reverse(std::fs::metadata(p).and_then(|m| m.modified()).ok()));
-    for old in backups.iter().skip(BACKUPS_TO_KEEP - 1) {
-        let _ = std::fs::remove_file(old);
-        let _ = std::fs::remove_file(format!("{}-wal", old.display()));
-    }
-
-    Ok(Some(target))
-}
-
-/// Undo an update that did not reach the installer: clear the marker and start the Runtime again.
-fn abort_update(app: &tauri::AppHandle, reason: String) -> String {
-    clear_update_marker();
-    spawn_runtime_host_if_needed(app);
-    let restarted = (0..30).any(|_| {
-        if runtime_is_up() {
-            true
-        } else {
-            std::thread::sleep(Duration::from_secs(1));
-            false
-        }
-    });
-    if restarted {
-        format!("{} Nothing was installed. The billing service is running again.", reason)
-    } else {
-        format!("{} Nothing was installed, but the billing service did not restart. Restart the billing PC.", reason)
-    }
-}
-
-/// Download and install the update, then restart. Called only after the cashier clicks "Update now".
-/// Refuses while orders or print jobs are unfinished. Stops the Runtime cleanly before
-/// the installer runs, backs up the database, and starts the Runtime again if anything fails first.
+/// Download and install the update. Only ever invoked by the "Update now" button.
+/// On Windows the installer closes this app and starts the new version when it finishes.
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     let update = app.updater()
@@ -448,43 +277,17 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         .check().await
         .map_err(|e| format!("Update check failed: {}", e))?
         .ok_or_else(|| "No update available".to_string())?;
-
-    // 1. Confirm before downloading anything
-    tauri::async_runtime::spawn_blocking(check_update_readiness)
-        .await
-        .map_err(|e| format!("Readiness check failed: {}", e))??;
-
-    // 2. Download while the Runtime is still running. This changes nothing on disk yet.
-    let bytes = update
-        .download(|_, _| {}, || {})
-        .await
-        .map_err(|e| format!("Update download failed: {}", e))?;
-
-    // 3. Stop, back up and install. Blocking work runs off the async runtime.
-    let app_for_abort = app.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        // New orders or prints may have arrived during the download
-        check_update_readiness()?;
-
-        write_update_marker()?;
-
-        // The Runtime answers /runtime/shutdown by exiting, so the reply may never arrive
-        let _ = runtime_request("POST", "/runtime/shutdown");
-        if !wait_for_runtime_stopped(Duration::from_secs(40)) {
-            return Err(abort_update(&app_for_abort, "The billing service did not stop in time.".to_string()));
-        }
-
-        if let Err(e) = backup_database() {
-            return Err(abort_update(&app_for_abort, format!("Database backup failed: {}.", e)));
-        }
-
-        // Windows launches the installer, and this app exits from here on
-        update
-            .install(bytes)
-            .map_err(|e| abort_update(&app_for_abort, format!("Install failed: {}.", e)))
-    })
-    .await
-    .map_err(|e| format!("Update task failed: {}", e))?
+    let progress_app = app.clone();
+    let mut downloaded: u64 = 0;
+    update.download_and_install(
+        move |chunk, total| {
+            downloaded += chunk as u64;
+            let _ = progress_app.emit("update-progress", UpdateProgress { downloaded, total });
+        },
+        || {},
+    ).await
+        .map_err(|e| format!("Update install failed: {}", e))?;
+    Ok(())
 }
 
 /// Enable autostart on Windows boot (Run registry key).
@@ -639,14 +442,14 @@ fn main() {
                 eprintln!("[Autostart] Enabled on first run");
             }
 
-            // A leftover update marker (from an update that was interrupted) must not
-            // keep the Runtime Host from starting the Runtime.
-            clear_update_marker();
-
             // Launch the Runtime Host if the Runtime isn't already running.
             // The Cashier never spawns edge-server.exe directly — it spawns the
             // Runtime Host, which supervises edge-server + print service.
             spawn_runtime_host_if_needed(&app.handle());
+
+            // Updates are never installed automatically. The frontend checks for a new
+            // version and shows an "Update now" button; `install_update` runs only when
+            // the cashier clicks it.
 
             // Build system tray with Show / Restart Runtime / Shutdown Runtime
             use tauri::menu::{Menu, MenuItem};
@@ -729,7 +532,7 @@ fn main() {
             print_raw,
             print_network,
             get_app_version,
-            check_for_update,
+            check_update,
             install_update,
             get_edge_server_status,
             restart_edge_server,
@@ -761,39 +564,4 @@ fn main() {
             // The Runtime survives Cashier closure.
         }
     });
-}
-
-#[cfg(test)]
-mod update_safety_tests {
-    use super::*;
-
-    // One test covers the whole backup path, because it sets a process-wide env var
-    #[test]
-    fn backup_copies_the_database_and_keeps_the_newest_ten() {
-        let dir = std::env::temp_dir().join(format!("softshape-backup-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let db = dir.join("edge.db");
-        std::fs::write(&db, b"live-orders").unwrap();
-        std::env::set_var("EDGE_DB_PATH", &db);
-
-        // Older backups already on disk, plus the one this call creates
-        let backups_dir = dir.join("backups");
-        std::fs::create_dir_all(&backups_dir).unwrap();
-        for i in 0..12 {
-            std::fs::write(backups_dir.join(format!("edge-pre-update-100000000{:02}.db", i)), b"old").unwrap();
-        }
-
-        let created = backup_database().unwrap().expect("a backup should be created");
-        assert_eq!(std::fs::read(&created).unwrap(), b"live-orders");
-
-        let kept = std::fs::read_dir(&backups_dir)
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().starts_with("edge-pre-update-"))
-            .count();
-        assert_eq!(kept, BACKUPS_TO_KEEP);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 }

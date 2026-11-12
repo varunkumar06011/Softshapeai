@@ -72,7 +72,7 @@ import { useMenu } from '../context/MenuContext';
 
 import { useVenueSections } from '../hooks/useVenueSections';
 
-import { updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvailabilityEdge, toggleMenuTypeEdge, toggleVenueAvailabilityEdge, toggleSectionAvailabilityEdge } from '../services/menuService';
+import { updateMenuItemEdge, createMenuItemEdge, deleteMenuItemEdge, toggleAvailabilityEdge, toggleMenuTypeEdge, toggleVenueAvailabilityEdge, toggleSectionAvailabilityEdge, fetchCategoryPrintersEdge, setCategoryPrinterEdge } from '../services/menuService';
 
 import { createMenuItem, updateMenuItem } from '../services/adminApi';
 
@@ -9702,6 +9702,56 @@ const CashierDashboard = ({ onLogout }) => {
 
   // ── Save handler for the edit menu modal (edge-first with cloud fallback) ──
 
+  // ── Category KOT printers (Edit Menu) ──
+  // Mirrors the admin panel's per-category printer. Setting one overrides every
+  // per-item printer in that category; an item printer set afterwards wins again.
+  const [categoryPrinterList, setCategoryPrinterList] = useState([]);
+  const [categoryPrinterSaving, setCategoryPrinterSaving] = useState(false);
+
+  const categoryPrintersByName = useMemo(() => {
+    const m = {};
+    for (const c of categoryPrinterList) if (c.printerTarget) m[c.name] = c.printerTarget;
+    return m;
+  }, [categoryPrinterList]);
+
+  const loadCategoryPrinters = useCallback(async () => {
+    try {
+      setCategoryPrinterList(await fetchCategoryPrintersEdge());
+    } catch (err) {
+      console.warn('[CashierDashboard] Could not load category printers:', err?.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'menuedit') loadCategoryPrinters();
+  }, [activeTab, loadCategoryPrinters, configVersion]);
+
+  const handleCategoryPrinterChange = useCallback(async (category, printerTarget) => {
+    setCategoryPrinterSaving(true);
+    try {
+      const result = await setCategoryPrinterEdge(category.id, printerTarget);
+      if (!result || !result.success) {
+        addNotification('Update Failed', result?.error || 'Could not set category printer', 'error');
+        return;
+      }
+      setCategoryPrinterList(prev => prev.map(c => c.id === category.id ? { ...c, printerTarget: printerTarget || null } : c));
+      // The category printer now overrides every item in it (the server cleared their
+      // own printers). The KOT is printed from this in-memory menu, so the items must
+      // carry the new printer here too — leaving them empty sent KOTs to the default printer.
+      const target = printerTarget || null;
+      const apply = i => (i.c === category.name
+        ? { ...i, printerTarget: target, printerName: null, categoryPrinterTarget: target }
+        : i);
+      setGlobalMenu(prev => prev.map(apply));
+      setGlobalBarMenu(prev => prev.map(apply));
+      addNotification('Category Printer Updated', `${category.name} → ${printerTarget || 'Default (auto)'}`, 'success');
+    } catch (err) {
+      addNotification('Update Failed', err.message || 'Could not set category printer', 'error');
+    } finally {
+      setCategoryPrinterSaving(false);
+    }
+  }, [addNotification, setGlobalMenu, setGlobalBarMenu]);
+
   const handleSaveMenuItem = useCallback(async (payload) => {
 
     setMenuEditSaving(true);
@@ -9756,7 +9806,9 @@ const CashierDashboard = ({ onLogout }) => {
 
         gstEnabled: payload.gstEnabled,
 
-        printerTarget: payload.printerTarget,
+        // "Follow category" saves no own printer; the KOT still needs the category's one.
+        printerTarget: payload.printerTarget || categoryPrintersByName[payload.category] || null,
+        categoryPrinterTarget: categoryPrintersByName[payload.category] || null,
 
         printerName: payload.printerName,
 
@@ -9794,7 +9846,7 @@ const CashierDashboard = ({ onLogout }) => {
 
     }
 
-  }, [addNotification, setGlobalMenu, setGlobalBarMenu]);
+  }, [addNotification, setGlobalMenu, setGlobalBarMenu, categoryPrintersByName]);
 
 
 
@@ -15896,9 +15948,9 @@ const CashierDashboard = ({ onLogout }) => {
 
                       <div className="flex flex-col h-full p-4 gap-4 overflow-hidden">
 
-                        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col flex-1 min-h-0">
 
-                          <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center justify-between mb-4 shrink-0">
 
                             <div>
 
@@ -15986,7 +16038,39 @@ const CashierDashboard = ({ onLogout }) => {
 
 
 
-                          <div className="overflow-y-auto max-h-[calc(100vh-280px)] -mx-1 px-1">
+                          {categoryPrinterList.length > 0 && (
+                            <details className="mb-4 rounded-lg border border-gray-200 bg-gray-50/60 shrink-0">
+                              <summary className="px-3 py-2 text-xs font-black uppercase tracking-wider text-gray-600 cursor-pointer">
+                                Category Printers (KOT)
+                              </summary>
+                              <div className="px-3 pb-3 max-h-[40vh] overflow-y-auto">
+                                <p className="text-[11px] text-gray-500 mb-2">Setting a category printer applies to every item in it and replaces any per-item printer. Set an item's printer afterwards to override the category for that item.</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                  {categoryPrinterList.map(cat => (
+                                    <div key={cat.id} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2 py-1.5">
+                                      <span className="flex-1 min-w-0 truncate text-sm font-bold text-gray-700" title={cat.name}>{cat.name}</span>
+                                      <select
+                                        value={cat.printerTarget || ''}
+                                        disabled={categoryPrinterSaving}
+                                        onChange={(e) => handleCategoryPrinterChange(cat, e.target.value)}
+                                        className="text-[11px] px-1.5 py-1 border border-gray-200 rounded bg-white text-gray-600 max-w-[150px]"
+                                      >
+                                        <option value="">Default (auto)</option>
+                                        {cat.printerTarget && !specialPrinterOptions.some(o => o.name === cat.printerTarget) && (
+                                          <option value={cat.printerTarget}>{cat.printerTarget}</option>
+                                        )}
+                                        {specialPrinterOptions.map(opt => (
+                                          <option key={opt.name} value={opt.name}>{opt.name}{opt.type ? ` (${opt.type})` : ''}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </details>
+                          )}
+
+                          <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
 
                             {editMenuItems.length === 0 ? (
 
@@ -16120,6 +16204,8 @@ const CashierDashboard = ({ onLogout }) => {
 
                         printerOptions={specialPrinterOptions}
 
+                        categoryPrinters={categoryPrintersByName}
+
                         showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
 
                         sections={fetchedSections}
@@ -16151,6 +16237,8 @@ const CashierDashboard = ({ onLogout }) => {
                         activeVenueId={editMenuActiveVenueId}
 
                         printerOptions={specialPrinterOptions}
+
+                        categoryPrinters={categoryPrintersByName}
 
                         showBarType={activeOutlet === 'bar' || activeOutlet === 'both'}
 

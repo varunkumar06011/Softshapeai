@@ -6,16 +6,13 @@
 //
 // Flow:
 //   1. On startup: checkAndApplyOtaOnStartup()
-//      - Re-opens the bundle the staff already accepted (so it survives restarts)
-//      - Never applies a newer bundle by itself
-//      - If the accepted bundle is corrupted, fall back to bundled assets
-//   2. In background: checkAndDownloadOta()
+//      - If an OTA bundle is pending, navigate to it via window.location.replace()
+//      - If the OTA bundle is corrupted, fall back to bundled assets
+//   2. In background: checkForOtaUpdate()
 //      - Calls GET /api/ota/version for latest bundle metadata
-//      - If newer, downloads ZIP into a staging folder (ota/next), verifies SHA-256
-//      - The running app is not touched; the update is only "staged"
-//   3. Applying: applyStagedOta() — called ONLY when the user clicks "Update now"
-//      - Moves the staged bundle into place and reloads into it
-//   4. Corruption recovery:
+//      - If newer version exists, downloads ZIP, verifies SHA-256, extracts
+//      - Marks update as pending — applied on next app launch
+//   3. Corruption recovery:
 //      - If the OTA bundle fails to load, the app falls back to bundled assets
 //      - The corrupted OTA directory is cleaned up automatically
 //
@@ -30,10 +27,8 @@ import { apiUrl } from './apiConfig';
 
 const OTA_DIR = 'ota';
 const OTA_CURRENT_DIR = 'ota/current';
-const OTA_NEXT_DIR = 'ota/next';
 const OTA_DOWNLOAD_DIR = 'ota/downloads';
 const OTA_META_KEY = 'ss_ota_meta';
-const OTA_STAGED_META_KEY = 'ss_ota_staged';
 
 // ── Platform detection ───────────────────────────────────────────────────────
 
@@ -67,28 +62,6 @@ function setOtaMeta(meta) {
 function clearOtaMeta() {
   try {
     localStorage.removeItem(OTA_META_KEY);
-  } catch { /* ignore */ }
-}
-
-// Metadata for a downloaded-but-not-yet-applied bundle (lives in ota/next)
-function getStagedMeta() {
-  try {
-    const stored = localStorage.getItem(OTA_STAGED_META_KEY);
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
-
-function setStagedMeta(meta) {
-  try {
-    localStorage.setItem(OTA_STAGED_META_KEY, JSON.stringify(meta));
-  } catch { /* ignore */ }
-}
-
-function clearStagedMeta() {
-  try {
-    localStorage.removeItem(OTA_STAGED_META_KEY);
   } catch { /* ignore */ }
 }
 
@@ -138,13 +111,12 @@ export async function checkForOtaUpdate() {
     if (!data.version || !data.downloadUrl || !data.sha256) return null;
 
     const meta = getOtaMeta();
-    const currentVersion = meta?.version || __APP_VERSION__ || '0.0.0';
-
-    // Already downloaded and waiting for "Update now" — no need to fetch again
-    const staged = getStagedMeta();
-    if (staged && compareVersions(staged.version, data.version) <= 0) {
-      return null;
-    }
+    // After an APK update the bundled web code can be newer than an old OTA bundle
+    // left in storage — never "update" to something older than what is installed.
+    const bundledVersion = __APP_VERSION__ || '0.0.0';
+    const currentVersion = meta?.version && compareVersions(meta.version, bundledVersion) < 0
+      ? meta.version
+      : bundledVersion;
 
     if (compareVersions(currentVersion, data.version) > 0) {
       return data;
@@ -162,7 +134,7 @@ export async function checkForOtaUpdate() {
  * Download the OTA bundle ZIP, verify its SHA-256 hash, and extract it.
  * Returns true on success, false on failure.
  */
-export async function downloadOtaToStaging(updateInfo) {
+export async function downloadAndApplyOta(updateInfo) {
   if (!isCapacitorApp() || isTauriApp()) return false;
 
   const { version, downloadUrl, sha256: expectedHash, releaseNotes } = updateInfo;
@@ -191,11 +163,10 @@ export async function downloadOtaToStaging(updateInfo) {
     console.log(`[OTA] Extracted ${Object.keys(files).length} files`);
 
     // 4. Write each file to the OTA directory
-    // Start from an empty staging folder so leftovers from a failed try are not mixed in
-    await cleanupDir(OTA_NEXT_DIR);
+    // First, ensure the directory exists
     try {
       await Filesystem.mkdir({
-        path: OTA_NEXT_DIR,
+        path: OTA_CURRENT_DIR,
         directory: Directory.Data,
         recursive: true,
       });
@@ -207,7 +178,7 @@ export async function downloadOtaToStaging(updateInfo) {
 
       // Remove leading slashes for filesystem path
       const cleanPath = filename.replace(/^\/+/, '');
-      const fullPath = `${OTA_NEXT_DIR}/${cleanPath}`;
+      const fullPath = `${OTA_CURRENT_DIR}/${cleanPath}`;
 
       // Ensure parent directory exists
       const dirPath = fullPath.split('/').slice(0, -1).join('/');
@@ -234,26 +205,27 @@ export async function downloadOtaToStaging(updateInfo) {
     // 5. Verify the bundle has an index.html
     try {
       await Filesystem.stat({
-        path: `${OTA_NEXT_DIR}/index.html`,
+        path: `${OTA_CURRENT_DIR}/index.html`,
         directory: Directory.Data,
       });
     } catch {
       throw new Error('OTA bundle missing index.html — corrupted or invalid');
     }
 
-    // 6. Record it as staged. The running app keeps its current bundle until "Update now".
-    setStagedMeta({
+    // 6. Store metadata
+    setOtaMeta({
       version,
-      stagedAt: Date.now(),
+      appliedAt: Date.now(),
       releaseNotes: releaseNotes || null,
+      status: 'pending',
     });
 
-    console.log(`[OTA] Bundle v${version} downloaded and staged — waiting for user to tap Update now`);
+    console.log(`[OTA] Bundle v${version} downloaded and extracted — pending restart`);
     return true;
   } catch (err) {
-    console.error('[OTA] Download failed:', err.message);
-    // Clean up partial download; the accepted bundle (ota/current) is untouched
-    await cleanupDir(OTA_NEXT_DIR);
+    console.error('[OTA] Download/apply failed:', err.message);
+    // Clean up partial download
+    await cleanupOtaDir();
     return false;
   }
 }
@@ -269,12 +241,8 @@ export async function downloadOtaToStaging(updateInfo) {
 export async function checkAndApplyOtaOnStartup() {
   if (!isCapacitorApp() || isTauriApp()) return;
 
-  // Only re-open the bundle the user already accepted. A staged update is never applied here.
   const meta = getOtaMeta();
-  if (!meta || meta.status !== 'applied') return;
-
-  // Already running from the OTA bundle — don't reload again
-  if (window.location.href.includes(OTA_CURRENT_DIR)) return;
+  if (!meta || meta.status !== 'pending') return;
 
   try {
     // Verify the OTA bundle still exists and has index.html
@@ -289,77 +257,26 @@ export async function checkAndApplyOtaOnStartup() {
       directory: Directory.Data,
     });
 
-    console.log(`[OTA] Re-opening accepted bundle v${meta.version}`);
+    console.log(`[OTA] Applying pending update v${meta.version} — navigating to ${uri}`);
+
+    // Mark as applied so we don't re-apply on every launch
+    setOtaMeta({ ...meta, status: 'applied', appliedAt: Date.now() });
+
+    // Navigate to the OTA bundle
     window.location.replace(uri);
   } catch (err) {
-    console.warn('[OTA] Accepted bundle not found or corrupted — falling back to bundled assets:', err.message);
-    await cleanupDir(OTA_CURRENT_DIR);
+    console.warn('[OTA] Pending bundle not found or corrupted — falling back to bundled assets:', err.message);
+    await cleanupOtaDir();
     clearOtaMeta();
-  }
-}
-
-// ── Apply staged update (user clicked "Update now") ──────────────────────────
-
-/** The downloaded-but-not-yet-applied update, or null. */
-export function getStagedOta() {
-  return getStagedMeta();
-}
-
-/**
- * Move the staged bundle into place and reload into it.
- * Only call this from a direct user action (the "Update now" button).
- * The caller must make sure no orders or KOTs are unsynced first.
- */
-export async function applyStagedOta() {
-  if (!isCapacitorApp() || isTauriApp()) return false;
-
-  const staged = getStagedMeta();
-  if (!staged) return false;
-
-  try {
-    await Filesystem.stat({
-      path: `${OTA_NEXT_DIR}/index.html`,
-      directory: Directory.Data,
-    });
-
-    // Replace the accepted bundle with the staged one
-    await cleanupDir(OTA_CURRENT_DIR);
-    await Filesystem.rename({
-      from: OTA_NEXT_DIR,
-      to: OTA_CURRENT_DIR,
-      directory: Directory.Data,
-      toDirectory: Directory.Data,
-    });
-
-    setOtaMeta({
-      version: staged.version,
-      appliedAt: Date.now(),
-      releaseNotes: staged.releaseNotes || null,
-      status: 'applied',
-    });
-    clearStagedMeta();
-
-    const { uri } = await Filesystem.getUri({
-      path: `${OTA_CURRENT_DIR}/index.html`,
-      directory: Directory.Data,
-    });
-    console.log(`[OTA] Applied v${staged.version} — reloading`);
-    window.location.replace(uri);
-    return true;
-  } catch (err) {
-    console.error('[OTA] Apply failed — staying on the current version:', err.message);
-    await cleanupDir(OTA_NEXT_DIR);
-    clearStagedMeta();
-    return false;
   }
 }
 
 // ── Cleanup ──────────────────────────────────────────────────────────────────
 
-async function cleanupDir(path) {
+async function cleanupOtaDir() {
   try {
     await Filesystem.rmdir({
-      path,
+      path: OTA_CURRENT_DIR,
       directory: Directory.Data,
       recursive: true,
     });
@@ -376,10 +293,8 @@ export async function rollbackOta() {
   if (!isCapacitorApp()) return;
 
   console.log('[OTA] Rolling back to bundled assets');
-  await cleanupDir(OTA_CURRENT_DIR);
-  await cleanupDir(OTA_NEXT_DIR);
+  await cleanupOtaDir();
   clearOtaMeta();
-  clearStagedMeta();
 
   // Reload from bundled assets — Capacitor will load from webDir
   window.location.replace('/');
@@ -400,9 +315,9 @@ export function getOtaStatus() {
 // ── Full OTA check flow (for background polling) ─────────────────────────────
 
 /**
- * Check for an OTA update and download it into staging if available.
+ * Check for an OTA update and download it if available.
  * Non-blocking — returns immediately if no update or download fails.
- * Nothing is applied here; the user applies it with applyStagedOta().
+ * The update is applied on next app launch via checkAndApplyOtaOnStartup().
  */
 export async function checkAndDownloadOta() {
   if (!isCapacitorApp() || isTauriApp()) return;
@@ -411,9 +326,9 @@ export async function checkAndDownloadOta() {
     const update = await checkForOtaUpdate();
     if (!update) return;
 
-    const success = await downloadOtaToStaging(update);
+    const success = await downloadAndApplyOta(update);
     if (success) {
-      console.log(`[OTA] Update v${update.version} staged — waiting for user to tap Update now`);
+      console.log(`[OTA] Update v${update.version} downloaded — will apply on next launch`);
     }
   } catch (err) {
     console.warn('[OTA] Background check failed:', err.message);

@@ -127,6 +127,19 @@ jobs:
         shell: bash
         run: npx tauri icon "../../public/logo softshape.ai.png"
 
+      # createUpdaterArtifacts is set in tauri.conf.json, so Tauri must sign the installer
+      # with this key. Fail early and clearly if the key secret is missing — a build that
+      # silently ships unsigned installers breaks desktop auto-update for every cashier PC.
+      - name: Require updater signing key
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::TAURI_PRIVATE_KEY secret is not set — cannot sign the installer, desktop auto-update would not work"
+            exit 1
+          fi
+
       - name: Build Cashier Desktop
         run: npm run build:cashier-desktop
         env:
@@ -194,37 +207,17 @@ jobs:
             mv "$sig" "$dir/${fixed}.sig"
           fi
 
-      - name: Generate updater manifest (latest.json)
-        if: github.event_name == 'release'
+      # Without the .sig the backend offers no update, so cashier PCs would never auto-update.
+      - name: Verify updater signature was produced
         shell: bash
-        env:
-          TAG: ${{ github.event.release.tag_name }}
-          REPO: ${{ github.repository }}
         run: |
-          set -e
-          dir="apps/cashier-desktop/src-tauri/target/release/bundle/nsis"
-          node -e '
-            const fs = require("fs");
-            const conf = JSON.parse(fs.readFileSync("apps/cashier-desktop/src-tauri/tauri.conf.json", "utf8"));
-            const tag = process.env.TAG;
-            if (tag.replace(/^v/, "") !== conf.version) {
-              throw new Error(`Release tag ${tag} does not match tauri.conf.json version ${conf.version}`);
-            }
-            const sig = fs.readFileSync(process.argv[1], "utf8").trim();
-            const manifest = {
-              version: conf.version,
-              notes: "See the GitHub release for what changed.",
-              pub_date: new Date().toISOString(),
-              platforms: {
-                "windows-x86_64": {
-                  signature: sig,
-                  url: `https://github.com/${process.env.REPO}/releases/download/${tag}/SoftShape.Cashier_x64-setup.exe`
-                }
-              }
-            };
-            fs.writeFileSync(process.argv[2], JSON.stringify(manifest, null, 2) + "\n");
-          ' "$dir/SoftShape.Cashier_x64-setup.exe.sig" "$dir/latest.json"
-          cat "$dir/latest.json"
+          sigfile="apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe.sig"
+          if [ ! -s "$sigfile" ]; then
+            echo "::error::No updater signature (.sig) was produced — check TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD secrets and createUpdaterArtifacts in tauri.conf.json"
+            ls -la "apps/cashier-desktop/src-tauri/target/release/bundle/nsis" || true
+            exit 1
+          fi
+          echo "Updater signature present: $(wc -c < "$sigfile") bytes"
 
       - name: Smoke-test installed edge-server health
         shell: powershell
@@ -330,7 +323,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for asset in "SoftShape.Cashier_x64-setup.exe" "SoftShape.Cashier_x64-setup.exe.sig" "latest.json"; do
+          for asset in "SoftShape.Cashier_x64-setup.exe" "SoftShape.Cashier_x64-setup.exe.sig"; do
             gh release delete-asset "${{ github.event.release.tag_name }}" "$asset" --yes || true
           done
           for msi in apps/cashier-desktop/src-tauri/target/release/bundle/msi/*.msi; do
@@ -346,7 +339,6 @@ jobs:
           files: |
             apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe
             apps/cashier-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Cashier_x64-setup.exe.sig
-            apps/cashier-desktop/src-tauri/target/release/bundle/nsis/latest.json
             apps/cashier-desktop/src-tauri/target/release/bundle/msi/*.msi
 
   # ── Build Admin Desktop (Tauri, no edge-server) ─────────────────────────────
@@ -379,9 +371,23 @@ jobs:
         shell: bash
         run: npx tauri icon "../../public/logo-square.png"
 
+      # createUpdaterArtifacts is set in tauri.conf.json, so Tauri must sign the installer
+      # with this key. Fail early and clearly if it is missing.
+      - name: Require updater signing key
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::TAURI_PRIVATE_KEY secret is not set — cannot sign the installer, desktop auto-update would not work"
+            exit 1
+          fi
+
       - name: Build Admin Desktop
         run: npm run build:admin-desktop
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
@@ -400,6 +406,18 @@ jobs:
           if [ -n "$sig" ] && [ -f "$sig" ]; then
             mv "$sig" "$dir/${fixed}.sig"
           fi
+
+      # Without the .sig the backend offers no update, so admin PCs would never auto-update.
+      - name: Verify updater signature was produced
+        shell: bash
+        run: |
+          sigfile="apps/admin-desktop/src-tauri/target/release/bundle/nsis/SoftShape.Admin_x64-setup.exe.sig"
+          if [ ! -s "$sigfile" ]; then
+            echo "::error::No updater signature (.sig) was produced — check TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD secrets and createUpdaterArtifacts in tauri.conf.json"
+            ls -la "apps/admin-desktop/src-tauri/target/release/bundle/nsis" || true
+            exit 1
+          fi
+          echo "Updater signature present: $(wc -c < "$sigfile") bytes"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
