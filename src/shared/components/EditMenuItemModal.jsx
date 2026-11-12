@@ -99,6 +99,11 @@ export default function EditMenuItemModal({
             ? { [activeVenueId]: Number(form.venuePrice) }
             : {}),
         },
+        // The venue whose price was saved here: the billing PC uploads it even
+        // if unchanged, so re-saving fixes a price that differs from the cloud.
+        ...(activeVenueId && form.venuePrice !== '' && form.venuePrice !== null && form.venuePrice !== undefined
+          ? { savedVenueIds: [activeVenueId] }
+          : {}),
         // Include section availability map so the edge upserts per-section toggles.
         // Only send when the modal has sections to edit (cashier edit-menu path).
         ...(sections.length > 0 ? { sectionAvailabilities: form.sectionAvailabilities || {} } : {}),

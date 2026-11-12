@@ -23,6 +23,7 @@ export default function SyncStatusIndicator() {
   const [printPending, setPrintPending] = useState(0);
   const [printDeadLetter, setPrintDeadLetter] = useState(0);
   const [syncFailures, setSyncFailures] = useState(0);
+  const [stuck, setStuck] = useState({ count: 0, reason: null });
 
   const checkStatus = useCallback(async () => {
     try {
@@ -50,8 +51,14 @@ export default function SyncStatusIndicator() {
         setPendingCount(total);
         setLastSync(status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleTimeString() : null);
         setSyncFailures(status.consecutiveFailures || 0);
+        // Records the PC has tried for 30+ min (or many times) without success,
+        // with the cloud's own error, so staff can report the exact reason.
+        const stuckList = Array.isArray(status.stuckRecords) ? status.stuckRecords : [];
+        setStuck({ count: stuckList.length, reason: stuckList.find((r) => r.lastError)?.lastError || null });
 
-        if (total > 0) {
+        if (stuckList.length > 0) {
+          setState('stuck');
+        } else if (total > 0) {
           setState(status.consecutiveFailures > 0 ? 'retrying' : 'syncing');
         } else if (status.consecutiveFailures > 0) {
           setState('offline');
@@ -108,6 +115,13 @@ export default function SyncStatusIndicator() {
       text: `Sync retrying — ${pendingCount} record${pendingCount !== 1 ? 's' : ''} pending`,
       spin: true,
     },
+    stuck: {
+      icon: AlertTriangle,
+      color: 'text-red-700',
+      bg: 'bg-red-50',
+      border: 'border-red-300',
+      text: `${stuck.count} record${stuck.count !== 1 ? 's' : ''} not reaching cloud — still saved on this PC`,
+    },
     offline: {
       icon: WifiOff,
       color: 'text-red-600',
@@ -145,7 +159,11 @@ export default function SyncStatusIndicator() {
       )}
 
       {/* Persistent status pill — bottom right corner */}
-      <div data-tour="sync-status" className={`fixed bottom-3 right-3 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full border ${c.bg} ${c.border} shadow-sm text-xs font-bold ${c.color}`}>
+      <div
+        data-tour="sync-status"
+        title={state === 'stuck' && stuck.reason ? `Cloud says: ${stuck.reason}` : undefined}
+        className={`fixed bottom-3 right-3 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full border ${c.bg} ${c.border} shadow-sm text-xs font-bold ${c.color}`}
+      >
         <Icon size={14} className={c.spin ? 'animate-spin' : ''} />
         <span>{c.text}</span>
         {lastSync && state === 'online' && (
