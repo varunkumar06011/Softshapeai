@@ -277,6 +277,7 @@ export function EditItemSheet({ itemId }) {
   const [name, setName] = useState(item.name), [unit, setUnit] = useState(item.unit);
   const [oq, setOq] = useState(opening ? String(oq0) : ''), [orate, setOrate] = useState(opening ? String(or0) : '');
   const [touched, setTouched] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const { busy, err, setErr, run } = useSubmit();
   const unitChanged = unit !== item.unit, famChanged = unitChanged && !sameFamily(unit, item.unit);
 
@@ -311,6 +312,12 @@ export function EditItemSheet({ itemId }) {
     notify(`${n} updated`);
   });
 
+  const remove = () => run(async () => {
+    await actions.deleteItem(itemId, { by: user });
+    close();
+    notify(`${item.name} deleted`);
+  });
+
   return (
     <Sheet title="Edit item" onClose={close}>
       <Field label="Item name"><input autoFocus value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} className={inputCls} autoComplete="off" /></Field>
@@ -333,6 +340,19 @@ export function EditItemSheet({ itemId }) {
       </p>
       <ErrorText>{err}</ErrorText>
       <Btn className="w-full" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</Btn>
+      {hasOther ? (
+        <p className="px-1 text-[12px] font-bold text-gray-400">This item has purchases or issues, so it can’t be deleted.</p>
+      ) : confirmDel ? (
+        <div className="space-y-2 rounded-xl border border-red-200 bg-red-50 p-3">
+          <p className="text-sm font-bold text-red-700">Delete {item.name}{bl.q > 0 ? ` (${fq(bl.q)} ${unitSym(item)} opening stock)` : ''}? This can’t be undone.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Btn variant="soft" disabled={busy} onClick={() => setConfirmDel(false)}>Keep it</Btn>
+            <Btn variant="danger" disabled={busy} onClick={remove}>{busy ? 'Deleting…' : 'Yes, delete'}</Btn>
+          </div>
+        </div>
+      ) : (
+        <Btn variant="danger" className="w-full" disabled={busy} onClick={() => setConfirmDel(true)}>Delete item</Btn>
+      )}
     </Sheet>
   );
 }

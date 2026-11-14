@@ -150,6 +150,12 @@ export default function StoreStockPortal() {
       }));
       load(codeRef.current, { silent: true }); // pick up the audit line
     },
+    // only allowed by the server while the item has nothing but its opening entry
+    deleteItem: async (id, body) => {
+      await storeApi.deleteItem(codeRef.current, id, body);
+      setData((d) => ({ ...d, items: d.items.filter((i) => i.id !== id), entries: d.entries.filter((e) => e.itemId !== id) }));
+      load(codeRef.current, { silent: true }); // pick up the audit line
+    },
     addEntry: async (body) => {
       const r = await storeApi.addEntry(codeRef.current, body);
       setData((d) => ({ ...d, entries: [...d.entries, r.entry] }));

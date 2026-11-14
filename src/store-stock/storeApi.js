@@ -38,6 +38,7 @@ export const storeApi = {
   state: (code) => call(code, '/state'),
   addItem: (code, body) => call(code, '/items', 'POST', body),
   editItem: (code, id, body) => call(code, `/items/${encodeURIComponent(id)}`, 'PATCH', body),
+  deleteItem: (code, id, body) => call(code, `/items/${encodeURIComponent(id)}`, 'DELETE', body),
   addEntry: (code, body) => call(code, '/entries', 'POST', body),
   editEntry: (code, id, body) => call(code, `/entries/${encodeURIComponent(id)}`, 'PATCH', body),
   countMatch: (code, body) => call(code, '/count-match', 'POST', body),
