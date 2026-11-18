@@ -1,21 +1,32 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // PortalSelection — Landing page for selecting which portal to log into
 //
-// Two parts are deliberately frozen and must not be restyled:
+// Two parts are deliberately frozen and must not be restyled or animated:
 //   1. the portal cards (the `portals` array and the card grid that renders
 //      it, including onSelect(portal.id)),
 //   2. the footer with the large wordmark.
 // Everything else is the marketing page around them.
+//
+// Motion: GSAP (ScrollTrigger + SplitText) with Lenis smooth scrolling, and a
+// three.js hero (ReceiptPrinter3D) loaded on demand. Everything degrades to a
+// static, fully readable page under prefers-reduced-motion or without WebGL.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { SplitText } from 'gsap/SplitText';
+import Lenis from 'lenis';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode, ArrowRight,
   Package, WifiOff, Printer, FileSpreadsheet, Check,
 } from 'lucide-react';
+
+gsap.registerPlugin(ScrollTrigger, SplitText);
+
+const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 const FONT_HREF =
   'https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap';
@@ -25,18 +36,19 @@ const RED = '#E3262B';
 const RED_DEEP = '#C11C21';
 const INK = '#0B0B0C';
 const PAPER = '#F3F1EC';
-const STONE = '#E7E3DA';
 
 const display = { fontFamily: "'Inter Tight', 'Plus Jakarta Sans', sans-serif" };
 const serif = { fontFamily: "'Instrument Serif', Georgia, serif" };
 // Monospace is used only where the real thing is monospace: thermal-printed tickets.
 const mono = { fontFamily: "'Roboto Mono', ui-monospace, monospace" };
 
-const EASE = [0.16, 1, 0.3, 1];
-
-// Browser surfaces (selection, caret, focus) themed from the palette.
-// Scoped to .ss-l so the portal cards and the footer keep their own defaults.
+// Browser surfaces (selection, caret, focus) themed from the palette, plus the
+// pieces GSAP and Lenis need. Scoped to .ss-l so the portal cards and the
+// footer keep their own defaults.
 const SURFACE_CSS = `
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
 .ss-l ::selection { background: ${RED}; color: #fff; }
 .ss-l input, .ss-l textarea { caret-color: ${RED}; }
 .ss-l a:focus-visible, .ss-l button:focus-visible {
@@ -44,6 +56,11 @@ const SURFACE_CSS = `
 }
 .ss-l input:focus-visible, .ss-l textarea:focus-visible { outline: none; }
 .ss-l .tnum { font-variant-numeric: tabular-nums; }
+.ss-l [data-hero-reveal] { opacity: 0; animation: ss-failsafe 0.01s 3.5s forwards; }
+@keyframes ss-failsafe { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ss-l [data-hero-reveal] { opacity: 1; animation: none; } }
+.ss-l .ss-word { perspective: 900px; }
+.ss-l .ss-char { display: inline-block; will-change: transform; }
 `;
 
 // Loads the landing-only typefaces once, so other portals don't pay for them.
@@ -57,9 +74,23 @@ function useLandingFonts() {
   }, []);
 }
 
-// ── Hero: the live service board ────────────────────────────────────────────
-// One orchestrated moment: the order for table 5 is keyed in, line by line,
-// then the kitchen and bar tickets come off the printers.
+function usePrefersReducedMotion() {
+  const [reduce, setReduce] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!mq) return undefined;
+    const on = () => setReduce(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return reduce;
+}
+
+const inr = (n) => '₹' + n.toLocaleString('en-IN');
+
+// ── The cashier screen ──────────────────────────────────────────────────────
 
 const BILL = [
   { name: 'Paneer tikka', qty: 1, price: 320, station: 'K' },
@@ -74,8 +105,6 @@ const TABLES = [
   { id: 'T5', s: 'active' }, { id: 'T6', s: 'free' }, { id: 'T7', s: 'busy' }, { id: 'T8', s: 'free' },
   { id: 'B1', s: 'busy' }, { id: 'B2', s: 'free' }, { id: 'R1', s: 'bill' }, { id: 'R2', s: 'busy' },
 ];
-
-const inr = (n) => '₹' + n.toLocaleString('en-IN');
 
 const TABLE_TONE = {
   free: 'border-white/10 text-white/45',
@@ -102,29 +131,32 @@ function Ticket({ title, number, lines, className = '' }) {
   );
 }
 
-function ServiceBoard() {
-  const reduce = useReducedMotion();
+
+// The order for table 5 is keyed in line by line once `play` turns true, then
+// the kitchen and bar tickets come off the printers.
+function ServiceBoard({ play, reduce }) {
   const [shown, setShown] = useState(reduce ? BILL.length : 0);
   const [printed, setPrinted] = useState(!!reduce);
 
   useEffect(() => {
-    if (reduce) return undefined;
+    if (reduce || !play) return undefined;
     if (shown < BILL.length) {
-      const t = setTimeout(() => setShown((n) => n + 1), shown === 0 ? 1100 : 520);
+      const t = setTimeout(() => setShown((n) => n + 1), shown === 0 ? 350 : 480);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setPrinted(true), 650);
+    const t = setTimeout(() => setPrinted(true), 600);
     return () => clearTimeout(t);
-  }, [shown, reduce]);
+  }, [shown, play, reduce]);
 
   const items = BILL.slice(0, shown);
   const sub = items.reduce((a, b) => a + b.price, 0);
   const gst = Math.round(sub * 0.05);
   const kitchen = BILL.filter((b) => b.station === 'K');
   const bar = BILL.filter((b) => b.station === 'B');
+  const enter = 'transition-[opacity,transform,filter] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
   return (
-    <div className="overflow-hidden rounded-[20px] border border-white/10 bg-[#141416] shadow-[0_40px_80px_-40px_rgba(0,0,0,0.45)]">
+    <div className="overflow-hidden rounded-[20px] border border-white/10 bg-[#141416] text-white shadow-[0_60px_120px_-50px_rgba(0,0,0,0.9)]">
       <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-3.5 text-[12px]">
         <span className="font-medium text-white/80">Cashier, main floor</span>
         <span className="flex items-center gap-2 text-white/60">
@@ -134,7 +166,6 @@ function ServiceBoard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[0.9fr_1.1fr] lg:grid-cols-[0.85fr_1fr_0.95fr]">
-        {/* Floor */}
         <div className="border-b border-white/[0.08] p-5 md:border-b-0 md:border-r">
           <p className="mb-3 text-[12px] text-white/60">Floor</p>
           <div className="grid grid-cols-4 gap-2">
@@ -151,24 +182,20 @@ function ServiceBoard() {
           <p className="mt-4 text-[12px] text-white/55">8 seated, 2 waiting on the bill, 2 free</p>
         </div>
 
-        {/* Bill */}
         <div className="flex flex-col p-5 lg:border-r lg:border-white/[0.08]">
           <div className="mb-3 flex items-baseline justify-between text-[12px]">
             <p className="text-white/60">Table 5, 4 guests</p>
             <p className="tnum text-white/45">Bill 0142</p>
           </div>
           <div className="min-h-[148px] space-y-2.5">
-            {items.map((it) => (
-              <motion.div
+            {BILL.map((it, i) => (
+              <div
                 key={it.name}
-                initial={reduce ? false : { opacity: 0, x: 10, filter: 'blur(4px)' }}
-                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                transition={{ duration: 0.55, ease: EASE }}
-                className="tnum flex items-center justify-between text-[13px]"
+                className={`tnum flex items-center justify-between text-[13px] ${enter} ${i < shown ? 'translate-x-0 opacity-100 blur-0' : 'translate-x-2.5 opacity-0 blur-[4px]'}`}
               >
                 <span className="text-white/90"><span className="mr-2.5 text-white/45">{it.qty}</span>{it.name}</span>
                 <span className="text-white/80">{inr(it.price)}</span>
-              </motion.div>
+              </div>
             ))}
           </div>
           <div className="tnum mt-4 space-y-1.5 border-t border-white/10 pt-3.5 text-[12px]">
@@ -182,39 +209,96 @@ function ServiceBoard() {
           </div>
         </div>
 
-        {/* Printers */}
         <div className="hidden flex-col bg-[#0F0F11] p-5 lg:flex">
           <div className="mb-4 flex items-center justify-between text-[12px]">
             <p className="text-white/60">Printers</p>
             <span className="flex items-center gap-1.5 text-white/45"><Printer size={13} /> 2 online</span>
           </div>
           <div className="relative flex-1">
-            {printed ? (
-              <>
-                <motion.div
-                  initial={reduce ? false : { opacity: 0, y: -18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.7, ease: EASE }}
-                >
-                  <Ticket title="Kitchen" number="KOT 0142" lines={kitchen} />
-                </motion.div>
-                <motion.div
-                  initial={reduce ? false : { opacity: 0, y: -18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.7, delay: 0.25, ease: EASE }}
-                  className="mt-3"
-                >
-                  <Ticket title="Bar" number="BOT 0088" lines={bar} />
-                </motion.div>
-              </>
-            ) : (
-              <p className="pt-8 text-center text-[12px] text-white/50">Waiting for the order</p>
-            )}
+            <div className={`${enter} ${printed ? 'translate-y-0 opacity-100' : '-translate-y-5 opacity-0'}`}>
+              <Ticket title="Kitchen" number="KOT 0142" lines={kitchen} />
+            </div>
+            <div className={`mt-3 ${enter} delay-200 ${printed ? 'translate-y-0 opacity-100' : '-translate-y-5 opacity-0'}`}>
+              <Ticket title="Bar" number="BOT 0088" lines={bar} />
+            </div>
+            {!printed && <p className="absolute inset-x-0 top-8 text-center text-[12px] text-white/50">Waiting for the order</p>}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+// ── Hero 3D scene host ──────────────────────────────────────────────────────
+// Loads three.js on demand. Exposes the scene API through apiRef so the page's
+// GSAP timelines can drive printing and camera from scroll.
+function HeroScene({ apiRef, reduce }) {
+  const hostRef = useRef(null);
+  const [webgl] = useState(() => {
+    try {
+      const c = document.createElement('canvas');
+      return !!(c.getContext('webgl2') || c.getContext('webgl'));
+    } catch {
+      return false;
+    }
+  });
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let disposed = false;
+    let api = null;
+    if (!webgl) return undefined;
+    Promise.all([import('./landing/ReceiptPrinter3D.js'), document.fonts?.ready]).then(([mod]) => {
+      if (disposed || !hostRef.current) return;
+      try {
+        api = mod.createReceiptScene(hostRef.current, { reducedMotion: reduce });
+        apiRef.current = api;
+        if (reduce) api.setPrinted(0.85);
+        hostRef.current.dataset.ready = '1';
+        window.dispatchEvent(new Event('ss:scene-ready'));
+      } catch {
+        setFailed(true);
+      }
+    }).catch(() => setFailed(true));
+    return () => {
+      disposed = true;
+      apiRef.current = null;
+      api?.dispose();
+    };
+  }, [apiRef, reduce, webgl]);
+
+  if (!webgl || failed) return null;
+  return (
+    <div
+      ref={hostRef}
+      aria-hidden="true"
+      className="absolute inset-0 opacity-0 transition-opacity duration-[1400ms] data-[ready='1']:opacity-100"
+    />
+  );
+}
+
+// Elements marked data-magnetic drift toward the pointer.
+function bindMagnetic(scope) {
+  const offs = [];
+  scope.querySelectorAll('[data-magnetic]').forEach((el) => {
+    const xTo = gsap.quickTo(el, 'x', { duration: 0.5, ease: 'power3.out' });
+    const yTo = gsap.quickTo(el, 'y', { duration: 0.5, ease: 'power3.out' });
+    const move = (e) => {
+      const r = el.getBoundingClientRect();
+      xTo((e.clientX - (r.left + r.width / 2)) * 0.28);
+      yTo((e.clientY - (r.top + r.height / 2)) * 0.4);
+    };
+    const leave = () => {
+      gsap.to(el, { x: 0, y: 0, duration: 0.9, ease: 'elastic.out(1, 0.4)' });
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerleave', leave);
+    offs.push(() => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerleave', leave);
+    });
+  });
+  return () => offs.forEach((f) => f());
 }
 
 // ── One night of service: product-specific moments, in time order ────────────
@@ -301,7 +385,7 @@ function CloseArt() {
   return (
     <div className="tnum">
       <p className="text-[13px] text-black/60">Day close, Friday</p>
-      <p className="mt-1 text-[34px] font-medium leading-none tracking-[-0.03em]">{inr(110150)}</p>
+      <p data-count="110150" className="mt-1 text-[34px] font-medium leading-none tracking-[-0.03em]">{inr(110150)}</p>
       <div className="mt-4 grid grid-cols-3 gap-3 border-t border-black/10 pt-3 text-[13px]">
         {rows.map(([k, v, plain]) => (
           <div key={k}><p className="text-black/55">{k}</p><p className="mt-0.5 text-black/85">{plain ? v : inr(v)}</p></div>
@@ -311,19 +395,22 @@ function CloseArt() {
   );
 }
 
+
+// Evening of service. Panels darken as the night goes on; the lights go out
+// with the internet at 9:15.
 const NIGHT = [
-  { time: '6:40 pm', title: 'The specials go on the menu', body: 'Upload a spreadsheet or edit items by hand. Prices, variants and categories update on every device at once.', Art: MenuArt },
-  { time: '7:42 pm', title: 'Table 7 orders from their phones', body: 'Guests scan the table QR, browse the menu and add items. The order lands with the captain for confirmation.', Art: QrArt },
-  { time: '7:43 pm', title: 'Each ticket reaches the right printer', body: 'Food goes to the kitchen, drinks go to the bar. Nobody walks a paper slip across the floor.', Art: PrintArt },
-  { time: '9:15 pm', title: 'The internet drops. Billing does not.', body: 'Bills, tickets and payments keep working offline and sync on their own when the connection returns.', Art: OfflineArt },
-  { time: '11:30 pm', title: 'Bar stock counts itself', body: 'Every peg and bottle sold is deducted from stock, so the closing count matches the ledger.', Art: LedgerArt },
-  { time: '11:55 pm', title: 'The day closes, and the owner sees it from home', body: 'Sales by section, top items and captain performance, live from every outlet you run.', Art: CloseArt },
+  { time: '6:40', ampm: 'pm', title: 'The specials go on the menu', body: 'Upload a spreadsheet or edit items by hand. Prices, variants and categories update on every device at once.', Art: MenuArt, bg: '#ECE7DD', dark: false },
+  { time: '7:42', ampm: 'pm', title: 'Table 7 orders from their phones', body: 'Guests scan the table QR, browse the menu and add items. The order lands with the captain for confirmation.', Art: QrArt, bg: '#E3DBCC', dark: false },
+  { time: '7:43', ampm: 'pm', title: 'Each ticket reaches the right printer', body: 'Food goes to the kitchen, drinks go to the bar. Nobody walks a paper slip across the floor.', Art: PrintArt, bg: '#D7CDBA', dark: false },
+  { time: '9:15', ampm: 'pm', title: 'The internet drops. Billing does not.', body: 'Bills, tickets and payments keep working offline and sync on their own when the connection returns.', Art: OfflineArt, bg: '#1D1D20', dark: true },
+  { time: '11:30', ampm: 'pm', title: 'Bar stock counts itself', body: 'Every peg and bottle sold is deducted from stock, so the closing count matches the ledger.', Art: LedgerArt, bg: '#151517', dark: true },
+  { time: '11:55', ampm: 'pm', title: 'The day closes, and the owner sees it from home', body: 'Sales by section, top items and captain performance, live from every outlet you run.', Art: CloseArt, bg: INK, dark: true },
 ];
 
 const STEPS = [
-  { t: 'Create your restaurant', b: 'Answer a few questions about your outlet, its tables and its taxes.' },
-  { t: 'Bring your menu', b: 'Upload your spreadsheet or add items by hand, then assign printers and sections.' },
-  { t: 'Start billing', b: 'Open the cashier panel, give your captains the app, and take the first order.' },
+  { t: 'Create your restaurant', b: 'Answer a few questions about your outlet, its tables and its taxes.', bg: '#18181A', fg: '#fff' },
+  { t: 'Bring your menu', b: 'Upload your spreadsheet or add items by hand, then assign printers and sections.', bg: '#232326', fg: '#fff' },
+  { t: 'Start billing', b: 'Open the cashier panel, give your captains the app, and take the first order.', bg: RED, fg: '#fff' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,7 +418,10 @@ const STEPS = [
 const PortalSelection = ({ onSelect }) => {
   const isDesktopApp = typeof window !== 'undefined' && !!window.__TAURI__;
   useLandingFonts();
-  const reduce = useReducedMotion();
+  const reduce = usePrefersReducedMotion();
+  const rootRef = useRef(null);
+  const sceneApi = useRef(null);
+  const [boardPlay, setBoardPlay] = useState(false);
 
   const [contactForm, setContactForm] = useState({
     name: '',
@@ -393,29 +483,208 @@ const PortalSelection = ({ onSelect }) => {
     },
   ];
 
-  const headline = [
-    { w: 'Every', s: false }, { w: 'table,', s: false },
-    { w: 'every', s: false }, { w: 'ticket,', s: false },
-    { w: 'every', s: true }, { w: 'peg.', s: true },
-  ];
+  // ── Motion ────────────────────────────────────────────────────────────────
+  // Layout effect so GSAP reverts its pin wrappers before React removes the DOM.
+  useLayoutEffectSafe(() => {
+    const root = rootRef.current;
+    if (!root || reduce) return undefined;
+    let alive = true;
+    let ctx = null;
+    let lenis = null;
+    let tick = null;
+    let unbindMagnetic = null;
+    let offPointer = null;
 
-  const enter = (delay) => (reduce ? {} : {
-    initial: { opacity: 0, y: 16 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.9, delay, ease: EASE },
-  });
+    const fontsReady = Promise.race([
+      Promise.all([
+        document.fonts?.load("500 64px 'Inter Tight'"),
+        document.fonts?.load("italic 400 64px 'Instrument Serif'"),
+      ]).catch(() => {}),
+      new Promise((r) => setTimeout(r, 2500)),
+    ]);
+
+    fontsReady.then(() => {
+      if (!alive) return;
+
+      lenis = new Lenis({ lerp: 0.085, anchors: true, wheelMultiplier: 0.95 });
+      lenis.on('scroll', ScrollTrigger.update);
+      tick = (time) => lenis.raf(time * 1000);
+      gsap.ticker.add(tick);
+      gsap.ticker.lagSmoothing(0);
+      unbindMagnetic = bindMagnetic(root);
+
+      ctx = gsap.context(() => {
+        const mm = gsap.matchMedia();
+        const hero = root.querySelector('[data-hero]');
+
+        // Hero: one orchestrated entrance.
+        gsap.set('[data-hero-reveal]', { opacity: 1, animation: 'none' });
+        const title = SplitText.create('[data-hero-title]', { type: 'words,chars', wordsClass: 'ss-word', charsClass: 'ss-char' });
+        gsap.timeline({ defaults: { ease: 'expo.out' } })
+          .fromTo('[data-hero-nav] > *', { y: -18, opacity: 0 }, { y: 0, opacity: 1, duration: 1, stagger: 0.07 }, 0.1)
+          .from(title.chars, {
+            yPercent: 120, rotateX: -100, opacity: 0, duration: 1.4, stagger: 0.022,
+            transformOrigin: '50% 100% -40px',
+          }, 0.2)
+          .fromTo('[data-hero-sub] > *', { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 1.1, stagger: 0.09 }, 0.75);
+
+        // Printer: prints the first 60% on load, the rest is driven by scroll.
+        const st = { intro: 0, scroll: 0 };
+        const push = () => {
+          const api = sceneApi.current;
+          if (!api) return;
+          api.setPrinted(st.intro + st.scroll * 0.4);
+          api.setScroll(st.scroll);
+        };
+        const startPrint = () => gsap.to(st, { intro: 0.6, duration: 3.6, delay: 0.5, ease: 'power2.inOut', onUpdate: push });
+        if (sceneApi.current) startPrint();
+        else window.addEventListener('ss:scene-ready', startPrint, { once: true });
+
+        const onMove = (e) => sceneApi.current?.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
+        hero.addEventListener('pointermove', onMove);
+        offPointer = () => hero.removeEventListener('pointermove', onMove);
+
+        ScrollTrigger.create({
+          trigger: hero, start: 'top bottom', end: 'bottom top',
+          onToggle: (self) => sceneApi.current?.setActive(self.isActive),
+        });
+
+        mm.add('(min-width: 1024px)', () => {
+          gsap.timeline({ scrollTrigger: { trigger: hero, start: 'top top', end: '+=110%', pin: true, pinSpacing: true, scrub: 1 } })
+            .to(st, { scroll: 1, ease: 'none', onUpdate: push }, 0)
+            .to('[data-hero-copy]', { yPercent: -14, opacity: 0, ease: 'power2.in', duration: 0.55 }, 0.45);
+        });
+        mm.add('(max-width: 1023px)', () => {
+          gsap.to(st, { scroll: 1, ease: 'none', onUpdate: push, scrollTrigger: { trigger: hero, start: 'top top', end: 'bottom top', scrub: 1 } });
+        });
+
+        // Headings: masked line reveals.
+        root.querySelectorAll('[data-lines]').forEach((el) => {
+          SplitText.create(el, {
+            type: 'lines', mask: 'lines', autoSplit: true,
+            onSplit: (self) => gsap.from(self.lines, {
+              yPercent: 110, duration: 1.2, stagger: 0.09, ease: 'expo.out',
+              scrollTrigger: { trigger: el, start: 'top 86%', once: true },
+            }),
+          });
+        });
+        root.querySelectorAll('[data-fade]').forEach((el) => {
+          gsap.fromTo(el, { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 1.1, ease: 'expo.out', scrollTrigger: { trigger: el, start: 'top 90%', once: true } });
+        });
+
+        // The cashier screen tilts up out of the page, then the order plays.
+        const board = root.querySelector('[data-board]');
+        // Hinged at the bottom edge: the screen lies back, then stands up to face you.
+        mm.add({ wide: '(min-width: 768px)', narrow: '(max-width: 767px)' }, (c) => {
+          gsap.fromTo(board,
+            { rotateX: c.conditions.wide ? 40 : 22, scale: c.conditions.wide ? 0.84 : 0.92, transformOrigin: '50% 100%' },
+            { rotateX: 0, scale: 1, ease: 'none', scrollTrigger: { trigger: '[data-board-section]', start: 'top 85%', end: c.conditions.wide ? 'center 60%' : 'top 10%', scrub: 1 } });
+        });
+        ScrollTrigger.create({ trigger: board, start: 'top 45%', once: true, onEnter: () => setBoardPlay(true) });
+
+        const countUp = (el) => {
+          const o = { v: 0 };
+          gsap.to(o, { v: Number(el.dataset.count), duration: 2, ease: 'power3.out', onUpdate: () => { el.textContent = inr(Math.round(o.v)); } });
+        };
+
+        // One Friday night: horizontal on desktop, stacked on small screens.
+        mm.add('(min-width: 1024px)', () => {
+          const section = root.querySelector('[data-night]');
+          const track = root.querySelector('[data-night-track]');
+          const dist = () => track.scrollWidth - window.innerWidth;
+          const horizontal = gsap.to(track, {
+            x: () => -dist(), ease: 'none',
+            scrollTrigger: { trigger: section, start: 'top top', end: () => `+=${dist()}`, pin: true, pinSpacing: true, scrub: 1, invalidateOnRefresh: true, anticipatePin: 1 },
+          });
+          gsap.fromTo('[data-night-progress]', { scaleX: 0 }, {
+            scaleX: 1, ease: 'none',
+            scrollTrigger: { trigger: section, start: 'top top', end: () => `+=${dist()}`, scrub: true, invalidateOnRefresh: true },
+          });
+          section.querySelectorAll('[data-panel]').forEach((panel) => {
+            const art = panel.querySelector('[data-art]');
+            const time = panel.querySelector('[data-time]');
+            if (art) {
+              gsap.fromTo(art, { y: 140, rotate: 5, opacity: 0 }, {
+                y: 0, rotate: 0, opacity: 1, ease: 'none',
+                scrollTrigger: { trigger: panel, containerAnimation: horizontal, start: 'left 90%', end: 'left 30%', scrub: true },
+              });
+            }
+            if (time) {
+              gsap.fromTo(time, { xPercent: 30 }, {
+                xPercent: -20, ease: 'none',
+                scrollTrigger: { trigger: panel, containerAnimation: horizontal, start: 'left right', end: 'right left', scrub: true },
+              });
+            }
+            panel.querySelectorAll('[data-count]').forEach((el) => {
+              ScrollTrigger.create({ trigger: panel, containerAnimation: horizontal, start: 'left 55%', once: true, onEnter: () => countUp(el) });
+            });
+          });
+        });
+        mm.add('(max-width: 1023px)', () => {
+          root.querySelectorAll('[data-panel] [data-art]').forEach((art) => {
+            gsap.fromTo(art, { y: 60, rotate: 2, opacity: 0 }, { y: 0, rotate: 0, opacity: 1, duration: 1.1, ease: 'expo.out', scrollTrigger: { trigger: art, start: 'top 88%', once: true } });
+          });
+          root.querySelectorAll('[data-panel] [data-count]').forEach((el) => {
+            ScrollTrigger.create({ trigger: el, start: 'top 85%', once: true, onEnter: () => countUp(el) });
+          });
+        });
+
+        // Steps stack like tickets on a spike.
+        const steps = gsap.utils.toArray(root.querySelectorAll('[data-step]'));
+        steps.forEach((card, i) => {
+          if (i === steps.length - 1) return;
+          gsap.to(card, {
+            scale: 0.93, filter: 'brightness(0.72)', ease: 'none',
+            scrollTrigger: { trigger: steps[i + 1], start: 'top 85%', end: 'top 20%', scrub: true },
+          });
+        });
+
+        // Scroll velocity gives the big numerals a little lean.
+        const lean = gsap.utils.toArray(root.querySelectorAll('[data-lean]'));
+        if (lean.length) {
+          const setSkew = gsap.quickTo(lean, 'skewX', { duration: 0.6, ease: 'power3.out' });
+          let settle = null;
+          ScrollTrigger.create({
+            onUpdate: (self) => {
+              setSkew(gsap.utils.clamp(-8, 8, self.getVelocity() / -300));
+              // straighten up once scrolling stops
+              settle?.kill();
+              settle = gsap.delayedCall(0.12, () => setSkew(0));
+            },
+          });
+        }
+      }, root);
+
+      requestAnimationFrame(() => ScrollTrigger.refresh());
+      window.addEventListener('ss:scene-ready', () => ScrollTrigger.refresh(), { once: true });
+    });
+
+    return () => {
+      alive = false;
+      offPointer?.();
+      unbindMagnetic?.();
+      ctx?.revert();
+      if (tick) gsap.ticker.remove(tick);
+      lenis?.destroy();
+    };
+  }, [reduce]);
 
   const fieldCls =
     'w-full border-0 border-b border-white/25 bg-transparent px-0 pb-3 pt-1 text-[16px] text-white outline-none transition-colors placeholder:text-white/50 hover:border-white/45 focus:border-white';
   const labelCls = 'block text-[13px] text-white/65';
+  const h2 = 'text-balance text-[clamp(2.2rem,4.6vw,4rem)] font-medium leading-[1] tracking-[-0.04em]';
 
   return (
-    <div className="ss-l min-h-screen flex flex-col overflow-x-hidden antialiased" style={{ backgroundColor: PAPER, color: INK }} data-desktop={isDesktopApp || undefined}>
+    <div ref={rootRef} className="ss-l min-h-screen flex flex-col overflow-x-clip antialiased" style={{ backgroundColor: PAPER, color: INK }} data-desktop={isDesktopApp || undefined}>
       <style>{SURFACE_CSS}</style>
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="relative text-white" style={{ ...display, backgroundColor: INK }}>
-        <nav className="relative z-20 mx-auto flex max-w-[1360px] items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
+      <section data-hero className="relative overflow-hidden text-white lg:h-[100svh] lg:min-h-[680px]" style={{ ...display, backgroundColor: INK }}>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[56svh] lg:inset-y-0 lg:left-[44%] lg:right-0 lg:h-auto">
+          <HeroScene apiRef={sceneApi} reduce={reduce} />
+        </div>
+
+        <nav data-hero-nav className="relative z-20 mx-auto flex max-w-[1360px] items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
           <Link to="/" className="flex items-center gap-3 rounded-lg">
             <img src="/logo softshape.ai.png" alt="" className="h-9 w-9 rounded-[10px]" />
             <span className="text-[17px] font-semibold tracking-tight">softshape</span>
@@ -442,70 +711,65 @@ const PortalSelection = ({ onSelect }) => {
           </div>
         </nav>
 
-        <div className="relative z-10 mx-auto max-w-[1360px] px-5 pt-14 sm:px-8 lg:px-12 lg:pt-24">
-          <motion.p {...enter(0)} className="mb-8 inline-flex items-center gap-2.5 text-[14px] text-white/70">
-            <span className="rounded-full px-2.5 py-0.5 text-[12px] font-semibold text-white" style={{ backgroundColor: RED }}>Free</span>
-            for the first 200 restaurants that sign up
-          </motion.p>
-
-          <div className="grid grid-cols-1 items-end gap-10 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
-            <h1 className="text-[clamp(2.9rem,7.2vw,6rem)] font-medium leading-[0.96] tracking-[-0.04em]">
-              {headline.map(({ w, s }, i) => (
-                <span key={i} className="mr-[0.2em] inline-block overflow-hidden pb-[0.1em] align-bottom">
-                  <motion.span
-                    className="inline-block"
-                    style={s ? { ...serif, fontStyle: 'italic', fontWeight: 400, letterSpacing: '-0.01em' } : undefined}
-                    initial={reduce ? false : { y: '105%' }}
-                    animate={{ y: 0 }}
-                    transition={{ duration: 1.1, delay: 0.1 + i * 0.06, ease: EASE }}
-                  >
-                    {w}
-                  </motion.span>
-                </span>
-              ))}
+        <div data-hero-copy className="relative z-10 mx-auto flex max-w-[1360px] flex-col px-5 pb-[60svh] pt-10 sm:px-8 lg:h-[calc(100%-80px)] lg:justify-center lg:px-12 lg:pb-16 lg:pt-0">
+          <div data-hero-reveal className="max-w-[40rem]">
+            <h1 data-hero-title className="text-[clamp(3rem,7vw,6rem)] font-medium leading-[0.95] tracking-[-0.04em] [perspective:900px]">
+              Every table,<br />every ticket,<br /><span style={{ ...serif, fontStyle: 'italic', fontWeight: 400, letterSpacing: '-0.01em' }}>every peg.</span>
             </h1>
-
-            <motion.div {...enter(0.55)} className="pb-[0.6em]">
-              <p className="max-w-[28rem] text-[17px] leading-[1.6] text-white/70">
+            <div data-hero-sub className="mt-8">
+              <p className="inline-flex items-center gap-2.5 text-[14px] text-white/70">
+                <span className="rounded-full px-2.5 py-0.5 text-[12px] font-semibold text-white" style={{ backgroundColor: RED }}>Free</span>
+                for the first 200 restaurants that sign up
+              </p>
+              <p className="mt-5 max-w-[30rem] text-[17px] leading-[1.6] text-white/70">
                 Softshape runs billing, kitchen tickets, bar stock and QR ordering for restaurants, cafes and bars across India, and keeps running when the internet doesn't.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Link
                   to="/onboarding/legacy"
-                  className="inline-flex items-center justify-center rounded-full px-7 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-[#C11C21]"
+                  data-magnetic
+                  className="inline-flex items-center justify-center rounded-full px-7 py-4 text-[15px] font-semibold text-white transition-colors hover:bg-[#C11C21]"
                   style={{ backgroundColor: RED }}
                 >
                   Create your restaurant
                 </Link>
                 <Link
                   to="/edge-setup"
-                  className="inline-flex items-center justify-center rounded-full px-5 py-3.5 text-[15px] font-medium text-white/85 underline decoration-white/30 underline-offset-[6px] transition-colors hover:text-white hover:decoration-white"
+                  className="inline-flex items-center justify-center rounded-full px-5 py-4 text-[15px] font-medium text-white/85 underline decoration-white/30 underline-offset-[6px] transition-colors hover:text-white hover:decoration-white"
                 >
                   Link an existing restaurant
                 </Link>
               </div>
-            </motion.div>
+            </div>
           </div>
+        </div>
+      </section>
 
-          <motion.div
-            initial={reduce ? false : { opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, delay: 0.7, ease: EASE }}
-            className="relative z-10 -mb-28 mt-16 lg:-mb-40 lg:mt-20"
-          >
-            <ServiceBoard />
-          </motion.div>
+      {/* ── The cashier screen ───────────────────────────────────────────── */}
+      <section data-board-section className="relative px-5 pb-28 pt-24 text-white sm:px-8 lg:px-12 lg:pb-40 lg:pt-32" style={{ ...display, backgroundColor: INK }}>
+        <div className="mx-auto max-w-[1360px]">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr] lg:items-end">
+            <h2 data-lines className={h2}>Your whole floor, on one screen.</h2>
+            <p data-fade className="max-w-md text-[16px] leading-[1.6] text-white/65 lg:justify-self-end">
+              Tables, the running bill and both printers, live. Tap a table, add items, and the tickets print where they should.
+            </p>
+          </div>
+          <div className="mt-14 [perspective:2000px] lg:mt-20">
+            <div data-board className="will-change-transform">
+              <ServiceBoard play={boardPlay || reduce} reduce={reduce} />
+            </div>
+          </div>
         </div>
       </section>
 
       {/* ── Portals ──────────────────────────────────────────────────────── */}
-      <section id="portals" className="relative z-0 scroll-mt-6 px-6 pb-24 pt-44 lg:px-16 lg:pb-32 lg:pt-64" style={{ backgroundColor: PAPER }}>
+      <section id="portals" className="relative z-10 scroll-mt-6 px-6 py-24 lg:px-16 lg:py-32" style={{ backgroundColor: PAPER }}>
         <div className="mx-auto max-w-7xl">
           <div className="mb-12 grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-end" style={display}>
-            <h2 className="text-balance text-[clamp(2.1rem,4.2vw,3.5rem)] font-medium leading-[1.02] tracking-[-0.035em]">
+            <h2 data-lines className="text-balance text-[clamp(2.1rem,4.2vw,3.5rem)] font-medium leading-[1.02] tracking-[-0.035em]">
               One platform. A screen for every role on the floor.
             </h2>
-            <p className="max-w-md text-[16px] leading-[1.6] text-black/65 lg:justify-self-end">
+            <p data-fade className="max-w-md text-[16px] leading-[1.6] text-black/65 lg:justify-self-end">
               Pick your portal to sign in. Everyone works from the same live orders, tables and stock.
             </p>
           </div>
@@ -537,63 +801,85 @@ const PortalSelection = ({ onSelect }) => {
         </div>
       </section>
 
-      {/* ── One night of service ─────────────────────────────────────────── */}
-      <section id="night" className="scroll-mt-6 px-5 pb-24 sm:px-8 lg:px-12 lg:pb-36" style={{ ...display, backgroundColor: PAPER }}>
-        <div className="mx-auto grid max-w-[1360px] grid-cols-1 gap-12 border-t border-black/10 pt-20 lg:grid-cols-[0.8fr_1.6fr] lg:gap-20 lg:pt-28">
-          <div className="lg:sticky lg:top-10 lg:self-start">
-            <h2 className="text-balance text-[clamp(2rem,3.3vw,2.9rem)] font-medium leading-[1.05] tracking-[-0.035em]">
-              One Friday night, from the first order to day close.
+      {/* ── One Friday night ─────────────────────────────────────────────── */}
+      <section id="night" data-night className="relative scroll-mt-0 overflow-hidden lg:h-[100svh]" style={display}>
+        <div data-night-track className="flex flex-col lg:h-full lg:w-max lg:flex-row">
+          <div data-panel className="flex flex-col justify-end px-5 pb-16 pt-24 sm:px-8 lg:h-full lg:w-[46vw] lg:px-12 lg:pb-24" style={{ backgroundColor: PAPER }}>
+            <h2 data-lines className="max-w-[12ch] text-[clamp(2.6rem,5.4vw,5.2rem)] font-medium leading-[0.98] tracking-[-0.04em]">
+              One Friday night, start to close.
             </h2>
-            <p className="mt-6 max-w-sm text-[16px] leading-[1.6] text-black/65">
+            <p data-fade className="mt-6 max-w-sm text-[16px] leading-[1.6] text-black/65">
               What Softshape is doing in the background while your team serves a full house.
             </p>
           </div>
 
-          <ol className="border-t border-black/10 lg:border-t-0">
-            {NIGHT.map(({ time, title, body, Art }) => (
-              <li key={time} className="grid grid-cols-1 gap-6 border-b border-black/10 py-10 first:lg:pt-0 md:grid-cols-[1fr_1.05fr] md:gap-10">
-                <div>
-                  <p className="tnum text-[14px] font-medium" style={{ color: RED_DEEP }}>{time}</p>
-                  <h3 className="mt-3 text-balance text-[22px] font-semibold leading-[1.2] tracking-[-0.02em]">{title}</h3>
-                  <p className="mt-3 max-w-[34rem] text-[15.5px] leading-[1.6] text-black/65">{body}</p>
-                </div>
-                <div className="rounded-2xl p-5 sm:p-6" style={{ backgroundColor: STONE }}>
-                  <Art />
-                </div>
-              </li>
-            ))}
-          </ol>
+          {NIGHT.map(({ time, ampm, title, body, Art, bg, dark }) => (
+            <article
+              key={time}
+              data-panel
+              className={`relative grid grid-cols-1 content-center gap-10 overflow-hidden px-5 py-20 sm:px-8 lg:h-full lg:w-[78vw] lg:max-w-[1180px] lg:grid-cols-[1fr_1fr] lg:gap-16 lg:px-14 lg:py-0 ${dark ? 'text-white' : 'text-[#0B0B0C]'}`}
+              style={{ backgroundColor: bg }}
+            >
+              <div className="relative">
+                <p data-time className="tnum whitespace-nowrap text-[clamp(4.5rem,11vw,10rem)] font-medium leading-[0.85] tracking-[-0.05em]">
+                  <span data-lean className="inline-block" style={{ color: dark ? '#fff' : RED_DEEP }}>{time}</span>
+                  <span className={`ml-3 align-top text-[0.22em] tracking-normal ${dark ? 'text-white/60' : 'text-black/55'}`}>{ampm}</span>
+                </p>
+                <h3 className="mt-8 max-w-[22ch] text-balance text-[clamp(1.5rem,2.2vw,2rem)] font-semibold leading-[1.15] tracking-[-0.02em]">{title}</h3>
+                <p className={`mt-4 max-w-[36ch] text-[16px] leading-[1.6] ${dark ? 'text-white/70' : 'text-black/65'}`}>{body}</p>
+              </div>
+              <div
+                data-art
+                className={`self-center rounded-[22px] p-6 text-[#0B0B0C] sm:p-8 ${dark ? '' : 'shadow-[0_30px_60px_-35px_rgba(60,40,10,0.45)]'}`}
+                style={{ backgroundColor: dark ? PAPER : '#FBFAF7' }}
+              >
+                <Art />
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute inset-x-5 bottom-8 hidden h-[2px] overflow-hidden bg-white/25 mix-blend-difference sm:inset-x-8 lg:inset-x-12 lg:block">
+          <div data-night-progress className="h-full origin-left bg-white" />
         </div>
       </section>
 
       {/* ── Getting started ──────────────────────────────────────────────── */}
-      <section className="px-5 py-24 text-white sm:px-8 lg:px-12 lg:py-32" style={{ ...display, backgroundColor: INK }}>
+      <section className="relative px-5 pb-24 pt-24 text-white sm:px-8 lg:px-12 lg:pb-32 lg:pt-32" style={{ ...display, backgroundColor: INK }}>
         <div className="mx-auto max-w-[1360px]">
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_1fr] lg:items-end">
-            <h2 className="text-balance text-[clamp(2.1rem,4.2vw,3.5rem)] font-medium leading-[1.02] tracking-[-0.035em]">
-              Three steps to your first bill.
-            </h2>
-            <div className="flex flex-col gap-3 sm:flex-row lg:justify-self-end">
+            <h2 data-lines className={h2}>Three steps to your first bill.</h2>
+            <div data-fade className="flex flex-col gap-3 sm:flex-row lg:justify-self-end">
               <Link
                 to="/onboarding/legacy"
-                className="inline-flex items-center justify-center rounded-full bg-white px-7 py-3.5 text-[15px] font-semibold text-black transition-colors hover:bg-white/85"
+                data-magnetic
+                className="inline-flex items-center justify-center rounded-full bg-white px-7 py-4 text-[15px] font-semibold text-black transition-colors hover:bg-white/85"
               >
                 Create your restaurant
               </Link>
               <Link
                 to="/edge-setup"
-                className="inline-flex items-center justify-center rounded-full px-5 py-3.5 text-[15px] font-medium text-white/85 underline decoration-white/30 underline-offset-[6px] transition-colors hover:text-white hover:decoration-white"
+                className="inline-flex items-center justify-center rounded-full px-5 py-4 text-[15px] font-medium text-white/85 underline decoration-white/30 underline-offset-[6px] transition-colors hover:text-white hover:decoration-white"
               >
                 Link an existing restaurant
               </Link>
             </div>
           </div>
-          <ol className="mt-16 grid grid-cols-1 md:grid-cols-3">
+
+          <ol className="mt-16 lg:mt-24">
             {STEPS.map((s, i) => (
-              <li key={s.t} className={`border-t border-white/15 py-8 md:pr-10 ${i > 0 ? 'md:pl-10 md:border-l' : ''}`}>
-                <p className="tnum text-[44px] font-medium leading-none tracking-[-0.04em]" style={{ color: RED }}>{i + 1}</p>
-                <h3 className="mt-6 text-[20px] font-semibold tracking-[-0.015em]">{s.t}</h3>
-                <p className="mt-2.5 max-w-sm text-[15.5px] leading-[1.6] text-white/65">{s.b}</p>
+              <li
+                key={s.t}
+                data-step
+                className="sticky mb-6 grid min-h-[52vh] grid-cols-1 content-between gap-10 rounded-[28px] p-8 will-change-transform sm:p-12 lg:grid-cols-[1fr_1.2fr] lg:content-stretch lg:p-16"
+                style={{ backgroundColor: s.bg, color: s.fg, top: `calc(10vh + ${i * 22}px)` }}
+              >
+                <p data-lean className="tnum text-[clamp(7rem,16vw,15rem)] font-medium leading-[0.8] tracking-[-0.06em]" style={{ color: i === 2 ? '#fff' : RED }}>
+                  {i + 1}
+                </p>
+                <div className="flex flex-col justify-end">
+                  <h3 className="text-[clamp(1.8rem,3.2vw,3rem)] font-semibold leading-[1.05] tracking-[-0.03em]">{s.t}</h3>
+                  <p className={`mt-4 max-w-md text-[17px] leading-[1.6] ${i === 2 ? 'text-white/90' : 'text-white/65'}`}>{s.b}</p>
+                </div>
               </li>
             ))}
           </ol>
@@ -606,10 +892,10 @@ const PortalSelection = ({ onSelect }) => {
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.1fr]">
             <div className="flex flex-col justify-between gap-14 p-8 sm:p-12 lg:p-16">
               <div>
-                <h2 className="text-balance text-[clamp(2.3rem,4.6vw,4rem)] font-medium leading-[1] tracking-[-0.04em]">
+                <h2 data-lines className="text-balance text-[clamp(2.3rem,4.6vw,4rem)] font-medium leading-[1] tracking-[-0.04em]">
                   Let's set up your restaurant.
                 </h2>
-                <p className="mt-6 max-w-md text-[16px] leading-[1.6] text-white/70">
+                <p data-fade className="mt-6 max-w-md text-[16px] leading-[1.6] text-white/70">
                   Tell us about your outlet and we'll reply on WhatsApp.
                 </p>
               </div>
@@ -688,7 +974,8 @@ const PortalSelection = ({ onSelect }) => {
               </label>
               <button
                 type="submit"
-                className="mt-2 inline-flex w-full items-center justify-center gap-2.5 rounded-full bg-white px-7 py-3.5 text-[15px] font-semibold text-black transition-colors hover:bg-white/85 sm:w-auto sm:self-start"
+                data-magnetic
+                className="mt-2 inline-flex w-full items-center justify-center gap-2.5 rounded-full bg-white px-7 py-4 text-[15px] font-semibold text-black transition-colors hover:bg-white/85 sm:w-auto sm:self-start"
               >
                 Send on WhatsApp
                 <ArrowRight size={16} aria-hidden="true" />

@@ -24,7 +24,6 @@ import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import AnimatedPage from "./shared/components/AnimatedPage";
-import PortalSelection from "./shared/components/PortalSelection";
 import LoginScreen from "./shared/components/LoginScreen";
 import AdminDashboard from "./admin/AdminDashboard";
 import CashierDashboard from "./cashier/CashierDashboard";
@@ -47,6 +46,8 @@ import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import TermsPage from "./pages/TermsPage";
 import SupportPage from "./pages/SupportPage";
 const StoreStockPortal = lazy(() => import("./store-stock/StoreStockPortal")); // standalone /store portal
+// Landing page is code-split: it carries GSAP, Lenis and three.js, which no portal needs.
+const PortalSelection = lazy(() => import("./shared/components/PortalSelection"));
 const TableQRCodes = lazy(() => import("./admin/TableQRCodes"));
 const CaptainReportCard = lazy(() => import("./admin/CaptainReportCard"));
 const CaptainsGroupReport = lazy(() => import("./admin/CaptainsGroupReport"));
@@ -393,7 +394,11 @@ function PortalSelectionWrapper() {
       </div>
     );
   }
-  return <PortalSelection onSelect={(role) => navigate(`/${role}`)} />;
+  return (
+    <Suspense fallback={<div className="min-h-screen" style={{ backgroundColor: '#0B0B0C' }} />}>
+      <PortalSelection onSelect={(role) => navigate(`/${role}`)} />
+    </Suspense>
+  );
 }
 
 function AdminLoginWrapper() {
