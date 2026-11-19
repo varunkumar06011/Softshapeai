@@ -25,6 +25,9 @@ import {
 } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger, SplitText);
+// Phones resize the viewport when the address bar slides; re-measuring every
+// trigger on that is a visible hitch, so skip it.
+ScrollTrigger.config({ ignoreMobileResize: true });
 
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
@@ -60,7 +63,7 @@ html.lenis, html.lenis body { height: auto; }
 @keyframes ss-failsafe { to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ss-l [data-hero-reveal] { opacity: 1; animation: none; } }
 .ss-l .ss-word { perspective: 900px; }
-.ss-l .ss-char { display: inline-block; will-change: transform; }
+.ss-l .ss-char { display: inline-block; }
 `;
 
 // Loads the landing-only typefaces once, so other portals don't pay for them.
@@ -87,6 +90,45 @@ function usePrefersReducedMotion() {
   }, []);
   return reduce;
 }
+
+// 'full' gets the live 3D hero, 'lite' a pre-rendered poster of it.
+// ?motion=full or ?motion=lite in the URL overrides this, to test on a phone.
+function detectMotionTier() {
+  if (typeof window === 'undefined') return 'lite';
+  try {
+    const q = new URLSearchParams(window.location.search).get('motion');
+    if (q === 'full' || q === 'lite') return q;
+  } catch {
+    // ignore
+  }
+  const nav = window.navigator || {};
+  const conn = nav.connection || {};
+  if (conn.saveData) return 'lite';
+  if (/2g|^3g$/.test(conn.effectiveType || '')) return 'lite';
+  // deviceMemory and core count are only trusted where deviceMemory exists
+  // (Chromium). Safari reports neither reliably, so iPhones rely on the
+  // scene's own frame-rate watchdog instead.
+  if (typeof nav.deviceMemory === 'number') {
+    if (nav.deviceMemory <= 4) return 'lite';
+    if ((nav.hardwareConcurrency || 8) <= 4) return 'lite';
+  }
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return 'lite';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    // no GPU: the browser is drawing 3D on the CPU
+    if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(renderer)) return 'lite';
+  } catch {
+    return 'lite';
+  }
+  return 'full';
+}
+
+const isTouchDevice = () =>
+  typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none), (pointer: coarse)').matches;
 
 const inr = (n) => '₹' + n.toLocaleString('en-IN');
 
@@ -153,7 +195,7 @@ function ServiceBoard({ play, reduce }) {
   const gst = Math.round(sub * 0.05);
   const kitchen = BILL.filter((b) => b.station === 'K');
   const bar = BILL.filter((b) => b.station === 'B');
-  const enter = 'transition-[opacity,transform,filter] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
+  const enter = 'transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
   return (
     <div className="overflow-hidden rounded-[20px] border border-white/10 bg-[#141416] text-white shadow-[0_60px_120px_-50px_rgba(0,0,0,0.9)]">
@@ -191,7 +233,7 @@ function ServiceBoard({ play, reduce }) {
             {BILL.map((it, i) => (
               <div
                 key={it.name}
-                className={`tnum flex items-center justify-between text-[13px] ${enter} ${i < shown ? 'translate-x-0 opacity-100 blur-0' : 'translate-x-2.5 opacity-0 blur-[4px]'}`}
+                className={`tnum flex items-center justify-between text-[13px] ${enter} ${i < shown ? 'translate-x-0 opacity-100' : 'translate-x-2.5 opacity-0'}`}
               >
                 <span className="text-white/90"><span className="mr-2.5 text-white/45">{it.qty}</span>{it.name}</span>
                 <span className="text-white/80">{inr(it.price)}</span>
@@ -230,44 +272,62 @@ function ServiceBoard({ play, reduce }) {
 }
 
 // ── Hero 3D scene host ──────────────────────────────────────────────────────
-// Loads three.js on demand. Exposes the scene API through apiRef so the page's
-// GSAP timelines can drive printing and camera from scroll.
-function HeroScene({ apiRef, reduce }) {
+// 'full' devices load three.js once the page is idle, so the 3D never competes
+// with the first paint or the headline entrance. 'lite' devices, and any device
+// whose frame rate collapses while running the scene, get a 21 kB poster of the
+// same printer instead. Exposes the scene API through apiRef so the page's GSAP
+// timelines can drive printing and camera from scroll.
+function HeroScene({ apiRef, reduce, tier }) {
   const hostRef = useRef(null);
-  const [webgl] = useState(() => {
-    try {
-      const c = document.createElement('canvas');
-      return !!(c.getContext('webgl2') || c.getContext('webgl'));
-    } catch {
-      return false;
-    }
-  });
-  const [failed, setFailed] = useState(false);
+  const [poster, setPoster] = useState(tier === 'lite');
 
   useEffect(() => {
+    if (poster) return undefined;
     let disposed = false;
     let api = null;
-    if (!webgl) return undefined;
-    Promise.all([import('./landing/ReceiptPrinter3D.js'), document.fonts?.ready]).then(([mod]) => {
-      if (disposed || !hostRef.current) return;
-      try {
-        api = mod.createReceiptScene(hostRef.current, { reducedMotion: reduce });
-        apiRef.current = api;
-        if (reduce) api.setPrinted(0.85);
-        hostRef.current.dataset.ready = '1';
-        window.dispatchEvent(new Event('ss:scene-ready'));
-      } catch {
-        setFailed(true);
-      }
-    }).catch(() => setFailed(true));
+    const start = () => {
+      Promise.all([import('./landing/ReceiptPrinter3D.js'), document.fonts?.ready]).then(([mod]) => {
+        if (disposed || !hostRef.current) return;
+        try {
+          api = mod.createReceiptScene(hostRef.current, {
+            reducedMotion: reduce,
+            quality: isTouchDevice() || window.innerWidth < 1024 ? 'low' : 'high',
+            onDegrade: (level) => {
+              // Still too slow at pixel ratio 1: hand over to the poster.
+              if (level >= 2 && !disposed) setPoster(true);
+            },
+          });
+          apiRef.current = api;
+          if (reduce) api.setPrinted(0.85);
+          hostRef.current.dataset.ready = '1';
+          window.dispatchEvent(new Event('ss:scene-ready'));
+        } catch {
+          setPoster(true);
+        }
+      }).catch(() => setPoster(true));
+    };
+    const idleId = window.requestIdleCallback ? window.requestIdleCallback(start, { timeout: 1500 }) : window.setTimeout(start, 700);
     return () => {
       disposed = true;
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idleId);
+      window.clearTimeout(idleId);
       apiRef.current = null;
       api?.dispose();
     };
-  }, [apiRef, reduce, webgl]);
+  }, [apiRef, reduce, poster]);
 
-  if (!webgl || failed) return null;
+  if (poster) {
+    return (
+      <img
+        src="/landing/printer-poster.webp"
+        alt=""
+        aria-hidden="true"
+        decoding="async"
+        fetchPriority="low"
+        className="absolute inset-0 h-full w-full object-contain object-bottom"
+      />
+    );
+  }
   return (
     <div
       ref={hostRef}
@@ -419,6 +479,7 @@ const PortalSelection = ({ onSelect }) => {
   const isDesktopApp = typeof window !== 'undefined' && !!window.__TAURI__;
   useLandingFonts();
   const reduce = usePrefersReducedMotion();
+  const [tier] = useState(detectMotionTier);
   const rootRef = useRef(null);
   const sceneApi = useRef(null);
   const [boardPlay, setBoardPlay] = useState(false);
@@ -506,12 +567,17 @@ const PortalSelection = ({ onSelect }) => {
     fontsReady.then(() => {
       if (!alive) return;
 
-      lenis = new Lenis({ lerp: 0.085, anchors: true, wheelMultiplier: 0.95 });
-      lenis.on('scroll', ScrollTrigger.update);
-      tick = (time) => lenis.raf(time * 1000);
-      gsap.ticker.add(tick);
-      gsap.ticker.lagSmoothing(0);
-      unbindMagnetic = bindMagnetic(root);
+      const touch = isTouchDevice();
+      // Smooth scrolling only with a mouse or trackpad on a capable device;
+      // phones and lite devices keep native scrolling, which is the cheapest.
+      if (!touch && tier === 'full') {
+        lenis = new Lenis({ lerp: 0.085, anchors: true, wheelMultiplier: 0.95 });
+        lenis.on('scroll', ScrollTrigger.update);
+        tick = (time) => lenis.raf(time * 1000);
+        gsap.ticker.add(tick);
+        gsap.ticker.lagSmoothing(0);
+      }
+      if (!touch) unbindMagnetic = bindMagnetic(root);
 
       ctx = gsap.context(() => {
         const mm = gsap.matchMedia();
@@ -633,15 +699,16 @@ const PortalSelection = ({ onSelect }) => {
         const steps = gsap.utils.toArray(root.querySelectorAll('[data-step]'));
         steps.forEach((card, i) => {
           if (i === steps.length - 1) return;
-          gsap.to(card, {
-            scale: 0.93, filter: 'brightness(0.72)', ease: 'none',
-            scrollTrigger: { trigger: steps[i + 1], start: 'top 85%', end: 'top 20%', scrub: true },
-          });
+          // scale and an overlay's opacity are both compositor-only; a CSS
+          // filter here would repaint the whole card every frame
+          const tl = gsap.timeline({ scrollTrigger: { trigger: steps[i + 1], start: 'top 85%', end: 'top 20%', scrub: true } });
+          tl.to(card, { scale: 0.93, ease: 'none' }, 0)
+            .to(card.querySelector('[data-step-shade]'), { opacity: 0.32, ease: 'none' }, 0);
         });
 
         // Scroll velocity gives the big numerals a little lean.
         const lean = gsap.utils.toArray(root.querySelectorAll('[data-lean]'));
-        if (lean.length) {
+        if (lean.length && !touch) {
           const setSkew = gsap.quickTo(lean, 'skewX', { duration: 0.6, ease: 'power3.out' });
           let settle = null;
           ScrollTrigger.create({
@@ -667,7 +734,7 @@ const PortalSelection = ({ onSelect }) => {
       if (tick) gsap.ticker.remove(tick);
       lenis?.destroy();
     };
-  }, [reduce]);
+  }, [reduce, tier]);
 
   const fieldCls =
     'w-full border-0 border-b border-white/25 bg-transparent px-0 pb-3 pt-1 text-[16px] text-white outline-none transition-colors placeholder:text-white/50 hover:border-white/45 focus:border-white';
@@ -681,7 +748,7 @@ const PortalSelection = ({ onSelect }) => {
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section data-hero className="relative overflow-hidden text-white lg:h-[100svh] lg:min-h-[680px]" style={{ ...display, backgroundColor: INK }}>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[56svh] lg:inset-y-0 lg:left-[44%] lg:right-0 lg:h-auto">
-          <HeroScene apiRef={sceneApi} reduce={reduce} />
+          <HeroScene apiRef={sceneApi} reduce={reduce} tier={tier} />
         </div>
 
         <nav data-hero-nav className="relative z-20 mx-auto flex max-w-[1360px] items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
@@ -873,6 +940,7 @@ const PortalSelection = ({ onSelect }) => {
                 className="sticky mb-6 grid min-h-[52vh] grid-cols-1 content-between gap-10 rounded-[28px] p-8 will-change-transform sm:p-12 lg:grid-cols-[1fr_1.2fr] lg:content-stretch lg:p-16"
                 style={{ backgroundColor: s.bg, color: s.fg, top: `calc(10vh + ${i * 22}px)` }}
               >
+                <span data-step-shade aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[28px] bg-black opacity-0" />
                 <p data-lean className="tnum text-[clamp(7rem,16vw,15rem)] font-medium leading-[0.8] tracking-[-0.06em]" style={{ color: i === 2 ? '#fff' : RED }}>
                   {i + 1}
                 </p>

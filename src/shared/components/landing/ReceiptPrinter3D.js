@@ -176,38 +176,64 @@ function drawBadge() {
 }
 
 // ── Scene ───────────────────────────────────────────────────────────────────
-export function createReceiptScene(container, { reducedMotion = false } = {}) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+// Performance notes (the landing page must stay smooth on budget phones):
+// - no real-time shadows: a pre-drawn contact shadow sits under the printer;
+// - the paper is a Lambert (matte) surface, normals are written analytically
+//   from the curve instead of computeVertexNormals();
+// - quality 'low' (phones) uses fewer segments, no environment map and a
+//   lower pixel-ratio cap;
+// - a watchdog measures real frame times: if the device can't keep up it first
+//   drops the pixel ratio to 1, then freezes the flutter and only redraws when
+//   something actually changes (scroll, pointer, printing).
+
+function drawContactShadow() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grad.addColorStop(0, 'rgba(0,0,0,0.75)');
+  grad.addColorStop(0.45, 'rgba(0,0,0,0.35)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
+
+export function createReceiptScene(container, { reducedMotion = false, quality = 'high', onDegrade } = {}) {
+  const low = quality === 'low';
+  const SEG_L_Q = low ? 120 : SEG_L;
+  const SEG_W_Q = low ? 6 : SEG_W;
+  const maxDpr = low ? 1.5 : 2;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: !low, alpha: true, powerPreference: low ? 'low-power' : 'high-performance' });
+  let dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+  renderer.setPixelRatio(dpr);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.style.display = 'block';
   renderer.domElement.style.width = '100%';
   renderer.domElement.style.height = '100%';
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environment = envTex;
-  scene.environmentIntensity = 0.55;
+  let pmrem = null;
+  let envTex = null;
+  if (!low) {
+    pmrem = new THREE.PMREMGenerator(renderer);
+    envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = envTex;
+    scene.environmentIntensity = 0.55;
+  } else {
+    scene.add(new THREE.HemisphereLight('#ffffff', '#202024', 0.9));
+  }
 
   const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
 
-  // lights
+  // lights (no shadow maps)
   const key = new THREE.DirectionalLight('#FFF3E6', 2.4);
   key.position.set(-4, 7, 6);
-  key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = -5;
-  key.shadow.camera.right = 5;
-  key.shadow.camera.top = 6;
-  key.shadow.camera.bottom = -4;
-  key.shadow.radius = 6;
-  key.shadow.bias = -0.0004;
   scene.add(key);
   const rim = new THREE.PointLight(RED, 38, 14, 1.6);
   rim.position.set(3.5, 2.5, -2.5);
@@ -222,32 +248,25 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
   // printer
   const printer = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: '#1A1A1D', roughness: 0.42, metalness: 0.15 });
-  const body = new THREE.Mesh(new RoundedBoxGeometry(2.5, 1.25, 2.1, 6, 0.2), bodyMat);
-  body.castShadow = true;
-  body.receiveShadow = true;
-  printer.add(body);
+  printer.add(new THREE.Mesh(new RoundedBoxGeometry(2.5, 1.25, 2.1, low ? 3 : 5, 0.2), bodyMat));
   const lid = new THREE.Mesh(
-    new RoundedBoxGeometry(2.3, 0.08, 1.35, 4, 0.04),
+    new RoundedBoxGeometry(2.3, 0.08, 1.35, 2, 0.04),
     new THREE.MeshStandardMaterial({ color: '#232327', roughness: 0.3, metalness: 0.2 }),
   );
   lid.position.set(0, 0.64, -0.3);
-  lid.receiveShadow = true;
   printer.add(lid);
-  const slot = new THREE.Mesh(
-    new THREE.BoxGeometry(1.75, 0.06, 0.12),
-    new THREE.MeshBasicMaterial({ color: '#050506' }),
-  );
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.06, 0.12), new THREE.MeshBasicMaterial({ color: '#050506' }));
   slot.position.set(0, 0.62, 0.52);
   printer.add(slot);
   const tear = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, 1.85, 16),
+    new THREE.CylinderGeometry(0.025, 0.025, 1.85, 12),
     new THREE.MeshStandardMaterial({ color: '#B9B9BE', roughness: 0.25, metalness: 1 }),
   );
   tear.rotation.z = Math.PI / 2;
   tear.position.set(0, 0.65, 0.62);
   printer.add(tear);
-  const ledMat = new THREE.MeshStandardMaterial({ color: RED, emissive: RED, emissiveIntensity: 2.2 });
-  const led = new THREE.Mesh(new THREE.SphereGeometry(0.045, 20, 20), ledMat);
+  const ledMat = new THREE.MeshBasicMaterial({ color: RED });
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 12), ledMat);
   led.position.set(0.95, 0.12, 1.06);
   printer.add(led);
   const badge = new THREE.Mesh(
@@ -259,21 +278,24 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
   printer.position.set(0, -1.9, 0);
   rig.add(printer);
 
-  // ground shadow
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.ShadowMaterial({ opacity: 0.45 }));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -2.53;
-  ground.receiveShadow = true;
-  rig.add(ground);
+  // pre-drawn contact shadow instead of a shadow map
+  const shadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(5.2, 4.2),
+    new THREE.MeshBasicMaterial({ map: drawContactShadow(), transparent: true, depthWrite: false }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(0.35, -2.52, 0.2);
+  rig.add(shadow);
 
   // paper ribbon
-  const geo = new THREE.PlaneGeometry(PAPER_W, PAPER_L, SEG_W, SEG_L);
+  const geo = new THREE.PlaneGeometry(PAPER_W, PAPER_L, SEG_W_Q, SEG_L_Q);
   const pos = geo.attributes.position;
-  const rows = SEG_L + 1;
-  const cols = SEG_W + 1;
+  const nor = geo.attributes.normal;
+  const rows = SEG_L_Q + 1;
+  const cols = SEG_W_Q + 1;
   const receiptTex = drawReceipt();
-  receiptTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const paperMat = new THREE.MeshStandardMaterial({ map: receiptTex, roughness: 0.82, metalness: 0, side: THREE.DoubleSide });
+  receiptTex.anisotropy = Math.min(low ? 2 : 8, renderer.capabilities.getMaxAnisotropy());
+  const paperMat = new THREE.MeshLambertMaterial({ map: receiptTex, side: THREE.DoubleSide });
   paperMat.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <map_fragment>',
@@ -285,17 +307,13 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
     );
   };
   const paper = new THREE.Mesh(geo, paperMat);
-  paper.castShadow = true;
-  paper.receiveShadow = true;
   paper.frustumCulled = false;
   rig.add(paper);
 
   const slotOrigin = new THREE.Vector3(0, printer.position.y + 0.62, 0.52);
-  const sArr = new Float32Array(rows);
   const cy = new Float32Array(rows);
   const cz = new Float32Array(rows);
   const th = new Float32Array(rows);
-  const order = Array.from({ length: rows }, (_, i) => i);
 
   const state = {
     printed: 0,
@@ -306,6 +324,8 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
     tpy: 0,
     active: true,
     time: 0,
+    frozen: !!reducedMotion,
+    dirty: true,
   };
 
   function curvature(s, t) {
@@ -318,20 +338,19 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
     return bow + roll + flutter;
   }
 
+  const STEP = low ? 0.06 : 0.04;
   function updatePaper() {
     const L = PAPER_L;
     const P = state.printed * L;
     const t = state.time;
-    // row r: v = r / SEG_L, PlaneGeometry row 0 is the top edge (+y) = tip
-    for (let r = 0; r < rows; r++) sArr[r] = P - (r / SEG_L) * L;
-    // integrate centre line in order of increasing s
-    order.sort((a, b) => sArr[a] - sArr[b]);
+    // Row r sits at arc length s = P - (r / SEG) * L from the slot; s grows as
+    // r falls, so integrate the centre line from the last row to the first.
     let prevS = 0;
     let y = 0;
     let z = 0;
     let theta = 0;
-    for (const r of order) {
-      const s = sArr[r];
+    for (let r = rows - 1; r >= 0; r--) {
+      const s = P - (r / SEG_L_Q) * L;
       if (s <= 0) {
         // unprinted paper stays folded inside the printer body
         cy[r] = Math.max(s, -0.45);
@@ -339,12 +358,10 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
         th[r] = 0;
         continue;
       }
-      // sub-step for accuracy
-      const steps = Math.max(1, Math.ceil((s - prevS) / 0.03));
+      const steps = Math.max(1, Math.ceil((s - prevS) / STEP));
       const ds = (s - prevS) / steps;
       for (let k = 0; k < steps; k++) {
-        const sm = prevS + (k + 0.5) * ds;
-        theta += curvature(sm, t) * ds;
+        theta += curvature(prevS + (k + 0.5) * ds, t) * ds;
         y += Math.cos(theta) * ds;
         z += Math.sin(theta) * ds;
       }
@@ -354,25 +371,31 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
       th[r] = theta;
     }
     for (let r = 0; r < rows; r++) {
-      const s = sArr[r];
-      const ny = -Math.sin(th[r]);
-      const nz = Math.cos(th[r]);
-      const twist = s > 0 ? 0.16 * Math.sin(t * 0.8 + s * 0.85) * smooth(1.2, 5, s) : 0;
+      const s = P - (r / SEG_L_Q) * L;
+      const live = s > 0;
+      const sinT = Math.sin(th[r]);
+      const cosT = Math.cos(th[r]);
+      const ny = -sinT;
+      const nz = cosT;
+      const twist = live ? 0.16 * Math.sin(t * 0.8 + s * 0.85) * smooth(1.2, 5, s) : 0;
       const ct = Math.cos(twist);
       const st = Math.sin(twist);
+      const drift = live ? 0.28 * Math.sin(s * 0.55 + t * 0.45) * smooth(1, 5, s) : 0;
+      const cupK = live ? 0.05 * smooth(0.3, 1.5, s) : 0;
+      // surface normal: the curve normal rotated by the twist about the tangent
+      const nX = -st;
+      const nY = ct * ny;
+      const nZ = ct * nz;
       for (let c = 0; c < cols; c++) {
         const i = r * cols + c;
-        const u = (c / SEG_W - 0.5) * PAPER_W;
-        // slight curl across the width, as thermal paper does
-        const cup = s > 0 ? 0.05 * (u * u) * smooth(0.3, 1.5, s) : 0;
-        const drift = s > 0 ? 0.28 * Math.sin(s * 0.55 + t * 0.45) * smooth(1, 5, s) : 0;
-        const x = u * ct + drift;
-        const off = u * st + cup;
-        pos.setXYZ(i, slotOrigin.x + x, slotOrigin.y + cy[r] + ny * off, slotOrigin.z + cz[r] + nz * off);
+        const u = (c / SEG_W_Q - 0.5) * PAPER_W;
+        const off = u * st + cupK * u * u;
+        pos.setXYZ(i, slotOrigin.x + u * ct + drift, slotOrigin.y + cy[r] + ny * off, slotOrigin.z + cz[r] + nz * off);
+        nor.setXYZ(i, nX, nY, nZ);
       }
     }
     pos.needsUpdate = true;
-    geo.computeVertexNormals();
+    nor.needsUpdate = true;
   }
 
   function resize() {
@@ -384,22 +407,61 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
     const dist = camera.aspect < 0.7 ? 19 : camera.aspect < 1 ? 14.5 : 13.5;
     camera.userData.dist = dist;
     camera.updateProjectionMatrix();
+    state.dirty = true;
+  }
+
+  // Watchdog: after a short warm-up, compare real frame intervals with the
+  // display's budget. Level 1 drops the pixel ratio; level 2 freezes flutter
+  // and switches to redraw-on-change.
+  let degrade = 0;
+  let samples = [];
+  let warm = 0;
+  function watch(delta) {
+    if (degrade >= 2 || state.frozen) return;
+    if (warm < 20) {
+      warm++;
+      return;
+    }
+    samples.push(delta);
+    if (samples.length < 45) return;
+    samples.sort((a, b) => a - b);
+    const median = samples[Math.floor(samples.length / 2)];
+    samples = [];
+    if (median > 28) {
+      degrade++;
+      if (degrade === 1 && dpr > 1) {
+        dpr = 1;
+        renderer.setPixelRatio(1);
+        resize();
+      } else {
+        degrade = 2;
+        state.frozen = true;
+      }
+      onDegrade?.(degrade, median);
+    }
   }
 
   let raf = 0;
   let last = performance.now();
+  let lastKey = '';
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    if (!state.active) {
-      last = now;
-      return;
-    }
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const delta = now - last;
     last = now;
-    if (!reducedMotion) state.time += dt;
+    if (!state.active) return;
+    const dt = Math.min(0.05, delta / 1000);
+    if (!state.frozen) state.time += dt;
 
-    state.px += (state.tpx - state.px) * 0.05;
-    state.py += (state.tpy - state.py) * 0.05;
+    state.px += (state.tpx - state.px) * 0.06;
+    state.py += (state.tpy - state.py) * 0.06;
+
+    // When frozen, skip the frame entirely unless something visible changed.
+    if (state.frozen) {
+      const k = `${state.printed.toFixed(4)}|${state.scroll.toFixed(4)}|${state.px.toFixed(3)}|${state.py.toFixed(3)}`;
+      if (k === lastKey && !state.dirty) return;
+      lastKey = k;
+    }
+    state.dirty = false;
 
     const sc = state.scroll;
     rig.rotation.y = -0.98 + state.px * 0.3 + sc * 0.5;
@@ -411,10 +473,12 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
     camera.lookAt(0, 0.75 + sc * 0.55, 0);
 
     // LED blinks while printing
-    ledMat.emissiveIntensity = state.printed < 0.995 ? 1.4 + Math.sin(state.time * 18) * 1.1 : 2.2;
+    const blink = state.printed < 0.995 && !state.frozen ? 0.6 + 0.4 * Math.sin(state.time * 18) : 1;
+    ledMat.color.setRGB(0.89 * blink + 0.1, 0.15 * blink, 0.17 * blink);
 
     updatePaper();
     renderer.render(scene, camera);
+    watch(delta);
   }
 
   resize();
@@ -428,11 +492,16 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
     setScroll(v) { state.scroll = Math.min(1, Math.max(0, v)); },
     setPointer(x, y) { state.tpx = x; state.tpy = y; },
     setActive(v) {
+      if (v && !state.active) {
+        state.dirty = true;
+        last = performance.now();
+      }
       state.active = v;
       // A paused canvas is hidden as well: some mobile compositors repaint a
       // stale WebGL frame over the page, and a hidden layer costs nothing.
       renderer.domElement.style.visibility = v ? 'visible' : 'hidden';
     },
+    get degradeLevel() { return degrade; },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
@@ -443,8 +512,8 @@ export function createReceiptScene(container, { reducedMotion = false } = {}) {
           o.material.dispose();
         }
       });
-      envTex.dispose();
-      pmrem.dispose();
+      envTex?.dispose();
+      pmrem?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },
