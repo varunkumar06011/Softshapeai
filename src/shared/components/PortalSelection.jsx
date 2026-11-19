@@ -108,8 +108,11 @@ function detectMotionTier() {
   // deviceMemory and core count are only trusted where deviceMemory exists
   // (Chromium). Safari reports neither reliably, so iPhones rely on the
   // scene's own frame-rate watchdog instead.
+  // Chrome rounds RAM down to 0.25/0.5/1/2/4/8 GB, so "< 4" means under 4 GB:
+  // budget phones get the poster, mid-range phones (4-7 GB report 4) get the
+  // live 3D, still guarded by the watchdog.
   if (typeof nav.deviceMemory === 'number') {
-    if (nav.deviceMemory <= 4) return 'lite';
+    if (nav.deviceMemory < 4) return 'lite';
     if ((nav.hardwareConcurrency || 8) <= 4) return 'lite';
   }
   try {
