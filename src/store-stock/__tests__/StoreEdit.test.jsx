@@ -62,6 +62,24 @@ describe('unit list', () => {
   });
 });
 
+describe('delete item', () => {
+  it('asks to confirm, then deletes an item that has only its opening entry', async () => {
+    mount(<EditItemSheet itemId="salt" />, { actions: { deleteItem: vi.fn().mockResolvedValue() } });
+    press('Delete item');
+    expect(ctx.actions.deleteItem).not.toHaveBeenCalled();
+    press('Yes, delete');
+    await flush();
+    expect(ctx.actions.deleteItem).toHaveBeenCalledWith('salt', { by: 'Tester' });
+    expect(ctx.close).toHaveBeenCalled();
+  });
+
+  it('offers no delete button once the item has purchases or issues', () => {
+    mount(<EditItemSheet itemId="rice" />, { actions: { deleteItem: vi.fn() } });
+    expect(screen.queryByRole('button', { name: 'Delete item' })).toBeNull();
+    expect(screen.getByText(/can’t be deleted/)).toBeTruthy();
+  });
+});
+
 describe('edit item', () => {
   it('renames and sends only the name', async () => {
     mount(<EditItemSheet itemId="salt" />);
