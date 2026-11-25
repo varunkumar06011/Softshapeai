@@ -10,6 +10,8 @@ const SAFE_CSS = '*,*::before,*::after{border-color:#E7B9BF;outline-color:transp
 
 export async function captureCanvas(node) {
   const html2canvas = (await import('html2canvas')).default;
+  // Wait for the logo (and any image) to finish loading so it is never missing.
+  await Promise.all([...node.querySelectorAll('img')].map((img) => (img.complete ? null : new Promise((res) => { img.onload = res; img.onerror = res; }))));
   return html2canvas(node, {
     scale: 2,
     backgroundColor: '#ffffff',
