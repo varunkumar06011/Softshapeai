@@ -4,7 +4,7 @@
 import { forwardRef } from 'react';
 import { OFFLINE_CHANNELS, PAYMENT_MODES, PLATFORMS, GOOGLE_ROWS, CHECKS, BRANCHES, money, pctText, fmtDate, dayName, compute } from './t1Schema';
 
-const RED = '#C8102E', PINK = '#FBE3E6', LINE = '#E7B9BF', INK = '#1F1F1F';
+const RED = '#E31E25', PINK = '#FBE3E6', LINE = '#E7B9BF', INK = '#1F1F1F';
 const box = { border: `1.5px solid ${LINE}`, borderRadius: 10, overflow: 'hidden', background: '#FFFFFF' };
 const td = { borderTop: `1px solid ${LINE}`, padding: '4px 10px 8px', fontSize: 15, lineHeight: '18px', color: INK, height: 26, verticalAlign: 'middle' };
 const tdNum = { ...td, borderLeft: `1px solid ${LINE}`, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'Arial, sans-serif' };
@@ -33,7 +33,7 @@ const Blank = ({ children, w }) => (
   <span style={{ display: 'inline-block', minWidth: w, borderBottom: `1.5px solid ${INK}`, padding: '0 6px', fontWeight: 700 }}>{children || ' '}</span>
 );
 
-const T1ReportSheet = forwardRef(function T1ReportSheet({ report, date, branch, outletName }, ref) {
+const T1ReportSheet = forwardRef(function T1ReportSheet({ report, date, branch }, ref) {
   const r = report;
   const c = compute(r);
   const font = '"Arial Narrow", "Roboto Condensed", Arial, sans-serif';
@@ -42,10 +42,8 @@ const T1ReportSheet = forwardRef(function T1ReportSheet({ report, date, branch, 
     <div ref={ref} style={{ width: 1200, background: '#FFFFFF', color: INK, fontFamily: font, paddingBottom: 24, boxSizing: 'border-box', borderColor: LINE }}>
       {/* Header */}
       <div style={{ background: RED, color: '#FFFFFF', display: 'flex', alignItems: 'center', padding: '14px 30px', gap: 28 }}>
-        <div style={{ width: 200, textAlign: 'center', borderRight: '2px solid rgba(255,255,255,0.7)', paddingRight: 24 }}>
-          <div style={{ fontSize: 44, fontWeight: 900, lineHeight: 1 }}>V</div>
-          <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: 1, borderTop: '2px solid #FFFFFF', borderBottom: '2px solid #FFFFFF', margin: '2px 0' }}>GRAND</div>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5 }}>{(outletName || 'FAMILY RESTAURANT').toUpperCase()}</div>
+        <div style={{ width: 200, borderRight: '2px solid rgba(255,255,255,0.7)', paddingRight: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src="/vgrand-logo.jpg" alt="V Grand Family Restaurant" style={{ width: 176, height: 'auto', display: 'block' }} />
         </div>
         <div style={{ flex: 1, textAlign: 'center' }}>
           <div style={{ fontSize: 33, fontWeight: 900, letterSpacing: 0.3, whiteSpace: 'nowrap' }}>HEAD ACCOUNTANT – MASTER DAILY REPORT</div>
