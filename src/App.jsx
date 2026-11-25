@@ -46,6 +46,7 @@ import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import TermsPage from "./pages/TermsPage";
 import SupportPage from "./pages/SupportPage";
 const StoreStockPortal = lazy(() => import("./store-stock/StoreStockPortal")); // standalone /store portal
+const T1Portal = lazy(() => import("./t1-portal/T1Portal")); // standalone /t1 portal (Head Accountant daily report)
 // Landing page is code-split: it carries GSAP, Lenis and three.js, which no portal needs.
 const PortalSelection = lazy(() => import("./shared/components/PortalSelection"));
 const TableQRCodes = lazy(() => import("./admin/TableQRCodes"));
@@ -335,6 +336,9 @@ function AnimatedRoutes() {
         {/* Standalone Store Stock portal: Outlet ID only, not linked to any other portal */}
         <Route path="/store" element={<ErrorBoundary><Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><StoreStockPortal /></Suspense></ErrorBoundary>} />
         <Route path="/store/:code" element={<ErrorBoundary><Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><StoreStockPortal /></Suspense></ErrorBoundary>} />
+        {/* Standalone T1 Task Portal: Head Accountant master daily report */}
+        <Route path="/t1" element={<ErrorBoundary><Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><T1Portal /></Suspense></ErrorBoundary>} />
+        <Route path="/t1/:code" element={<ErrorBoundary><Suspense fallback={<div className="h-screen"><LottieLoader /></div>}><T1Portal /></Suspense></ErrorBoundary>} />
         <Route path="/print-station" element={<ErrorBoundary><AnimatedPage><PrintStation /></AnimatedPage></ErrorBoundary>} />
         <Route path="/user-menu/:slug/:tableId/:sig" element={<UserMenuApp />} />
         <Route path="/user-menu/:slug" element={<UserMenuApp />} />
