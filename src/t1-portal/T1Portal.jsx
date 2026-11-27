@@ -6,17 +6,19 @@
 //   3. Pick a date + branch → fill the digital form → it saves to the database
 //      (auto-save + Save button; every save is kept as a version, nothing is deleted)
 //   4. Generate Image / Generate PDF of the filled form.
+//   5. NSNC button → AI assistant over T1 + Store + admin data (T1Nsnc.jsx).
 // Owners / admins create accountant logins from "Manage accountants" using their
 // normal Softshape email + password.
 // Data lives in the t1_* tables via /api/t1/:code/*.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, Loader2, LogOut, Users, ArrowLeft } from 'lucide-react';
+import { ArrowRight, Loader2, LogOut, Users, ArrowLeft, Sparkles } from 'lucide-react';
 import { t1Api, getToken, setToken } from './t1Api';
 import { inputCls, Btn, ErrorText, Field } from './t1Ui';
 import T1Owner from './T1Owner';
 import T1Workspace from './T1Workspace';
+import T1Nsnc from './T1Nsnc';
 
 const LS_CODE = 'softshape.t1.code';
 const read = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
@@ -105,6 +107,7 @@ export default function T1Portal() {
   const [info, setInfo] = useState(null);
   const [session, setSession] = useState(null); // { user, outlet, today }
   const [view, setView] = useState('login'); // login | owner
+  const [nsnc, setNsnc] = useState(false);    // NSNC assistant layer open
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -136,7 +139,7 @@ export default function T1Portal() {
     setToken(r.token);
     setSession({ user: r.user, outlet: r.outlet, today: info?.today });
   };
-  const logout = () => { setToken(''); setSession(null); setView('login'); };
+  const logout = () => { setToken(''); setSession(null); setView('login'); setNsnc(false); };
   const changeOutlet = () => { setToken(''); setSession(null); setInfo(null); write(LS_CODE, ''); setCode(''); navigate('/t1', { replace: true }); };
 
   if (!info) return <CodeScreen initial={code} onOpen={open} error={err} busy={busy} />;
@@ -145,15 +148,24 @@ export default function T1Portal() {
     return <LoginScreen info={info} onLogin={login} onOwner={() => setView('owner')} onChangeOutlet={changeOutlet} />;
   }
   return (
-    <T1Workspace
-      code={code}
-      session={session}
-      onSessionExpired={logout}
-      headerRight={(
-        <button onClick={logout} className="flex h-10 items-center gap-1.5 rounded-xl border border-gray-100 px-3 text-[11px] font-black uppercase tracking-widest text-gray-500 hover:border-[#E53935] hover:text-[#B71C1C]">
-          <LogOut size={14} /> <span className="hidden sm:inline">Sign out</span>
-        </button>
-      )}
-    />
+    <>
+      <T1Workspace
+        code={code}
+        session={session}
+        onSessionExpired={logout}
+        headerRight={(
+          <>
+            <button onClick={() => setNsnc(true)} className="flex h-10 items-center gap-1.5 rounded-xl bg-gradient-to-br from-[#C8102E] to-[#7F0E1C] px-3 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-red-100 hover:opacity-90">
+              <Sparkles size={14} /> NSNC
+            </button>
+            <button onClick={logout} className="flex h-10 items-center gap-1.5 rounded-xl border border-gray-100 px-3 text-[11px] font-black uppercase tracking-widest text-gray-500 hover:border-[#E53935] hover:text-[#B71C1C]">
+              <LogOut size={14} /> <span className="hidden sm:inline">Sign out</span>
+            </button>
+          </>
+        )}
+      />
+      {/* NSNC opens as a layer, so the report underneath keeps its unsaved state. */}
+      {nsnc && <T1Nsnc code={code} session={session} onClose={() => setNsnc(false)} onSessionExpired={logout} />}
+    </>
   );
 }
