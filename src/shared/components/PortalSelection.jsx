@@ -21,7 +21,7 @@ import Lenis from 'lenis';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   LayoutDashboard, Smartphone, ShoppingCart, UserCog, QrCode, ArrowRight,
-  Package, WifiOff, Printer, FileSpreadsheet, Check,
+  Package, WifiOff, Printer, FileSpreadsheet, Check, ClipboardList,
 } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger, SplitText);
@@ -543,6 +543,13 @@ const PortalSelection = ({ onSelect }) => {
       title: 'Store Stock',
       description: 'Store supervisor book: purchases, issues to kitchens, closing stock and reports.',
       icon: Package,
+      color: '#B71C1C',
+    },
+    {
+      id: 't1',
+      title: 'T1 Portal',
+      description: 'Head Accountant daily report: sales, payouts, cash and checks, with the NSNC AI assistant.',
+      icon: ClipboardList,
       color: '#B71C1C',
     },
   ];
