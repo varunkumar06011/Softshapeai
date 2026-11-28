@@ -5,8 +5,11 @@
 // T1 daily reports + Store portal + admin / POS (read-only, via /api/nsnc).
 // Opens as a full-screen layer over the report, so the report keeps its state.
 // The chat is kept on this device only (localStorage).
+// A question runs as a job on the server; this screen polls for the answer.
+// The job id is saved with the chat, so closing NSNC, locking the phone or a
+// network drop never loses the answer: it is picked up on return. Stop ends it.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Copy, Loader2, RotateCcw, Send, Sparkles, Trash2 } from 'lucide-react';
 import { nsncApi } from './t1Api';
 
@@ -25,22 +28,48 @@ const MAX_KEEP = 40;
 const read = (k) => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v.slice(-MAX_KEEP))); } catch { /* storage full / private mode */ } };
 const ddmm = (d) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(0, 4)}` : d || '');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+
+// Earlier answered questions as context: (question, answer) pairs only.
+function historyOf(list) {
+  const out = [];
+  for (let i = 0; i < list.length - 1; i += 1) {
+    const q = list[i];
+    const a = list[i + 1];
+    if (q.role === 'user' && a.role === 'model' && !a.error && q.text && a.text) {
+      out.push({ role: 'user', text: q.text }, { role: 'model', text: a.text });
+      i += 1;
+    }
+  }
+  return out.slice(-10);
+}
+
+function workingLine(stage, s) {
+  const t = s >= 3 ? ` · ${s}s` : '';
+  if (stage && stage !== 'Starting') return `${stage}…${t}`;
+  return `${s < 6 ? 'Reading your data…' : s < 20 ? 'Analysing…' : 'Working through the numbers…'}${t}`;
+}
 
 // ── Tiny, safe Markdown → React (no HTML injection) ─────────────────────────
+// The model sometimes writes <br> for a line break (mostly inside table cells):
+// show a real line break instead of the tag text.
+const brs = (s, kb) => s.split(/<br\s*\/?>/i).flatMap((part, j) => (j ? [<br key={`${kb}-br${j}`} />, part] : [part]));
+
 function inline(text, kb) {
   const out = [];
   // **bold**, `code`, *italic* (italic may contain **bold**)
   const re = /(\*\*[^*]+\*\*|`[^`]+`|\*(?=[^*\s])(?:\*\*[^*]+\*\*|[^*])+?\*(?!\*))/g;
   let last = 0, m, i = 0;
   while ((m = re.exec(text))) {
-    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m.index > last) out.push(...brs(text.slice(last, m.index), `${kb}-${i++}`));
     const t = m[0];
     if (t.startsWith('**')) out.push(<strong key={`${kb}-${i++}`} className="font-black text-gray-900">{inline(t.slice(2, -2), `${kb}-${i}`)}</strong>);
     else if (t.startsWith('`')) out.push(<code key={`${kb}-${i++}`} className="rounded bg-gray-100 px-1 font-mono text-[12px]">{t.slice(1, -1)}</code>);
     else out.push(<em key={`${kb}-${i++}`} className="text-gray-500">{inline(t.slice(1, -1), `${kb}-${i}`)}</em>);
     last = m.index + t.length;
   }
-  if (last < text.length) out.push(text.slice(last));
+  if (last < text.length) out.push(...brs(text.slice(last), `${kb}-${i}`));
   return out;
 }
 
@@ -167,11 +196,25 @@ export default function T1Nsnc({ code, session, onClose, onSessionExpired }) {
   const key = `softshape.nsnc.${code}.${session?.user?.username || session?.user?.name || 'user'}`;
   const [msgs, setMsgs] = useState(() => read(key));
   const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
+  const [starting, setStarting] = useState(false);
+  const [stage, setStage] = useState('');
+  const [now, setNow] = useState(() => Date.now());
+  const sendingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const expiredRef = useRef(onSessionExpired);
   const endRef = useRef(null);
   const boxRef = useRef(null);
 
+  // The question still being worked on (at most one). Its job id lives in the
+  // saved chat, so after closing NSNC or reloading, the answer is picked up.
+  const last = msgs[msgs.length - 1];
+  const pending = last?.role === 'user' && last.job && last.pending ? last : null;
+  const busy = starting || !!pending;
+  const askedAt = busy && last?.role === 'user' ? last.at : 0;
+  const elapsed = askedAt ? Math.max(0, Math.round((now - askedAt) / 1000)) : 0;
+
+  useEffect(() => { expiredRef.current = onSessionExpired; });
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   useEffect(() => { write(key, msgs); }, [key, msgs]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs, busy]);
   useEffect(() => {
@@ -181,26 +224,79 @@ export default function T1Nsnc({ code, session, onClose, onSessionExpired }) {
   }, []);
   useEffect(() => {
     if (!busy) return undefined;
-    const started = Date.now();
-    const t = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
-    return () => { clearInterval(t); setTimeout(() => setElapsed(0), 0); };
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
   }, [busy]);
+
+  // Puts the reply right after its question and marks the question answered.
+  const settle = useCallback((id, reply) => {
+    setMsgs((list) => {
+      const i = list.findIndex((m) => m.role === 'user' && m.job === id);
+      if (i < 0 || !list[i].pending) return list;
+      return [...list.slice(0, i), { ...list[i], pending: false }, { role: 'model', at: Date.now(), ...reply }, ...list.slice(i + 1)];
+    });
+    setStage('');
+  }, []);
+
+  // Waits for the pending answer. Each poll is short (the server holds it up to
+  // 20 s), and failures just poll again, so nothing is lost on a flaky network.
+  const jobId = pending?.job;
+  const jobText = pending?.text;
+  useEffect(() => {
+    if (!jobId) return undefined;
+    let alive = true;
+    let ctl = null;
+    let v = 0;
+    let fails = 0;
+    const fail = (text) => settle(jobId, { text, error: true, retry: jobText });
+    // Back in the app: poll at once instead of waiting on a request the phone froze.
+    const wake = () => { if (document.visibilityState === 'visible') ctl?.abort(); };
+    document.addEventListener('visibilitychange', wake);
+    (async () => {
+      while (alive) {
+        ctl = new AbortController();
+        try {
+          const r = await nsncApi.poll(code, jobId, v, ctl.signal);
+          if (!alive) return;
+          fails = 0;
+          if (r.status === 'working') { v = r.v; setStage(r.stage || ''); continue; }
+          if (r.status === 'done') settle(jobId, { text: r.answer, sources: r.sources || [] });
+          else fail(r.error || 'Something went wrong. Please try again.');
+          return;
+        } catch (e) {
+          if (!alive) return;
+          if (e.status === 401) { expiredRef.current?.(); return; }
+          if (e.status === 404) { fail(e.message); return; }
+          if (e.aborted || e.timedOut) continue;
+          fails += 1;
+          if (e.offline) setStage('Waiting for the internet');
+          await sleep(Math.min(10000, 1500 * fails));
+        }
+      }
+    })();
+    return () => { alive = false; ctl?.abort(); document.removeEventListener('visibilitychange', wake); };
+  }, [code, jobId, jobText, settle]);
 
   const ask = async (q, base = msgs) => {
     const question = String(q || '').trim();
-    if (!question || busy) return;
-    const history = base.filter((m) => !m.error).slice(-10).map((m) => ({ role: m.role, text: m.text }));
-    setMsgs([...base, { role: 'user', text: question, at: Date.now() }]);
+    if (!question || busy || sendingRef.current) return;
+    sendingRef.current = true;
+    const cid = newId();
+    setMsgs([...base, { role: 'user', text: question, at: Date.now(), cid }]);
     setInput('');
-    setBusy(true);
+    setStarting(true);
     try {
-      const r = await nsncApi.ask(code, question, history);
-      setMsgs((m) => [...m, { role: 'model', text: r.answer, sources: r.sources || [], at: Date.now() }]);
+      const r = await nsncApi.start(code, question, historyOf(base));
+      const mark = (list) => list.map((m) => (m.cid === cid ? { ...m, job: r.id, pending: true } : m));
+      if (mountedRef.current) setMsgs(mark);
+      else write(key, mark(read(key))); // NSNC was closed meanwhile: keep the job for next time
+      setStage(r.stage || '');
     } catch (e) {
-      if (e.status === 401) { onSessionExpired?.(); return; }
-      setMsgs((m) => [...m, { role: 'model', text: e.message, error: true, retry: question, at: Date.now() }]);
+      if (e.status === 401) { expiredRef.current?.(); return; }
+      setMsgs((list) => [...list, { role: 'model', text: e.message, error: true, retry: question, at: Date.now() }]);
     } finally {
-      setBusy(false);
+      sendingRef.current = false;
+      setStarting(false);
       setTimeout(() => boxRef.current?.focus(), 0);
     }
   };
@@ -211,6 +307,11 @@ export default function T1Nsnc({ code, session, onClose, onSessionExpired }) {
     if (i < 0 || busy) return;
     const start = i > 0 && msgs[i - 1].role === 'user' ? i - 1 : i;
     ask(m.retry, [...msgs.slice(0, start), ...msgs.slice(i + 1)]);
+  };
+  const stop = () => {
+    if (!pending) return;
+    settle(pending.job, { text: 'Stopped.', error: true, retry: pending.text });
+    nsncApi.stop(code, pending.job).catch(() => { /* it also stops when the next question is asked */ });
   };
   const clear = () => { if (!busy && window.confirm('Clear this NSNC chat on this device?')) setMsgs([]); };
 
@@ -280,9 +381,19 @@ export default function T1Nsnc({ code, session, onClose, onSessionExpired }) {
 
           {busy && (
             <div className="flex justify-start">
-              <div className="flex items-center gap-2 rounded-[22px] rounded-bl-md border border-gray-100 bg-white px-4 py-3 text-[13px] font-bold text-gray-500">
-                <Loader2 size={15} className="animate-spin text-[#B71C1C]" />
-                {elapsed < 6 ? 'Reading your data…' : elapsed < 20 ? `Analysing… ${elapsed}s` : `Working through the numbers… ${elapsed}s`}
+              <div className="max-w-[95%] rounded-[22px] rounded-bl-md border border-gray-100 bg-white px-4 py-3">
+                <div className="flex items-center gap-2 text-[13px] font-bold text-gray-500">
+                  <Loader2 size={15} className="shrink-0 animate-spin text-[#B71C1C]" />
+                  <span className="min-w-0 flex-1">{workingLine(stage, elapsed)}</span>
+                  {pending && (
+                    <button onClick={stop} className="shrink-0 rounded-lg border border-gray-100 px-2.5 py-1 text-[10.5px] font-black uppercase tracking-widest text-gray-400 hover:border-[#E53935] hover:text-[#B71C1C]">
+                      Stop
+                    </button>
+                  )}
+                </div>
+                {elapsed >= 15 && (
+                  <p className="mt-1.5 text-[11.5px] font-semibold text-gray-400">You can leave this screen — the answer will be here when you come back.</p>
+                )}
               </div>
             </div>
           )}

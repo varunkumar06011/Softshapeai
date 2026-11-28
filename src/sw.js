@@ -54,6 +54,7 @@ registerRoute(
   ({ url, request }) =>
     url.pathname.startsWith('/api/') &&
     !url.pathname.startsWith('/api/auth/') &&
+    !url.pathname.startsWith('/api/nsnc/') && // NSNC answers: always live, never cached
     request.method === 'GET' &&
     url.hostname !== 'localhost' &&
     url.hostname !== '127.0.0.1',
