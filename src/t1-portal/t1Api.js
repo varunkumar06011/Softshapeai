@@ -38,25 +38,33 @@ async function call(code, path, method = 'GET', body) {
   return data;
 }
 
-// NSNC (AI assistant) lives at /api/nsnc/:code/* and needs a longer wait: it may
-// read several data sources before answering. Same token, no retry.
-async function nsncCall(code, path, method = 'GET', body) {
+// NSNC (AI assistant) lives at /api/nsnc/:code/*. A question runs as a job on
+// the server: start() returns at once, then poll() asks for news (the server
+// holds each poll up to 20 s). Every call is short, so a locked phone, an app
+// switch or a network blip never loses the answer. Same token, no retry here
+// (the NSNC screen decides when to poll again).
+async function nsncCall(code, path, method = 'GET', body, { timeout = 30000, signal } = {}) {
   let res;
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 170000);
+  const timer = setTimeout(() => ctl.abort(), timeout);
+  const onAbort = () => ctl.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
   const headers = {};
   if (body) headers['Content-Type'] = 'application/json';
   const tok = getToken();
   if (tok) headers.Authorization = `Bearer ${tok}`;
   try {
     // eslint-disable-next-line no-restricted-syntax
-    res = await fetch(`${API_BASE}/api/nsnc/${encodeURIComponent(code)}${path}`, { signal: ctl.signal, method, headers, body: body ? JSON.stringify(body) : undefined });
-  } catch (err) {
-    const e = new Error(err?.name === 'AbortError' ? 'NSNC took too long. Try a shorter date range or a simpler question.' : 'No connection. Check the internet and try again.');
-    e.offline = true;
+    res = await fetch(`${API_BASE}/api/nsnc/${encodeURIComponent(code)}${path}`, { signal: ctl.signal, method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  } catch {
+    const e = new Error(signal?.aborted ? 'Stopped.' : 'No connection. Check the internet and try again.');
+    e.aborted = !!signal?.aborted;               // the caller cancelled it
+    e.timedOut = !e.aborted && ctl.signal.aborted; // no reply in time
+    e.offline = !e.aborted && !e.timedOut;
     throw e;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON error page */ }
@@ -68,9 +76,14 @@ async function nsncCall(code, path, method = 'GET', body) {
   return data;
 }
 
+let pollSeq = 0;
 export const nsncApi = {
   status: (code) => nsncCall(code, '/status'),
-  ask: (code, question, history) => nsncCall(code, '/ask', 'POST', { question, history }),
+  start: (code, question, history) => nsncCall(code, '/jobs', 'POST', { question, history }),
+  // v = the last state seen; the server answers as soon as there is news.
+  // n makes every poll address unique, so no cache can ever answer for it.
+  poll: (code, id, v, signal) => nsncCall(code, `/jobs/${encodeURIComponent(id)}?v=${v || 0}&n=${Date.now().toString(36)}${(pollSeq++).toString(36)}`, 'GET', undefined, { timeout: 35000, signal }),
+  stop: (code, id) => nsncCall(code, `/jobs/${encodeURIComponent(id)}`, 'DELETE'),
 };
 
 const rp = (date, branch) => `/reports/${encodeURIComponent(date)}/${encodeURIComponent(branch)}`;
